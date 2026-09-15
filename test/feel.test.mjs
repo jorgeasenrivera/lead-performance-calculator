@@ -16,6 +16,7 @@ const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8");
+const sm = fs.readFileSync(new URL("../api/_store-month.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
 
 test("the status controls are never greyed out for a round trip", () => {
@@ -436,13 +437,13 @@ test("new and used are counted off the report on every screen that shows them", 
 });
 
 test("the month's goal is asked for once, written by one writer, and a change says what it replaced", () => {
-  /* The card only means anything if it can actually appear. `storeGoalFor`
-     falls back to the store's standing figure, so a card keyed on "this store
-     has no goal" would never show again for a store that has ever set one:
-     October would silently inherit September. This is the distinction that
-     stops that, and it is the one worth holding. */
-  assert.ok(/const goalMonthState = \(store, month\) => \{/.test(mgr), "a month's own goal is told apart from one it inherited");
-  assert.ok(/const carried = own == null && g && g\.units > 0 \? g\.units : null;/.test(mgr), "and an inherited figure is named as carried rather than counted as set");
+  /* A goal belongs to one month. The standing figure a month used to fall back
+     on is gone from the reader, from the two writers and from the store editor,
+     because any one of them keeping it would put a new month back on the last
+     one's number. */
+  assert.ok(/const goalMonthState = \(store, month\) => \{/.test(mgr), "one reader for whether a month has a goal");
+  assert.ok(!/g\.units/.test(mgr), "nothing in the manager reads or writes a standing figure any more");
+  assert.ok(/const units = g\.byMonth\[monthKey\];/.test(sm) && !/: g\.units;/.test(sm), "and the shared reader takes the month's own figure or nothing");
   assert.equal(mgr.split("!goalMonth.set &&").length - 1, 2, "both surfaces ask on the same condition: the desk hero and the phone board");
 
   // One writer. Two copies of this were two chances to word one event
@@ -463,4 +464,11 @@ test("the month's goal is asked for once, written by one writer, and a change sa
      the change had been refused. Both fields keep their own draft in state and
      must call it with no argument at all. */
   assert.ok(!/onClick=\{saveGoal\}/.test(mgr), "no field hands the click event in as the figure to save");
+
+  /* Written in, not offered. A figure a screen puts up for you is a figure you
+     accept without deciding, and the point of asking is that the month gets a
+     number somebody chose for it. */
+  assert.ok(/const \[draft, setDraft\] = useState\(""\);/.test(mgr), "the card opens on an empty field");
+  assert.ok(!/lastGoal/.test(mgr), "and the hero no longer offers last month's figure either");
+  assert.ok(!/placeholder=\{suggest/.test(mgr) && !/last month \$\{fmtNum/.test(mgr), "nor does it print one as a hint");
 });
