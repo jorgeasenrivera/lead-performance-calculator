@@ -698,7 +698,12 @@ func phoneCaption(_ p: QueueAttributes.PhoneLane) -> String? {
   switch p.state {
   case "free":
     let f = p.free ?? []
-    return f.count > 1 ? "\(f.joined(separator: " and ")) are open" : nil
+    /* The count, not the roll call. These were joined with the word "and", so
+       a quiet afternoon read "1 and 2 and 3 and 4 and 5 and 6 are open" on a
+       lock screen somebody looks at for two seconds. The headline above already
+       names the first free desk; what this line is for is how many there are.
+       One free desk needs no caption at all, because the headline is it. */
+    return f.count > 1 ? "\(f.count) desks open" : nil
   case "off": return "Back in line when you're ready"
   case "cord": return (p.ahead ?? 0) == 0 ? "The first desk to free is yours" : nil
   default: return nil
