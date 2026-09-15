@@ -25567,7 +25567,12 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
            stack, which is why this never showed there. */
         .topstack { background:rgba(255,255,255,.86);
           backdrop-filter:blur(18px) saturate(1.6);
-          -webkit-backdrop-filter:blur(18px) saturate(1.6); }
+          -webkit-backdrop-filter:blur(18px) saturate(1.6);
+          /* The chip strip ended exactly on the stack's own bottom edge, so the
+             pills sat on the seam with the page moving directly under them.
+             Six points of air is the difference between a row of tabs and a row
+             of tabs about to fall off. */
+          padding-bottom:6px; }
         /* The 20px white fade under the stack went with it. It was covering for
            the see-through header, and over the green hero it read as a white
            line that stayed put however far the page scrolled. An opaque header
