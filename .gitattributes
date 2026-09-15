@@ -1,0 +1,6 @@
+# The source guards read intentional newlines. Keep them identical on Windows
+# and Linux so a checkout cannot change what the tests see.
+*.html text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.mjs text eol=lf

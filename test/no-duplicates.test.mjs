@@ -27,8 +27,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /* The app is one program in two files: the core, and the manager's pages
    split out of it so a phone downloads less (src/Manager.jsx). */
 const APP_FILES = ["src/LeadPerformanceCalculator.jsx", "src/Manager.jsx"].map((f) => path.join(ROOT, f));
@@ -94,7 +95,7 @@ test("the shared files stay importable by the browser", async () => {
     for (const bad of [/from "node:/, /require\(/, /process\.env/, /createClient/]) {
       assert.ok(!bad.test(src), `${rel} reaches for something the browser has not got: ${bad}`);
     }
-    await import(path.join(ROOT, rel));   // and it actually loads
+    await import(pathToFileURL(path.join(ROOT, rel)));   // and it actually loads
   }
 });
 
@@ -103,7 +104,7 @@ test("every name the app imports from a shared file is really exported", async (
   const rx = /import\s*\{([^}]+)\}\s*from\s*"(\.\.\/api\/[^"]+)"/g;
   let m, checked = 0;
   while ((m = rx.exec(src))) {
-    const mod = await import(path.join(ROOT, "api", m[2].replace("../api/", "")));
+    const mod = await import(pathToFileURL(path.join(ROOT, "api", m[2].replace("../api/", ""))));
     for (const raw of m[1].split(",")) {
       const name = raw.trim().split(/\s+as\s+/)[0].trim();
       if (!name) continue;

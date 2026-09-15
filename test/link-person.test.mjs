@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 // Linking an account to a person on the floor, and the device fix that depends on it.
 process.env.SUPABASE_URL="https://stub.local"; process.env.SUPABASE_SERVICE_ROLE_KEY="svc"; process.env.SUPABASE_ANON_KEY="anon";
-const API = new URL("../api", import.meta.url).pathname;
+const API = new URL("../api/", import.meta.url);
 
 let DEVICES=[];
 let USERS=[];
@@ -39,8 +39,8 @@ globalThis.fetch = async (url, opt={}) => {
   }
   return j({});
 };
-const { default: link } = await import(API+"/link-person.mjs");
-const { default: reg }  = await import(API+"/register-device.mjs");
+const { default: link } = await import(new URL("link-person.mjs", API));
+const { default: reg }  = await import(new URL("register-device.mjs", API));
 const mkRes = () => { const r={code:200}; r.status=(c)=>{r.code=c;return r;}; r.json=(x)=>{r.body=x;return r;}; return r; };
 const call = (fn, body, jwt="jwt") => { const res=mkRes(); return fn({method:"POST",headers:jwt?{authorization:`Bearer ${jwt}`}:{},body},res).then(()=>res); };
 /* The query rides in the URL, as it does on the platform; the handler reads it from there. */
