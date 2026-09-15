@@ -36,6 +36,7 @@ import * as P from "../api/_report-parsers.mjs";
    that rolled its own would drift on the first ligature, and a name set with
    "ff" in it would stop matching the roster. */
 import { extractPdfLines } from "../api/ingest.mjs";
+import { pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -169,6 +170,17 @@ async function main() {
   if (!WRITE && wouldWrite) console.log("Run it again with --write to make these changes.");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/* Built with pathToFileURL rather than by gluing "file://" onto argv[1]. The
+   glued form is false on Windows, where argv[1] is C:\repo\scripts\... against
+   an import.meta.url of file:///C:/repo/scripts/..., and false on any path with
+   a space in it, which import.meta.url percent-encodes. Either way main() never
+   runs and the script exits 0 having done nothing, which for a backfill is the
+   worst shape a failure can take: it looks exactly like a clean dry run.
+   argv[1] is checked first because pathToFileURL THROWS on undefined where the
+   glued form merely came out false, and this module has to stay importable: the
+   tests import newestPerStoreMonth from it, and a module that throws on import
+   cannot be tested. */
+const runDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (runDirectly) {
   main().catch((e) => { console.error(e); process.exit(1); });
 }
