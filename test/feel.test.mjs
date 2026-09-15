@@ -391,3 +391,25 @@ test("the burst check measures from inside the page, and reads the server until 
   assert.ok(/trace\[trace\.length - 1\] === "Here" && trace\.indexOf\("Lunch"\) >= 0 && trace\.indexOf\("Lunch"\) < trace\.lastIndexOf\("Here"\) && mine && mine\.status === "waiting"/.test(feel), "and the bar itself is unchanged: the second tap arrives, stays, and the server ends on it");
   assert.ok(/let n = \(window\.__vib \|\| \[\]\)\.length, still = 0;/.test(feel), "the press test waits for the phone to stop buzzing before it starts counting");
 });
+
+test("the phone's own measurements survive a larger text size, and the top of the room is a band", () => {
+  assert.ok(/\.q-page\.sf, \.ar-bar, \.fba-sheetwrap, \.mc-ov\{ zoom:var\(--sftxt, 1\);/.test(core), "the person's text size is still a zoom of the whole screen");
+  assert.ok(/--dvh:calc\(100dvh \/ var\(--sftxt, 1\)\);/.test(core), "and the screen's height is divided back down inside it, or at Largest a full-height screen is a third taller than the phone");
+  assert.equal(core.split("100dvh").length - 1, 3, "so nothing reads the viewport's height raw: only :root's default, the zoom's own division, and the note about the keyboard");
+  assert.ok(/--sat:calc\(\(var\(--satr\) \+ var\(--satx\)\) \/ var\(--sftxt, 1\)\);/.test(core) && /--sab:calc\(max\(env\(safe-area-inset-bottom, 0px\), var\(--shell-inset-bottom, 0px\)\) \/ var\(--sftxt, 1\)\);/.test(core), "and so are the two insets, which are the phone's measurements and not text the person asked to enlarge");
+
+  assert.ok(/--satr:max\(env\(safe-area-inset-top, 0px\), var\(--shell-inset-top, 0px\)\);/.test(core) && /--satx:0px;/.test(core) && /--sat:calc\(var\(--satr\) \+ var\(--satx\)\);/.test(core), "the top band is the phone's inset plus whatever the room has put over it");
+  assert.ok(/html\.net-off\{ --satx:36px; \}/.test(core) && /html\.net-stale\{ --satx:30px; \}/.test(core), "the offline bar and the stale stamp each claim their own height");
+  assert.ok(/document\.documentElement\.classList\.toggle\("net-stale", stale\)/.test(core), "and the stamp turns its band on the way the offline bar does");
+
+  // Three things read the phone's inset directly and three things sat on top of
+  // the room because of it: the stamp, the offline bar, and Help.
+  assert.equal(core.split("env(safe-area-inset-top").length - 1, 4, "nothing reads the top inset raw except --satr and the three fallbacks, because a WebView reports none and the shell measures it");
+  assert.ok(/\.ar-age\{ position:fixed; z-index:104; top:calc\(var\(--satr\) \+ 6px\); left:14px; right:auto;/.test(core), "the stamp sits in the band it made, on the left, clear of Help");
+  assert.ok(/\.ar-net\{ position:fixed; z-index:104; top:0; left:0; right:0; padding:calc\(var\(--satr\) \+ 10px\)/.test(core), "and so does the offline bar");
+  assert.ok(/\.q-page \.help-fab:not\(\.inline\) \{ bottom:auto; top:calc\(var\(--sat\) \+ 18px\);/.test(core), "Help clears the clock rather than sitting under it");
+  assert.ok(/padding:max\(clamp\(52px,8vh,70px\), calc\(66px \+ var\(--sat\)\)\) clamp\(20px,6vw,26px\)/.test(core), "and the first row of desks starts below Help, not eight pixels under the camera");
+
+  assert.ok(/\.mc-head\{ display:flex; flex-wrap:wrap;/.test(core) && /\.mc-corner\{[^}]*margin-left:auto; \}/.test(core) && /\.mc-side\{ min-width:0; \}/.test(core), "and the corner head takes a second line rather than printing the stamp through the weekday");
+  assert.ok(/\.mc-head\{ container-type:inline-size; container-name:mchead; \}/.test(core) && /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/.test(core), "and on that line it lies across, asked of the head and not of the screen: the text size is a zoom, and a zoom does not move a media query");
+});

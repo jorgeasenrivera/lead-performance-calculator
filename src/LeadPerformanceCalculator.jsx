@@ -7552,6 +7552,8 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   useEffect(() => { try { document.documentElement.classList.toggle("net-off", !!net.offline); } catch (e) {} return () => { try { document.documentElement.classList.remove("net-off"); } catch (e) {} }; }, [net.offline]);
   const minsOld = (t) => Math.max(1, Math.floor((Date.now() - t) / 60000));
   const staleMins = !net.offline && net.okAt && Date.now() - net.okAt > 60000 ? minsOld(net.okAt) : 0;
+  const stale = staleMins > 0;
+  useEffect(() => { try { document.documentElement.classList.toggle("net-stale", stale); } catch (e) {} return () => { try { document.documentElement.classList.remove("net-stale"); } catch (e) {} }; }, [stale]);
   void netTick;
 
   return (
@@ -11411,8 +11413,16 @@ const SAGE_CSS = `
          bar itself through env(). Android's WebView does not report them
          reliably, so the phone shell measures its own insets, including the
          three-button bar, and sets --shell-inset-*; whichever is larger wins. */
-:root { --sat:max(env(safe-area-inset-top, 0px), var(--shell-inset-top, 0px));
-        --sab:max(env(safe-area-inset-bottom, 0px), var(--shell-inset-bottom, 0px)); }
+:root { --satr:max(env(safe-area-inset-top, 0px), var(--shell-inset-top, 0px));
+        --satx:0px;
+        --sat:calc(var(--satr) + var(--satx));
+        --sab:max(env(safe-area-inset-bottom, 0px), var(--shell-inset-bottom, 0px));
+        --dvh:100dvh; }
+/* The offline bar and the stale stamp are drawn over the top of the room, so
+   while one is up the room starts that much further down and nothing is
+   printed through. */
+html.net-off{ --satx:36px; }
+html.net-stale{ --satx:30px; }
 :root {
         --bg: #F5F5F7; --card: #FFFFFF; --ink: #1D1D1F; --ink-2: #6E6E73; --ink-3: #AEAEB2;
         --line: rgba(0,0,0,.08); --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
@@ -12346,7 +12356,7 @@ html:has(.q-page.sf), body:has(.q-page.sf),
 /* Clear of the spine. The salesperson screens draw the queue down a 46px
          column on the right edge, and at right:18px the button landed on its
          label. */
-.q-page .help-fab:not(.inline) { bottom:auto; top:18px; right:58px; width:40px; height:40px;
+.q-page .help-fab:not(.inline) { bottom:auto; top:calc(var(--sat) + 18px); right:58px; width:40px; height:40px;
         background:rgba(255,255,255,.12); box-shadow:0 6px 18px -8px rgba(0,0,0,.5);
         backdrop-filter:blur(6px); }
 .q-page .help-fab:hover { background:rgba(255,255,255,.2); }
@@ -14355,14 +14365,16 @@ input[type=number] { width:84px; }
 /* the strip that says the screen is the phone's memory, not the network */
 /* No connection: a bar across the top of the room in solid sand, dropping
    in on the spring; mint for a beat on the way back. */
-.ar-net{ position:fixed; z-index:104; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+.ar-net{ position:fixed; z-index:104; top:0; left:0; right:0; padding:calc(var(--satr) + 10px) 16px 10px;
   display:flex; align-items:center; justify-content:center; gap:8px; background:#E4C98D; color:#15211B; white-space:nowrap;
   font:700 11px var(--sfmono, ui-monospace, monospace); letter-spacing:.08em; text-transform:uppercase; box-shadow:0 8px 24px -12px rgba(0,0,0,.6); pointer-events:none;
   animation:netIn var(--t-settle) var(--spring) both; }
 .ar-net.back{ background:#8FD8AF; animation:netIn var(--t-swap) var(--ease) both; }
 @keyframes netIn{ from{ transform:translateY(-110%); } to{ transform:none; } }
-/* Stale: online, nothing heard for over a minute. Small, top right, sand. */
-.ar-age{ position:fixed; z-index:104; top:calc(env(safe-area-inset-top, 0px) + 12px); right:14px; display:inline-flex; align-items:center; gap:6px;
+/* Stale: online, nothing heard for over a minute. Small, sand, top left, which
+   is the corner Help is not in. It reads the phone's own inset rather than the
+   band, because the band is the room's room for this. */
+.ar-age{ position:fixed; z-index:104; top:calc(var(--satr) + 6px); left:14px; right:auto; display:inline-flex; align-items:center; gap:6px;
   padding:4px 10px; border-radius:999px; border:1px solid rgba(228,201,141,.35); background:rgba(228,201,141,.12); color:#E4C98D;
   font:600 10.5px var(--sfmono, ui-monospace, monospace); letter-spacing:.06em; pointer-events:none; animation:ageIn var(--t-settle) var(--ease-bloop) both; }
 .ar-age i{ width:6px; height:6px; border-radius:50%; background:#E4C98D; animation:agePulse 1.8s ease-in-out infinite; }
@@ -14533,7 +14545,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
 /* Both rooms switched off. Somebody did that deliberately, so it is said
    plainly rather than drawn as an empty shell they will tap at. */
-.ar-none{ min-height:100dvh; display:flex; flex-direction:column; align-items:center;
+.ar-none{ min-height:var(--dvh); display:flex; flex-direction:column; align-items:center;
   justify-content:center; gap:12px; padding:32px 26px; text-align:center;
   background:#10141F; color:rgba(255,255,255,.8); }
 .ar-none-h{ font-family:var(--mffont); font-size:19px; font-weight:600; color:#fff; }
@@ -14710,7 +14722,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
   --sfmono:var(--font-mono);
   font-family:var(--sffont); color:var(--sfink); letter-spacing:-.005em; padding:0;
   background:radial-gradient(1000px 680px at 15% -10%, rgba(11,197,197,.05), transparent 60%), #06090F;
-  position:fixed; inset:0; width:100%; height:100dvh; min-height:100dvh; border-radius:0; z-index:100;
+  position:fixed; inset:0; width:100%; height:var(--dvh); min-height:var(--dvh); border-radius:0; z-index:100;
   overflow-y:auto; overscroll-behavior:contain;
   scrollbar-width:none; -ms-overflow-style:none;
 }
@@ -14740,9 +14752,9 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @supports not (background: color-mix(in srgb, red 10%, transparent)){
   .q-page.sf::before{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
 }
-.sf .q-stage{ align-items:stretch; min-height:100dvh; }
+.sf .q-stage{ align-items:stretch; min-height:var(--dvh); }
 /* the frame: body left, spine right */
-.sf-view{ display:flex; width:100%; min-height:100dvh; align-items:stretch; }
+.sf-view{ display:flex; width:100%; min-height:var(--dvh); align-items:stretch; }
 .sf-body{
   flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
   padding:calc(18px + var(--sat)) 6px
@@ -15113,7 +15125,12 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 /* the status glyphs are SVG on the 5x5 grid now, not a CSS grid of dots */
 .sf .sf-ico{ display:block; color:var(--led); filter:drop-shadow(0 0 3px color-mix(in srgb, var(--led) 55%, transparent)); }
 /* the hero "you're on the floor / in line" screen */
-.sf-live{ width:100%; max-width:460px; display:flex; flex-direction:column; min-height:100dvh; padding:clamp(52px,8vh,70px) clamp(20px,6vw,26px) clamp(24px,5vh,34px); }
+/* The top of these screens carries the desks, and over them the notch, the
+   offline bar and the help button, none of which the screen knew about: at
+   8vh the first row of desks came out eight pixels under the camera. It now
+   starts below whatever the phone and the room have put up there. */
+.sf-live{ width:100%; max-width:460px; display:flex; flex-direction:column; min-height:var(--dvh);
+  padding:max(clamp(52px,8vh,70px), calc(66px + var(--sat))) clamp(20px,6vw,26px) clamp(24px,5vh,34px); }
 .sf-top{ display:flex; align-items:center; justify-content:space-between; }
 .sf-live-dot{ width:7px; height:7px; border-radius:50%; background:var(--a1); box-shadow:0 0 8px var(--glow); }
 .sf-poswrap{ position:relative; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; }
@@ -15173,7 +15190,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    there, by the phone's own measure, with a floor for phones that report none. */
 .mc{ width:min(430px, 100%); margin:0 auto; padding:max(28px, calc(14px + var(--sat))) 16px 84px; text-align:left; font-family:var(--font-ui);
   display:flex; flex-direction:column; gap:11px; }
-.mc-head{ display:flex; gap:16px; align-items:flex-start; margin-top:4px; }
+.mc-head{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; margin-top:4px; }
 .mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
   font-size:9.5px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
 .mc-cal{ display:grid; grid-template-columns:repeat(7, 9px); gap:5px 6px; margin-top:7px; }
@@ -15185,7 +15202,8 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-cal s.today{ outline:1.5px solid rgba(242,246,242,.85); outline-offset:1.5px; }
 .mc-cal s.off{ background:rgba(232,238,242,.05); }
 .mc-cal s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.3); }
-.mc-calw{ border:0; background:none; padding:0; text-align:left; cursor:pointer; }
+.mc-calw{ border:0; background:none; padding:0; text-align:left; cursor:pointer; flex:0 0 auto; }
+.mc-side{ min-width:0; }
 .mc-pacew{ position:relative; flex:1; display:flex; }
 .mc-pace .tr{ position:relative; }
 .mc-pace .tr i{ position:absolute; top:0; bottom:0; left:0; }
@@ -15427,7 +15445,20 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 /* head */
 .mc-head{ align-items:flex-start; }
 .mc-side{ gap:8px; }
-.mc-corner{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto; }
+/* The stamp is one line and will not shrink, so when the three columns stop
+   fitting, at a larger text size or on a narrow phone, the corner takes a line
+   of its own at the right rather than printing through the weekday. */
+.mc-corner{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto; margin-left:auto; }
+/* And on that second line it lies across rather than down. Stacked, the stamp,
+   the initials and the question mark cost 128 points of height at Largest, all
+   of it above the month. It is asked of the head and not of the screen, because
+   the text size is a zoom and a zoom does not move a media query: the head is
+   324 points wide at Normal on this phone and 234 at Largest, and it stops
+   fitting on one line at about 300. */
+.mc-head{ container-type:inline-size; container-name:mchead; }
+@container mchead (max-width:300px){
+  .mc-corner{ flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px 10px; }
+}
 .mc-corner .mc-help{ position:static; }
 .mc-corner .mc-asof{ white-space:nowrap; }
 .mc-aheadlbl{ border:0; background:none; padding:0; text-align:left; cursor:pointer; font-family:var(--sfmono); font-size:11.5px; font-weight:700; letter-spacing:.14em; color:rgba(232,238,242,.6); }
@@ -15756,7 +15787,15 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    hit, nothing smaller than 11px to read, and the numerals scale with it.
    The person's own text size rides on top as a zoom of the whole screen,
    the bar and the sheets included, so nothing they can tap stays small. */
-.q-page.sf, .ar-bar, .fba-sheetwrap, .mc-ov{ zoom:var(--sftxt, 1); }
+.q-page.sf, .ar-bar, .fba-sheetwrap, .mc-ov{ zoom:var(--sftxt, 1);
+  /* Zoom multiplies every length inside, and the screen's own measurements are
+     not lengths the person asked to enlarge: at Largest a full-height screen
+     came out a third taller than the phone, so its bottom third fell off the
+     bottom and the dock landed on the last card. The height and the two insets
+     are divided back down, so they still mean the phone. */
+  --dvh:calc(100dvh / var(--sftxt, 1));
+  --sat:calc((var(--satr) + var(--satx)) / var(--sftxt, 1));
+  --sab:calc(max(env(safe-area-inset-bottom, 0px), var(--shell-inset-bottom, 0px)) / var(--sftxt, 1)); }
 .mc{ gap:14px; padding-left:18px; padding-right:48px; }
 .mc-calhead{ font-size:11.5px; }
 .mc-cal{ grid-template-columns:repeat(7, 12px); gap:6px 8px; margin-top:9px; }
@@ -16286,10 +16325,10 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
      stretched plan already does, so tables drawn a hand apart on the desk do
      not land on top of each other once they are big enough to hit */
   .fba-sheet .fbp-scroll.mini{flex:0 0 auto;}
-  .fba-sheet .fbp-scroll.mini .fbp{height:min(520px,60dvh);min-width:190%;}
+  .fba-sheet .fbp-scroll.mini .fbp{height:min(520px,calc(var(--dvh) * .6));min-width:190%;}
   /* the ask carries the lot and the reasons under the room, so its room is
      shorter: the send button has to be on the screen without a scroll */
-  .fba-sheet.ask .fbp-scroll.mini .fbp{height:min(400px,42dvh);}
+  .fba-sheet.ask .fbp-scroll.mini .fbp{height:min(400px,calc(var(--dvh) * .42));}
   .fba-sheet .fbp-scroll.mini .fbp-tbl{width:54px;height:42px;border-radius:12px;font-size:18px;font-weight:700;}
   .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:48px;height:48px;}
   .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:12.5px;}
