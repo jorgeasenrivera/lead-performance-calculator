@@ -25558,9 +25558,20 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           align-items:center; justify-content:center; width:32px; height:32px; border:none;
           border-radius:50%; background:var(--line); color:var(--ink); cursor:pointer; }
         .coach-empty { display:none; }
-        .topstack::after { content:""; position:absolute; left:0; right:0; top:100%;
-          height:20px; pointer-events:none;
-          background:linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,0)); }
+        /* The stack is the surface, not the pills on it. It is sticky with no
+           background of its own, and on a phone it is 100px tall while the bar
+           covers the top 58 and the chip strip the bottom 33 at 14 percent. So
+           the hero scrolled through a 9px band between them and through the
+           tab pills themselves, which is why Summary and History were legible
+           only against white. On the desk the bar happens to fill the whole
+           stack, which is why this never showed there. */
+        .topstack { background:rgba(255,255,255,.86);
+          backdrop-filter:blur(18px) saturate(1.6);
+          -webkit-backdrop-filter:blur(18px) saturate(1.6); }
+        /* The 20px white fade under the stack went with it. It was covering for
+           the see-through header, and over the green hero it read as a white
+           line that stayed put however far the page scrolled. An opaque header
+           needs no apology under it. */
         .sect-chip { flex:0 0 auto; position:relative; border:1px solid var(--line);
           background:var(--card); border-radius:999px; padding:5px 13px; font:inherit;
           font-size:12.5px; font-weight:650; color:var(--ink-2); cursor:pointer;
