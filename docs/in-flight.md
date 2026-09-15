@@ -56,7 +56,6 @@ waiting on Jorge's proposal page), `in review`, `done`.
 | X1 | **Make the required checks reliable on Windows.** Git currently converts the checkout to CRLF, which breaks source guards written against LF, and five tests turn a Windows file URL into `C:\\C:\\...`. Keep code files on LF and resolve file URLs with Node's cross-platform helper so Codex can run the same required checks Claude and CI run. No product behaviour or pixels change. | Codex | `codex/windows-checks` | `.gitattributes`, `test/` | in review | #336 |
 | C5 | **Review the `--dvh` and safe-area division inside the text-size zoom.** Merged in #334. One rule redefines `--dvh`, `--sat` and `--sab` inside the four zoom roots so the phone's own measurements are not enlarged along with the words, and it carries every full-height salesperson screen. Verified by measurement and pixel diff in Chromium only, so WebKit is the open question, along with whether `--satx` can leak to the manager and two hand-tuned constants no test holds. The brief is the issue. | Codex | - | review only, no branch | open | #335 |
 | C9 | **"Short by 126 at this pace" is not a pace figure.** `storePace.short` is `goal.bar - totalUnits`, the plain gap still to sell. The line calls it "at this pace", which is a projection. Holler Ford: goal 200, sold 74, so it says short by 126, while at this pace the store lands on 159 and is 41 short. Either the words or the number is wrong, and `needPerDay` uses `short` correctly, so it is the words. Copy, so it needs Jorge. | Claude | - | `src/Manager.jsx` | needs approval | - |
-| C11 | **Backfill the stock split for months already filed.** #341 fixed it going forward; a month filed before it still shows the scaled estimate. The stored reports make a backfill possible: 122 PDFs, ten stores, 31 August to 15 September, kept as raw base64 with their mime, and `pdfjs-dist` is a real dependency, so the same reader can run over them. **It is ten files, not 122**, because the grid is month to date: only the newest report per store per month carries the month's split. Two blockers, both about where it runs. This session cannot: `.env.local` points at the local mock, and the only live path is the Supabase MCP, which is SQL and cannot run `pdfjs`. And it writes to production store rows, so it wants a dry run that prints what it would change before it changes anything. | Claude | `claude/mobile-site-optimization-qvei7u` | `scripts/` | in progress | - |
 | C6 | **Move the restore point out of the store row.** Every save currently ships a copy of the state it is replacing. Putting the restore point in a key of its own makes a save smaller and a store row easier to read. Noted in the September audit and deliberately not taken then, because it is bigger than the rest of that batch. | - | - | `src/LeadPerformanceCalculator.jsx`, `api/`, `test/` | open | - |
 
 ## Settled
@@ -85,6 +84,23 @@ for nine stores, and it is short on purpose: nobody should go looking for a bug
 in it, and nobody should propose the backfill again without Jorge raising it
 first.
 
+**Running the stock split backfill (#342).** Written, merged, and not run.
+Nothing changes for a month already filed until somebody runs it with live
+credentials, which no web session has. The order that makes sense:
+
+```
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+  node scripts/backfill-stock-split.mjs --store holler-ford --month 2026-09
+```
+
+a dry run on one store first, check the new and used it prints against the PDF
+for that store, then the same line with `--write`, then drop the filters for the
+other nine. It says what it would do and writes nothing until told.
+
+Worth knowing: only 31 August onwards can be recovered, because that is as far
+back as the stored reports go. Anything earlier keeps the estimate, and there is
+no way to get it back.
+
 ## Outside the repo, for Jorge
 
 These are not agent work. They are here so nobody proposes them again.
@@ -111,3 +127,4 @@ These are not agent work. They are here so nobody proposes them again.
 | #338 | The Online hero is a sign and a sentence, clear of the header by the 64px the other pages leave. The tape on a phone had been 0px tall since it was written. | Claude |
 | #339 | `public.queue_identity` dropped, the PIN's table, with its six rows. Nothing had read it since #326. | Claude |
 | #341 | New and used are counted off the report's own rows instead of scaled from the people's, so the stock split is whole cars. | Claude |
+| #342 | A backfill for the stock split on months already filed, dry run by default. Written and tested, **not yet run against production**: `scripts/backfill-stock-split.mjs`. | Claude |
