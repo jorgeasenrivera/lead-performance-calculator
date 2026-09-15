@@ -41,6 +41,12 @@ Corrected 15 September: this first said the outage began "at about 15:10 ET on 1
 
 Worth knowing for next time: these must never point at a `*-<hash>-<org>.vercel.app` URL. Those are per-deployment and Vercel collects them. Only the domain is stable.
 
+**The scanlines on the round-up head.** The white hairlines across the manager round-up's green head are `.s2-hero::before`'s scanline texture, a white line every three points at three percent, and they are on the dashboard hero card at the same strength. Measured on a flat patch of each at three times scale, with the layer switched off and on: 5.73 luminance steps on the round-up against 5.25 on the hero. They read harder on the round-up only because its head is 102 points tall against the hero's 373, so the same three-stop gradient is compressed and runs darker under them.
+
+Jorge decided on 15 September that they stay: they are part of the character of the site. **Not to be proposed again, and not to be tidied away by anybody who reads the round-up head as a rendering fault.** It is deliberate.
+
+Two dead ends, recorded so nobody walks them twice. The heavy `.s2-noise` layer, which draws the same lines at twenty two percent, is not involved: it sits at `opacity:0` unless the hero is in its grey lost-signal state. And the rounded corner is not leaking the sheet's own background: painting `.ru-sheet` red produces no red at the corner, the clip is clean. Also worth knowing: there are two round-ups, one in `Manager.jsx` and one on the salesperson side, and a question about "the round-up" needs to say which.
+
 ## Outside the repo, for Jorge
 
 These are not agent work. They are here so nobody proposes them again.
