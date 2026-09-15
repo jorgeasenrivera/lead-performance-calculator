@@ -342,8 +342,15 @@ test("the Online room says it is not a room yet, in the house's own parts", () =
   assert.ok(/\) : queue === "online" \? \(\n\s*<OnlineSoon store=\{store\} rooms=\{roomListOf\(config, store\.id\)\} onToolChange=\{onToolChange\} \/>/.test(mgr), "and it is what Online opens, instead of a queue that does nothing");
   assert.ok(/aria-label="Under construction"/.test(mgr) && /<PixIcon glyph="warn" size=\{22\} \/>/.test(mgr) && /<b>Room under construction<\/b>/.test(mgr), "the sign is the pix set's own warn on sand");
   assert.ok(/repeating-linear-gradient\(135deg, #E4C98D 0 10px, #241A06 10px 20px\)/.test(mgr), "and the tape is painted the way tape is painted");
-  assert.ok(/Seventeen days have been opened in this room/.test(mgr), "the joke is a real number or it is not a joke");
-  assert.ok(/<div className="s2-led onsoon-led"><i style=\{\{ width: "0%" \}\} \/><\/div>/.test(mgr), "the progress bar is the app's own track, at nothing");
+  // The hero is the sign and the sentence, and Jorge asked for it to be
+  // purposeful. A cap saying Online under a tab that already says Online, a
+  // line about doors and light switches, a bar that could only ever read
+  // nought and a paragraph of history were the page talking about itself.
+  assert.ok(/<div className="onsoon-head">\n\s*<h2>There is no room here yet<\/h2>\n\s*<\/div>/.test(mgr), "the hero carries the headline and nothing under it");
+  assert.ok(!/Seventeen days have been opened|onsoon-led|onsoon-prog|onsoon-real|It has a door, a sign, a light switch/.test(mgr), "and the cap, the sentence, the bar at nought and the history are gone, their rules with them");
+  assert.ok(/\.onsoon\{ max-width:1000px; margin:64px auto 0; \}/.test(mgr), "the page clears the header by the 64px every other content page leaves");
+  assert.ok(/\.onsoon-hero \.s2-tube\{ width:100%; \}/.test(mgr), "the sign takes the card, so losing the paragraph does not shrink the tape to two stubs");
+  assert.ok(/\.onsoon-tape\{ width:100%; height:12px; flex:none; \}/.test(mgr), "and stacked on a phone the tape has a height, rather than taking flex-basis:0 on the axis it is now stacked along");
   assert.ok(/\.onsoon\{ padding-bottom:104px; \}/.test(mgr), "the last card ends above the dock on a phone");
   assert.ok(/onClick=\{\(\) => onToolChange\(id\)\}/.test(mgr), "and there is a way out to a room that exists");
 });
