@@ -220,20 +220,32 @@ async function run(b) {
   await p.evaluate(() => cancelAnimationFrame(window.__segRaf));
   const frames = await p.evaluate(() => window.__seg);
   const trace = frames.map((x) => x.v);
-  /* Read until the row stops moving: two reads the same, or eight seconds,
-     whichever comes first. A server still mid-write is not a verdict. */
+  /* Read until the row has been STILL for longer than one write takes.
+     "Two reads the same" was not enough and it cost a day of chasing a bug
+     that was never there. A write is a read and then a save, so at a
+     dealership's lag each link of the chain is about 2 x LAG, and between two
+     chained writes the row sits unchanged for that whole time. Two polls half
+     a second apart both land in that gap, agree with each other, and the check
+     calls a server mid-chain a finished one. At 900 ms of lag that happened on
+     every single run: the screen was right, both taps were written in the
+     right order, the row ended on the right status, and the check still said
+     the floor had lost a tap.
+
+     So stillness is measured against what a write actually costs. Nothing is
+     settled until the row has not moved for 2 x LAG plus a margin. */
   const readMine = async () => {
     const d = (await (await fetch(`${MOCK}/rest/v1/floor_public?id=eq.${floor.id}&select=data`)).json())[0]?.data;
     return { d, st: ((d && d.line) || []).find((x) => x.id === floor.me.id)?.status || null };
   };
-  let last = await readMine(), settled = null;
-  for (let i = 0; i < 16; i++) {
-    await p.waitForTimeout(500);
+  const STILL = 2 * LAG + 600;                 // longer than one read-and-save
+  let last = await readMine(), unchangedSince = Date.now();
+  while (Date.now() - unchangedSince < STILL && Date.now() - t0 < 25000) {
+    await p.waitForTimeout(300);
     const now = await readMine();
-    if (now.st === last.st) { settled = now; break; }
+    if (now.st !== last.st) unchangedSince = Date.now();
     last = now;
   }
-  const server = (settled || last).d;
+  const server = last.d;
   const mine = ((server && server.line) || []).find((x) => x.id === floor.me.id);
   const burstOk = trace[trace.length - 1] === "Here" && trace.indexOf("Lunch") >= 0 && trace.indexOf("Lunch") < trace.lastIndexOf("Here") && mine && mine.status === "waiting";
   row("two taps in one round trip: " + trace.join(" > ") + ", server " + (mine ? mine.status : "?"), burstOk ? 0 : 1, 0, burstOk);

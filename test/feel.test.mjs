@@ -386,7 +386,8 @@ test("printing opens one window the same way, and the poster takes the room", ()
 test("the burst check measures from inside the page, and reads the server until it stops moving", () => {
   assert.ok(/window\.__segRaf = requestAnimationFrame\(tick\);/.test(feel), "the screen records itself on its own frames");
   assert.ok(!/while \(Date\.now\(\) - t0 < 3200\)/.test(feel), "and is not sampled over the debugging channel forty times a second");
-  assert.ok(/for \(let i = 0; i < 16; i\+\+\) \{/.test(feel) && /if \(now\.st === last\.st\) \{ settled = now; break; \}/.test(feel), "the server is read until two reads agree, not on a fixed clock");
+  assert.ok(/const STILL = 2 \* LAG \+ 600;/.test(feel) && /while \(Date\.now\(\) - unchangedSince < STILL/.test(feel), "the server is read until the row has been still for longer than one write costs, not on a fixed clock and not on two reads agreeing");
+  assert.ok(!/if \(now\.st === last\.st\) \{ settled = now; break; \}/.test(feel), "two reads agreeing is not settled: between two chained writes the row sits unchanged for a whole write");
   assert.ok(/trace\[trace\.length - 1\] === "Here" && trace\.indexOf\("Lunch"\) >= 0 && trace\.indexOf\("Lunch"\) < trace\.lastIndexOf\("Here"\) && mine && mine\.status === "waiting"/.test(feel), "and the bar itself is unchanged: the second tap arrives, stays, and the server ends on it");
   assert.ok(/let n = \(window\.__vib \|\| \[\]\)\.length, still = 0;/.test(feel), "the press test waits for the phone to stop buzzing before it starts counting");
 });
