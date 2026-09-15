@@ -19,10 +19,11 @@ import assert from "node:assert/strict";
    the real thing rather than a slice of it that could go stale without saying so. */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { norm } from "../api/_report-parsers.mjs";
 import { mergeAgainstServer } from "../api/_store-merge.mjs";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /* Still read as text, and rightly so: the three checks at the bottom are about
    the repair tool and the importer, which do live in the app file. Only the
    merge moved out. */
