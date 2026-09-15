@@ -271,3 +271,59 @@ test("texts and emails stay with their own person, across a page break", () => {
   assert.equal(rowOf("Mitch Marius")[em], 35, "Mitch carried Juan's emails");
   assert.ok(rowOf("Chase Cabney"), "the person after the break survived");
 });
+
+/* The store's own New and Used rows, which the grid has always printed and the
+   reader always threw away. Jorge sent a screenshot of the summary grid for
+   Drivers Mart Winter Park to prove they were there, after I had claimed the
+   report carried no stock type at all: I had read the parsed blob in the
+   database rather than the report, and the parse is not the report.
+
+   They were never missing from the parse either. They were kept in
+   storeSources by the same branch that keeps the channel rows, and then died
+   three lines later because the block that builds `stated` read the four
+   channels and nothing else. With no stated split the app scaled the people's
+   credited rows onto the headline, which double count split deals, and that
+   scaling is what wrote 36.3 new and 37.7 used on a card about whole cars. */
+test("the store's own new and used rows reach the app, as whole cars", () => {
+  const head = (name) => line(`${name} Total Leads Total Ups Showroom Unsold In Showroom Be Backs Total Delivered/ F&I Closing %`);
+  const person = (name, leads, del) => [
+    head(name), line(`Internet ${leads} 5 3 2 ${del} 15.0%`),
+    line("New 0 0 0 0 0 0%"), line(`Used ${leads} 5 3 2 ${del} 15.0%`),
+  ];
+  const got = P.mapDeliverySummaryGrid([
+    head("Drivers Mart Winter Park"),
+    line("Internet 520 63 41 29 55 10.5%"),
+    line("Showroom 74 63 41 29 26 35.1%"),
+    line("New 0 0 0 0 0 0%"),
+    line("Used 520 63 41 29 81 15.5%"),
+    ...person("Chase Cabney", 40, 6),
+    ...person("Luke Pancake", 50, 9),
+    ...person("Mike Ganus", 60, 11),
+  ]);
+  assert.ok(got, "the grid parsed");
+  assert.equal(got.storeName, "Drivers Mart Winter Park");
+  assert.ok(got.stated, "the store's own block is kept");
+  assert.ok(got.stated.vehicles, "and its stock split comes with it");
+  // A used-only store: every car it delivered was used, and none were new.
+  assert.equal(got.stated.vehicles.new, 0, "new is nought, not absent");
+  assert.equal(got.stated.vehicles.used, 81, "used is the report's own count");
+  // Whole cars. The whole point: no scaling, so no thirds of a car.
+  for (const k of ["new", "used"]) {
+    assert.ok(Number.isInteger(got.stated.vehicles[k]), `${k} is a whole number`);
+  }
+  // The channel figures are untouched by any of this.
+  assert.equal(got.stated.total, 81);
+  assert.equal(got.stated.units.internet, 55);
+});
+
+test("a grid with no stock rows leaves the split alone rather than inventing a zero", () => {
+  const head = (name) => line(`${name} Total Leads Total Ups Showroom Unsold In Showroom Be Backs Total Delivered/ F&I Closing %`);
+  const person = (name, del) => [head(name), line(`Internet 40 5 3 2 ${del} 15.0%`)];
+  const got = P.mapDeliverySummaryGrid([
+    head("Holler Ford"), line("Internet 246 63 41 29 30 12.2%"),
+    ...person("Fin Smith", 6), ...person("Jimmy Loy", 9), ...person("Rick Dawkins", 11),
+  ]);
+  assert.ok(got && got.stated, "the store block still parses");
+  assert.equal(got.stated.vehicles, undefined,
+    "no stock rows means no vehicles key, so the reader falls back rather than reading a zero as a fact");
+});

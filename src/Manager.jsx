@@ -273,6 +273,18 @@ const unitsOf = (s) =>
    Everywhere the STORE's month is shown prefers this; per-person figures stay
    exactly as the report credited them. */
 const statedOf = (M) => (M?.stated?.deliveries != null ? M.stated : null);
+/* The stock split as the report itself counted it: whole cars, off the store's
+   own New and Used rows. One reader, because three screens draw this and three
+   copies of "prefer the report, else estimate" is three chances to disagree
+   about the same month. Null when the report on file predates the split being
+   carried, and the caller falls back to scaling the people's rows. */
+const statedSplitOf = (M) => {
+  const v = M?.stated?.vehicles;
+  if (!v) return null;
+  const nw = v.new ?? null, us = v.used ?? null, other = v.other ?? null;
+  if (nw == null && us == null) return null;
+  return { nw: nw || 0, us: us || 0, other: other || 0, counted: true };
+};
 
 // How well someone is holding their standards, whether or not they clear all of
 // them: the share of requirements met, plus a bonus for how far past they are.
@@ -12808,8 +12820,14 @@ function buildDigest(args) {
      stock split keeps the people's figures scaled onto the count, so the two
      lines of the day detail cannot disagree. */
   const stated = statedOf(M);
+  const toldSplit = statedSplitOf(M);
   if (stated) {
-    if (u > 0 && nu != null) { const f = stated.deliveries / u;
+    /* The report's own New and Used rows when it carried them, and the scaled
+       people only when it did not. A digest is what the round-up and the day
+       detail read, so a stock split invented here would be a made-up figure
+       stored day after day. */
+    if (toldSplit) { nu = toldSplit.nw; uu = toldSplit.us; }
+    else if (u > 0 && nu != null) { const f = stated.deliveries / u;
       nu = Math.round(nu * f * 10) / 10; uu = Math.round(uu * f * 10) / 10; }
     u = stated.deliveries;
   }
@@ -18539,6 +18557,8 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     }
     const known = nw + us + other;
     const newPct = known > 0 ? nw / known : null, usedPct = known > 0 ? us / known : null;
+    const told = statedSplitOf(M);
+    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, known: told.nw + told.us };
     if (statedM && known > 0) { const f = statedM.deliveries / known; nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10; }
     return { seen, nw, us, known, newPct, usedPct };
   })();
@@ -19176,6 +19196,14 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
        a split deal splits inside one stock type. But the printed counts must sum
        to the headline, or the card contradicts itself two lines apart -- so when
        DriveCentric's own count is on file, the people's split is scaled onto it. */
+    /* The report counted them, so use the count. Scaling the people's rows was
+       only ever a stand-in for a figure the report had all along, and it is the
+       thing that put a third of a car on the card. */
+    const told = statedSplitOf(M);
+    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, other: told.other,
+      known: told.nw + told.us + told.other,
+      newPct: (told.nw + told.us + told.other) > 0 ? told.nw / (told.nw + told.us + told.other) : null,
+      usedPct: (told.nw + told.us + told.other) > 0 ? told.us / (told.nw + told.us + told.other) : null };
     if (statedM && known > 0) {
       const f = statedM.deliveries / known;
       nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10;
