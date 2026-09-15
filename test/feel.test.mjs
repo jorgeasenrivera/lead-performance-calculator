@@ -16,6 +16,7 @@ const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8");
+const sm = fs.readFileSync(new URL("../api/_store-month.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
 
 test("the status controls are never greyed out for a round trip", () => {
@@ -433,4 +434,41 @@ test("new and used are counted off the report on every screen that shows them", 
   // The estimate stays, for a month whose report landed before any of this.
   assert.ok(/const f = statedM\.deliveries \/ known;/.test(mgr),
     "the scaled fallback is kept for a month filed before the split was carried");
+});
+
+test("the month's goal is asked for once, written by one writer, and a change says what it replaced", () => {
+  /* A goal belongs to one month. The standing figure a month used to fall back
+     on is gone from the reader, from the two writers and from the store editor,
+     because any one of them keeping it would put a new month back on the last
+     one's number. */
+  assert.ok(/const goalMonthState = \(store, month\) => \{/.test(mgr), "one reader for whether a month has a goal");
+  assert.ok(!/g\.units/.test(mgr), "nothing in the manager reads or writes a standing figure any more");
+  assert.ok(/const units = g\.byMonth\[monthKey\];/.test(sm) && !/: g\.units;/.test(sm), "and the shared reader takes the month's own figure or nothing");
+  assert.equal(mgr.split("!goalMonth.set &&").length - 1, 2, "both surfaces ask on the same condition: the desk hero and the phone board");
+
+  // One writer. Two copies of this were two chances to word one event
+  // differently and two places to forget that a change is not a first.
+  assert.ok(/async function saveMonthGoal\(\{ config, store, draft, onSaveConfig, confirm = askConfirm \}\)/.test(mgr), "there is one writer for the goal");
+  assert.equal(mgr.split("saveMonthGoal({ config, store, draft, onSaveConfig })").length - 1, 2, "and both fields go through it");
+  assert.ok(!/action: "Set the monthly unit goal", detail: `\$\{store\.name\}: \$\{n\} units`/.test(mgr), "neither surface writes its own audit line any more");
+
+  assert.ok(/const changing = own != null && own !== n;/.test(mgr), "a change is a figure this month already had, and a different one");
+  assert.ok(/action: changing \? "Changed the monthly unit goal" : "Set the monthly unit goal"/.test(mgr), "Set and Changed are two actions, so a change is findable on its own");
+  assert.ok(/\$\{fmtNum\(own\)\} to \$\{fmtNum\(n\)\} units for \$\{monthLabel\(month\)\}/.test(mgr), "and the line carries the figure it replaced, and which month it was");
+  assert.ok(/if \(changing && !\(await confirm\(/.test(mgr), "only a real change asks first, so the first of the month stays one tap and Enter");
+  assert.ok(/if \(await saveMonthGoal\(\{ config, store, draft, onSaveConfig \}\)\) setGoalOpen\(false\);/.test(mgr), "and a cancel leaves the field open rather than closing as if it had saved");
+
+  /* This one is here because it happened. saveGoal takes the draft as its first
+     argument, so a bare onClick hands it React's click event, parseInt of which
+     is NaN: the Set button silently did nothing and the field stayed open as if
+     the change had been refused. Both fields keep their own draft in state and
+     must call it with no argument at all. */
+  assert.ok(!/onClick=\{saveGoal\}/.test(mgr), "no field hands the click event in as the figure to save");
+
+  /* Written in, not offered. A figure a screen puts up for you is a figure you
+     accept without deciding, and the point of asking is that the month gets a
+     number somebody chose for it. */
+  assert.ok(/const \[draft, setDraft\] = useState\(""\);/.test(mgr), "the card opens on an empty field");
+  assert.ok(!/lastGoal/.test(mgr), "and the hero no longer offers last month's figure either");
+  assert.ok(!/placeholder=\{suggest/.test(mgr) && !/last month \$\{fmtNum/.test(mgr), "nor does it print one as a hint");
 });
