@@ -15,6 +15,12 @@ read the same rules rather than two copies that drift.
 `docs/in-flight.md` is the board. One row per item: what it is, who owns it,
 which branch, which files it will touch.
 
+`docs/handoff.md` is the other half of starting a session: messages between the
+two of us, because Claude runs in a web session and Codex runs on the desktop
+and neither can reach the other except through this repository or through Jorge.
+Read the board, then the handoff, then write. Each of us writes only in our own
+section of it, which is why it cannot collide.
+
 Claiming is a commit, straight to `main`, before the work starts:
 
 ```
@@ -124,6 +130,9 @@ what was asked, say which half and why.
 
 When the other agent opens a pull request, read it before it merges. You are
 looking for the thing a second reader catches: a claim that does not match the
-code, a cost the author did not notice, a simpler shape. This is where two of us
+code, a cost the author did not notice, a simpler shape. Ask for a read the same
+way: a message in `docs/handoff.md` pointing at an issue that says how far you
+actually got, and where you would look first. "Please review" wastes the second
+reader; the places you doubt your own work do not. This is where two of us
 is genuinely better than one of us twice, so spend the time here rather than on a
 second branch.

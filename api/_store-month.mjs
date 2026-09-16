@@ -63,12 +63,22 @@ export function storeDaysDone(monthKey, isHoliday = () => false, todayStr = null
    a bad one. Nobody should have to do that multiplication in their head while
    standing at a screen.
 
-   A month of its own beats the standing figure, because goals move every month
-   and last month's is worse than nothing. */
+   A goal belongs to ONE month and to no other. There used to be a standing
+   figure a month with no entry of its own would fall back on, which meant a new
+   month silently opened holding the last one's number: on the first of October
+   a store would appear to be chasing September's goal, against a bar nobody had
+   agreed to, and the screen that asks for a goal would never ask. Jorge settled
+   it on 15 September: the month turns over, the goal goes with it, and the new
+   month has none until somebody writes one in. So there is no fallback here.
+
+   The consequence, said plainly rather than discovered later: four store-months
+   that never had a goal set were borrowing one, and now correctly show none.
+   They are Holler Ford's July and August, Holler Honda's July and Driver's Mart
+   Winter Park's July. */
 export function storeGoalFor(store, monthKey) {
   const g = (store && store.goal) || null;
-  if (!g) return null;
-  const units = (g.byMonth && g.byMonth[monthKey] != null) ? g.byMonth[monthKey] : g.units;
+  if (!g || !g.byMonth) return null;
+  const units = g.byMonth[monthKey];
   if (!(units > 0)) return null;
   const pct = g.pct > 0 ? g.pct : 100;
   return { units, pct, bar: units * (pct / 100) };

@@ -22,7 +22,7 @@ import {
   mapDailyActivityGrid, mapDeliverySummaryGrid, reportBelongsElsewhere,
 } from "../api/_report-parsers.mjs";
 import {
-  storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
+  storeKey, actKey, floorStatsKey, boardKey, reportFileKey, restoreKey,
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
@@ -1761,6 +1761,17 @@ export default function LeadPerformanceCalculator() {
   const [storeLoadError, setStoreLoadError] = useState("");
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
+  /* Restore points, by store, read from their own rows. They are loaded when
+     something is about to show or use one rather than with the store, because
+     the whole point of moving them out is that the common path never carries
+     them. `null` means looked and found none; `undefined` means not looked. */
+  const [restorePoints, setRestorePoints] = useState({});
+  const loadRestorePoint = useCallback(async (storeId) => {
+    if (!storeId) return null;
+    const point = await loadShared(restoreKey(storeId), null).catch(() => null);
+    setRestorePoints((p) => ({ ...p, [storeId]: point || null }));
+    return point || null;
+  }, []);
   const [tab, setTab] = useState("board");
   useEffect(() => { try { window.__bgWake && window.__bgWake(4000); } catch (e) {} }, [tab, appModule]);
   // drawerOpen now lives in AppShell, which is the only thing that opens it.
@@ -2333,15 +2344,14 @@ export default function LeadPerformanceCalculator() {
       alert("That change was blocked because it would have wiped this store's records. Nothing was lost.\n\nReload the page and try again. If it happens twice, use the Help button in the corner to report it, because that means something is wrong.");
       return;
     }
-    // Keep the saved blob small. Snapshots are by far the biggest bloat (each is
-    // roughly a full copy of the store), and every save ships the whole blob, so a
-    // pile of them is what pushed writes past the database statement timeout. Cap
-    // them hard on EVERY save, so the first save after this permanently shrinks it.
-    // Snapshots are full copies of the store and the single biggest bloat in the saved
-    // blob; keep only the most recent one so writes stay well under the DB timeout.
-    if (next && Array.isArray(next.snapshots) && next.snapshots.length > 1) {
-      next.snapshots = next.snapshots.slice(0, 1);
-    }
+    /* Restore points live in their own row now, so any still sitting inside a
+       store row are the old shape and go on the next save. Dropped rather than
+       migrated, which Jorge chose knowing the cost: the one restore point a
+       store is carrying right now is lost, and the next import writes a fresh
+       one into the new row within the hour anybody imports anything. Migrating
+       would have meant reading and rewriting every store to save a snapshot
+       that is superseded the next time a report lands. */
+    if (next && next.snapshots) delete next.snapshots;
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
 
@@ -2404,19 +2414,36 @@ export default function LeadPerformanceCalculator() {
     });
   }, []);
 
-  // Keep a rolling set of restore points so a bad import is never fatal.
-  const snapshotStore = (data, reason) => {
-    const copy = JSON.parse(JSON.stringify({
+  /* The restore point taken before a bad import can ruin a month, now written
+     to a row of its own rather than into the store it is a copy of.
+     It returns the stamp so the import log can point back at the exact state
+     before it, and it deliberately does NOT touch `data`: a restore point that
+     travels inside the thing it is protecting doubles the size of every save. */
+  /* One writer for the restore row, so the three places that make a restore
+     point cannot disagree about where it goes or what shape it is. */
+  const saveRestorePoint = useCallback(async (storeId, point) => {
+    await saveShared(restoreKey(storeId), point);
+    setRestorePoints((p) => ({ ...p, [storeId]: point }));
+    return point.t;
+  }, []);
+  const takeRestorePoint = async (storeId, data, reason) => {
+    const t = new Date().toISOString();
+    const point = { t, by: session?.name || "-", reason, data: JSON.parse(JSON.stringify({
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
       excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
-    }));
-    const t = new Date().toISOString();
-    const snaps = data.snapshots || [];
-    snaps.unshift({ t, by: session?.name || "-", reason, data: copy });
-    data.snapshots = snaps.slice(0, 1);
-    return t;   // so an upload can point back at the exact state before it
+    })) };
+    /* Awaited, not fired and forgotten. If this write loses, the import that
+       follows is not undoable, and the honest thing is to know that here rather
+       than to discover it when somebody reaches for the undo. */
+    try {
+      await saveRestorePoint(storeId, point);
+      return t;
+    } catch (e) {
+      setRestorePoints((p) => ({ ...p, [storeId]: null }));
+      return null;
+    }
   };
 
   // Apply already-typed report entries. Ambiguous delivery files are resolved before we get here.
@@ -2440,7 +2467,7 @@ export default function LeadPerformanceCalculator() {
     const tickDayFor = (type) => (type === "activity" || month !== today().slice(0, 7)) ? day : today();
     try { console.log("[LPC import] activityDay=" + activityDay + " actDay=" + actDay + " month=" + month + " today=" + today() + " types=" + JSON.stringify((entries || []).map((e) => e && e.type))); } catch (e) {}
     let next = JSON.parse(JSON.stringify(storeData));
-    const snapT = snapshotStore(next, "Before import");
+    const snapT = await takeRestorePoint(view, next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
     const M = next.months[month];
     // A month written by an older build can exist without one of these, and the
@@ -2908,7 +2935,7 @@ export default function LeadPerformanceCalculator() {
       return b ? { store: b } : null;
     } catch { return null; }
   })();
-  if (boardParams) return <React.Suspense fallback={null}><BoardScreen storeId={boardParams.store} /></React.Suspense>;
+  if (boardParams) return <BoardBoundary><React.Suspense fallback={null}><BoardScreen storeId={boardParams.store} /></React.Suspense></BoardBoundary>;
   // --- live floor: public sign-in intercept (before any auth) ---
   const floorParams = (() => {
     try {
@@ -3301,6 +3328,7 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
               <BackupPanel config={config} adminData={adminData} session={session}
+                restorePoints={restorePoints} onLoadRestorePoint={loadRestorePoint}
                 onRestoreAll={async (backup) => {
                   await saveShared(CONFIG_KEY, backup.config);
                   saveShared(PUBLIC_STORES_KEY, publicSlice(backup.config)).catch(() => {});
@@ -3314,18 +3342,15 @@ export default function LeadPerformanceCalculator() {
                 }}
                 onRestoreStore={async (storeId, snap) => {
                   const current = adminData[storeId] || emptyStoreData();
-                  const restored = {
-                    ...current,
-                    ...snap.data,
-                    // keep the existing restore points, and add one for the state we're leaving
-                    snapshots: [
-                      { t: new Date().toISOString(), by: session.name, reason: "Before rollback", data: JSON.parse(JSON.stringify({
-                        roster: current.roster, months: current.months, activity: current.activity,
-                        plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
-                      })) },
-                      ...(current.snapshots || []),
-                    ].slice(0, 2),
-                  };
+                  /* The state being left becomes the restore point, so a
+                     rollback is itself undoable. It goes to the restore row, not
+                     into the store: that was the whole bloat. */
+                  await saveRestorePoint(storeId, { t: new Date().toISOString(), by: session.name,
+                    reason: "Before rollback", data: JSON.parse(JSON.stringify({
+                      roster: current.roster, months: current.months, activity: current.activity,
+                      plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+                    })) });
+                  const restored = { ...current, ...snap.data };
                   /* A rollback has to be able to undo a deletion, and the plate log
                      records deletions as tombstones — which would otherwise filter
                      the restored plates straight back out on the next merge. Lift the
@@ -3427,7 +3452,7 @@ export default function LeadPerformanceCalculator() {
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} onCoach={() => setTab("coaching")} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
-                {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <><ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />
                   <ChecklistEditor config={config} storeId={view} onChange={persistConfig} /></>}
               </>
@@ -3465,7 +3490,7 @@ export default function LeadPerformanceCalculator() {
                 {/* The gutter the Dashboard has had all along. These four were
                     rendered straight into .page, which carries no padding, so they
                     ran edge to edge on anything wider than a laptop. */}
-                {tab === "import" && <div className="tab-page"><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "import" && <div className="tab-page"><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
                 {tab === "standards" && isAdmin && <div className="tab-page"><TargetsEditor config={config} storeId={view} data={storeData} onChange={persistConfig} /></div>}
@@ -3936,6 +3961,26 @@ function QueueBoard({ storeId, kind }) {
    and not a written-into popup, a reboot recovers on its own and a reload picks up
    whatever code is currently deployed. Nobody signs in: it reads the published
    board row with the anon key and nothing else. */
+
+/* Nobody is standing in front of a TV to click "try again", so a chunk that 404s
+   because a deploy retired it has to heal itself. One reload picks up whatever
+   build is live now; the sessionStorage flag stops a second reload from looping
+   if the error is not a stale chunk. */
+class BoardBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    const frame = String((info && info.componentStack) || "").split("\n").map((l) => l.trim()).find(Boolean) || null;
+    report("render", err, { screen: "board", component: frame });
+    try {
+      if (!sessionStorage.getItem("lpcf:board-reloaded")) {
+        sessionStorage.setItem("lpcf:board-reloaded", "1");
+        window.location.reload();
+      }
+    } catch (e) {}
+  }
+  render() { return this.state.err ? null : this.props.children; }
+}
 
 // Reload when a new build ships, so a screen that has been up for weeks is never
 // running last month's layout. Vercel fingerprints its asset filenames, so a plain
@@ -7427,7 +7472,13 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const crossTimer = useRef(null);
   const flight = useRef(null);
   const markOf = (r) => document.querySelector(`.ar-room[data-room="${r}"] ` + (r === "line" ? ".sfc-you" : ".mcf-you"));
-  const crossRooms = (from, to) => {
+  /* Which ground the room is arriving onto, decided here rather than read off
+     the page: the arriving room has not been drawn yet, and the whole point is
+     that its colour is down before it lands. The floor room has two of them,
+     because Home and Live Floor are two tabs of the one room. */
+  const groundOf = (r, t) => (r === "line" ? "var(--gnd-line)"
+    : (t === "corner" ? "var(--gnd-home)" : "var(--gnd-floor)"));
+  const crossRooms = (from, to, toGround) => {
     let reduce = false;
     try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
     if (reduce) return;
@@ -7443,7 +7494,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     } catch (e) {}
     /* Which way the bar moved. The line sits right of the floor, so going to
        it brings the new room in from the right, as a page does. */
-    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now() });
+    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now(), bg: toGround || null });
     clearTimeout(crossTimer.current);
     /* Held until the whole gesture is over, not until the dots were: pulling
        these classes early is what made the old room disappear mid-flight. */
@@ -7483,12 +7534,13 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     anim.onfinish = done; anim.oncancel = done;
     flight.current = anim;
   }, [cross && cross.n]);   // eslint-disable-line
-  const pick = (r) => {
+  const pick = (r, toTab) => {
     if (r !== room) {
       try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
       const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
       requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
-      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor");
+      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor",
+        groundOf(r, toTab === undefined ? tab : toTab));
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
@@ -7527,12 +7579,130 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const active = room === "line" ? "line" : tab === "corner" ? "home" : "floor";
   const go = (t) => {
     buzz(8);
-    if (t === "line") { pick("line"); return; }
-    pick("floor");
-    setTab(t === "home" ? "corner" : "floor");
+    if (t === "line") { pick("line", null); return; }
+    /* The destination tab is handed in, because setTab has not run yet when the
+       cross is set up and the ground would otherwise be the one being left. */
+    const nextTab = t === "home" ? "corner" : "floor";
+    pick("floor", nextTab);
+    setTab(nextTab);
   };
   const GLYPH = { home: "home", floor: "door", line: "phone" };
   const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
+
+  /* ---- the swipe ----
+     A drag across the screen moves through the same bar at the foot, and the
+     screen follows the thumb rather than waiting for it to let go.
+
+     It follows the thumb only where there is something to follow. The floor and
+     the line are two sheets, so one can be pulled off the other. Home and Live
+     Floor are two TABS OF ONE SHEET, the same `.q-page` with different classes
+     and different content, so there is no second sheet behind the first and
+     nothing to drag: that pair commits when the finger lifts. Making it uniform
+     means rendering the corner and the floor as two sheets, which is a bigger
+     change than this one and is worth doing on its own.
+
+     Three things the gesture has to give way to, in this order:
+       the left edge, which iOS owns for going back;
+       anything that scrolls sideways under the finger, or a person swiping a
+         row of cards changes room by accident;
+       a vertical intent, because the page scrolls and that has to win. */
+  const EDGE = 24;        // iOS's back gesture lives here
+  const START = 10;       // before this, it might still be a scroll
+  const RATIO = 1.2;      // how much more across than down before it is a swipe
+  const TAKE = 0.28;      // how far over before letting go commits it
+  const FLICK = 0.45;     // px per ms that commits whatever the distance
+  const [drag, setDrag] = useState(null);
+  const g = useRef(null);
+
+  const roomOfTab = (t) => (t === "line" ? "line" : "floor");
+  const neighbour = (dx) => {
+    const i = tabs.indexOf(active);
+    const j = dx < 0 ? i + 1 : i - 1;
+    return i < 0 || j < 0 || j >= tabs.length ? null : tabs[j];
+  };
+  /* Sideways scrollers win. Walked up from whatever was touched, because the
+     scroller is usually an ancestor of it rather than the thing itself. */
+  const overScroller = (el) => {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      try {
+        const cs = getComputedStyle(n);
+        if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true;
+      } catch (e) { /* detached mid-gesture */ }
+    }
+    return false;
+  };
+
+  /* Touch events, not pointer events. The app captures the pointer on every
+     press for the held-and-released effect, and a capture on another element
+     fires pointercancel on this one: traced it, and the cancel arrived before a
+     single pointermove did, so the gesture never ran at all. The first version
+     of this looked like it worked only because a cancel was being treated as a
+     release, which committed the switch on a gesture that had already been
+     taken away. Touch events are not affected by pointer capture. */
+  const onDown = (t, target) => {
+    if (tabs.length < 2 || cross) return;
+    if (t.clientX <= EDGE || t.clientX >= window.innerWidth - EDGE) return;
+    if (overScroller(target)) return;
+    g.current = { x0: t.clientX, y0: t.clientY, t0: Date.now(), live: false, to: null, slide: false };
+  };
+  const onMove = (t) => {
+    const s0 = g.current;
+    if (!s0) return;
+    const dx = t.clientX - s0.x0, dy = t.clientY - s0.y0;
+    if (!s0.live) {
+      if (Math.abs(dx) < START) return;
+      if (Math.abs(dx) < Math.abs(dy) * RATIO) { g.current = null; return; }   // the page is scrolling
+      const to = neighbour(dx);
+      if (!to) { g.current = null; return; }
+      s0.live = true; s0.to = to; s0.slide = roomOfTab(to) !== roomOfTab(active);
+      try { buzz(6); } catch (err) {}
+    }
+    if (!s0.slide) return;            // two tabs of one sheet: nothing behind to pull
+    setDrag({ dx, to: s0.to, room: roomOfTab(s0.to) });
+  };
+  /* A cancel is not a release. The browser takes the pointer away when it
+     decides the page is scrolling, and treating that as "the finger lifted
+     here" commits a switch the person had already lost. It springs back. */
+  const onCancel = () => { g.current = null; setDrag(null); };
+  const onUp = (t) => {
+    const s0 = g.current;
+    g.current = null;
+    if (!s0 || !s0.live) { setDrag(null); return; }
+    const dx = t.clientX - s0.x0;
+    const v = Math.abs(dx) / Math.max(1, Date.now() - s0.t0);
+    const took = Math.abs(dx) > window.innerWidth * TAKE || v > FLICK;
+    setDrag(null);
+    if (took) go(s0.to);
+  };
+  /* The listeners are attached once and read the current handlers through a
+     ref, because they close over the tab the person is standing in and that
+     changes under them on every switch. */
+  const hRef = useRef(null);
+  hRef.current = { onDown, onMove, onUp, onCancel };
+  const stackRef = useRef(null);
+  useEffect(() => {
+    const el = stackRef.current;
+    if (!el) return undefined;
+    const one = (e) => (e.touches && e.touches.length === 1 ? e.touches[0] : null);
+    const down = (e) => { const t = one(e); if (t) hRef.current.onDown(t, e.target); };
+    const move = (e) => { const t = one(e); if (t) hRef.current.onMove(t); };
+    const up = (e) => { const t = e.changedTouches && e.changedTouches[0]; if (t) hRef.current.onUp(t); };
+    const cancel = () => hRef.current.onCancel();
+    const opt = { passive: true };
+    el.addEventListener("touchstart", down, opt);
+    el.addEventListener("touchmove", move, opt);
+    el.addEventListener("touchend", up, opt);
+    el.addEventListener("touchcancel", cancel, opt);
+    return () => {
+      el.removeEventListener("touchstart", down, opt);
+      el.removeEventListener("touchmove", move, opt);
+      el.removeEventListener("touchend", up, opt);
+      el.removeEventListener("touchcancel", cancel, opt);
+    };
+  }, []);
+
+
+
   const net = useNet();
   /* Two weights for two different things. No connection is a bar across the
      top of the room in solid sand, with the warn glyph and how old the
@@ -7574,15 +7744,23 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? " x" : "")} style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" } : null}>
-      <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")} data-room="line"
-        hidden={room !== "line" && !(cross && cross.from === "line")} inert={room !== "line" ? "" : undefined}>
+      <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")}
+        ref={stackRef}
+        style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%", "--ar-to-bg": cross.bg || undefined }
+          : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%",
+            "--ar-to-bg": groundOf(drag.room, drag.to === "home" ? "corner" : "floor") } : null}>
+      <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")
+        + (drag ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
+        hidden={room !== "line" && !(cross && cross.from === "line") && !(drag && drag.room === "line")}
+        inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
           <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
             variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
-      <div className={"ar-room" + (cross && cross.to === "floor" ? " ar-in" : cross && cross.from === "floor" ? " ar-out" : "")} data-room="floor"
-        hidden={room === "line" && !(cross && cross.from === "floor")} inert={room === "line" ? "" : undefined}>
+      <div className={"ar-room" + (cross && cross.to === "floor" ? " ar-in" : cross && cross.from === "floor" ? " ar-out" : "")
+        + (drag ? (drag.room === "floor" ? " ar-nxt" : " ar-cur") : "")} data-room="floor"
+        hidden={room === "line" && !(cross && cross.from === "floor") && !(drag && drag.room === "floor")}
+        inert={room === "line" ? "" : undefined}>
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
             account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
@@ -9475,10 +9653,15 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         </div>
         <div className="mc-corner">
           {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
-          {/* A question mark means help everywhere (consistency pass, item 8);
-              the person's own settings are behind their own initials. */}
-          {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You">{initialsOf(meFull || meLabel || "")}</button>}
-          <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={16} /></button>
+          {/* One door, not two. The sheet behind these initials already carries two
+              rows that open the help panel, so the question mark beside them was a
+              second way into a room you were already standing in.
+              This reverses "a question mark means help everywhere" from the
+              consistency pass. Jorge made that call on 16 September knowing it was
+              a reversal: the argument for the question mark was that it is the
+              universal sign for help, and the argument against is that it pointed
+              somewhere you could already get to. */}
+
         </div>
       </div>
       {/* ---- the rail ----
@@ -9503,6 +9686,12 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <em>DOOR</em>
         </button>
       )}
+      {/* The initials live beside the spine rather than in the card's corner,
+          because they have to line up with it and the two were positioned
+          against different boxes: the card's corner is measured from the card's
+          padding, the spine from the screen. Same parent, same axis, one line
+          down the right side. */}
+      {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You and help">{initialsOf(meFull || meLabel || "")}</button>}
       <McSpine rows={rows} />
 
       <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
@@ -11496,6 +11685,9 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
          fades into --bg at its own edges anyway, so the bands now continue it.
          The theme-color meta in index.html does the same for Safari's own bar. */
 html, body { margin:0; padding:0; background:var(--bg); }
+/* The three grounds, named once. The rooms are genuinely different places and
+   the colour is how a person knows which one they are standing in. */
+:root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }
 /* Portalled overlays — the help sheet, the day screen — sit outside .lpc,
          which is where the app's face is set, so they were rendering in the
          browser's default serif. */
@@ -11503,9 +11695,19 @@ body { font-family: var(--font-ui); }
 /* The salesperson screens are dark and fixed. Anything the fixed layer
          does not cover — and iOS uncovers a strip below it the moment the
          keyboard opens — showed the light --bg underneath as a white band. */
-html:has(.q-page.sf), body:has(.q-page.sf) { background:#06090F; }
-html:has(.q-page.sf.mc-shell), body:has(.q-page.sf.mc-shell) { background:#15211B; }
-html:has(.q-page.sf.mc-floor), body:has(.q-page.sf.mc-floor) { background:#070A08; }
+html:has(.q-page.sf), body:has(.q-page.sf) { background:var(--gnd-line); }
+html:has(.q-page.sf.mc-shell), body:has(.q-page.sf.mc-shell) { background:var(--gnd-home); }
+html:has(.q-page.sf.mc-floor), body:has(.q-page.sf.mc-floor) { background:var(--gnd-floor); }
+/* The ground travels. Each room paints its own and the swap used to be
+   instant, so the most characteristic thing about a room was the one thing
+   that did not move while the rooms themselves slid, dimmed and caught a
+   sheen. This carries the corner and the floor into each other, which is the
+   half of the change that needs no cross at all: they are two tabs of one
+   room, so nothing slides between them. */
+html:has(.q-page.sf), body:has(.q-page.sf) {
+  transition:background-color var(--t-wipe) cubic-bezier(.35,.12,.2,1); }
+@media (prefers-reduced-motion: reduce){
+  html:has(.q-page.sf), body:has(.q-page.sf) { transition:none; } }
 /* A page whose content is a full-screen fixed layer has nothing to scroll,
          but .lpc underneath is min-height:100vh with a bottom padding on top of
          it — there is no global border-box here — so the document scrolled by
@@ -14397,9 +14599,22 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    names its rooms under the glyphs as the manager's dock does, and shares
    its geometry (26 px bar, 22 px thumb). */
 .ar-lbl{ font:700 9.5px var(--font-ui); letter-spacing:-.01em; white-space:nowrap; }
-/* The person's own entry on the corner (item 8). */
-.mc-corner .mc-me{ width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; background:#567D61; color:#fff;
-  font:700 12px var(--sfmono); letter-spacing:.02em; display:grid; place-items:center; }
+/* The person's own entry, and the only door to help now that the question mark
+   has gone into it.
+   It sits in the right gutter on the SAME axis as the spine, which is what
+   Jorge asked for on 16 September. There were three things stacked down the
+   right side on three different axes: the initials with their centre 68px from
+   the edge, the question mark at 61px, and the spine at 22px. One axis is left.
+
+   Fixed, not in the card's flow, because the card's padding decides where the
+   flow puts it and the spine is fixed to the screen: aligning two things that
+   are measured from different edges only holds until the padding changes. It
+   also means the way to help does not scroll off, which is what the question
+   mark it replaces already did. */
+:root{ --mc-axis:30px; }   /* from the right edge to the gutter's centre line */
+.mc-me{ width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; background:#567D61; color:#fff;
+  font:700 12px var(--sfmono); letter-spacing:.02em; display:grid; place-items:center;
+  position:fixed; z-index:8; top:calc(var(--sat) + 14px); right:calc(var(--mc-axis) - 20px); }
 /* Three shapes, not nine (item 5). The phone's section strip is the desk's
    strip: a grey track, a white thumb that glides. The corner's three-ways are
    the rooms' status pill in mint. Up Next's tiles are the tool bar's pills. */
@@ -14454,7 +14669,31 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    Without it the sliver the leaving room uncovers is the shell behind, which
    is a light grey, and a white edge on a black room is the one thing a phone
    never shows. */
-.ar-stack.x::before{ content:""; position:fixed; inset:0; z-index:99; background:#06090F; pointer-events:none; }
+/* While a finger is on the screen the two sheets are placed by hand and nothing
+   animates: an animation and a drag fighting over the same transform is how a
+   sheet ends up lagging behind the thumb. The one being left moves with the
+   finger, the one arriving sits a screen away on whichever side the finger came
+   from, and the ground underneath is already the arriving room's. */
+.ar-stack.ar-dragging > .ar-room > .q-page.sf{ animation:none !important; transition:none; will-change:transform; }
+.ar-stack.ar-dragging > .ar-room.ar-cur > .q-page.sf{ z-index:102;
+  transform:translate3d(var(--ar-drag, 0px), 0, 0); }
+.ar-stack.ar-dragging > .ar-room.ar-nxt > .q-page.sf{ z-index:101;
+  transform:translate3d(calc(var(--ar-drag, 0px) + var(--ar-nxt, 100%)), 0, 0); }
+.ar-stack.ar-dragging::before{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
+  background:var(--ar-to-bg, var(--gnd-line)); }
+/* The gesture owns the across, the page keeps the down. */
+.ar-stack{ touch-action:pan-y; }
+
+/* The ground leads. This layer sits UNDER both rooms, and it now carries the
+   colour of the one arriving rather than one flat dark for every switch. It
+   fades in over a little over half the wipe, so the new room's ground is
+   already down by the time the room itself lands on it: the place changes
+   first and the screen follows, which is Jorge's call of 16 September over the
+   quieter version where the two simply crossfade together. */
+.ar-stack.x::before{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
+  background:var(--ar-to-bg, var(--gnd-line));
+  animation:arGround calc(var(--t-wipe) * .55) cubic-bezier(.35,.12,.2,1) both; }
+@keyframes arGround{ from{ opacity:0; } to{ opacity:1; } }
 html.sun .ar-stack.x::before{ background:#2E4A38; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
@@ -14503,7 +14742,7 @@ html.sun .ar-stack.x::before{ background:#2E4A38; }
 @media (prefers-reduced-motion: reduce){
   .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; box-shadow:none; }
   .ar-room.ar-in > .q-page.sf::after{ animation:none; display:none; }
-  .ar-stack.x::before{ display:none; }
+  .ar-stack.x::before{ display:none; animation:none; }
   .ar-room.ar-out{ display:none; } }
 /* The rooms in sunlight: the curtain's deep green for the ground, cream for
    what sits on it, the pill in mint with ink on it, and the two help cards
@@ -15190,7 +15429,15 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    there, by the phone's own measure, with a floor for phones that report none. */
 .mc{ width:min(430px, 100%); margin:0 auto; padding:max(28px, calc(14px + var(--sat))) 16px 84px; text-align:left; font-family:var(--font-ui);
   display:flex; flex-direction:column; gap:11px; }
-.mc-head{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; margin-top:4px; }
+/* The gutter is reserved, not shared. The initials used to sit IN this row, so
+   the row's own width kept the weekday clear of them; now they are fixed in the
+   right gutter and the row would happily run the weekday underneath.
+   Divided by --sftxt because the two are measured in different spaces: a fixed
+   element is placed against the screen, while this row lives inside the text
+   size's zoom. The division keeps the gap the same number of REAL pixels at
+   every text size, which is the thing that has to stay true. */
+.mc-head{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; margin-top:4px;
+  padding-right:calc((var(--mc-axis) + 26px) / var(--sftxt, 1)); }
 .mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
   font-size:9.5px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
 .mc-cal{ display:grid; grid-template-columns:repeat(7, 9px); gap:5px 6px; margin-top:7px; }
@@ -15421,7 +15668,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    always; everything else plays once on load or once when something changes. */
 .q-page.sf.mc-shell{ --mc-geist:'Geist','Sora',system-ui,-apple-system,'Segoe UI',sans-serif; }
 .mc{ position:relative; }
-.mc > *:not(.mc-aurora):not(.mc-spine){ position:relative; z-index:1; }
+.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ position:relative; z-index:1; }
 .mc-aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
 .mc-aurora i{ position:absolute; width:520px; height:520px; border-radius:50%; opacity:.7; display:block; will-change:transform; }
 .mc-aurora i:nth-child(1){ left:-140px; bottom:-120px; background:radial-gradient(closest-side,rgba(86,125,97,.9),rgba(86,125,97,.35) 40%,transparent 72%); animation:mcDrift1 18s ease-in-out infinite; }
@@ -15436,7 +15683,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @keyframes mcDrift4{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-110px,160px) scale(1.2); } }
 @keyframes mcGrid{ from{ transform:translate(0,0); } to{ transform:translate(22px,44px); } }
 @keyframes mcBreathe{ 0%,100%{ opacity:.18; } 50%{ opacity:.6; } }
-.mc > *:not(.mc-aurora):not(.mc-spine){ animation:mcRise .6s cubic-bezier(.2,.8,.3,1) both; }
+.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:mcRise .6s cubic-bezier(.2,.8,.3,1) both; }
 .mc > *:nth-child(4){ animation-delay:.05s; }
 .mc > *:nth-child(5),.mc > *:nth-child(6){ animation-delay:.12s; }
 .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; }
@@ -15458,6 +15705,12 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-head{ container-type:inline-size; container-name:mchead; }
 @container mchead (max-width:300px){
   .mc-corner{ flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px 10px; }
+  /* The weekday takes its own line once the row is tight. It is one unbreakable
+     word, so at a larger text size it cannot shrink and the row overflowed the
+     screen instead of wrapping, which is how WEDNESDAY ended up underneath the
+     initials in the gutter. Asked of this row, not of the screen: the text size
+     is a zoom, and a zoom does not move a media query. */
+  .mc-side{ flex-basis:100%; }
 }
 .mc-corner .mc-help{ position:static; }
 .mc-corner .mc-asof{ white-space:nowrap; }
@@ -15508,7 +15761,12 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-behind .mc-state{ background:rgba(216,72,60,.35); color:#FFD7D3; }
 .mc-on .mc-state{ background:rgba(228,201,141,.25); color:#E4C98D; }
 .mc-ahead .mc-state{ background:rgba(30,138,76,.4); color:#8FD8AF; }
-.mc-trail{ position:relative; z-index:1; margin-top:10px; height:92px; }
+/* The caption underneath is measured against THIS box, not the screen, because
+   the person's text size is a zoom and a zoom does not move a media query. A
+   container query does track it, which is the same reason the manager's corner
+   head uses one. */
+.mc-trail{ position:relative; z-index:1; margin-top:10px; height:92px;
+  container-type:inline-size; container-name:mctl; }
 .mc-trail svg{ width:100%; height:92px; overflow:visible; display:block; }
 .mc-trail .grid line{ stroke:rgba(255,255,255,.07); stroke-width:1; }
 .mc-trail .pace{ fill:none; stroke:rgba(255,255,255,.28); stroke-width:1.5; stroke-dasharray:3 5; }
@@ -15521,7 +15779,24 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @keyframes mcDot{ 50%{ transform:scale(1.33); } }
 .mc-trail .goalring{ fill:none; stroke:#E4C98D; stroke-width:2; }
 @keyframes mcGrow{ from{ transform:scaleX(0); } }
-.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between; font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); }
+/* It shrinks rather than wraps. Jorge's call on 16 September, over stacking it
+   and over shortening the words.
+   Why it had to change at all: this sits at bottom:-14px, so when it wrapped it
+   grew UPWARD and the sold line ran straight through the words. Measured at
+   390px with a real caption: one line at Normal, two at Large and 11.9px into
+   the chart, three at Largest and 13.8px in. A 360px phone wrapped at Normal.
+   One number does the whole job, because a container query unit ALREADY tracks
+   the zoom: cqw shrinks as the text size grows, so dividing by --sftxt as well
+   squared it and drove the caption to 3.89px. 2.9cqw is the largest coefficient
+   that clears the tightest case, a 320px phone at Largest, where the longest
+   caption wants 1.66 times the room it has.
+   The cost, which is the trade Jorge took over stacking the line: at 390px and
+   Normal this prints at 8.5px rather than 9.5px, about 11% smaller than today,
+   in exchange for never crossing the chart at any width or text size. */
+.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between;
+  font-family:var(--sfmono); font-size:min(9.5px, 2.9cqw);
+  font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); white-space:nowrap; }
+.mc-tl > span{ white-space:nowrap; }
 .mc-tl .mid{ color:#E4C98D; }
 .mc-behind .mc-tl .mid{ color:#F08A80; }
 .mc-ahead .mc-tl .mid{ color:#8FD8AF; }
@@ -15752,7 +16027,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-shell .sf-link-quiet{ color:rgba(237,242,234,.42); }
 .mc-shell .mcf-title{ color:#EDF2EA; }
 .mc{ padding-right:44px; }
-.mc-spine{ position:fixed; right:7px; top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
+.mc-spine{ position:fixed; right:calc(var(--mc-axis) - 11px); top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
   flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
 .mc-spine .rt{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.18em;
   color:rgba(237,242,234,.42); writing-mode:vertical-rl; }
@@ -15860,7 +16135,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-offc b{ font-size:17px; }
 .mc-offc .hint{ font-size:13px; }
 .mc-offb button{ padding:11px 20px; font-size:13px; min-height:44px; }
-.mc-spine{ width:26px; right:9px; }
+.mc-spine{ width:26px; right:calc(var(--mc-axis) - 13px); }
 .mc-spine .rt{ font-size:11px; }
 .mc-spine .sp{ width:5px; }
 .mc-spine .sp b{ width:13px; height:13px; }

@@ -15,7 +15,9 @@ const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", imp
 const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
+const keys = fs.readFileSync(new URL("../api/_store-keys.mjs", import.meta.url), "utf8");
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8");
+const sm = fs.readFileSync(new URL("../api/_store-month.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
 
 test("the status controls are never greyed out for a round trip", () => {
@@ -134,7 +136,7 @@ test("the rails spring on transform, not left", () => {
 });
 
 test("one object across rooms: the mark flies, the rooms travel, and less motion gets the cut", () => {
-  assert.ok(/const crossRooms = \(from, to\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor"\);/.test(core), "a tab switch crosses the rooms");
+  assert.ok(/const crossRooms = \(from, to, toGround\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor",\n\s*groundOf\(r, toTab === undefined \? tab : toTab\)\);/.test(core), "a tab switch crosses the rooms, and says which ground it is arriving onto");
   assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches; \} catch \(e\) \{\}\n    if \(reduce\) return;/.test(core), "less motion asks for the cut");
   /* One gesture, one clock: the rooms, the mark and the bar's pill all run for
      the wipe token on the same curve, and the classes are held until the last
@@ -142,14 +144,24 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.35,\.12,\.2,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the page curve");
   assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ z-index:102;\n\s*animation:arPageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core) && /\.ar-room\.ar-out > \.q-page\.sf\{ z-index:100;\n\s*animation:arPageOut var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core), "the room's own sheet is what travels, on one clock and one curve");
   assert.ok(/\.ar-bar\{ position:fixed; z-index:105;/.test(core) && /\.ar-fly\{ position:fixed; z-index:106;/.test(core), "the bar and the mark stay above a room in mid-travel");
-  assert.ok(/\.ar-stack\.x::before\{ content:""; position:fixed; inset:0; z-index:99; background:#06090F;/.test(core), "the rooms' own ground is behind the switch, so no light edge shows");
+  /* The ground behind the switch used to be one flat dark for every room. It
+     carries the ARRIVING room's colour now and lands before the room does, so
+     the place changes first and the screen follows. */
+  assert.ok(/\.ar-stack\.x::before\{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;\n\s*background:var\(--ar-to-bg, var\(--gnd-line\)\);/.test(core),
+    "the ground behind the switch is the one being arrived at, so no light edge shows and the room lands on its own colour");
+  assert.ok(/animation:arGround calc\(var\(--t-wipe\) \* \.55\)/.test(core),
+    "and it is down before the room is, which is what makes the ground lead rather than follow");
+  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
+  assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
+    "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
   assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
   assert.ok(/transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\); will-change:transform; \}/.test(core), "the bar's pill lands with the room");
   assert.ok(/crossTimer\.current = setTimeout\(\(\) => setCross\(null\), MOTION\.wipe \+ 60\);/.test(core), "the classes are held until the whole gesture is over");
   assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades, so two rooms are never readable through each other");
   assert.ok(!/arDotsIn|arDotsOut|steps\(5,end\)|steps\(3,end\)|@property --ar-r/.test(core), "nothing in the switch is stepped");
   assert.ok(/const roomEl = dest\.closest\("\.q-page\.sf"\) \|\| dest\.closest\("\.ar-room"\);/.test(core), "the mark lands where the room comes to rest, not where it started");
-  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\)\}/.test(core), "the room being left stays on screen for the whole gesture");
+  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),
+    "the room being left stays on screen for the whole gesture, and the one being dragged in is uncovered before the finger reaches it");
 });
 test("the rooms in sunlight: deep green ground, cream on it, only the tokens change, off by default", () => {
   assert.ok(/html\.sun \.q-page\.sf\.mc-floor, html\.sun \.q-page\.sf\.sf-line\{[^}]*background:#2E4A38;/.test(core), "the ground is the curtain's deep green");
@@ -256,7 +268,13 @@ test("consistency pass, items 2, 3, 5, 6 and 8: one primary, one status control,
   assert.ok(/\.lpc \.sect-strip\{ background:rgba\(118,118,128,\.14\); border-radius:12px;/.test(core) && /\.lpc \.sect-strip \.sect-pill\{ background:rgba\(255,255,255,\.92\); border-radius:9px;/.test(core), "the phone's strip is the desk's strip");
   assert.ok(/\.mc-you \.mc-seg3 button\.on\{ background:#8FD8AF; color:#12251B; \}/.test(core) && /\.lpc \.qpick \.qpick-btn\{ flex-direction:row;[^}]*border-radius:999px; background:var\(--qa\); color:#fff;/.test(core), "the corner's three-ways are the status pill; Up Next's tiles are tool pills");
   assert.ok(/<span className="ar-lbl">\{LABEL\[t\]\}<\/span>/.test(core) && /display:flex; padding:4px; border-radius:26px;/.test(core), "the salesperson's bar names its rooms and shares the dock's geometry");
-  assert.ok(/onHelp=\{\(\) => \{ buzz\(8\); setHelpPanel\(true\); \}\} onYou=\{\(\) => \{ buzz\(8\); setHelpOpen\(true\); \}\}/.test(core) && /className="mc-me" onClick=\{onYou\} aria-label="You"/.test(core), "the ? is help; the initials are You");
+  /* Item 8 said a question mark means help everywhere and the initials mean You.
+     Jorge reversed that on 16 September: the sheet behind the initials already
+     carried two rows that opened the same help panel, so the question mark was a
+     second door to a room you were already in. One door now, and it says so. */
+  assert.ok(/onHelp=\{\(\) => \{ buzz\(8\); setHelpPanel\(true\); \}\} onYou=\{\(\) => \{ buzz\(8\); setHelpOpen\(true\); \}\}/.test(core)
+    && /className="mc-me" onClick=\{onYou\} aria-label="You and help"/.test(core),
+    "the initials are the one way in, and the label says both of the things behind them");
 });
 
 test("consistency pass, items 10 and 11: the app asks in its own voice, and a seat is one tap", () => {
@@ -294,9 +312,20 @@ test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on
   assert.ok(/near:\s*\{ col: "#E0A100", mark: "clock", word: "near" \},/.test(mgr) && /short: \{ col: "#C8352B", mark: "warn",\s*word: "short" \},/.test(mgr), "near is a clock, short is a warn");
   assert.ok(/function Verdict\(\{ ratio, size = 11, word = false, className \}\) \{/.test(mgr) && /<PixIcon glyph=\{t\.mark\} size=\{size\} \/>/.test(mgr), "the mark is a pix glyph");
   assert.ok(!/col: "#C2361F"|col: "#C98A00"|col: "#1E8A4C"|col: "#0BB25F"/.test(mgr), "the old tier colours are gone");
-  assert.ok(/fmtPct\(c\.pct\)\}\{t && <Verdict ratio=\{pctV \/ target\} size=\{10\}/.test(mgr), "the hero's channels carry the mark");
-  assert.ok(/<span className="s2-mklbl">\{METRIC_TINY\[v\.m\] \|\| METRICS\[v\.m\]\.short\}<Verdict ratio=\{v\.mean\} size=\{9\} \/><\/span>/.test(mgr), "the video rings carry the mark");
-  assert.ok((mgr.match(/\{t && <Verdict ratio=\{vShow \/ tgt\} size=\{9\} \/>\}/g) || []).length === 2, "both shapes of the desk table carry the mark");
+  /* Item 5 put the mark on every figure with a target. Jorge took it off the
+     four that already draw the thing it was saying, on 16 September: the tube,
+     the dial and the bar ARE the verdict, and a glyph beside each one made the
+     row busy without adding a reading. It stays where nothing is drawn. */
+  assert.ok(!/<Verdict ratio=\{pctV \/ target\}/.test(mgr), "the hero's channels let the tube say it");
+  assert.ok(!/<Verdict ratio=\{v\.mean\} size=\{9\}/.test(mgr), "the video rings let the dial say it");
+  assert.equal((mgr.match(/\{t && <Verdict ratio=\{vShow \/ tgt\} size=\{9\} \/>\}/g) || []).length, 0,
+    "and neither shape of the desk table carries one");
+  /* What was kept, because it is the one thing the drawing does NOT say: which
+     way the figure moved since yesterday. */
+  assert.ok(/<PixIcon glyph=\{d >= 0 \? "triup" : "tridown"\} size=\{11\} \/>/.test(mgr),
+    "the direction arrow stays: a tube shows where you are, not which way you are going");
+  assert.equal((mgr.match(/<Verdict /g) || []).length, 2,
+    "the mark survives exactly where there is no drawing: the pace sentence and the weakest standard");
   assert.ok(/toneMark\(t\)\{ return pix\(t === 'g' \? 'check' : t === 'y' \? 'clock' : 'warn'\); \}/.test(mgr) && /--green:#1F8A6B; --greenbg:#E1F1EA; --yellow:#E0A100;[^}]*--red:#C8352B;/.test(mgr), "the TV board speaks the same three");
   assert.ok(/--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(mgr) && /--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(core), "the rooms and the phone take the same three");
   assert.ok(/\.vmark\{ display:inline-flex; align-items:center; gap:3px; color:var\(--vc\);/.test(mgr), "the mark takes its figure's colour");
@@ -305,7 +334,7 @@ test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on
 test("five-second pass, items 1, 3, 4 and 8: the lamp, the sentence, five shades, a covered hour, no PIN list", () => {
   assert.ok(/className=\{"s2-imp s2-lampbtn" \+ \(missing\.length \? "" : " done"\)\}/.test(mgr) && /<b>\{missing\.length \? `\$\{missing\.length\} due today` : "All in"\}<\/b>/.test(mgr), "the imports card is the lamp");
   assert.ok(/\.s2-lampbtn \.s2-lamp\.y\{ background:#E0A100;[^}]*animation:lampPulse/.test(mgr) && !/className="s2-answers"/.test(mgr), "the lamp breathes while a report is owed, and there is no lamp row");
-  assert.ok(/<div className="s2-vitals s2-say" style=\{\{ color: paceCol \}\}>/.test(mgr) && /Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr) && !/on the board\{capTotal/.test(mgr), "the pace sentence replaced the vitals line");
+  assert.ok(/<div className="s2-vitals s2-say" style=\{\{ color: paceCol \}\}>/.test(mgr) && /Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr) && !/on the board\{capTotal/.test(mgr), "the pace sentence replaced the vitals line");
   assert.ok(/"s2-ansq bloop-host an-" \+ \(weakest\.mean >= 1 \? 5 : weakest\.mean >= 0\.9 \? 4 : weakest\.mean >= 0\.75 \? 3 : weakest\.mean >= 0\.5 \? 2 : 1\)/.test(mgr) && /\.s2-ansq\.an-1\{ background:linear-gradient\(150deg,#C8352B,#8E1F17\)/.test(mgr) && /\.s2-ansq\.an-5\{ background:linear-gradient\(150deg,#2A9C77,#1B6E54\)/.test(mgr), "five grounds on the standards card");
   assert.ok(/if \(b\.staffed === 0\) return "gap";\n\s*if \(b\.staffed >= b\.of\) return "full";\n\s*return b\.staffed >= line \? "ok" : "thin";/.test(mgr), "five states on the day's line");
   assert.ok(/<span className="k-pre">not yet<\/span>/.test(mgr) && /<span className="k-full">full<\/span>/.test(mgr), "the key names all five");
@@ -324,7 +353,7 @@ test("five-second pass, item 2: the shortfall is drawn, and its height is the se
   assert.ok(/const col = t \? t\.col : "rgba\(255,255,255,\.3\)";/.test(mgr), "the fill takes the verdict, not the identity");
 });
 
-test("the record slims down: backups prune by what is on the server, day rows have a window, restore points are two, no legacy stars", () => {
+test("the record slims down: backups prune by what is on the server, day rows have a window, restore points left the store row, no legacy stars", () => {
   assert.ok(/async function saveShared\(key, value, quiet\) \{/.test(core) && /lastSaveError = null; if \(!quiet\) buzz\("taken"\);/.test(core), "housekeeping writes do not buzz a phone");
   assert.ok(/await saveShared\(row\.key, null, true\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true\)/.test(core), "the prunes and the backup rows are housekeeping");
   assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
@@ -332,7 +361,15 @@ test("the record slims down: backups prune by what is on the server, day rows ha
   assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
   assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId\) \{/.test(core), "the day rows have a window");
   assert.ok(/const GOAL_LOOKBACK = 21;/.test(core), "and the window clears the longest read of them by a fortnight");
-  assert.ok(/\]\.slice\(0, 2\),/.test(core) && /\]\.slice\(0, 2\),/.test(mgr) && /\.\.\.\(next\.snapshots \|\| \[\]\)\]\.slice\(0, 2\);/.test(ing), "a row carries two restore points, not six, eight or twelve");
+  /* A store row carries NO restore points now. It used to carry two, and before
+     that six, and before that forty, and every one of those numbers was an
+     answer to "how many copies of the store can the store's own row afford".
+     Out of the row, the question stops being how many. */
+  assert.ok(/export const restoreKey   = \(storeId\) => `lpc:store:\$\{storeId\}:restore:v1`;/.test(keys),
+    "the restore point has a row of its own, under lpc:store: so it lands on the existing row policy");
+  assert.ok(!/next\.snapshots = \[/.test(core + mgr + ing), "nothing writes a restore point back into the store row");
+  assert.ok(/if \(next && next\.snapshots\) delete next\.snapshots;/.test(core) && /if \(next\.snapshots\) delete next\.snapshots;/.test(ing),
+    "and both writers drop the ones older builds left inside it, which is the shape Jorge chose over migrating them");
   assert.ok(!/data\.stars\?\.\[/.test(core + mgr) && !/const starsFor/.test(mgr), "the star count RockEd replaced is no longer read");
   assert.ok(/return null;\s*\/\/ no RockEd mark at all/.test(core), "no mark means no mark");
 });
@@ -342,8 +379,15 @@ test("the Online room says it is not a room yet, in the house's own parts", () =
   assert.ok(/\) : queue === "online" \? \(\n\s*<OnlineSoon store=\{store\} rooms=\{roomListOf\(config, store\.id\)\} onToolChange=\{onToolChange\} \/>/.test(mgr), "and it is what Online opens, instead of a queue that does nothing");
   assert.ok(/aria-label="Under construction"/.test(mgr) && /<PixIcon glyph="warn" size=\{22\} \/>/.test(mgr) && /<b>Room under construction<\/b>/.test(mgr), "the sign is the pix set's own warn on sand");
   assert.ok(/repeating-linear-gradient\(135deg, #E4C98D 0 10px, #241A06 10px 20px\)/.test(mgr), "and the tape is painted the way tape is painted");
-  assert.ok(/Seventeen days have been opened in this room/.test(mgr), "the joke is a real number or it is not a joke");
-  assert.ok(/<div className="s2-led onsoon-led"><i style=\{\{ width: "0%" \}\} \/><\/div>/.test(mgr), "the progress bar is the app's own track, at nothing");
+  // The hero is the sign and the sentence, and Jorge asked for it to be
+  // purposeful. A cap saying Online under a tab that already says Online, a
+  // line about doors and light switches, a bar that could only ever read
+  // nought and a paragraph of history were the page talking about itself.
+  assert.ok(/<div className="onsoon-head">\n\s*<h2>There is no room here yet<\/h2>\n\s*<\/div>/.test(mgr), "the hero carries the headline and nothing under it");
+  assert.ok(!/Seventeen days have been opened|onsoon-led|onsoon-prog|onsoon-real|It has a door, a sign, a light switch/.test(mgr), "and the cap, the sentence, the bar at nought and the history are gone, their rules with them");
+  assert.ok(/\.onsoon\{ max-width:1000px; margin:64px auto 0; \}/.test(mgr), "the page clears the header by the 64px every other content page leaves");
+  assert.ok(/\.onsoon-hero \.s2-tube\{ width:100%; \}/.test(mgr), "the sign takes the card, so losing the paragraph does not shrink the tape to two stubs");
+  assert.ok(/\.onsoon-tape\{ width:100%; height:12px; flex:none; \}/.test(mgr), "and stacked on a phone the tape has a height, rather than taking flex-basis:0 on the axis it is now stacked along");
   assert.ok(/\.onsoon\{ padding-bottom:104px; \}/.test(mgr), "the last card ends above the dock on a phone");
   assert.ok(/onClick=\{\(\) => onToolChange\(id\)\}/.test(mgr), "and there is a way out to a room that exists");
 });
@@ -412,4 +456,149 @@ test("the phone's own measurements survive a larger text size, and the top of th
 
   assert.ok(/\.mc-head\{ display:flex; flex-wrap:wrap;/.test(core) && /\.mc-corner\{[^}]*margin-left:auto; \}/.test(core) && /\.mc-side\{ min-width:0; \}/.test(core), "and the corner head takes a second line rather than printing the stamp through the weekday");
   assert.ok(/\.mc-head\{ container-type:inline-size; container-name:mchead; \}/.test(core) && /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/.test(core), "and on that line it lies across, asked of the head and not of the screen: the text size is a zoom, and a zoom does not move a media query");
+});
+
+test("new and used are counted off the report on every screen that shows them", () => {
+  // One reader, because three screens draw this and three copies of "prefer the
+  // report, else estimate" is three chances to disagree about the same month.
+  assert.ok(/const statedSplitOf = \(M\) => \{/.test(mgr), "there is one reader for the stock split");
+  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 3,
+    "and the three screens that show new and used all go through it: the hero, the phone board and the digest");
+  assert.ok(/M\.stated = \{ \.\.\.M\.stated, vehicles: stated\.vehicles \};/.test(ing),
+    "a roll-up owns how many cars, but the grid still hands over how many were new");
+  assert.ok(/vehicles: stated\.vehicles, day, at: nowISO/.test(ing), "and the grid files its own split with the rest");
+  // The estimate stays, for a month whose report landed before any of this.
+  assert.ok(/const f = statedM\.deliveries \/ known;/.test(mgr),
+    "the scaled fallback is kept for a month filed before the split was carried");
+});
+
+test("the month's goal is asked for once, written by one writer, and a change says what it replaced", () => {
+  /* A goal belongs to one month. The standing figure a month used to fall back
+     on is gone from the reader, from the two writers and from the store editor,
+     because any one of them keeping it would put a new month back on the last
+     one's number. */
+  assert.ok(/const goalMonthState = \(store, month\) => \{/.test(mgr), "one reader for whether a month has a goal");
+  assert.ok(!/g\.units/.test(mgr), "nothing in the manager reads or writes a standing figure any more");
+  assert.ok(/const units = g\.byMonth\[monthKey\];/.test(sm) && !/: g\.units;/.test(sm), "and the shared reader takes the month's own figure or nothing");
+  assert.equal(mgr.split("!goalMonth.set &&").length - 1, 2, "both surfaces ask on the same condition: the desk hero and the phone board");
+
+  // One writer. Two copies of this were two chances to word one event
+  // differently and two places to forget that a change is not a first.
+  assert.ok(/async function saveMonthGoal\(\{ config, store, draft, onSaveConfig, confirm = askConfirm \}\)/.test(mgr), "there is one writer for the goal");
+  assert.equal(mgr.split("saveMonthGoal({ config, store, draft, onSaveConfig })").length - 1, 2, "and both fields go through it");
+  assert.ok(!/action: "Set the monthly unit goal", detail: `\$\{store\.name\}: \$\{n\} units`/.test(mgr), "neither surface writes its own audit line any more");
+
+  assert.ok(/const changing = own != null && own !== n;/.test(mgr), "a change is a figure this month already had, and a different one");
+  assert.ok(/action: changing \? "Changed the monthly unit goal" : "Set the monthly unit goal"/.test(mgr), "Set and Changed are two actions, so a change is findable on its own");
+  assert.ok(/\$\{fmtNum\(own\)\} to \$\{fmtNum\(n\)\} units for \$\{monthLabel\(month\)\}/.test(mgr), "and the line carries the figure it replaced, and which month it was");
+  assert.ok(/if \(changing && !\(await confirm\(/.test(mgr), "only a real change asks first, so the first of the month stays one tap and Enter");
+  assert.ok(/if \(await saveMonthGoal\(\{ config, store, draft, onSaveConfig \}\)\) setGoalOpen\(false\);/.test(mgr), "and a cancel leaves the field open rather than closing as if it had saved");
+
+  /* This one is here because it happened. saveGoal takes the draft as its first
+     argument, so a bare onClick hands it React's click event, parseInt of which
+     is NaN: the Set button silently did nothing and the field stayed open as if
+     the change had been refused. Both fields keep their own draft in state and
+     must call it with no argument at all. */
+  assert.ok(!/onClick=\{saveGoal\}/.test(mgr), "no field hands the click event in as the figure to save");
+
+  /* Written in, not offered. A figure a screen puts up for you is a figure you
+     accept without deciding, and the point of asking is that the month gets a
+     number somebody chose for it. */
+  assert.ok(/const \[draft, setDraft\] = useState\(""\);/.test(mgr), "the card opens on an empty field");
+  assert.ok(!/lastGoal/.test(mgr), "and the hero no longer offers last month's figure either");
+  assert.ok(!/placeholder=\{suggest/.test(mgr) && !/last month \$\{fmtNum/.test(mgr), "nor does it print one as a hint");
+});
+
+test("the shortfall printed next to \"at this pace\" is the pace's, not the sell gap", () => {
+  /* Two different numbers, and the line used to print the wrong one under the
+     right words. Holler Ford: goal 200, sold 74, so 126 still to sell while the
+     month runs at 159, which is 41 short. `needPerDay` wants the 126, because
+     that is what actually has to be sold; the sentence wants the 41. */
+  assert.ok(/out\.shortAtPace = Math\.max\(0, goal\.bar - projected\);/.test(mgr), "the pace's own shortfall is goal against projection");
+  assert.ok(/out\.short = Math\.max\(0, goal\.bar - totalUnits\);/.test(mgr), "and the sell gap is still goal against what is delivered");
+  assert.ok(/Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr), "the sentence prints the pace's shortfall");
+  assert.ok(/out\.needPerDay = daysLeft > 0 \? out\.short \/ daysLeft : null;/.test(mgr), "and what to sell a day is still worked from the sell gap");
+  assert.ok(!/Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr), "the two are never swapped back");
+});
+
+test("a restore point survives leaving the store row: one writer, one reader, and an undo that still matches its own upload", () => {
+  /* The point of moving it is that the common path stops carrying it. So the
+     things worth holding are that nobody put it back, and that the paths which
+     genuinely need it still find it. */
+  assert.ok(/const saveRestorePoint = useCallback\(async \(storeId, point\) => \{/.test(core),
+    "one writer for the restore row, so the three places that take a point cannot disagree about where it goes");
+  assert.equal(core.split("saveShared(restoreKey(storeId), point)").length - 1, 1,
+    "and it is the only place in the app that writes that row");
+  assert.ok(/const snapT = await takeRestorePoint\(view, next, "Before import"\);/.test(core),
+    "the import waits for its restore point, so a failed write is known here rather than at the undo");
+
+  /* The undo used to search an array. With one point in a row of its own the
+     stamp check is what stops it rewinding to a point taken before some later
+     import, which is the same protection the find() gave. */
+  assert.ok(/const snap = restorePoint && restorePoint\.t === u\.snapT \? restorePoint : null;/.test(mgr),
+    "an undo only uses the restore point that was taken for that upload");
+  assert.ok(/if \(restorePoint === undefined\) onLoadRestorePoint\?\.\(\)/.test(mgr),
+    "the panel fetches it when it opens, and undefined is not the same as none");
+
+  // The pipeline hands it out rather than writing it, because applyToStore runs
+  // inside a compare-and-set retry and has to stay synchronous.
+  assert.ok(/return \{ next, results, archiveDue, restorePoint \};/.test(ing), "the pipeline returns its restore point");
+  assert.ok(/await sbPut\(restoreKey\(st\.id\), lastRestorePoint\)/.test(ing), "and the caller writes it once the store row it protects has landed");
+  assert.ok(/imported but its restore point did not save/.test(ing), "a restore point that fails to write says so rather than failing the import");
+});
+
+test("the phone's right gutter is one axis, and the sold line never crosses its own caption", () => {
+  /* The caption sits at bottom:-14px, so wrapping grew it UPWARD and the line
+     ran through the words. Measured at 390px with a real caption before the
+     change: one line at Normal, two at Large and 11.9px into the chart, three
+     at Largest and 13.8px in. A 360px phone wrapped at Normal. */
+  assert.ok(/\.mc-trail\{[^}]*container-type:inline-size; container-name:mctl;/.test(core),
+    "the caption is measured against the chart's own box, because a zoom does not move a media query");
+  assert.ok(/font-size:min\(9\.5px, 2\.9cqw\);/.test(core),
+    "it shrinks to fit rather than wrapping, which is what Jorge chose over stacking it");
+  assert.ok(!/calc\(3\.4cqw \/ var\(--sftxt/.test(core),
+    "and it is not divided by the text size as well: a container unit already tracks the zoom, and doing both squared it");
+  assert.ok(/\.mc-tl\{[^}]*white-space:nowrap;/.test(core) && /\.mc-tl > span\{ white-space:nowrap; \}/.test(core),
+    "nothing in the caption may wrap, which is the whole point");
+
+  // One axis down the right side. There were three, on three different offsets.
+  assert.ok(/:root\{ --mc-axis:30px; \}/.test(core), "the gutter has one centre line");
+  assert.equal(core.split("var(--mc-axis)").length - 1, 4,
+    "and the initials, the spine and both of the spine's own rules are measured from it");
+  assert.ok(!/className="mc-help"/.test(core), "the question mark is gone: the sheet behind the initials already opened the same help panel");
+  assert.ok(/\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)/.test(core),
+    "the initials are exempt from the card stacking rules, or position:relative wins and they never reach the gutter");
+  assert.ok(/@container mchead \(max-width:300px\)\{[^}]*\}\s*\/\*[\s\S]*?\*\/\s*\.mc-side\{ flex-basis:100%; \}/.test(core)
+    || /\.mc-side\{ flex-basis:100%; \}/.test(core),
+    "the weekday takes its own line when the row is tight, because it is one unbreakable word and used to overflow under the initials");
+});
+
+test("the swipe follows the thumb, and gives way to the three things that outrank it", () => {
+  /* Touch events, not pointer events, and this one is worth holding: the app
+     captures the pointer on every press for the held-and-released effect, and a
+     capture on another element fires pointercancel on this one. Traced in a
+     browser: the cancel arrived before a single pointermove did, so the gesture
+     never ran. The first version only looked like it worked because a cancel
+     was treated as a release and committed the switch. */
+  assert.ok(/el\.addEventListener\("touchstart", down, opt\);/.test(core) && /el\.addEventListener\("touchmove", move, opt\);/.test(core),
+    "the gesture listens on touch, which pointer capture cannot take away");
+  assert.ok(!/onPointerDown=\{onDown\}/.test(core), "and not on pointer events, which it can");
+  assert.ok(/const onCancel = \(\) => \{ g\.current = null; setDrag\(null\); \};/.test(core)
+    && /el\.addEventListener\("touchcancel", cancel, opt\);/.test(core),
+    "a cancel springs back and never commits: it means the gesture was taken away, not that a finger lifted");
+
+  // The three that outrank it, each checked in a browser as well as here.
+  assert.ok(/if \(t\.clientX <= EDGE \|\| t\.clientX >= window\.innerWidth - EDGE\) return;/.test(core), "the left and right edges are the phone's, for going back");
+  assert.ok(/if \(overScroller\(e?\.?target\)\) return;|if \(overScroller\(target\)\) return;/.test(core), "anything that scrolls sideways under the finger wins");
+  assert.ok(/if \(Math\.abs\(dx\) < Math\.abs\(dy\) \* RATIO\) \{ g\.current = null; return; \}/.test(core), "a vertical intent wins, because the page scrolls");
+  assert.ok(/\.ar-stack\{ touch-action:pan-y; \}/.test(core), "and the browser is told the across is ours and the down is its own");
+
+  /* It follows the thumb only where there are two sheets. Home and Live Floor
+     are two tabs of ONE .q-page, so there is nothing behind the first to pull. */
+  assert.ok(/s0\.slide = roomOfTab\(to\) !== roomOfTab\(active\);/.test(core), "whether there is a second sheet to drag is decided when the gesture starts");
+  assert.ok(/if \(!s0\.slide\) return;/.test(core), "and two tabs of one sheet commit on release instead of dragging");
+  assert.ok(/\.ar-stack\.ar-dragging > \.ar-room\.ar-cur > \.q-page\.sf\{ z-index:102;\n\s*transform:translate3d\(var\(--ar-drag, 0px\), 0, 0\); \}/.test(core),
+    "the sheet being left moves with the finger");
+  assert.ok(/\.ar-stack\.ar-dragging > \.ar-room > \.q-page\.sf\{ animation:none !important; transition:none;/.test(core),
+    "and nothing animates while a finger is down, or the sheet lags behind the thumb");
 });

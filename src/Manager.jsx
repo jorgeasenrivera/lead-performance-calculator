@@ -273,6 +273,98 @@ const unitsOf = (s) =>
    Everywhere the STORE's month is shown prefers this; per-person figures stay
    exactly as the report credited them. */
 const statedOf = (M) => (M?.stated?.deliveries != null ? M.stated : null);
+/* The stock split as the report itself counted it: whole cars, off the store's
+   own New and Used rows. One reader, because three screens draw this and three
+   copies of "prefer the report, else estimate" is three chances to disagree
+   about the same month. Null when the report on file predates the split being
+   carried, and the caller falls back to scaling the people's rows. */
+const statedSplitOf = (M) => {
+  const v = M?.stated?.vehicles;
+  if (!v) return null;
+  const nw = v.new ?? null, us = v.used ?? null, other = v.other ?? null;
+  if (nw == null && us == null) return null;
+  return { nw: nw || 0, us: us || 0, other: other || 0, counted: true };
+};
+
+/* Whether this month has a goal. There is nothing else to ask: a goal belongs
+   to one month, and the standing figure a month used to fall back on is gone,
+   so a month either has a number somebody wrote in or it has none. */
+const goalMonthState = (store, month) => {
+  const g = (store && store.goal) || null;
+  const own = g && g.byMonth && g.byMonth[month] != null ? g.byMonth[month] : null;
+  return { own, set: own != null };
+};
+
+/* Setting the month's goal, from either place that offers the field. The hero
+   and the phone board each wrote their own audit line, which is two chances to
+   word one event differently and two places to forget that a change is not a
+   first. One writer now.
+   Returns false when nothing was written, so a caller can leave its field open
+   on a cancel rather than close as if it had saved. */
+async function saveMonthGoal({ config, store, draft, onSaveConfig, confirm = askConfirm }) {
+  const n = Math.max(0, parseInt(draft, 10) || 0);
+  if (!n || !onSaveConfig) return false;
+  const next = JSON.parse(JSON.stringify(config));
+  const s = next.stores.find((x) => x.id === store.id);
+  if (!s) return false;
+  const month = ym();
+  const { own } = goalMonthState(store, month);
+  const changing = own != null && own !== n;
+  /* Only a real change asks. The first of the month stays one tap and Enter,
+     and re-entering the figure already there is not a change to confirm. */
+  if (changing && !(await confirm(
+    `Change ${monthLabel(month)}'s goal from ${fmtNum(own)} to ${fmtNum(n)}?\nThe old figure is kept in the audit either way.`,
+    { ok: "Change it" }))) return false;
+  const g = s.goal || {};
+  /* Months only. The standing `units` is not written any more and nothing reads
+     it: keeping one would be keeping the thing that made a new month open on the
+     last one's number. */
+  s.goal = { pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [month]: n } };
+  /* Set and Changed are two actions on purpose. The audit already speaks this
+     way (Changed a target, Changed activity standards), and a change written as
+     a first set is a change nobody can find afterwards by anything but diffing
+     two lines that look alike. */
+  onSaveConfig(next, { store: store.id,
+    action: changing ? "Changed the monthly unit goal" : "Set the monthly unit goal",
+    detail: changing
+      ? `${store.name}: ${fmtNum(own)} to ${fmtNum(n)} units for ${monthLabel(month)}`
+      : `${store.name}: ${fmtNum(n)} units for ${monthLabel(month)}` });
+  return true;
+}
+
+/* The card that asks. A month with no goal has an idle pace bar, no projection
+   and no marker on the dots, so the words say what setting one turns on rather
+   than what the field does. It has no way out, and it offers no figure: Jorge
+   settled both on 15 September. A suggested number is a number somebody accepts
+   without deciding, and the whole point of asking is that the month gets a
+   figure a person chose for it. */
+function GoalAskCard({ store, month, onSave }) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const name = new Date(month + "-02").toLocaleDateString("en-US", { month: "long" });
+  const save = async () => {
+    if (busy || !(parseInt(draft, 10) > 0)) return;
+    setBusy(true);
+    try { await onSave(draft); } finally { setBusy(false); }
+  };
+  return (
+    <div className="gask">
+      <div className="gask-cap"><PixIcon glyph="sold" size={11} /> {store.name}</div>
+      <div className="gask-h">{name} has no goal yet</div>
+      <div className="gask-p">Set one and the pace bar, the projection and every card that reads against it start working.</div>
+      <div className="gask-act">
+        <label className="gask-f">
+          <input type="number" min="0" inputMode="numeric" value={draft} autoComplete="off"
+            aria-label={`Units to deliver in ${name}`}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+          <span>units</span>
+        </label>
+        <button type="button" className="gask-set" onClick={save} disabled={busy || !(parseInt(draft, 10) > 0)}>Set it</button>
+      </div>
+    </div>
+  );
+}
 
 // How well someone is holding their standards, whether or not they clear all of
 // them: the share of requirements met, plus a bonus for how far past they are.
@@ -8583,35 +8675,23 @@ function OnlineSoon({ store, rooms, onToolChange }) {
             </span>
             <span className="onsoon-tape" aria-hidden="true" />
           </div>
+          {/* The sign and the sentence, and nothing else. A cap saying Online
+              under a tab that already says Online, a progress bar that can only
+              ever read nought, and a paragraph of history were all the page
+              talking about itself. */}
           <div className="onsoon-head">
-            <div className="s2-cap"><PixIcon glyph="globe" size={11} /> Online</div>
             <h2>There is no room here yet</h2>
-            <p>
-              It has a door, a sign, a light switch and a link you can send to a phone.
-              What it does not have is a floor.
-            </p>
           </div>
-          {/* The honest progress bar. The app's own track, at nothing, because
-              that is where it is. */}
-          <div className="onsoon-prog">
-            <div className="s2-led onsoon-led"><i style={{ width: "0%" }} /></div>
-            <div className="onsoon-proglbl"><span>poured</span><b>0%</b><span>ready</span></div>
-          </div>
-          <p className="onsoon-real">
-            Seventeen days have been opened in this room across the group since August.
-            Nobody has ever stood in one. Not one person, not one lead, not one minute.
-          </p>
         </div>
       </div>
 
       <div className="onsoon-grid">
         <div className="onsoon-card">
-          <div className="s2-cap cap-sent"><PixIcon glyph="list" size={12} /> What it will be</div>
-          <ul className="onsoon-list">
-            <li><PixIcon glyph="globe" size={15} /><span>Internet leads arrive here on their own, the moment the CRM says so.</span></li>
-            <li><PixIcon glyph="assign" size={15} /><span>The next one goes to whoever is up, the way the phone line hands out a call.</span></li>
-            <li><PixIcon glyph="chart" size={15} /><span>And closing them counts where it already counts, against Internet delivered.</span></li>
-          </ul>
+          {/* What a manager gets, not how it is wired. The three bullets that
+              were here described the mechanism, which is the part nobody is
+              waiting for. */}
+          <div className="s2-cap cap-sent"><PixIcon glyph="assign" size={12} /> What it will be</div>
+          <p className="onsoon-why">A manager will know who to give the next lead to, at a glance.</p>
         </div>
         <div className="onsoon-card">
           <div className="s2-cap cap-sent"><PixIcon glyph="door" size={12} /> Next door, and open</div>
@@ -12820,8 +12900,14 @@ function buildDigest(args) {
      stock split keeps the people's figures scaled onto the count, so the two
      lines of the day detail cannot disagree. */
   const stated = statedOf(M);
+  const toldSplit = statedSplitOf(M);
   if (stated) {
-    if (u > 0 && nu != null) { const f = stated.deliveries / u;
+    /* The report's own New and Used rows when it carried them, and the scaled
+       people only when it did not. A digest is what the round-up and the day
+       detail read, so a stock split invented here would be a made-up figure
+       stored day after day. */
+    if (toldSplit) { nu = toldSplit.nw; uu = toldSplit.us; }
+    else if (u > 0 && nu != null) { const f = stated.deliveries / u;
       nu = Math.round(nu * f * 10) / 10; uu = Math.round(uu * f * 10) / 10; }
     u = stated.deliveries;
   }
@@ -13101,8 +13187,7 @@ function RoundUp({ config, store, data, M }) {
       for (const a of data.roster || []) n += unitsOf(M?.stats?.[norm(a.name)]);
       return Math.round(n * 10) / 10;
     })();
-    const g = store.goal || {};
-    const goal = (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0);
+    const goal = storeGoalFor(store, mk)?.units ?? 0;
     const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
     const elapsed = Math.max(1, dayOfMonth() - 1);   // through yesterday
     const onPaceFor = Math.round((sold / elapsed) * dim);
@@ -13333,8 +13418,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
       if (!st) continue;
       units += (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
     }
-    const g = s.goal || {};
-    const goal = (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0);
+    const goal = storeGoalFor(s, mk)?.units ?? 0;
     const chan = channelRates(M, roster);
     const five = FIVE.map((f) => {
       const c = chan.find((x) => x.id === f.id);
@@ -13615,7 +13699,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         <div className="s2-podium">
           {top3.map((r, i) => (
             <button key={r.name} className={"s2-pod" + (i === 0 ? " first" : "")} onClick={() => onFocus && onFocus(r.name)}>
-              <span className={"s2-medal m" + (i + 1)}>{i + 1}</span>
+              <span className={"s2-medal m" + (i + 1)}><DotNum value={String(i + 1)} dot={4} color="#fff" /></span>
               <span className="s2-podname">{r.name}
                 <span className="s2-podsub">{r.passing ? `on standard · ${r.met}/${r.total} above bar` : `${r.met}/${r.total} standards`}</span>
               </span>
@@ -13845,7 +13929,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
                 <i style={{ height: h.toFixed(1) + "%" }} />{gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")} aria-hidden="true" style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}<s />
               </span>
-              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
+              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
                 <div className="bw-title">{def.label}</div>
                 <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -13875,7 +13959,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               })()}
               <text x="22" y="18.4" textAnchor="middle" style={{ font: "700 8.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
             </svg>
-            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
+            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i></span>
             <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
               <div className="bw-title">{def.label}</div>
               <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -14411,8 +14495,17 @@ function WelcomeCard({ store, onDismiss }) {
 }
 
 /* ---------------- Backup / restore ---------------- */
-function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore }) {
+function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRestorePoint, onRestoreStore, onRestoreAll }) {
   const [busy, setBusy] = useState(false);
+  /* Restore points are one row per store now, so this panel fetches the ones it
+     is about to list. It is the only screen that shows all of them at once, and
+     it is admin-only and rarely opened, which is exactly why they should not be
+     riding along in every store save for the rest of the app's life. */
+  useEffect(() => {
+    for (const st of config.stores || []) {
+      if (restorePoints[st.id] === undefined) onLoadRestorePoint?.(st.id);
+    }
+  }, [config.stores, restorePoints, onLoadRestorePoint]);
   const [msg, setMsg] = useState("");
   const [autoList, setAutoList] = useState(null);
 
@@ -14823,9 +14916,13 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
 
       <div className="card">
         <h3>Restore points</h3>
-        <p className="hint">Taken before every import. The last 8 are kept per store.</p>
+        {/* It said "the last 8 are kept" and one was kept, which is the sort of
+            line somebody plans around and then finds out about at the worst
+            moment. One is what the code has always done. */}
+        <p className="hint">Taken before every import. The most recent one is kept per store.</p>
         {config.stores.map((s) => {
-          const snaps = adminData[s.id]?.snapshots || [];
+          const point = restorePoints[s.id];
+          const snaps = point ? [point] : [];
           return (
             <div key={s.id} className="snap-store">
               <div className="snap-store-name">
@@ -14914,14 +15011,14 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   const [thresholds, setThresholds] = useState(() => normThresholds(store?.thresholds));
   const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
   const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
-  /* The goal is kept per month as well as as a standing figure, because goals move
-     every month and last month's is worse than none. The field here writes THIS
-     month; the standing one is the fallback for a month nobody has set. */
+  /* The goal is kept per month and only per month. This field is THIS month's,
+     and a month nobody has set opens empty rather than holding up the last one's
+     figure for somebody to accept without deciding. */
   const [goal, setGoal] = useState(() => {
     const g = store?.goal || {};
     const mk = ym();
     return {
-      units: (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0),
+      units: (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : 0,
       pct: g.pct ?? 100,
       byMonth: g.byMonth || {},
     };
@@ -14952,7 +15049,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
     if (goal.units > 0) byMonth[mk] = goal.units; else delete byMonth[mk];
     onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours,
       reportCutoff: cutoff,
-      goal: { units: goal.units, pct: goal.pct, byMonth } });
+      goal: { pct: goal.pct, byMonth } });
   };
 
   return (
@@ -15471,7 +15568,10 @@ function UploadHistory({ data, onChange, storeId }) {
   };
 
   const undoUpload = async (u) => {
-    const snap = (data.snapshots || []).find((s) => s.t === u.snapT);
+    /* One restore point, in its own row, and it is the right one only if it was
+       taken for THIS upload. Matching on the stamp is what stops an undo
+       rewinding to a point taken before some later import. */
+    const snap = restorePoint && restorePoint.t === u.snapT ? restorePoint : null;
     const after = laterThan(u);
     if (!snap) {
       toast(
@@ -15493,19 +15593,18 @@ function UploadHistory({ data, onChange, storeId }) {
 
     setBusy(true);
     const current = JSON.parse(JSON.stringify(data));
+    // The undo itself is undoable: the state being left becomes the restore
+    // point, written to the restore row rather than into the store.
+    await onSaveRestorePoint?.({ t: new Date().toISOString(), by: "-", reason: "Before undo",
+      data: JSON.parse(JSON.stringify({
+        roster: current.roster, months: current.months, activity: current.activity,
+        plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+        stars: current.stars, goals: current.goals, baselines: current.baselines,
+        excluded: current.excluded,
+      })) });
     const restored = {
       ...current,
       ...snap.data,
-      snapshots: [
-        { t: new Date().toISOString(), by: "-", reason: "Before undo", data: JSON.parse(JSON.stringify({
-          roster: current.roster, months: current.months, activity: current.activity,
-          plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
-          stars: current.stars, goals: current.goals, baselines: current.baselines,
-          excluded: current.excluded,
-        })) },
-        ...(current.snapshots || []),
-      ].slice(0, 2),
-      // the undo itself is undoable
       importLog: (current.importLog || []).filter((x) => new Date(x.t) < new Date(u.t)),
       // these are yours, not the report's: never rewind them
       goals: current.goals,
@@ -18551,6 +18650,8 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     }
     const known = nw + us + other;
     const newPct = known > 0 ? nw / known : null, usedPct = known > 0 ? us / known : null;
+    const told = statedSplitOf(M);
+    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, known: told.nw + told.us };
     if (statedM && known > 0) { const f = statedM.deliveries / known; nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10; }
     return { seen, nw, us, known, newPct, usedPct };
   })();
@@ -18665,16 +18766,9 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     return list;
   }, [people, roleFilter, limitOnly, drill]);
 
-  const saveGoal = () => {
-    const n = Math.max(0, parseInt(goalDraft, 10) || 0);
-    if (!n || !onSaveConfig) return;
-    const next = JSON.parse(JSON.stringify(config));
-    const s = next.stores.find((x) => x.id === store.id);
-    if (!s) return;
-    const g = s.goal || {};
-    s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [ym()]: n } };
-    onSaveConfig(next, { store: store.id, action: "Set the monthly unit goal", detail: `${store.name}: ${n} units` });
-    close();
+  const goalMonth = goalMonthState(store, ym());
+  const saveGoal = async (draft = goalDraft) => {
+    if (await saveMonthGoal({ config, store, draft, onSaveConfig })) close();
   };
   const avStyle = (p) => {
     const t = p.tag;
@@ -18769,7 +18863,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
         {canSetGoal && (
           <div className="fr-acts">
             <input className="fr-ref" type="number" min="0" inputMode="numeric" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
-            <button type="button" className="fr-b pri" onClick={saveGoal}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
+            <button type="button" className="fr-b pri" onClick={() => saveGoal()}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
           </div>
         )}
       </>);
@@ -18882,6 +18976,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           })}
         </div>
       </div>
+
+      {canSetGoal && !goalMonth.set && (
+        <GoalAskCard store={store} month={ym()} onSave={(d) => saveGoal(d)} />
+      )}
 
       <div className="bp-stand">
         <div className="bp-filt">
@@ -19136,6 +19234,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     const out = { goal, daysAll, daysDone, daysLeft, perDay, projected, units: totalUnits };
     if (goal) {
       out.short = Math.max(0, goal.bar - totalUnits);
+      /* The gap the pace leaves, which is a different number from the gap still
+         to sell and the only one that belongs next to the words "at this pace".
+         Holler Ford: goal 200, sold 74, so 126 still to sell, but the month is
+         running at 159, which is 41 short. The line used to print 126 and call
+         it a pace figure, which is two claims that cannot both be true. */
+      out.shortAtPace = Math.max(0, goal.bar - projected);
       /* What the rest of the month has to run at. Not the average that would have
          got here — the pace from here, which is the only one anybody can still
          do anything about. */
@@ -19188,6 +19292,14 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
        a split deal splits inside one stock type. But the printed counts must sum
        to the headline, or the card contradicts itself two lines apart -- so when
        DriveCentric's own count is on file, the people's split is scaled onto it. */
+    /* The report counted them, so use the count. Scaling the people's rows was
+       only ever a stand-in for a figure the report had all along, and it is the
+       thing that put a third of a car on the card. */
+    const told = statedSplitOf(M);
+    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, other: told.other,
+      known: told.nw + told.us + told.other,
+      newPct: (told.nw + told.us + told.other) > 0 ? told.nw / (told.nw + told.us + told.other) : null,
+      usedPct: (told.nw + told.us + told.other) > 0 ? told.us / (told.nw + told.us + told.other) : null };
     if (statedM && known > 0) {
       const f = statedM.deliveries / known;
       nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10;
@@ -19352,25 +19464,15 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   useEffect(() => { installBloopManager(); }, []);
   /* A store with no goal has no pace, no par tick and no bar to hit, and until
      now the only way to give it one was three screens deep in the store editor.
-     The number belongs where it is read, so the hero asks for it. It writes this
-     month's figure and the standing fallback in one go. */
+     The number belongs where it is read, so the hero asks for it. It writes the
+     month it is standing in and nothing else. */
   const [goalDraft, setGoalDraft] = useState("");
   const [goalOpen, setGoalOpen] = useState(false);
-  const lastGoal = (() => {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
-    const lm = storeGoalFor(store, d.toISOString().slice(0, 7));
-    return lm ? lm.units : 0;
-  })();
-  const saveGoal = () => {
-    const n = Math.max(0, parseInt(goalDraft, 10) || 0);
-    if (!n || !onSaveConfig) { setGoalOpen(false); return; }
-    const next = JSON.parse(JSON.stringify(config));
-    const s = next.stores.find((x) => x.id === store.id);
-    if (!s) return;
-    const g = s.goal || {};
-    s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [ym()]: n } };
-    onSaveConfig(next, { store: store.id, action: "Set the monthly unit goal", detail: `${store.name}: ${n} units` });
-    setGoalOpen(false);
+  const goalMonth = goalMonthState(store, ym());
+  const saveGoal = async (draft = goalDraft) => {
+    /* Left open on a cancel or a bad figure. Closing the field on a "no" would
+       read as if the change had gone through. */
+    if (await saveMonthGoal({ config, store, draft, onSaveConfig })) setGoalOpen(false);
   };
   const paceTone = storePace.tooEarly || !storePace.goal ? "dim" : storePace.tone;
   const paceCol = { g: "#8FE3B3", y: "#F2C57C", r: "#FFA294", dim: "rgba(255,255,255,.6)" }[paceTone];
@@ -19408,16 +19510,16 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   first of the month is one tap and Enter rather than a hunt. */}
               {goalOpen && canSetGoal
                 ? <span className="s2-goalset">
-                    <input type="number" min="0" autoFocus value={goalDraft} placeholder={String(lastGoal || 85)}
+                    <input type="number" min="0" autoFocus value={goalDraft} aria-label="Units to deliver this month"
                       onChange={(e) => setGoalDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") saveGoal(); if (e.key === "Escape") setGoalOpen(false); }} />
-                    <button onClick={saveGoal}>Set</button>
+                    <button onClick={() => saveGoal()}>Set</button>
                   </span>
                 : storePace.goal
                   ? (canSetGoal
                       ? <button className="s2-den s2-goaledit" title="Change this month's goal" onClick={() => { setGoalDraft(String(storePace.goal.units)); setGoalOpen(true); }}>/ {fmtNum(storePace.goal.bar)} goal</button>
                       : <span className="s2-den">/ {fmtNum(storePace.goal.bar)} goal</span>)
-                  : canSetGoal && <button className="s2-den s2-goalask" onClick={() => { setGoalDraft(lastGoal ? String(lastGoal) : ""); setGoalOpen(true); }}>/ set a goal{lastGoal ? ` · last month ${fmtNum(lastGoal)}` : ""}</button>}
+                  : canSetGoal && <button className="s2-den s2-goalask" onClick={() => { setGoalDraft(""); setGoalOpen(true); }}>/ set a goal</button>}
             </div>
             {storePace.goal && (
               <div className="s2-pacewrap bloop-host" tabIndex={0}>
@@ -19510,9 +19612,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="s2-vitals s2-say" style={{ color: paceCol }}>
               {storePace.goal && !storePace.tooEarly ? (
                 <>
-                  <Verdict ratio={storePace.short > 0 ? Math.max(0.01, storePace.projected / storePace.goal.bar) : 1} size={13} />
-                  {storePace.short > 0
-                    ? <>Short by <b>{fmtNum(Math.round(storePace.short))}</b> at this pace</>
+                  <Verdict ratio={storePace.shortAtPace > 0 ? Math.max(0.01, storePace.projected / storePace.goal.bar) : 1} size={13} />
+                  {storePace.shortAtPace > 0
+                    ? <>Short by <b>{fmtNum(Math.round(storePace.shortAtPace))}</b> at this pace</>
                     : <>On pace for <b>{Math.round(storePace.projected)}</b> of {fmtNum(storePace.goal.bar)}</>}
                 </>
               ) : storePace.goal ? <>Too early to call the month &#183; <b>{fmtNum(totalUnits)}</b> of {fmtNum(storePace.goal.bar)}</>
@@ -19547,7 +19649,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     : { bottom: h, height: TARGET_AT - h, deep: pctV < (thr[c.id].yellow ?? target / 2) };
                   return (
                     <div key={c.id} className="s2-hbar bloop-host" tabIndex={0}>
-                      <b>{pctV == null ? "–" : fmtPct(c.pct)}{t && <Verdict ratio={pctV / target} size={10} />}</b>
+                      <b>{pctV == null ? "–" : fmtPct(c.pct)}</b>
                       <span className="s2-hmid">
                         <span className="s2-hcol">
                           <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: pctV == null ? "rgba(255,255,255,.3)" : col }} />
@@ -19581,7 +19683,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
                       <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} />
-                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}<Verdict ratio={v.mean} size={9} /></span>
+                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
                       <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
                         <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
@@ -19736,6 +19838,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
       </div>
 
       {inGrace && <div className="hero-strip"><span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span></div>}
+      {/* Under the hero on purpose: the goal is read three inches above this, so
+          the ask and the answer are on the same screen. */}
+      {canSetGoal && !goalMonth.set && (
+        <GoalAskCard store={store} month={ym()} onSave={(d) => saveGoal(d)} />
+      )}
     </div>
   );
 }
@@ -20071,8 +20178,12 @@ function XcList({ title, hint, rows, col }) {
   );
 }
 
-function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
+function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, restorePoint, onLoadRestorePoint, onSaveRestorePoint, onChange }) {
   const [xcheck, setXcheck] = useState(false);
+  /* The restore point is in its own row now, so it is fetched when this panel
+     opens rather than carried inside every store save. undefined means it has
+     not been looked for yet, which is not the same as there being none. */
+  useEffect(() => { if (restorePoint === undefined) onLoadRestorePoint?.(); }, [restorePoint, onLoadRestorePoint]);
   const phone = usePhoneLayout();
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
@@ -25542,9 +25653,25 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           align-items:center; justify-content:center; width:32px; height:32px; border:none;
           border-radius:50%; background:var(--line); color:var(--ink); cursor:pointer; }
         .coach-empty { display:none; }
-        .topstack::after { content:""; position:absolute; left:0; right:0; top:100%;
-          height:20px; pointer-events:none;
-          background:linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,0)); }
+        /* The stack is the surface, not the pills on it. It is sticky with no
+           background of its own, and on a phone it is 100px tall while the bar
+           covers the top 58 and the chip strip the bottom 33 at 14 percent. So
+           the hero scrolled through a 9px band between them and through the
+           tab pills themselves, which is why Summary and History were legible
+           only against white. On the desk the bar happens to fill the whole
+           stack, which is why this never showed there. */
+        .topstack { background:rgba(255,255,255,.86);
+          backdrop-filter:blur(18px) saturate(1.6);
+          -webkit-backdrop-filter:blur(18px) saturate(1.6);
+          /* The chip strip ended exactly on the stack's own bottom edge, so the
+             pills sat on the seam with the page moving directly under them.
+             Six points of air is the difference between a row of tabs and a row
+             of tabs about to fall off. */
+          padding-bottom:6px; }
+        /* The 20px white fade under the stack went with it. It was covering for
+           the see-through header, and over the green hero it read as a white
+           line that stayed put however far the page scrolled. An opaque header
+           needs no apology under it. */
         .sect-chip { flex:0 0 auto; position:relative; border:1px solid var(--line);
           background:var(--card); border-radius:999px; padding:5px 13px; font:inherit;
           font-size:12.5px; font-weight:650; color:var(--ink-2); cursor:pointer;
@@ -27159,20 +27286,26 @@ button.da-lbrow { cursor:pointer; }
 .ts-body .q-qr-box { align-self:center; }
 .ts-note { margin:0; font-size:11px; color:var(--ink-2); line-height:1.55; }
 .ts-body .q-qr-btns { display:flex; gap:8px; flex-wrap:wrap; }
-.s2-podium { display:flex; gap:8px; margin-bottom:4px; }
-.s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
-        background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
+/* The three at the top carry more weight than they were being given: there was
+   a band of empty page above the roster and these were the smallest cards on
+   it. Bigger, and the places are pixel numerals rather than mono text, which is
+   the app's own way of printing a number that is meant to land.
+   Only this row changes. The roster below, the weakest standard and the card
+   beside it are all left exactly as they were, which Jorge asked for twice. */
+.s2-podium { display:flex; gap:10px; margin-bottom:4px; }
+.s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:13px; cursor:pointer;
+        background:var(--card); border:1px solid var(--line); border-radius:16px; padding:19px 20px;
         font:inherit; color:var(--ink); text-align:left; transition:transform var(--t-swap) var(--ease); }
 .s2-pod:hover { transform:translateY(-2px); }
-.s2-medal { width:26px; height:26px; border-radius:50%; flex:0 0 auto; display:flex;
-        align-items:center; justify-content:center; font:700 12px var(--font-mono); color:#fff; }
+.s2-medal { width:38px; height:38px; border-radius:50%; flex:0 0 auto; display:flex;
+        align-items:center; justify-content:center; color:#fff; }
 .s2-medal.m1 { background:linear-gradient(140deg,#F2BC2B,#D99206); box-shadow:0 3px 8px -3px rgba(217,146,6,.7); }
 .s2-medal.m2 { background:linear-gradient(140deg,#C4CEDA,#93A0AE); box-shadow:0 3px 8px -3px rgba(147,160,174,.7); }
 .s2-medal.m3 { background:linear-gradient(140deg,#D89055,#B0642A); box-shadow:0 3px 8px -3px rgba(176,100,42,.7); }
-.s2-podname { flex:1; min-width:0; font-size:11.5px; font-weight:600;
+.s2-podname { flex:1; min-width:0; font-size:14px; font-weight:600;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.s2-podsub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400; }
-.s2-podval { font:700 19px var(--font-mono); flex:0 0 auto; }
+.s2-podsub { display:block; font-size:11px; color:var(--ink-3); font-weight:400; margin-top:2px; }
+.s2-podval { font:700 26px var(--font-mono); flex:0 0 auto; letter-spacing:-.02em; }
 .s2-gracestrip { display:flex; align-items:center; gap:9px; margin-top:12px; font-size:11px;
         color:var(--ink-2); line-height:1.5; }
 .s2-gracestrip b { color:var(--ink); }
@@ -28112,8 +28245,14 @@ button.da-lbrow { cursor:pointer; }
 .s2-hlbl{ display:inline-flex; align-items:center; gap:5px; }
 .s2-hid{ width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
 /* ---- Online, before there is an Online ---- */
-.onsoon{ max-width:1000px; margin:0 auto; }
+/* Clear of the header. The other content pages start 64px below the topstack
+   and this one started at zero, with the card's top edge against it. */
+.onsoon{ max-width:1000px; margin:64px auto 0; }
 .onsoon-hero{ --hA:#8B5CF6; --hB:#6D3FD6; --hC:#3B1E86; text-align:center; align-items:center; }
+/* The tube is shrink to fit, and the paragraph that used to set its width has
+   gone, which left the tape either side of the sign as two stubs. The sign
+   takes the card so the tape still reads as something across a doorway. */
+.onsoon-hero .s2-tube{ width:100%; }
 .onsoon-sign{ display:flex; align-items:center; gap:12px; width:100%; }
 .onsoon-tape{ flex:1; height:14px; border-radius:3px;
   background:repeating-linear-gradient(135deg, #E4C98D 0 10px, #241A06 10px 20px); opacity:.9; }
@@ -28121,20 +28260,38 @@ button.da-lbrow { cursor:pointer; }
   background:#E4C98D; color:#3A2A08; white-space:nowrap; }
 .onsoon-signin b{ font:700 11px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; }
 .onsoon-head h2{ font:700 30px/1.1 var(--font-display); letter-spacing:-.015em; margin:8px 0 0; text-wrap:balance; }
-.onsoon-head p{ margin:8px auto 0; max-width:52ch; font-size:14.5px; line-height:1.5; color:rgba(255,255,255,.84); }
-.onsoon-prog{ width:min(420px, 100%); margin:4px auto 0; }
-.onsoon-led{ height:10px; }
-.onsoon-proglbl{ display:flex; justify-content:space-between; align-items:baseline; margin-top:6px;
-  font:600 11.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.72); }
-.onsoon-proglbl b{ font-family:var(--font-display); font-size:15px; letter-spacing:0; color:#fff; }
-.onsoon-real{ margin:0 auto; max-width:60ch; font:500 13px/1.6 var(--font-ui); color:rgba(255,255,255,.78); }
 .onsoon-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px; }
 .onsoon-card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+/* The card that asks for the month's goal. It borrows the app's own card, its
+   mono cap and its sage button rather than inventing a treatment: it appears
+   under the hero and above the board, between two surfaces that already look
+   like this, and a third look between them would read as something bolted on. */
+.gask{ background:var(--card); border:1px solid var(--line); border-radius:16px;
+        padding:15px 17px; margin:12px 0 0; display:flex; flex-direction:column; gap:7px;
+        box-shadow:0 1px 2px rgba(0,0,0,.04); }
+.gask-cap{ font:700 9.5px var(--font-mono); letter-spacing:.12em; text-transform:uppercase;
+        color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+.gask-h{ font:600 16px/1.25 var(--font-display); letter-spacing:-.01em; color:var(--ink); }
+.gask-p{ font-size:13px; color:var(--ink-2); max-width:62ch; }
+.gask-act{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:5px; }
+.gask-f{ display:inline-flex; align-items:baseline; gap:6px; border:1px solid var(--line);
+        border-radius:10px; padding:7px 11px; background:var(--bg); }
+.gask-f input{ width:54px; border:0; background:none; padding:0; color:var(--ink);
+        font:700 17px/1 var(--font-display); font-variant-numeric:tabular-nums; }
+.gask-f input:focus{ outline:none; }
+.gask-f:focus-within{ border-color:var(--p2); }
+/* The unit, not a second number: the mono cap keeps it from being read as part
+   of the figure beside it. */
+.gask-f span{ font:700 8.5px var(--font-mono); letter-spacing:.12em;
+        text-transform:uppercase; color:var(--ink-3); }
+.gask-set{ background:var(--p2); color:#fff; border:0; border-radius:12px;
+        padding:9px 18px; cursor:pointer; font:600 13px var(--font-ui); }
+.gask-set:hover{ background:var(--p2d); }
+.gask-set:disabled{ background:var(--ink-3); cursor:default; }
+.bp-page > .gask{ margin:12px 14px 0; }
 .onsoon-card .s2-cap{ color:var(--ink-2); }
-.onsoon-list{ list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:11px; }
-.onsoon-list li{ display:flex; align-items:flex-start; gap:10px; font-size:14px; line-height:1.45; }
-.onsoon-list .pix{ flex:0 0 auto; margin-top:2px; color:#7C4DEE; }
 .onsoon-sub{ margin:10px 0 0; font-size:13.5px; color:var(--ink-2); }
+.onsoon-why{ margin:10px 0 0; font-size:14px; line-height:1.45; }
 .onsoon-outs{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
 .onsoon-go{ gap:7px; }
 .onsoon-foot{ display:flex; align-items:flex-start; justify-content:center; gap:8px; margin:16px auto 0; max-width:62ch;
@@ -28149,7 +28306,10 @@ button.da-lbrow { cursor:pointer; }
      takes the width and the tape goes under it, full width, where it looks
      like what it is. */
   .onsoon-sign{ flex-direction:column; gap:8px; }
-  .onsoon-tape{ width:100%; height:12px; }
+  /* flex:1 from the row layout means flex-basis:0 on whichever axis is the
+     main one. Stacked, that is the height, so the tape collapsed to nothing
+     and the phone has never shown it. */
+  .onsoon-tape{ width:100%; height:12px; flex:none; }
   .onsoon-sign .onsoon-tape:first-child{ display:none; }
   /* The dock floats over the foot of the page, so the last thing on it has
      to end above the dock rather than under it. This was fixed for the Online
