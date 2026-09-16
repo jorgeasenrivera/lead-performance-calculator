@@ -14690,7 +14690,12 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    it went under the arriving sheet the moment that sheet was lifted. */
 .ar-bar{ position:fixed; z-index:105; left:50%; transform:translate(-50%, calc(100% + 40px));
   transition:transform var(--t-settle) var(--spring);
-  bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
+  /* The token, not the raw inset. Android's WebView cannot read env() at all,
+     which is why the shell injects the inset as --shell-inset-bottom, and this
+     was the one bottom-anchored rule not reading it. It is also a zoom root, so
+     a raw env() here was multiplied by the text size the way #334 fixed
+     everywhere else. */
+  bottom:calc(var(--sab, 0px) + 14px);
   display:flex; padding:4px; border-radius:26px;
   background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.13);
   backdrop-filter:blur(10px) saturate(140%); -webkit-backdrop-filter:blur(10px) saturate(140%);
@@ -14835,6 +14840,14 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    Only when the bar is drawn: a store with one room carries no gap for a
    control it does not have. */
 .lpc:has(> .ar-bar) .q-page{ padding-bottom:72px; }
+/* Live Floor, and only Live Floor, by Jorge's decision on 16 September: it is
+   not meant to be a page you scroll. The reserve above is added under a page
+   that already holds two boxes claiming the whole screen, so every room came
+   out one screen tall plus an empty band exactly the height of the reserve,
+   and scrolled by it. Here the reserve comes out of the height instead. The
+   other rooms keep the band, which is what was asked for. */
+.lpc:has(> .ar-bar) .q-page.sf.mc-floor .q-stage,
+.lpc:has(> .ar-bar) .q-page.sf.mc-floor .sf-live{ min-height:calc(var(--dvh) - 72px); }
 .lpc:has(> .ar-bar) .sf-live{ padding-bottom:74px; }
 .lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
 /* Both rooms switched off. Somebody did that deliberately, so it is said
