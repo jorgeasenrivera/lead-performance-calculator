@@ -7588,6 +7588,121 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   };
   const GLYPH = { home: "home", floor: "door", line: "phone" };
   const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
+
+  /* ---- the swipe ----
+     A drag across the screen moves through the same bar at the foot, and the
+     screen follows the thumb rather than waiting for it to let go.
+
+     It follows the thumb only where there is something to follow. The floor and
+     the line are two sheets, so one can be pulled off the other. Home and Live
+     Floor are two TABS OF ONE SHEET, the same `.q-page` with different classes
+     and different content, so there is no second sheet behind the first and
+     nothing to drag: that pair commits when the finger lifts. Making it uniform
+     means rendering the corner and the floor as two sheets, which is a bigger
+     change than this one and is worth doing on its own.
+
+     Three things the gesture has to give way to, in this order:
+       the left edge, which iOS owns for going back;
+       anything that scrolls sideways under the finger, or a person swiping a
+         row of cards changes room by accident;
+       a vertical intent, because the page scrolls and that has to win. */
+  const EDGE = 24;        // iOS's back gesture lives here
+  const START = 10;       // before this, it might still be a scroll
+  const RATIO = 1.2;      // how much more across than down before it is a swipe
+  const TAKE = 0.28;      // how far over before letting go commits it
+  const FLICK = 0.45;     // px per ms that commits whatever the distance
+  const [drag, setDrag] = useState(null);
+  const g = useRef(null);
+
+  const roomOfTab = (t) => (t === "line" ? "line" : "floor");
+  const neighbour = (dx) => {
+    const i = tabs.indexOf(active);
+    const j = dx < 0 ? i + 1 : i - 1;
+    return i < 0 || j < 0 || j >= tabs.length ? null : tabs[j];
+  };
+  /* Sideways scrollers win. Walked up from whatever was touched, because the
+     scroller is usually an ancestor of it rather than the thing itself. */
+  const overScroller = (el) => {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      try {
+        const cs = getComputedStyle(n);
+        if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true;
+      } catch (e) { /* detached mid-gesture */ }
+    }
+    return false;
+  };
+
+  /* Touch events, not pointer events. The app captures the pointer on every
+     press for the held-and-released effect, and a capture on another element
+     fires pointercancel on this one: traced it, and the cancel arrived before a
+     single pointermove did, so the gesture never ran at all. The first version
+     of this looked like it worked only because a cancel was being treated as a
+     release, which committed the switch on a gesture that had already been
+     taken away. Touch events are not affected by pointer capture. */
+  const onDown = (t, target) => {
+    if (tabs.length < 2 || cross) return;
+    if (t.clientX <= EDGE || t.clientX >= window.innerWidth - EDGE) return;
+    if (overScroller(target)) return;
+    g.current = { x0: t.clientX, y0: t.clientY, t0: Date.now(), live: false, to: null, slide: false };
+  };
+  const onMove = (t) => {
+    const s0 = g.current;
+    if (!s0) return;
+    const dx = t.clientX - s0.x0, dy = t.clientY - s0.y0;
+    if (!s0.live) {
+      if (Math.abs(dx) < START) return;
+      if (Math.abs(dx) < Math.abs(dy) * RATIO) { g.current = null; return; }   // the page is scrolling
+      const to = neighbour(dx);
+      if (!to) { g.current = null; return; }
+      s0.live = true; s0.to = to; s0.slide = roomOfTab(to) !== roomOfTab(active);
+      try { buzz(6); } catch (err) {}
+    }
+    if (!s0.slide) return;            // two tabs of one sheet: nothing behind to pull
+    setDrag({ dx, to: s0.to, room: roomOfTab(s0.to) });
+  };
+  /* A cancel is not a release. The browser takes the pointer away when it
+     decides the page is scrolling, and treating that as "the finger lifted
+     here" commits a switch the person had already lost. It springs back. */
+  const onCancel = () => { g.current = null; setDrag(null); };
+  const onUp = (t) => {
+    const s0 = g.current;
+    g.current = null;
+    if (!s0 || !s0.live) { setDrag(null); return; }
+    const dx = t.clientX - s0.x0;
+    const v = Math.abs(dx) / Math.max(1, Date.now() - s0.t0);
+    const took = Math.abs(dx) > window.innerWidth * TAKE || v > FLICK;
+    setDrag(null);
+    if (took) go(s0.to);
+  };
+  /* The listeners are attached once and read the current handlers through a
+     ref, because they close over the tab the person is standing in and that
+     changes under them on every switch. */
+  const hRef = useRef(null);
+  hRef.current = { onDown, onMove, onUp, onCancel };
+  const stackRef = useRef(null);
+  useEffect(() => {
+    const el = stackRef.current;
+    if (!el) return undefined;
+    const one = (e) => (e.touches && e.touches.length === 1 ? e.touches[0] : null);
+    const down = (e) => { const t = one(e); if (t) hRef.current.onDown(t, e.target); };
+    const move = (e) => { const t = one(e); if (t) hRef.current.onMove(t); };
+    const up = (e) => { const t = e.changedTouches && e.changedTouches[0]; if (t) hRef.current.onUp(t); };
+    const cancel = () => hRef.current.onCancel();
+    const opt = { passive: true };
+    el.addEventListener("touchstart", down, opt);
+    el.addEventListener("touchmove", move, opt);
+    el.addEventListener("touchend", up, opt);
+    el.addEventListener("touchcancel", cancel, opt);
+    return () => {
+      el.removeEventListener("touchstart", down, opt);
+      el.removeEventListener("touchmove", move, opt);
+      el.removeEventListener("touchend", up, opt);
+      el.removeEventListener("touchcancel", cancel, opt);
+    };
+  }, []);
+
+
+
   const net = useNet();
   /* Two weights for two different things. No connection is a bar across the
      top of the room in solid sand, with the warn glyph and how old the
@@ -7629,15 +7744,23 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? " x" : "")} style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%", "--ar-to-bg": cross.bg || undefined } : null}>
-      <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")} data-room="line"
-        hidden={room !== "line" && !(cross && cross.from === "line")} inert={room !== "line" ? "" : undefined}>
+      <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")}
+        ref={stackRef}
+        style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%", "--ar-to-bg": cross.bg || undefined }
+          : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%",
+            "--ar-to-bg": groundOf(drag.room, drag.to === "home" ? "corner" : "floor") } : null}>
+      <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")
+        + (drag ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
+        hidden={room !== "line" && !(cross && cross.from === "line") && !(drag && drag.room === "line")}
+        inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
           <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
             variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
-      <div className={"ar-room" + (cross && cross.to === "floor" ? " ar-in" : cross && cross.from === "floor" ? " ar-out" : "")} data-room="floor"
-        hidden={room === "line" && !(cross && cross.from === "floor")} inert={room === "line" ? "" : undefined}>
+      <div className={"ar-room" + (cross && cross.to === "floor" ? " ar-in" : cross && cross.from === "floor" ? " ar-out" : "")
+        + (drag ? (drag.room === "floor" ? " ar-nxt" : " ar-cur") : "")} data-room="floor"
+        hidden={room === "line" && !(cross && cross.from === "floor") && !(drag && drag.room === "floor")}
+        inert={room === "line" ? "" : undefined}>
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
             account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
@@ -14546,6 +14669,21 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    Without it the sliver the leaving room uncovers is the shell behind, which
    is a light grey, and a white edge on a black room is the one thing a phone
    never shows. */
+/* While a finger is on the screen the two sheets are placed by hand and nothing
+   animates: an animation and a drag fighting over the same transform is how a
+   sheet ends up lagging behind the thumb. The one being left moves with the
+   finger, the one arriving sits a screen away on whichever side the finger came
+   from, and the ground underneath is already the arriving room's. */
+.ar-stack.ar-dragging > .ar-room > .q-page.sf{ animation:none !important; transition:none; will-change:transform; }
+.ar-stack.ar-dragging > .ar-room.ar-cur > .q-page.sf{ z-index:102;
+  transform:translate3d(var(--ar-drag, 0px), 0, 0); }
+.ar-stack.ar-dragging > .ar-room.ar-nxt > .q-page.sf{ z-index:101;
+  transform:translate3d(calc(var(--ar-drag, 0px) + var(--ar-nxt, 100%)), 0, 0); }
+.ar-stack.ar-dragging::before{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
+  background:var(--ar-to-bg, var(--gnd-line)); }
+/* The gesture owns the across, the page keeps the down. */
+.ar-stack{ touch-action:pan-y; }
+
 /* The ground leads. This layer sits UNDER both rooms, and it now carries the
    colour of the one arriving rather than one flat dark for every switch. It
    fades in over a little over half the wipe, so the new room's ground is
