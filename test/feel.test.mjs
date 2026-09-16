@@ -160,7 +160,8 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades, so two rooms are never readable through each other");
   assert.ok(!/arDotsIn|arDotsOut|steps\(5,end\)|steps\(3,end\)|@property --ar-r/.test(core), "nothing in the switch is stepped");
   assert.ok(/const roomEl = dest\.closest\("\.q-page\.sf"\) \|\| dest\.closest\("\.ar-room"\);/.test(core), "the mark lands where the room comes to rest, not where it started");
-  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\)\}/.test(core), "the room being left stays on screen for the whole gesture");
+  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),
+    "the room being left stays on screen for the whole gesture, and the one being dragged in is uncovered before the finger reaches it");
 });
 test("the rooms in sunlight: deep green ground, cream on it, only the tokens change, off by default", () => {
   assert.ok(/html\.sun \.q-page\.sf\.mc-floor, html\.sun \.q-page\.sf\.sf-line\{[^}]*background:#2E4A38;/.test(core), "the ground is the curtain's deep green");
@@ -570,4 +571,34 @@ test("the phone's right gutter is one axis, and the sold line never crosses its 
   assert.ok(/@container mchead \(max-width:300px\)\{[^}]*\}\s*\/\*[\s\S]*?\*\/\s*\.mc-side\{ flex-basis:100%; \}/.test(core)
     || /\.mc-side\{ flex-basis:100%; \}/.test(core),
     "the weekday takes its own line when the row is tight, because it is one unbreakable word and used to overflow under the initials");
+});
+
+test("the swipe follows the thumb, and gives way to the three things that outrank it", () => {
+  /* Touch events, not pointer events, and this one is worth holding: the app
+     captures the pointer on every press for the held-and-released effect, and a
+     capture on another element fires pointercancel on this one. Traced in a
+     browser: the cancel arrived before a single pointermove did, so the gesture
+     never ran. The first version only looked like it worked because a cancel
+     was treated as a release and committed the switch. */
+  assert.ok(/el\.addEventListener\("touchstart", down, opt\);/.test(core) && /el\.addEventListener\("touchmove", move, opt\);/.test(core),
+    "the gesture listens on touch, which pointer capture cannot take away");
+  assert.ok(!/onPointerDown=\{onDown\}/.test(core), "and not on pointer events, which it can");
+  assert.ok(/const onCancel = \(\) => \{ g\.current = null; setDrag\(null\); \};/.test(core)
+    && /el\.addEventListener\("touchcancel", cancel, opt\);/.test(core),
+    "a cancel springs back and never commits: it means the gesture was taken away, not that a finger lifted");
+
+  // The three that outrank it, each checked in a browser as well as here.
+  assert.ok(/if \(t\.clientX <= EDGE \|\| t\.clientX >= window\.innerWidth - EDGE\) return;/.test(core), "the left and right edges are the phone's, for going back");
+  assert.ok(/if \(overScroller\(e?\.?target\)\) return;|if \(overScroller\(target\)\) return;/.test(core), "anything that scrolls sideways under the finger wins");
+  assert.ok(/if \(Math\.abs\(dx\) < Math\.abs\(dy\) \* RATIO\) \{ g\.current = null; return; \}/.test(core), "a vertical intent wins, because the page scrolls");
+  assert.ok(/\.ar-stack\{ touch-action:pan-y; \}/.test(core), "and the browser is told the across is ours and the down is its own");
+
+  /* It follows the thumb only where there are two sheets. Home and Live Floor
+     are two tabs of ONE .q-page, so there is nothing behind the first to pull. */
+  assert.ok(/s0\.slide = roomOfTab\(to\) !== roomOfTab\(active\);/.test(core), "whether there is a second sheet to drag is decided when the gesture starts");
+  assert.ok(/if \(!s0\.slide\) return;/.test(core), "and two tabs of one sheet commit on release instead of dragging");
+  assert.ok(/\.ar-stack\.ar-dragging > \.ar-room\.ar-cur > \.q-page\.sf\{ z-index:102;\n\s*transform:translate3d\(var\(--ar-drag, 0px\), 0, 0\); \}/.test(core),
+    "the sheet being left moves with the finger");
+  assert.ok(/\.ar-stack\.ar-dragging > \.ar-room > \.q-page\.sf\{ animation:none !important; transition:none;/.test(core),
+    "and nothing animates while a finger is down, or the sheet lags behind the thumb");
 });
