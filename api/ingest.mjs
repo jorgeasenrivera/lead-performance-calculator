@@ -20,7 +20,7 @@ import {
    that drifts writes a row of the right shape in the right place with one column
    missing, and says nothing at all. */
 import {
-  storeKey, actKey, floorStatsKey, boardKey, reportFileKey, withChannels,
+  storeKey, actKey, floorStatsKey, boardKey, reportFileKey, restoreKey, withChannels,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "./_store-keys.mjs";
 import { stampHours } from "./_hours.mjs";
@@ -309,22 +309,19 @@ function applyToStore(data, entries, sourceLabel) {
   // hourly re-sends would otherwise flush the whole history in a day.
   const snapT = new Date().toISOString();
   const alreadyToday = entries.every((e) => M.imports?.[day]?.[e.type]);
-  if (!alreadyToday) {
-    /* Six, not forty. Every snapshot carries a near-complete copy of the store,
-       and they live INSIDE the store document, so forty of them made the hot
-       row roughly forty times its own weight -- and that row is downloaded on
-       every app load and once per store on the admin overview. That is what ate
-       the database's egress allowance. Six covers most of a week of daily
-       imports, which is as far back as anyone has ever actually restored; the
-       undo screen already says the right thing when a point has aged out. */
-    /* Two, not six. A restore point is a full copy of the store, and it rides
-       inside the row that every single save ships: six of them were three and
-       a half times the store they protect (2.8 MB against 790 kB at the
-       largest store). Two covers the case this exists for, which is an import
-       that went in wrong and the one before it. */
-    next.snapshots = [{ t: snapT, by: "Auto-import", reason: "Before email import", data: snapCopy },
-      ...(next.snapshots || [])].slice(0, 2);
-  }
+  /* The restore point goes back to the caller rather than into `next`, because
+     it lives in a row of its own now. The counting argument that used to sit
+     here, forty down to six down to two, was always about how many copies of
+     the store the store's own row could afford to carry. Out of the row, the
+     question stops being how many and becomes simply the last one.
+
+     It leaves here as data because this function runs inside a compare-and-set
+     retry and must stay synchronous: the write is the caller's to do, once the
+     swap it belongs to has actually landed. */
+  const restorePoint = alreadyToday ? null
+    : { t: snapT, by: "Auto-import", reason: "Before email import", data: snapCopy };
+  // Anything an older build left inside the row goes on the next write.
+  if (next.snapshots) delete next.snapshots;
 
   const nowISO = new Date().toISOString();
   for (const { rows, type, fileName, actDay: fileDay, rollup, stated } of entries) {
@@ -529,7 +526,7 @@ function applyToStore(data, entries, sourceLabel) {
     }
     results.push({ file: fileName, type, day: type === "activity" ? actDay : day, count, skipped, held: heldCount });
   }
-  return { next, results, archiveDue };
+  return { next, results, archiveDue, restorePoint };
 }
 
 /* ---------- routing helpers ---------- */
@@ -781,10 +778,11 @@ export default async function handler(req, res) {
       }
       // Apply inside the swap, so a retry re-applies to whatever the row now holds
       // rather than replaying against the copy we first read.
-      let next = null, lastResults = [], lastArchiveDue = [];
+      let next = null, lastResults = [], lastArchiveDue = [], lastRestorePoint = null;
       const swap = await sbSwap(key, (cur) => {
         const out = applyToStore(cur, mine, "Auto-import (email)");
         next = out.next; lastResults = out.results; lastArchiveDue = out.archiveDue;
+        lastRestorePoint = out.restorePoint;
         return out.next;
       });
       if (!swap.ok) {
@@ -792,6 +790,17 @@ export default async function handler(req, res) {
         console.error("ingest:", why);
         failures.push({ file: mine.map((e) => e.fileName).join(", "), why });
         continue;
+      }
+      /* The restore point, after the store row it protects has landed. Written
+         here and not inside the swap because the swap's apply is synchronous and
+         may run more than once; the last attempt is the one that stuck.
+         Best effort, like the archive below: a restore point that fails to write
+         must never fail an import that already succeeded. It is said out loud in
+         the log, because the cost of losing it quietly is somebody reaching for
+         an undo that is not there. */
+      if (lastRestorePoint) {
+        try { await sbPut(restoreKey(st.id), lastRestorePoint); }
+        catch (e) { console.error(`ingest: ${st.id} imported but its restore point did not save:`, e?.message || e); }
       }
       const results = lastResults;
 

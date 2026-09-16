@@ -15,6 +15,7 @@ const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", imp
 const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
+const keys = fs.readFileSync(new URL("../api/_store-keys.mjs", import.meta.url), "utf8");
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8");
 const sm = fs.readFileSync(new URL("../api/_store-month.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
@@ -325,7 +326,7 @@ test("five-second pass, item 2: the shortfall is drawn, and its height is the se
   assert.ok(/const col = t \? t\.col : "rgba\(255,255,255,\.3\)";/.test(mgr), "the fill takes the verdict, not the identity");
 });
 
-test("the record slims down: backups prune by what is on the server, day rows have a window, restore points are two, no legacy stars", () => {
+test("the record slims down: backups prune by what is on the server, day rows have a window, restore points left the store row, no legacy stars", () => {
   assert.ok(/async function saveShared\(key, value, quiet\) \{/.test(core) && /lastSaveError = null; if \(!quiet\) buzz\("taken"\);/.test(core), "housekeeping writes do not buzz a phone");
   assert.ok(/await saveShared\(row\.key, null, true\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true\)/.test(core), "the prunes and the backup rows are housekeeping");
   assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
@@ -333,7 +334,15 @@ test("the record slims down: backups prune by what is on the server, day rows ha
   assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
   assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId\) \{/.test(core), "the day rows have a window");
   assert.ok(/const GOAL_LOOKBACK = 21;/.test(core), "and the window clears the longest read of them by a fortnight");
-  assert.ok(/\]\.slice\(0, 2\),/.test(core) && /\]\.slice\(0, 2\),/.test(mgr) && /\.\.\.\(next\.snapshots \|\| \[\]\)\]\.slice\(0, 2\);/.test(ing), "a row carries two restore points, not six, eight or twelve");
+  /* A store row carries NO restore points now. It used to carry two, and before
+     that six, and before that forty, and every one of those numbers was an
+     answer to "how many copies of the store can the store's own row afford".
+     Out of the row, the question stops being how many. */
+  assert.ok(/export const restoreKey   = \(storeId\) => `lpc:store:\$\{storeId\}:restore:v1`;/.test(keys),
+    "the restore point has a row of its own, under lpc:store: so it lands on the existing row policy");
+  assert.ok(!/next\.snapshots = \[/.test(core + mgr + ing), "nothing writes a restore point back into the store row");
+  assert.ok(/if \(next && next\.snapshots\) delete next\.snapshots;/.test(core) && /if \(next\.snapshots\) delete next\.snapshots;/.test(ing),
+    "and both writers drop the ones older builds left inside it, which is the shape Jorge chose over migrating them");
   assert.ok(!/data\.stars\?\.\[/.test(core + mgr) && !/const starsFor/.test(mgr), "the star count RockEd replaced is no longer read");
   assert.ok(/return null;\s*\/\/ no RockEd mark at all/.test(core), "no mark means no mark");
 });
@@ -483,4 +492,30 @@ test("the shortfall printed next to \"at this pace\" is the pace's, not the sell
   assert.ok(/Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr), "the sentence prints the pace's shortfall");
   assert.ok(/out\.needPerDay = daysLeft > 0 \? out\.short \/ daysLeft : null;/.test(mgr), "and what to sell a day is still worked from the sell gap");
   assert.ok(!/Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr), "the two are never swapped back");
+});
+
+test("a restore point survives leaving the store row: one writer, one reader, and an undo that still matches its own upload", () => {
+  /* The point of moving it is that the common path stops carrying it. So the
+     things worth holding are that nobody put it back, and that the paths which
+     genuinely need it still find it. */
+  assert.ok(/const saveRestorePoint = useCallback\(async \(storeId, point\) => \{/.test(core),
+    "one writer for the restore row, so the three places that take a point cannot disagree about where it goes");
+  assert.equal(core.split("saveShared(restoreKey(storeId), point)").length - 1, 1,
+    "and it is the only place in the app that writes that row");
+  assert.ok(/const snapT = await takeRestorePoint\(view, next, "Before import"\);/.test(core),
+    "the import waits for its restore point, so a failed write is known here rather than at the undo");
+
+  /* The undo used to search an array. With one point in a row of its own the
+     stamp check is what stops it rewinding to a point taken before some later
+     import, which is the same protection the find() gave. */
+  assert.ok(/const snap = restorePoint && restorePoint\.t === u\.snapT \? restorePoint : null;/.test(mgr),
+    "an undo only uses the restore point that was taken for that upload");
+  assert.ok(/if \(restorePoint === undefined\) onLoadRestorePoint\?\.\(\)/.test(mgr),
+    "the panel fetches it when it opens, and undefined is not the same as none");
+
+  // The pipeline hands it out rather than writing it, because applyToStore runs
+  // inside a compare-and-set retry and has to stay synchronous.
+  assert.ok(/return \{ next, results, archiveDue, restorePoint \};/.test(ing), "the pipeline returns its restore point");
+  assert.ok(/await sbPut\(restoreKey\(st\.id\), lastRestorePoint\)/.test(ing), "and the caller writes it once the store row it protects has landed");
+  assert.ok(/imported but its restore point did not save/.test(ing), "a restore point that fails to write says so rather than failing the import");
 });

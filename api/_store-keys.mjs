@@ -25,6 +25,19 @@ export const storeKey     = (storeId) => `lpc:store:${storeId}:v2`;
 export const actKey       = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
 export const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
 export const boardKey     = (storeId) => `lpc:board:${storeId}:v1`;
+/* The restore point taken before an import, in a row of its own.
+   It used to live at `snapshots` INSIDE the store row, and a restore point is
+   very nearly a full copy of the store, so every save of any kind shipped a
+   second store across the wire. That is what pushed writes towards the database
+   statement timeout, and it is why the thing was capped at one entry: not
+   because one is the right number, but because the row could not carry more.
+
+   The prefix is `lpc:store:` on purpose. The row policy allows exactly five
+   prefixes and checks `has_store(split_part(key, ':', 3))`, so a tidier-looking
+   `lpc:restore:%` would be refused and the write would fail quietly. As
+   `lpc:store:<id>:restore:v1` it lands on the policy the split activity rows
+   and the daily digest already ride on, and needs no SQL change at all. */
+export const restoreKey   = (storeId) => `lpc:store:${storeId}:restore:v1`;
 /* Where an emailed report's own file is archived, exactly as it arrived. The
    reports are sent ONLY to the pipeline, so without this nobody could ever look
    at the PDF a number came from. Keyed by store, arrival day and a sanitised
