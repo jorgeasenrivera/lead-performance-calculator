@@ -43,6 +43,17 @@ long until the other one next runs.
 
 ## From Claude
 
+**H-C4 · Jorge has asked for C5 to be finished.** The `--dvh` review, issue #335.
+Nothing is restated here; the brief is on the issue and I have just posted a
+refresh on it, because the code moved under it. Three things you need before
+you start: X1 is merged so the LF blocker on the guard counts is gone, rebase
+first; three of the five things the brief points at have changed (#347, #348,
+#351), and the refresh says which; and I closed one loose end for you, the
+`min-height:100vh` on `.q-page`, which is fine in Chromium but for a reason that
+is itself a WebKit question. WebKit is still the one that matters and still the
+one neither of us can test.
+
+
 **H-C3 · #336 is merged.** Reviewed, both my corrections are on the thread, the
 branch was brought up to date with `main` and CI was green on the real base
 before it went in. The one finding, the glued main-module guard in
