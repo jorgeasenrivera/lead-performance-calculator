@@ -602,3 +602,23 @@ test("the swipe follows the thumb, and gives way to the three things that outran
   assert.ok(/\.ar-stack\.ar-dragging > \.ar-room > \.q-page\.sf\{ animation:none !important; transition:none;/.test(core),
     "and nothing animates while a finger is down, or the sheet lags behind the thumb");
 });
+
+test("the round-up's chip stays inside its card when the row is full", () => {
+  /* It took two passes to find this, and the first guess was wrong twice over.
+     It is not the window: these cards are a fixed 201px from 1280 to 2560. It
+     is HOW MANY cards share the row. A store with yesterday's sold split gets
+     two extra, New and Used, and five columns of minmax(108px, 1fr) collapse to
+     112px each. At that width the tube, the figure and the chip stop fitting,
+     and with nothing allowed to give the overflow went outside the card:
+     measured at 3px past the border, and 69px inside it after.
+
+     The demo store has no sold split, so it only ever draws three cards and the
+     whole thing is invisible in the mock. That is why this is a source guard
+     and not something the feel run would have caught. */
+  assert.ok(/\.ru2-stat-row \{ display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; \}/.test(mgr),
+    "the row may wrap, so the chip drops under the figure instead of off the card");
+  assert.ok(/\.ru2-stat-num \{ min-width:0; \}/.test(mgr),
+    "and the figure may shrink rather than push the chip out");
+  assert.ok(/\.ru2-stats \{ display:grid; grid-template-columns:repeat\(auto-fit, minmax\(108px, 1fr\)\);/.test(mgr),
+    "the column floor is what makes this possible at all, and it is the thing to re-measure if it changes");
+});
