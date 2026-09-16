@@ -118,7 +118,7 @@ These are not agent work. They are here so nobody proposes them again.
 | J1 | Delete the empty "sage" Expo project on the jorgeasenriv team, then retry the transfer. | waiting on Jorge |
 | J2 | Delete the Vercel project `lead-performance-calculator-srnl`. | done 14 September |
 | J3 | Have a word with a salesperson about the PIN coming out of sign-in (#326). | done 15 September |
-| J4 | **Run the stock-split backfill.** `node scripts/backfill-stock-split.mjs` says what it would do and changes nothing; `--write` does it. It needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the real project, which no agent has and none should. Ten files to read, one per store per month. Jorge asked to be reminded, so raise it at the start of every session until it is done. | waiting on Jorge |
+| J4 | **Run the stock-split backfill.** `node scripts/backfill-stock-split.mjs` says what it would do and changes nothing; `--write` does it. It needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for the real project, which no agent has and none should. Ten files to read, one per store per month. Jorge asked to be reminded, so raise it at the start of every session until it is done. **A reminder is scheduled for 17 September, 9am ET**, which Jorge asked for on the 16th (routine `trig_015a4gDTXxKSWAmxNJLxeL82`, one shot, push and email). It carries no connectors, so that session cannot read Supabase to check whether it has already been run; it is told to say so rather than guess. | waiting on Jorge |
 | J5 | **The Expo plan.** Upgraded by Jorge on 15 September, and proved rather than assumed: #340 got a real iOS check (build 32, four and a half minutes, not the 62-second skip that means "could not check") and merged. | done 15 September |
 
 ## Done
