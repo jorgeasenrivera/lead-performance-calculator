@@ -13699,7 +13699,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         <div className="s2-podium">
           {top3.map((r, i) => (
             <button key={r.name} className={"s2-pod" + (i === 0 ? " first" : "")} onClick={() => onFocus && onFocus(r.name)}>
-              <span className={"s2-medal m" + (i + 1)}>{i + 1}</span>
+              <span className={"s2-medal m" + (i + 1)}><DotNum value={String(i + 1)} dot={4} color="#fff" /></span>
               <span className="s2-podname">{r.name}
                 <span className="s2-podsub">{r.passing ? `on standard · ${r.met}/${r.total} above bar` : `${r.met}/${r.total} standards`}</span>
               </span>
@@ -13929,7 +13929,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
                 <i style={{ height: h.toFixed(1) + "%" }} />{gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")} aria-hidden="true" style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}<s />
               </span>
-              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
+              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
                 <div className="bw-title">{def.label}</div>
                 <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -13959,7 +13959,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               })()}
               <text x="22" y="18.4" textAnchor="middle" style={{ font: "700 8.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
             </svg>
-            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
+            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i></span>
             <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
               <div className="bw-title">{def.label}</div>
               <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -19649,7 +19649,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     : { bottom: h, height: TARGET_AT - h, deep: pctV < (thr[c.id].yellow ?? target / 2) };
                   return (
                     <div key={c.id} className="s2-hbar bloop-host" tabIndex={0}>
-                      <b>{pctV == null ? "–" : fmtPct(c.pct)}{t && <Verdict ratio={pctV / target} size={10} />}</b>
+                      <b>{pctV == null ? "–" : fmtPct(c.pct)}</b>
                       <span className="s2-hmid">
                         <span className="s2-hcol">
                           <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: pctV == null ? "rgba(255,255,255,.3)" : col }} />
@@ -19683,7 +19683,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
                       <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} />
-                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}<Verdict ratio={v.mean} size={9} /></span>
+                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
                       <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
                         <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
@@ -27286,20 +27286,26 @@ button.da-lbrow { cursor:pointer; }
 .ts-body .q-qr-box { align-self:center; }
 .ts-note { margin:0; font-size:11px; color:var(--ink-2); line-height:1.55; }
 .ts-body .q-qr-btns { display:flex; gap:8px; flex-wrap:wrap; }
-.s2-podium { display:flex; gap:8px; margin-bottom:4px; }
-.s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
-        background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
+/* The three at the top carry more weight than they were being given: there was
+   a band of empty page above the roster and these were the smallest cards on
+   it. Bigger, and the places are pixel numerals rather than mono text, which is
+   the app's own way of printing a number that is meant to land.
+   Only this row changes. The roster below, the weakest standard and the card
+   beside it are all left exactly as they were, which Jorge asked for twice. */
+.s2-podium { display:flex; gap:10px; margin-bottom:4px; }
+.s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:13px; cursor:pointer;
+        background:var(--card); border:1px solid var(--line); border-radius:16px; padding:19px 20px;
         font:inherit; color:var(--ink); text-align:left; transition:transform var(--t-swap) var(--ease); }
 .s2-pod:hover { transform:translateY(-2px); }
-.s2-medal { width:26px; height:26px; border-radius:50%; flex:0 0 auto; display:flex;
-        align-items:center; justify-content:center; font:700 12px var(--font-mono); color:#fff; }
+.s2-medal { width:38px; height:38px; border-radius:50%; flex:0 0 auto; display:flex;
+        align-items:center; justify-content:center; color:#fff; }
 .s2-medal.m1 { background:linear-gradient(140deg,#F2BC2B,#D99206); box-shadow:0 3px 8px -3px rgba(217,146,6,.7); }
 .s2-medal.m2 { background:linear-gradient(140deg,#C4CEDA,#93A0AE); box-shadow:0 3px 8px -3px rgba(147,160,174,.7); }
 .s2-medal.m3 { background:linear-gradient(140deg,#D89055,#B0642A); box-shadow:0 3px 8px -3px rgba(176,100,42,.7); }
-.s2-podname { flex:1; min-width:0; font-size:11.5px; font-weight:600;
+.s2-podname { flex:1; min-width:0; font-size:14px; font-weight:600;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.s2-podsub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400; }
-.s2-podval { font:700 19px var(--font-mono); flex:0 0 auto; }
+.s2-podsub { display:block; font-size:11px; color:var(--ink-3); font-weight:400; margin-top:2px; }
+.s2-podval { font:700 26px var(--font-mono); flex:0 0 auto; letter-spacing:-.02em; }
 .s2-gracestrip { display:flex; align-items:center; gap:9px; margin-top:12px; font-size:11px;
         color:var(--ink-2); line-height:1.5; }
 .s2-gracestrip b { color:var(--ink); }
