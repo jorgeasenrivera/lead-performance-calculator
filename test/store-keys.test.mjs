@@ -69,6 +69,7 @@ test("the keys themselves", () => {
 // ---- days that already have a row of their own ----
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 test("an older day that already has its own row keeps being written to it", () => {
   /* Rows are read back whatever their age and they win over the copy embedded in
@@ -79,7 +80,7 @@ test("an older day that already has its own row keeps being written to it", () =
 
      Read off the source because the writer talks to the database and cannot be
      called here; this holds the one condition that decides it. */
-  const ROOT = new URL("..", import.meta.url).pathname;
+  const ROOT = fileURLToPath(new URL("..", import.meta.url));
   const src = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
   const fn = src.slice(src.indexOf("async function saveActivityDays("),
                        src.indexOf("/* ---- the daily digest"));

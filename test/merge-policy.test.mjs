@@ -26,9 +26,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { FIELD_POLICY, STRATEGIES, DEAD_FIELDS } from "../api/_store-merge.mjs";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const MERGE = fs.readFileSync(path.join(ROOT, "api/_store-merge.mjs"), "utf8");
 const INGEST = fs.readFileSync(path.join(ROOT, "api/ingest.mjs"), "utf8");
 
