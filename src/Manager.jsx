@@ -14495,8 +14495,17 @@ function WelcomeCard({ store, onDismiss }) {
 }
 
 /* ---------------- Backup / restore ---------------- */
-function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore }) {
+function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRestorePoint, onRestoreStore, onRestoreAll }) {
   const [busy, setBusy] = useState(false);
+  /* Restore points are one row per store now, so this panel fetches the ones it
+     is about to list. It is the only screen that shows all of them at once, and
+     it is admin-only and rarely opened, which is exactly why they should not be
+     riding along in every store save for the rest of the app's life. */
+  useEffect(() => {
+    for (const st of config.stores || []) {
+      if (restorePoints[st.id] === undefined) onLoadRestorePoint?.(st.id);
+    }
+  }, [config.stores, restorePoints, onLoadRestorePoint]);
   const [msg, setMsg] = useState("");
   const [autoList, setAutoList] = useState(null);
 
@@ -14907,9 +14916,13 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
 
       <div className="card">
         <h3>Restore points</h3>
-        <p className="hint">Taken before every import. The last 8 are kept per store.</p>
+        {/* It said "the last 8 are kept" and one was kept, which is the sort of
+            line somebody plans around and then finds out about at the worst
+            moment. One is what the code has always done. */}
+        <p className="hint">Taken before every import. The most recent one is kept per store.</p>
         {config.stores.map((s) => {
-          const snaps = adminData[s.id]?.snapshots || [];
+          const point = restorePoints[s.id];
+          const snaps = point ? [point] : [];
           return (
             <div key={s.id} className="snap-store">
               <div className="snap-store-name">
@@ -15555,7 +15568,10 @@ function UploadHistory({ data, onChange, storeId }) {
   };
 
   const undoUpload = async (u) => {
-    const snap = (data.snapshots || []).find((s) => s.t === u.snapT);
+    /* One restore point, in its own row, and it is the right one only if it was
+       taken for THIS upload. Matching on the stamp is what stops an undo
+       rewinding to a point taken before some later import. */
+    const snap = restorePoint && restorePoint.t === u.snapT ? restorePoint : null;
     const after = laterThan(u);
     if (!snap) {
       toast(
@@ -15577,19 +15593,18 @@ function UploadHistory({ data, onChange, storeId }) {
 
     setBusy(true);
     const current = JSON.parse(JSON.stringify(data));
+    // The undo itself is undoable: the state being left becomes the restore
+    // point, written to the restore row rather than into the store.
+    await onSaveRestorePoint?.({ t: new Date().toISOString(), by: "-", reason: "Before undo",
+      data: JSON.parse(JSON.stringify({
+        roster: current.roster, months: current.months, activity: current.activity,
+        plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+        stars: current.stars, goals: current.goals, baselines: current.baselines,
+        excluded: current.excluded,
+      })) });
     const restored = {
       ...current,
       ...snap.data,
-      snapshots: [
-        { t: new Date().toISOString(), by: "-", reason: "Before undo", data: JSON.parse(JSON.stringify({
-          roster: current.roster, months: current.months, activity: current.activity,
-          plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
-          stars: current.stars, goals: current.goals, baselines: current.baselines,
-          excluded: current.excluded,
-        })) },
-        ...(current.snapshots || []),
-      ].slice(0, 2),
-      // the undo itself is undoable
       importLog: (current.importLog || []).filter((x) => new Date(x.t) < new Date(u.t)),
       // these are yours, not the report's: never rewind them
       goals: current.goals,
@@ -20163,8 +20178,12 @@ function XcList({ title, hint, rows, col }) {
   );
 }
 
-function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
+function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, restorePoint, onLoadRestorePoint, onSaveRestorePoint, onChange }) {
   const [xcheck, setXcheck] = useState(false);
+  /* The restore point is in its own row now, so it is fetched when this panel
+     opens rather than carried inside every store save. undefined means it has
+     not been looked for yet, which is not the same as there being none. */
+  useEffect(() => { if (restorePoint === undefined) onLoadRestorePoint?.(); }, [restorePoint, onLoadRestorePoint]);
   const phone = usePhoneLayout();
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};

@@ -22,7 +22,7 @@ import {
   mapDailyActivityGrid, mapDeliverySummaryGrid, reportBelongsElsewhere,
 } from "../api/_report-parsers.mjs";
 import {
-  storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
+  storeKey, actKey, floorStatsKey, boardKey, reportFileKey, restoreKey,
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
@@ -1761,6 +1761,17 @@ export default function LeadPerformanceCalculator() {
   const [storeLoadError, setStoreLoadError] = useState("");
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
+  /* Restore points, by store, read from their own rows. They are loaded when
+     something is about to show or use one rather than with the store, because
+     the whole point of moving them out is that the common path never carries
+     them. `null` means looked and found none; `undefined` means not looked. */
+  const [restorePoints, setRestorePoints] = useState({});
+  const loadRestorePoint = useCallback(async (storeId) => {
+    if (!storeId) return null;
+    const point = await loadShared(restoreKey(storeId), null).catch(() => null);
+    setRestorePoints((p) => ({ ...p, [storeId]: point || null }));
+    return point || null;
+  }, []);
   const [tab, setTab] = useState("board");
   useEffect(() => { try { window.__bgWake && window.__bgWake(4000); } catch (e) {} }, [tab, appModule]);
   // drawerOpen now lives in AppShell, which is the only thing that opens it.
@@ -2333,15 +2344,14 @@ export default function LeadPerformanceCalculator() {
       alert("That change was blocked because it would have wiped this store's records. Nothing was lost.\n\nReload the page and try again. If it happens twice, use the Help button in the corner to report it, because that means something is wrong.");
       return;
     }
-    // Keep the saved blob small. Snapshots are by far the biggest bloat (each is
-    // roughly a full copy of the store), and every save ships the whole blob, so a
-    // pile of them is what pushed writes past the database statement timeout. Cap
-    // them hard on EVERY save, so the first save after this permanently shrinks it.
-    // Snapshots are full copies of the store and the single biggest bloat in the saved
-    // blob; keep only the most recent one so writes stay well under the DB timeout.
-    if (next && Array.isArray(next.snapshots) && next.snapshots.length > 1) {
-      next.snapshots = next.snapshots.slice(0, 1);
-    }
+    /* Restore points live in their own row now, so any still sitting inside a
+       store row are the old shape and go on the next save. Dropped rather than
+       migrated, which Jorge chose knowing the cost: the one restore point a
+       store is carrying right now is lost, and the next import writes a fresh
+       one into the new row within the hour anybody imports anything. Migrating
+       would have meant reading and rewriting every store to save a snapshot
+       that is superseded the next time a report lands. */
+    if (next && next.snapshots) delete next.snapshots;
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
 
@@ -2404,19 +2414,36 @@ export default function LeadPerformanceCalculator() {
     });
   }, []);
 
-  // Keep a rolling set of restore points so a bad import is never fatal.
-  const snapshotStore = (data, reason) => {
-    const copy = JSON.parse(JSON.stringify({
+  /* The restore point taken before a bad import can ruin a month, now written
+     to a row of its own rather than into the store it is a copy of.
+     It returns the stamp so the import log can point back at the exact state
+     before it, and it deliberately does NOT touch `data`: a restore point that
+     travels inside the thing it is protecting doubles the size of every save. */
+  /* One writer for the restore row, so the three places that make a restore
+     point cannot disagree about where it goes or what shape it is. */
+  const saveRestorePoint = useCallback(async (storeId, point) => {
+    await saveShared(restoreKey(storeId), point);
+    setRestorePoints((p) => ({ ...p, [storeId]: point }));
+    return point.t;
+  }, []);
+  const takeRestorePoint = async (storeId, data, reason) => {
+    const t = new Date().toISOString();
+    const point = { t, by: session?.name || "-", reason, data: JSON.parse(JSON.stringify({
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
       excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
-    }));
-    const t = new Date().toISOString();
-    const snaps = data.snapshots || [];
-    snaps.unshift({ t, by: session?.name || "-", reason, data: copy });
-    data.snapshots = snaps.slice(0, 1);
-    return t;   // so an upload can point back at the exact state before it
+    })) };
+    /* Awaited, not fired and forgotten. If this write loses, the import that
+       follows is not undoable, and the honest thing is to know that here rather
+       than to discover it when somebody reaches for the undo. */
+    try {
+      await saveRestorePoint(storeId, point);
+      return t;
+    } catch (e) {
+      setRestorePoints((p) => ({ ...p, [storeId]: null }));
+      return null;
+    }
   };
 
   // Apply already-typed report entries. Ambiguous delivery files are resolved before we get here.
@@ -2440,7 +2467,7 @@ export default function LeadPerformanceCalculator() {
     const tickDayFor = (type) => (type === "activity" || month !== today().slice(0, 7)) ? day : today();
     try { console.log("[LPC import] activityDay=" + activityDay + " actDay=" + actDay + " month=" + month + " today=" + today() + " types=" + JSON.stringify((entries || []).map((e) => e && e.type))); } catch (e) {}
     let next = JSON.parse(JSON.stringify(storeData));
-    const snapT = snapshotStore(next, "Before import");
+    const snapT = await takeRestorePoint(view, next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
     const M = next.months[month];
     // A month written by an older build can exist without one of these, and the
@@ -3301,6 +3328,7 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
               <BackupPanel config={config} adminData={adminData} session={session}
+                restorePoints={restorePoints} onLoadRestorePoint={loadRestorePoint}
                 onRestoreAll={async (backup) => {
                   await saveShared(CONFIG_KEY, backup.config);
                   saveShared(PUBLIC_STORES_KEY, publicSlice(backup.config)).catch(() => {});
@@ -3314,18 +3342,15 @@ export default function LeadPerformanceCalculator() {
                 }}
                 onRestoreStore={async (storeId, snap) => {
                   const current = adminData[storeId] || emptyStoreData();
-                  const restored = {
-                    ...current,
-                    ...snap.data,
-                    // keep the existing restore points, and add one for the state we're leaving
-                    snapshots: [
-                      { t: new Date().toISOString(), by: session.name, reason: "Before rollback", data: JSON.parse(JSON.stringify({
-                        roster: current.roster, months: current.months, activity: current.activity,
-                        plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
-                      })) },
-                      ...(current.snapshots || []),
-                    ].slice(0, 2),
-                  };
+                  /* The state being left becomes the restore point, so a
+                     rollback is itself undoable. It goes to the restore row, not
+                     into the store: that was the whole bloat. */
+                  await saveRestorePoint(storeId, { t: new Date().toISOString(), by: session.name,
+                    reason: "Before rollback", data: JSON.parse(JSON.stringify({
+                      roster: current.roster, months: current.months, activity: current.activity,
+                      plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+                    })) });
+                  const restored = { ...current, ...snap.data };
                   /* A rollback has to be able to undo a deletion, and the plate log
                      records deletions as tombstones — which would otherwise filter
                      the restored plates straight back out on the next merge. Lift the
@@ -3427,7 +3452,7 @@ export default function LeadPerformanceCalculator() {
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} onCoach={() => setTab("coaching")} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
-                {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <><ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />
                   <ChecklistEditor config={config} storeId={view} onChange={persistConfig} /></>}
               </>
@@ -3465,7 +3490,7 @@ export default function LeadPerformanceCalculator() {
                 {/* The gutter the Dashboard has had all along. These four were
                     rendered straight into .page, which carries no padding, so they
                     ran edge to edge on anything wider than a laptop. */}
-                {tab === "import" && <div className="tab-page"><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "import" && <div className="tab-page"><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
                 {tab === "standards" && isAdmin && <div className="tab-page"><TargetsEditor config={config} storeId={view} data={storeData} onChange={persistConfig} /></div>}
