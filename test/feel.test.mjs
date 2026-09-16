@@ -554,10 +554,33 @@ test("the phone's right gutter is one axis, and the sold line never crosses its 
      at Largest and 13.8px in. A 360px phone wrapped at Normal. */
   assert.ok(/\.mc-trail\{[^}]*container-type:inline-size; container-name:mctl;/.test(core),
     "the caption is measured against the chart's own box, because a zoom does not move a media query");
-  assert.ok(/font-size:min\(9\.5px, 2\.9cqw\);/.test(core),
-    "it shrinks to fit rather than wrapping, which is what Jorge chose over stacking it");
-  assert.ok(!/calc\(3\.4cqw \/ var\(--sftxt/.test(core),
-    "and it is not divided by the text size as well: a container unit already tracks the zoom, and doing both squared it");
+  /* Measured, not guessed. Two coefficients were tried and both were wrong,
+     because no constant can be right for a string whose length is not fixed:
+     the pace word is "ON PACE" on a good month and "12.5 BEHIND" on a bad one.
+     On a real phone the second one overran the card and printed the three parts
+     into each other, "SEP 1GOAL 40 ... BEHINDSEP 3", with the right end off the
+     screen. The browser is asked how wide the line is instead. */
+  assert.ok(/font-size:calc\(9\.5px \* var\(--tl-fit, 1\)\);/.test(core),
+    "the caption's size comes from a measurement, so it prints full size when it fits and shrinks only by what it must");
+  assert.ok(/fit = Math\.max\(FLOOR, fit \* \(have \/ used\(\)\)\);/.test(core),
+    "and the measurement is what is needed against what there is");
+  assert.ok(/for \(let pass = 0; pass < 2 && used\(\) > have; pass\+\+\)/.test(core),
+    "twice, because scaling the type does not scale the drawn width by the same ratio and one pass lands over");
+  assert.ok(/return w \+ 16;/.test(core), "with the air between the parts counted as needed, or they print into each other");
+  assert.ok(/const FLOOR = 6 \/ 9\.5;/.test(core), "shrinking stops at six points, below which nobody reads it anyway");
+
+  /* The change that makes the whole class of bug impossible, rather than the
+     one that hides it: the caption used to be pinned by its BOTTOM edge, so
+     every extra line grew up and across the sold line. */
+  assert.ok(/\.mc-tl\{ position:absolute; left:0; right:0; top:calc\(100% \+ 1px\); bottom:auto;/.test(core),
+    "the caption hangs downward from the chart, so a second line grows where there is nothing to cross");
+  assert.ok(/\.mc-tl\[data-tl-wrap\] > span\{ white-space:normal; overflow-wrap:anywhere; \}/.test(core),
+    "and only once the type has floored may the parts break inside themselves");
+  /* The declaration, not any mention of it: the comment above the rule names
+     both of the coefficients that were tried, and that history is the useful
+     part of the comment. */
+  assert.ok(!/font-size:min\(9\.5px, 2\.9cqw\);/.test(core) && !/font-size:min\(9\.5px, calc\(3\.4cqw/.test(core),
+    "neither guessed coefficient is still SETTING the size");
   assert.ok(/\.mc-tl\{[^}]*white-space:nowrap;/.test(core) && /\.mc-tl > span\{ white-space:nowrap; \}/.test(core),
     "nothing in the caption may wrap, which is the whole point");
 
@@ -568,9 +591,12 @@ test("the phone's right gutter is one axis, and the sold line never crosses its 
   assert.ok(!/className="mc-help"/.test(core), "the question mark is gone: the sheet behind the initials already opened the same help panel");
   assert.ok(/\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)/.test(core),
     "the initials are exempt from the card stacking rules, or position:relative wins and they never reach the gutter");
-  assert.ok(/@container mchead \(max-width:300px\)\{[^}]*\}\s*\/\*[\s\S]*?\*\/\s*\.mc-side\{ flex-basis:100%; \}/.test(core)
-    || /\.mc-side\{ flex-basis:100%; \}/.test(core),
-    "the weekday takes its own line when the row is tight, because it is one unbreakable word and used to overflow under the initials");
+  /* The weekday drops to its own line only when the row truly cannot hold it.
+     At 300px, borrowed from the manager's corner-head rule next door without
+     measuring what THIS row needs, it fired on a real phone at Normal and put
+     the day under the calendar when there was room beside it. */
+  assert.ok(/@container mchead \(max-width:250px\)\{\n\s*\.mc-side\{ flex-basis:100%; \}/.test(core),
+    "the weekday drops at 250px, below the width where it can sit beside the calendar");
 });
 
 test("the swipe follows the thumb, and gives way to the three things that outrank it", () => {

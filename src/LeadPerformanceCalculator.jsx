@@ -7577,8 +7577,17 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   if (list.includes("floor")) tabs.push("home", "floor");
   if (list.includes("line")) tabs.push("line");
   const active = room === "line" ? "line" : tab === "corner" ? "home" : "floor";
-  const go = (t) => {
-    buzz(8);
+  /* A button is a press, so it answers under the finger. A swipe is a throw, so
+     it answers when the thing you threw arrives. Jorge's call from a real phone
+     on 16 September, and it is the right one: buzzing at the start of a swipe
+     confirms the gesture, but the gesture is not the point, the room is. */
+  const landBuzz = useRef(null);
+  useEffect(() => () => clearTimeout(landBuzz.current), []);
+  const go = (t, bySwipe) => {
+    if (bySwipe) {
+      clearTimeout(landBuzz.current);
+      landBuzz.current = setTimeout(() => buzz(8), MOTION.wipe);
+    } else buzz(8);
     if (t === "line") { pick("line", null); return; }
     /* The destination tab is handed in, because setTab has not run yet when the
        cross is set up and the ground would otherwise be the one being left. */
@@ -7655,7 +7664,6 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       const to = neighbour(dx);
       if (!to) { g.current = null; return; }
       s0.live = true; s0.to = to; s0.slide = roomOfTab(to) !== roomOfTab(active);
-      try { buzz(6); } catch (err) {}
     }
     if (!s0.slide) return;            // two tabs of one sheet: nothing behind to pull
     setDrag({ dx, to: s0.to, room: roomOfTab(s0.to) });
@@ -7672,7 +7680,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     const v = Math.abs(dx) / Math.max(1, Date.now() - s0.t0);
     const took = Math.abs(dx) > window.innerWidth * TAKE || v > FLICK;
     setDrag(null);
-    if (took) go(s0.to);
+    if (took) go(s0.to, true);
   };
   /* The listeners are attached once and read the current handlers through a
      ref, because they close over the tab the person is standing in and that
@@ -9556,6 +9564,53 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const paceDiff = expectedNow != null && units != null ? Math.round((units - expectedNow) * 10) / 10 : null;
   const paceState = paceDiff == null ? "" : paceDiff < -1 ? "behind" : paceDiff > 1 ? "ahead" : "on";
   const paceLabel = paceState === "behind" ? "BEHIND PACE" : paceState === "ahead" ? "AHEAD OF PACE" : paceState === "on" ? "ON PACE" : "";
+  /* The caption under the chart is measured rather than guessed at.
+     It used to be font-size:min(9.5px, 2.9cqw), a coefficient tuned so the
+     longest caption I could think of fitted on one line. That was the mistake:
+     the middle of this line is `GOAL 40 · 20 TO GO · 1.3 BEHIND`, and the pace
+     word can be "12.5 BEHIND" as easily as "ON PACE", so its length is not
+     something I get to bound from here. On a real phone it overran the card and
+     the three parts printed into each other: "SEP 1GOAL 40 ... BEHINDSEP 3",
+     with the right end off the screen.
+     So it asks the browser how wide the line actually is and scales to fit.
+     One read per draw of this card, in a layout effect, so it is settled before
+     the frame is shown and never flashes at the wrong size. */
+  const tlRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = tlRef.current;
+    if (!el) return;
+    const have = el.clientWidth;
+    if (!have) return;
+    const used = () => {
+      let w = 0;
+      for (const kid of el.children) w += kid.getBoundingClientRect().width;
+      return w + 16;                // the air the ends must keep from the middle
+    };
+    /* Twice, not once. Scaling the type does not scale the drawn width by the
+       same ratio: the mono advances and the .1em tracking round to whole device
+       pixels, so one pass lands a few points over and the ends print into each
+       other. The second pass closes that, and a third is never needed because
+       the first got within a percent or two.
+       FLOOR is where shrinking stops being a kindness. Below about six points
+       nobody reads it anyway, so the line is allowed to wrap instead, which is
+       safe now: the caption hangs DOWNWARD from the chart, so a second line
+       grows into the space below rather than back across the sold line. */
+    const FLOOR = 6 / 9.5;
+    let fit = 1;
+    for (let pass = 0; pass < 2 && used() > have; pass++) {
+      fit = Math.max(FLOOR, fit * (have / used()));
+      el.style.setProperty("--tl-fit", fit.toFixed(3));
+    }
+    if (fit === 1) el.style.removeProperty("--tl-fit");
+    /* Once the type has floored and it STILL does not fit, the parts are
+       allowed to break inside themselves. Only then: a mid-sentence break is
+       uglier than a small caption, so it is the last resort and not the first.
+       This is a 320px phone at Largest with a four-hundred car goal, which is
+       the narrowest screen anybody has against the longest line the app can
+       print. It was two pixels over. */
+    el.toggleAttribute("data-tl-wrap", fit <= FLOOR && used() > have);
+  });
+
   const paceWord = paceState === "behind" ? `${Math.abs(paceDiff)} BEHIND` : paceState === "ahead" ? `${paceDiff} AHEAD` : paceState === "on" ? "ON PACE" : "";
 
   /* ---- the month as a line ----
@@ -9731,7 +9786,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                 <circle className="todaydot" cx={trail.todayX} cy={trail.todayY} r="4.5" />
                 {trail.goalY != null && <circle className="goalring" cx={trail.W} cy={trail.goalY} r="4" />}
               </svg>
-              <div className="mc-tl">
+              <div className="mc-tl" ref={tlRef}>
                 <span>{MC_MONTHS[mo - 1]} 1</span>
                 <span className="mid">{goal != null ? `GOAL ${goal}${toGo > 0 ? ` · ${toGo} TO GO` : " · MADE"}${paceWord ? ` · ${paceWord}` : ""}` : pace != null ? `PACE ${pace}` : ""}</span>
                 <span>{MC_MONTHS[mo - 1]} {daysInMonth}</span>
@@ -15705,11 +15760,15 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-head{ container-type:inline-size; container-name:mchead; }
 @container mchead (max-width:300px){
   .mc-corner{ flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px 10px; }
-  /* The weekday takes its own line once the row is tight. It is one unbreakable
-     word, so at a larger text size it cannot shrink and the row overflowed the
-     screen instead of wrapping, which is how WEDNESDAY ended up underneath the
-     initials in the gutter. Asked of this row, not of the screen: the text size
-     is a zoom, and a zoom does not move a media query. */
+}
+/* The weekday takes its own line only when the row genuinely cannot hold it.
+   At 300px this fired on a real phone at NORMAL text, which put the day under
+   the calendar when there was room for it beside: I picked 300 off the
+   manager's corner-head rule next door without measuring what this row needs,
+   which is a different question about a different row.
+   250px is below the width at which the calendar and the weekday can sit side
+   by side, so the drop now happens only when it is the truth. */
+@container mchead (max-width:250px){
   .mc-side{ flex-basis:100%; }
 }
 .mc-corner .mc-help{ position:static; }
@@ -15785,18 +15844,23 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    grew UPWARD and the sold line ran straight through the words. Measured at
    390px with a real caption: one line at Normal, two at Large and 11.9px into
    the chart, three at Largest and 13.8px in. A 360px phone wrapped at Normal.
-   One number does the whole job, because a container query unit ALREADY tracks
-   the zoom: cqw shrinks as the text size grows, so dividing by --sftxt as well
-   squared it and drove the caption to 3.89px. 2.9cqw is the largest coefficient
-   that clears the tightest case, a 320px phone at Largest, where the longest
-   caption wants 1.66 times the room it has.
-   The cost, which is the trade Jorge took over stacking the line: at 390px and
-   Normal this prints at 8.5px rather than 9.5px, about 11% smaller than today,
-   in exchange for never crossing the chart at any width or text size. */
-.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between;
-  font-family:var(--sfmono); font-size:min(9.5px, 2.9cqw);
+   It hangs DOWNWARD from the chart now, which is the change that makes the
+   whole class of bug impossible. It used to be pinned by its bottom edge, so
+   every extra line grew UP and across the sold line: that is the original
+   fault, and shrinking the type was only ever hiding it. Anchored by its top,
+   a second line grows into the space below, where there is nothing to cross.
+
+   The size comes from a measurement in the script, not from a coefficient here.
+   A container query unit tracks the zoom, which is why the first version used
+   one, but no coefficient can be right for a string whose length is not fixed:
+   the pace word is "ON PACE" on a good month and "12.5 BEHIND" on a bad one.
+   It prints full size whenever it fits, and only shrinks by what it has to. */
+.mc-tl{ position:absolute; left:0; right:0; top:calc(100% + 1px); bottom:auto;
+  display:flex; justify-content:space-between; flex-wrap:wrap; row-gap:1px;
+  font-family:var(--sfmono); font-size:calc(9.5px * var(--tl-fit, 1));
   font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); white-space:nowrap; }
 .mc-tl > span{ white-space:nowrap; }
+.mc-tl[data-tl-wrap] > span{ white-space:normal; overflow-wrap:anywhere; }
 .mc-tl .mid{ color:#E4C98D; }
 .mc-behind .mc-tl .mid{ color:#F08A80; }
 .mc-ahead .mc-tl .mid{ color:#8FD8AF; }
