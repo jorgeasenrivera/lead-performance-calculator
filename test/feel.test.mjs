@@ -258,7 +258,13 @@ test("consistency pass, items 2, 3, 5, 6 and 8: one primary, one status control,
   assert.ok(/\.lpc \.sect-strip\{ background:rgba\(118,118,128,\.14\); border-radius:12px;/.test(core) && /\.lpc \.sect-strip \.sect-pill\{ background:rgba\(255,255,255,\.92\); border-radius:9px;/.test(core), "the phone's strip is the desk's strip");
   assert.ok(/\.mc-you \.mc-seg3 button\.on\{ background:#8FD8AF; color:#12251B; \}/.test(core) && /\.lpc \.qpick \.qpick-btn\{ flex-direction:row;[^}]*border-radius:999px; background:var\(--qa\); color:#fff;/.test(core), "the corner's three-ways are the status pill; Up Next's tiles are tool pills");
   assert.ok(/<span className="ar-lbl">\{LABEL\[t\]\}<\/span>/.test(core) && /display:flex; padding:4px; border-radius:26px;/.test(core), "the salesperson's bar names its rooms and shares the dock's geometry");
-  assert.ok(/onHelp=\{\(\) => \{ buzz\(8\); setHelpPanel\(true\); \}\} onYou=\{\(\) => \{ buzz\(8\); setHelpOpen\(true\); \}\}/.test(core) && /className="mc-me" onClick=\{onYou\} aria-label="You"/.test(core), "the ? is help; the initials are You");
+  /* Item 8 said a question mark means help everywhere and the initials mean You.
+     Jorge reversed that on 16 September: the sheet behind the initials already
+     carried two rows that opened the same help panel, so the question mark was a
+     second door to a room you were already in. One door now, and it says so. */
+  assert.ok(/onHelp=\{\(\) => \{ buzz\(8\); setHelpPanel\(true\); \}\} onYou=\{\(\) => \{ buzz\(8\); setHelpOpen\(true\); \}\}/.test(core)
+    && /className="mc-me" onClick=\{onYou\} aria-label="You and help"/.test(core),
+    "the initials are the one way in, and the label says both of the things behind them");
 });
 
 test("consistency pass, items 10 and 11: the app asks in its own voice, and a seat is one tap", () => {
@@ -518,4 +524,30 @@ test("a restore point survives leaving the store row: one writer, one reader, an
   assert.ok(/return \{ next, results, archiveDue, restorePoint \};/.test(ing), "the pipeline returns its restore point");
   assert.ok(/await sbPut\(restoreKey\(st\.id\), lastRestorePoint\)/.test(ing), "and the caller writes it once the store row it protects has landed");
   assert.ok(/imported but its restore point did not save/.test(ing), "a restore point that fails to write says so rather than failing the import");
+});
+
+test("the phone's right gutter is one axis, and the sold line never crosses its own caption", () => {
+  /* The caption sits at bottom:-14px, so wrapping grew it UPWARD and the line
+     ran through the words. Measured at 390px with a real caption before the
+     change: one line at Normal, two at Large and 11.9px into the chart, three
+     at Largest and 13.8px in. A 360px phone wrapped at Normal. */
+  assert.ok(/\.mc-trail\{[^}]*container-type:inline-size; container-name:mctl;/.test(core),
+    "the caption is measured against the chart's own box, because a zoom does not move a media query");
+  assert.ok(/font-size:min\(9\.5px, 2\.9cqw\);/.test(core),
+    "it shrinks to fit rather than wrapping, which is what Jorge chose over stacking it");
+  assert.ok(!/calc\(3\.4cqw \/ var\(--sftxt/.test(core),
+    "and it is not divided by the text size as well: a container unit already tracks the zoom, and doing both squared it");
+  assert.ok(/\.mc-tl\{[^}]*white-space:nowrap;/.test(core) && /\.mc-tl > span\{ white-space:nowrap; \}/.test(core),
+    "nothing in the caption may wrap, which is the whole point");
+
+  // One axis down the right side. There were three, on three different offsets.
+  assert.ok(/:root\{ --mc-axis:30px; \}/.test(core), "the gutter has one centre line");
+  assert.equal(core.split("var(--mc-axis)").length - 1, 4,
+    "and the initials, the spine and both of the spine's own rules are measured from it");
+  assert.ok(!/className="mc-help"/.test(core), "the question mark is gone: the sheet behind the initials already opened the same help panel");
+  assert.ok(/\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)/.test(core),
+    "the initials are exempt from the card stacking rules, or position:relative wins and they never reach the gutter");
+  assert.ok(/@container mchead \(max-width:300px\)\{[^}]*\}\s*\/\*[\s\S]*?\*\/\s*\.mc-side\{ flex-basis:100%; \}/.test(core)
+    || /\.mc-side\{ flex-basis:100%; \}/.test(core),
+    "the weekday takes its own line when the row is tight, because it is one unbreakable word and used to overflow under the initials");
 });
