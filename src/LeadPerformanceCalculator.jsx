@@ -2935,7 +2935,7 @@ export default function LeadPerformanceCalculator() {
       return b ? { store: b } : null;
     } catch { return null; }
   })();
-  if (boardParams) return <React.Suspense fallback={null}><BoardScreen storeId={boardParams.store} /></React.Suspense>;
+  if (boardParams) return <BoardBoundary><React.Suspense fallback={null}><BoardScreen storeId={boardParams.store} /></React.Suspense></BoardBoundary>;
   // --- live floor: public sign-in intercept (before any auth) ---
   const floorParams = (() => {
     try {
@@ -3961,6 +3961,26 @@ function QueueBoard({ storeId, kind }) {
    and not a written-into popup, a reboot recovers on its own and a reload picks up
    whatever code is currently deployed. Nobody signs in: it reads the published
    board row with the anon key and nothing else. */
+
+/* Nobody is standing in front of a TV to click "try again", so a chunk that 404s
+   because a deploy retired it has to heal itself. One reload picks up whatever
+   build is live now; the sessionStorage flag stops a second reload from looping
+   if the error is not a stale chunk. */
+class BoardBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    const frame = String((info && info.componentStack) || "").split("\n").map((l) => l.trim()).find(Boolean) || null;
+    report("render", err, { screen: "board", component: frame });
+    try {
+      if (!sessionStorage.getItem("lpcf:board-reloaded")) {
+        sessionStorage.setItem("lpcf:board-reloaded", "1");
+        window.location.reload();
+      }
+    } catch (e) {}
+  }
+  render() { return this.state.err ? null : this.props.children; }
+}
 
 // Reload when a new build ships, so a screen that has been up for weeks is never
 // running last month's layout. Vercel fingerprints its asset filenames, so a plain
