@@ -139,3 +139,4 @@ These are not agent work. They are here so nobody proposes them again.
 | #341 | New and used are counted off the report's own rows instead of scaled from the people's, so the stock split is whole cars. | Claude |
 | #342 | A backfill for the stock split on months already filed, dry run by default. Written and tested, **not yet run against production**: `scripts/backfill-stock-split.mjs`. | Claude |
 | #350 | The casted TV board (`?board=`) hit a stale chunk after a deploy and crashed to white. `BoardBoundary` catches it and reloads once. | Claude |
+| #353 | Three from a real phone on build 33: the sold line's caption now measures itself and shrinks to fit instead of trusting a coefficient calibrated against the wrong worst case, the weekday sits beside the calendar again at Normal (the 300px breakpoint was borrowed, 250px is measured), and a swipe buzzes when the room lands while a button still buzzes at once. | Claude |
