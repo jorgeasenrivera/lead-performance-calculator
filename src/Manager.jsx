@@ -24551,7 +24551,19 @@ button.tile { cursor:pointer; text-align:left; font:inherit; width:100%; display
 .ru2-stat.ru2-new { background:#EAF1FB; border-color:#D4E2F6; }
 .ru2-stat.ru2-used { background:#FBF3E4; border-color:#F1E3C6; }
 .ru2-stat-name { font-size:10px; font-weight:600; color:var(--ink-2); line-height:1.25; min-height:24px; }
-.ru2-stat-row { display:flex; align-items:baseline; gap:6px; }
+/* The chip ran out of the card's right edge, and it took two goes to find out
+   why. It is not the window: these cards are a fixed 201px from 1280 all the
+   way to 2560. It is HOW MANY cards are in the row. A store with yesterday's
+   sold split gets two more of them, New and Used, and five columns of
+   minmax(108px, 1fr) collapse to 112px each. At that width the tube, the figure
+   and the chip no longer fit, and with nothing allowed to give, the overflow
+   went outside the card: measured at 3px past the border on Showroom close.
+   The demo store has no sold split, so it only ever drew three cards and the
+   whole thing was invisible here.
+   The row wraps now, so the chip drops under the figure instead of off the
+   card, and the figure may shrink rather than push it out. */
+.ru2-stat-row { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+.ru2-stat-num { min-width:0; }
 .ru2-stat-num { font-family:var(--font-display); font-size:21px; font-weight:700; letter-spacing:-.02em;
         font-variant-numeric:tabular-nums; }
 .ru-chip.ru-up { background:rgba(30,138,76,.12); }
