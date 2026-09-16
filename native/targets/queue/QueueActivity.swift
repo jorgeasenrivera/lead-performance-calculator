@@ -346,13 +346,13 @@ private func pipCenter(width w: Double, index i: Int, size: CGFloat, stride: Dou
 }
 
 private func pipSize(you: Bool, head: Bool, mini: Bool) -> CGFloat {
-  if mini { return you ? 21 : (head ? 17 : 14) }
-  return you ? 30 : (head ? 24 : 20)
+  if mini { return you ? 17 : (head ? 14 : 12) }
+  return you ? 26 : (head ? 21 : 17)
 }
 
 private func pipFont(you: Bool, head: Bool, mini: Bool) -> CGFloat {
-  if mini { return you ? 7 : 6 }
-  return you ? 10 : (head ? 8 : 7)
+  if mini { return you ? 6 : 5.5 }
+  return you ? 9 : (head ? 7 : 6.5)
 }
 
 /// The rail: from the left edge toward the door on the right, everybody in
@@ -374,7 +374,7 @@ private struct Rail: View {
         ForEach(stops, id: \.self) { x in
           Circle()
             .fill((up ? mint : sand).opacity(0.55))
-            .frame(width: 4, height: 4)
+            .frame(width: 3.5, height: 3.5)
             .position(x: x, y: mid)
         }
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
@@ -386,7 +386,7 @@ private struct Rail: View {
         }
       }
     }
-    .frame(height: 34)
+    .frame(height: 28)
   }
 }
 
@@ -407,10 +407,10 @@ private struct ActionButton: View {
   }
   private var inner: some View {
     HStack(spacing: 6) {
-      PixGlyph(name: glyph, size: 12, color: tint)
-      Text(label).font(.system(size: 12.5, weight: .bold)).foregroundStyle(tint)
+      PixGlyph(name: glyph, size: 11, color: tint)
+      Text(label).font(.system(size: 12, weight: .bold)).foregroundStyle(tint)
     }
-    .frame(maxWidth: .infinity, minHeight: 36)
+    .frame(maxWidth: .infinity, minHeight: 30)
     .background(RoundedRectangle(cornerRadius: 12).fill(fill))
     .overlay(RoundedRectangle(cornerRadius: 12).stroke(stroke, lineWidth: 1))
   }
@@ -778,7 +778,7 @@ private struct Track: View {
       let w: Double = geo.size.width
       let mid: Double = geo.size.height / 2.0
       let stride: Double = mini ? 18.0 : 25.0
-      let dot: CGFloat = mini ? 3 : 4
+      let dot: CGFloat = mini ? 2.5 : 3.5
       let mine: Int = line.firstIndex(where: { $0.me }) ?? -1
       let stops: [Double] = mine < 0 ? [] : lightStops(width: w, mine: mine, stride: stride, step: mini ? 9.0 : 11.0)
       ZStack(alignment: .leading) {
@@ -797,7 +797,7 @@ private struct Track: View {
         }
       }
     }
-    .frame(height: mini ? 24 : 34)
+    .frame(height: mini ? 20 : 28)
   }
 }
 
@@ -829,7 +829,7 @@ private struct Cord: View {
     return CGPoint(x: x * sx, y: y * sy)
   }
   var body: some View {
-    let boxH: Double = mini ? 38 : 52
+    let boxH: Double = mini ? 26 : 42
     GeometryReader { geo in
       let sx = geo.size.width / 348, sy = geo.size.height / boxH
       let a = mini ? flat0 : p0, b = mini ? flat1 : p1, c = mini ? flat2 : p2, d = mini ? flat3 : p3
@@ -846,7 +846,7 @@ private struct Cord: View {
         curve.trimmedPath(from: 0, to: litTo).stroke(led, style: StrokeStyle(lineWidth: 3, lineCap: .round))
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
           let you = p.me
-          let size: CGFloat = mini ? (you ? 24 : 18) : (you ? 30 : 22)
+          let size: CGFloat = mini ? (you ? 19 : 14) : (you ? 25 : 18)
           let at = pt(tOf(i), a, b, c, d, sx: sx, sy: sy)
           ZStack {
             if you {
@@ -855,17 +855,17 @@ private struct Cord: View {
               Circle().fill(sand)
             }
             Text(p.i)
-              .font(.system(size: mini ? (you ? 8 : 6.5) : (you ? 9.5 : 7.5), weight: .bold, design: .monospaced))
+              .font(.system(size: mini ? (you ? 6.5 : 5.5) : (you ? 8 : 6.5), weight: .bold, design: .monospaced))
               .foregroundStyle(you ? .white : Color(red: 0x1F/255, green: 0x2A/255, blue: 0x22/255))
           }
           .frame(width: size, height: size)
-          .shadow(color: you ? blue1.opacity(0.6) : sand.opacity(0.35), radius: you ? 9 : 6)
+          .shadow(color: you ? blue1.opacity(0.6) : sand.opacity(0.35), radius: you ? 7 : 5)
           .position(at)
         }
         /* the handset, at the end of the cord */
-        PixGlyph(name: "phone", size: mini ? 26 : 34, color: lit ? led : Color(red: 157/255, green: 195/255, blue: 1).opacity(0.28))
+        PixGlyph(name: "phone", size: mini ? 20 : 28, color: lit ? led : Color(red: 157/255, green: 195/255, blue: 1).opacity(0.28))
           .shadow(color: lit ? led.opacity(0.8) : .clear, radius: lit ? 8 : 0)
-          .position(x: geo.size.width - (mini ? 13 : 17), y: geo.size.height / 2)
+          .position(x: geo.size.width - (mini ? 10 : 14), y: geo.size.height / 2)
       }
     }
     .frame(height: boxH)
@@ -880,13 +880,13 @@ private struct DeskRow: View {
      checker had to weigh. */
   static let ink = Color(red: 11.0 / 255.0, green: 20.0 / 255.0, blue: 48.0 / 255.0)
   var body: some View {
-    HStack(spacing: 4) {
+    HStack(spacing: 3) {
       ForEach(Array(desks.enumerated()), id: \.offset) { (_, d) in
         Text(d.n)
-          .font(.system(size: 9, weight: .semibold, design: .monospaced))
+          .font(.system(size: 8, weight: .semibold, design: .monospaced))
           .foregroundStyle((d.mine || d.open) ? DeskRow.ink : Color.white.opacity(0.42))
-          .frame(maxWidth: .infinity, minHeight: 20)
-          .background(RoundedRectangle(cornerRadius: 6).fill(d.mine ? Color.white : d.open ? led : Color.white.opacity(0.07)))
+          .frame(maxWidth: .infinity, minHeight: 15)
+          .background(RoundedRectangle(cornerRadius: 5).fill(d.mine ? Color.white : d.open ? led : Color.white.opacity(0.07)))
       }
     }
   }
@@ -927,9 +927,9 @@ private struct PhoneLaneView: View {
   let top: Bool
   var body: some View {
     let hot = p.state == "offer"
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
           Text(phoneHeadline(p))
             .font(.system(size: big ? (hot ? 22 : 17) : 15, weight: .bold, design: .rounded))
             .foregroundStyle(hot ? led : .white).lineLimit(1).layoutPriority(2)
@@ -951,8 +951,8 @@ private struct PhoneLaneView: View {
       }
     }
     .padding(.horizontal, 14)
-    .padding(.top, top ? 14 : 10)
-    .padding(.bottom, 14)
+    .padding(.top, top ? 10 : 8)
+    .padding(.bottom, 10)
     .background(bloom(led, top: top))
   }
 }
@@ -963,9 +963,9 @@ private struct FloorLaneView: View {
   let top: Bool
   var body: some View {
     let ph = phaseOf(s)
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
           HeadlineText(s: s, ph: ph, size: big ? (ph == .up ? 22 : 17) : 15).layoutPriority(2)
           if let cap = caption(s, ph) {
             Text(cap)
@@ -987,15 +987,26 @@ private struct FloorLaneView: View {
       }
     }
     .padding(.horizontal, 14)
-    .padding(.top, top ? 14 : 10)
-    .padding(.bottom, 14)
+    .padding(.top, top ? 10 : 8)
+    .padding(.bottom, 10)
     .background(bloom(ph == .up ? mint : (ph == .desk ? red : (ph == .customer || ph == .asking || ph == .confirm ? fly : mint)), top: top))
   }
 }
 
 /* The card, v2: the lane that leads big, the other small beneath it; both
    small when neither is urgent; one lane on its own when they are only on
-   one line. */
+   one line.
+
+   Sized down on 16 September, because the card was cropping on the lock
+   screen. Two quiet lanes added up to about 233 pt against an allowance of
+   160, the phone lane carrying most of it: when the state is "free" it draws
+   the cord and the desk row at once, because both conditions are true at the
+   same time. Jorge chose to keep both lanes and shrink what is in them, over
+   showing one lane at a time. So the pips, the cord, the desks, the buttons
+   and the spacing all came down to the smallest that still reads: about
+   184 pt. Worth saying plainly: that is still over 160, so a crowded card can
+   still crop. Shrinking alone was never going to close a 73 pt gap, and the
+   proposal said so before the choice was made. */
 private struct V2Card: View {
   let s: QueueAttributes.ContentState
   var body: some View {
