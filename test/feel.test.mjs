@@ -311,9 +311,20 @@ test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on
   assert.ok(/near:\s*\{ col: "#E0A100", mark: "clock", word: "near" \},/.test(mgr) && /short: \{ col: "#C8352B", mark: "warn",\s*word: "short" \},/.test(mgr), "near is a clock, short is a warn");
   assert.ok(/function Verdict\(\{ ratio, size = 11, word = false, className \}\) \{/.test(mgr) && /<PixIcon glyph=\{t\.mark\} size=\{size\} \/>/.test(mgr), "the mark is a pix glyph");
   assert.ok(!/col: "#C2361F"|col: "#C98A00"|col: "#1E8A4C"|col: "#0BB25F"/.test(mgr), "the old tier colours are gone");
-  assert.ok(/fmtPct\(c\.pct\)\}\{t && <Verdict ratio=\{pctV \/ target\} size=\{10\}/.test(mgr), "the hero's channels carry the mark");
-  assert.ok(/<span className="s2-mklbl">\{METRIC_TINY\[v\.m\] \|\| METRICS\[v\.m\]\.short\}<Verdict ratio=\{v\.mean\} size=\{9\} \/><\/span>/.test(mgr), "the video rings carry the mark");
-  assert.ok((mgr.match(/\{t && <Verdict ratio=\{vShow \/ tgt\} size=\{9\} \/>\}/g) || []).length === 2, "both shapes of the desk table carry the mark");
+  /* Item 5 put the mark on every figure with a target. Jorge took it off the
+     four that already draw the thing it was saying, on 16 September: the tube,
+     the dial and the bar ARE the verdict, and a glyph beside each one made the
+     row busy without adding a reading. It stays where nothing is drawn. */
+  assert.ok(!/<Verdict ratio=\{pctV \/ target\}/.test(mgr), "the hero's channels let the tube say it");
+  assert.ok(!/<Verdict ratio=\{v\.mean\} size=\{9\}/.test(mgr), "the video rings let the dial say it");
+  assert.equal((mgr.match(/\{t && <Verdict ratio=\{vShow \/ tgt\} size=\{9\} \/>\}/g) || []).length, 0,
+    "and neither shape of the desk table carries one");
+  /* What was kept, because it is the one thing the drawing does NOT say: which
+     way the figure moved since yesterday. */
+  assert.ok(/<PixIcon glyph=\{d >= 0 \? "triup" : "tridown"\} size=\{11\} \/>/.test(mgr),
+    "the direction arrow stays: a tube shows where you are, not which way you are going");
+  assert.equal((mgr.match(/<Verdict /g) || []).length, 2,
+    "the mark survives exactly where there is no drawing: the pace sentence and the weakest standard");
   assert.ok(/toneMark\(t\)\{ return pix\(t === 'g' \? 'check' : t === 'y' \? 'clock' : 'warn'\); \}/.test(mgr) && /--green:#1F8A6B; --greenbg:#E1F1EA; --yellow:#E0A100;[^}]*--red:#C8352B;/.test(mgr), "the TV board speaks the same three");
   assert.ok(/--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(mgr) && /--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(core), "the rooms and the phone take the same three");
   assert.ok(/\.vmark\{ display:inline-flex; align-items:center; gap:3px; color:var\(--vc\);/.test(mgr), "the mark takes its figure's colour");
