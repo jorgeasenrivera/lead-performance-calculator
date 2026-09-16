@@ -136,7 +136,7 @@ test("the rails spring on transform, not left", () => {
 });
 
 test("one object across rooms: the mark flies, the rooms travel, and less motion gets the cut", () => {
-  assert.ok(/const crossRooms = \(from, to\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor"\);/.test(core), "a tab switch crosses the rooms");
+  assert.ok(/const crossRooms = \(from, to, toGround\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor",\n\s*groundOf\(r, toTab === undefined \? tab : toTab\)\);/.test(core), "a tab switch crosses the rooms, and says which ground it is arriving onto");
   assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches; \} catch \(e\) \{\}\n    if \(reduce\) return;/.test(core), "less motion asks for the cut");
   /* One gesture, one clock: the rooms, the mark and the bar's pill all run for
      the wipe token on the same curve, and the classes are held until the last
@@ -144,7 +144,16 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.35,\.12,\.2,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the page curve");
   assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ z-index:102;\n\s*animation:arPageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core) && /\.ar-room\.ar-out > \.q-page\.sf\{ z-index:100;\n\s*animation:arPageOut var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core), "the room's own sheet is what travels, on one clock and one curve");
   assert.ok(/\.ar-bar\{ position:fixed; z-index:105;/.test(core) && /\.ar-fly\{ position:fixed; z-index:106;/.test(core), "the bar and the mark stay above a room in mid-travel");
-  assert.ok(/\.ar-stack\.x::before\{ content:""; position:fixed; inset:0; z-index:99; background:#06090F;/.test(core), "the rooms' own ground is behind the switch, so no light edge shows");
+  /* The ground behind the switch used to be one flat dark for every room. It
+     carries the ARRIVING room's colour now and lands before the room does, so
+     the place changes first and the screen follows. */
+  assert.ok(/\.ar-stack\.x::before\{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;\n\s*background:var\(--ar-to-bg, var\(--gnd-line\)\);/.test(core),
+    "the ground behind the switch is the one being arrived at, so no light edge shows and the room lands on its own colour");
+  assert.ok(/animation:arGround calc\(var\(--t-wipe\) \* \.55\)/.test(core),
+    "and it is down before the room is, which is what makes the ground lead rather than follow");
+  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
+  assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
+    "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
   assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
   assert.ok(/transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\); will-change:transform; \}/.test(core), "the bar's pill lands with the room");
   assert.ok(/crossTimer\.current = setTimeout\(\(\) => setCross\(null\), MOTION\.wipe \+ 60\);/.test(core), "the classes are held until the whole gesture is over");

@@ -7452,7 +7452,13 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const crossTimer = useRef(null);
   const flight = useRef(null);
   const markOf = (r) => document.querySelector(`.ar-room[data-room="${r}"] ` + (r === "line" ? ".sfc-you" : ".mcf-you"));
-  const crossRooms = (from, to) => {
+  /* Which ground the room is arriving onto, decided here rather than read off
+     the page: the arriving room has not been drawn yet, and the whole point is
+     that its colour is down before it lands. The floor room has two of them,
+     because Home and Live Floor are two tabs of the one room. */
+  const groundOf = (r, t) => (r === "line" ? "var(--gnd-line)"
+    : (t === "corner" ? "var(--gnd-home)" : "var(--gnd-floor)"));
+  const crossRooms = (from, to, toGround) => {
     let reduce = false;
     try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
     if (reduce) return;
@@ -7468,7 +7474,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     } catch (e) {}
     /* Which way the bar moved. The line sits right of the floor, so going to
        it brings the new room in from the right, as a page does. */
-    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now() });
+    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now(), bg: toGround || null });
     clearTimeout(crossTimer.current);
     /* Held until the whole gesture is over, not until the dots were: pulling
        these classes early is what made the old room disappear mid-flight. */
@@ -7508,12 +7514,13 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     anim.onfinish = done; anim.oncancel = done;
     flight.current = anim;
   }, [cross && cross.n]);   // eslint-disable-line
-  const pick = (r) => {
+  const pick = (r, toTab) => {
     if (r !== room) {
       try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
       const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
       requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
-      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor");
+      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor",
+        groundOf(r, toTab === undefined ? tab : toTab));
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
@@ -7552,9 +7559,12 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const active = room === "line" ? "line" : tab === "corner" ? "home" : "floor";
   const go = (t) => {
     buzz(8);
-    if (t === "line") { pick("line"); return; }
-    pick("floor");
-    setTab(t === "home" ? "corner" : "floor");
+    if (t === "line") { pick("line", null); return; }
+    /* The destination tab is handed in, because setTab has not run yet when the
+       cross is set up and the ground would otherwise be the one being left. */
+    const nextTab = t === "home" ? "corner" : "floor";
+    pick("floor", nextTab);
+    setTab(nextTab);
   };
   const GLYPH = { home: "home", floor: "door", line: "phone" };
   const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
@@ -7599,7 +7609,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? " x" : "")} style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" } : null}>
+      <div className={"ar-stack" + (cross ? " x" : "")} style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%", "--ar-to-bg": cross.bg || undefined } : null}>
       <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")} data-room="line"
         hidden={room !== "line" && !(cross && cross.from === "line")} inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
@@ -11532,6 +11542,9 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
          fades into --bg at its own edges anyway, so the bands now continue it.
          The theme-color meta in index.html does the same for Safari's own bar. */
 html, body { margin:0; padding:0; background:var(--bg); }
+/* The three grounds, named once. The rooms are genuinely different places and
+   the colour is how a person knows which one they are standing in. */
+:root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }
 /* Portalled overlays — the help sheet, the day screen — sit outside .lpc,
          which is where the app's face is set, so they were rendering in the
          browser's default serif. */
@@ -11539,9 +11552,19 @@ body { font-family: var(--font-ui); }
 /* The salesperson screens are dark and fixed. Anything the fixed layer
          does not cover — and iOS uncovers a strip below it the moment the
          keyboard opens — showed the light --bg underneath as a white band. */
-html:has(.q-page.sf), body:has(.q-page.sf) { background:#06090F; }
-html:has(.q-page.sf.mc-shell), body:has(.q-page.sf.mc-shell) { background:#15211B; }
-html:has(.q-page.sf.mc-floor), body:has(.q-page.sf.mc-floor) { background:#070A08; }
+html:has(.q-page.sf), body:has(.q-page.sf) { background:var(--gnd-line); }
+html:has(.q-page.sf.mc-shell), body:has(.q-page.sf.mc-shell) { background:var(--gnd-home); }
+html:has(.q-page.sf.mc-floor), body:has(.q-page.sf.mc-floor) { background:var(--gnd-floor); }
+/* The ground travels. Each room paints its own and the swap used to be
+   instant, so the most characteristic thing about a room was the one thing
+   that did not move while the rooms themselves slid, dimmed and caught a
+   sheen. This carries the corner and the floor into each other, which is the
+   half of the change that needs no cross at all: they are two tabs of one
+   room, so nothing slides between them. */
+html:has(.q-page.sf), body:has(.q-page.sf) {
+  transition:background-color var(--t-wipe) cubic-bezier(.35,.12,.2,1); }
+@media (prefers-reduced-motion: reduce){
+  html:has(.q-page.sf), body:has(.q-page.sf) { transition:none; } }
 /* A page whose content is a full-screen fixed layer has nothing to scroll,
          but .lpc underneath is min-height:100vh with a bottom padding on top of
          it — there is no global border-box here — so the document scrolled by
@@ -14503,7 +14526,16 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    Without it the sliver the leaving room uncovers is the shell behind, which
    is a light grey, and a white edge on a black room is the one thing a phone
    never shows. */
-.ar-stack.x::before{ content:""; position:fixed; inset:0; z-index:99; background:#06090F; pointer-events:none; }
+/* The ground leads. This layer sits UNDER both rooms, and it now carries the
+   colour of the one arriving rather than one flat dark for every switch. It
+   fades in over a little over half the wipe, so the new room's ground is
+   already down by the time the room itself lands on it: the place changes
+   first and the screen follows, which is Jorge's call of 16 September over the
+   quieter version where the two simply crossfade together. */
+.ar-stack.x::before{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
+  background:var(--ar-to-bg, var(--gnd-line));
+  animation:arGround calc(var(--t-wipe) * .55) cubic-bezier(.35,.12,.2,1) both; }
+@keyframes arGround{ from{ opacity:0; } to{ opacity:1; } }
 html.sun .ar-stack.x::before{ background:#2E4A38; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
@@ -14552,7 +14584,7 @@ html.sun .ar-stack.x::before{ background:#2E4A38; }
 @media (prefers-reduced-motion: reduce){
   .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; box-shadow:none; }
   .ar-room.ar-in > .q-page.sf::after{ animation:none; display:none; }
-  .ar-stack.x::before{ display:none; }
+  .ar-stack.x::before{ display:none; animation:none; }
   .ar-room.ar-out{ display:none; } }
 /* The rooms in sunlight: the curtain's deep green for the ground, cream for
    what sits on it, the pill in mint with ink on it, and the two help cards
