@@ -9500,10 +9500,15 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         </div>
         <div className="mc-corner">
           {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
-          {/* A question mark means help everywhere (consistency pass, item 8);
-              the person's own settings are behind their own initials. */}
-          {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You">{initialsOf(meFull || meLabel || "")}</button>}
-          <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={16} /></button>
+          {/* One door, not two. The sheet behind these initials already carries two
+              rows that open the help panel, so the question mark beside them was a
+              second way into a room you were already standing in.
+              This reverses "a question mark means help everywhere" from the
+              consistency pass. Jorge made that call on 16 September knowing it was
+              a reversal: the argument for the question mark was that it is the
+              universal sign for help, and the argument against is that it pointed
+              somewhere you could already get to. */}
+
         </div>
       </div>
       {/* ---- the rail ----
@@ -9528,6 +9533,12 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <em>DOOR</em>
         </button>
       )}
+      {/* The initials live beside the spine rather than in the card's corner,
+          because they have to line up with it and the two were positioned
+          against different boxes: the card's corner is measured from the card's
+          padding, the spine from the screen. Same parent, same axis, one line
+          down the right side. */}
+      {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You and help">{initialsOf(meFull || meLabel || "")}</button>}
       <McSpine rows={rows} />
 
       <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
@@ -14422,9 +14433,22 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    names its rooms under the glyphs as the manager's dock does, and shares
    its geometry (26 px bar, 22 px thumb). */
 .ar-lbl{ font:700 9.5px var(--font-ui); letter-spacing:-.01em; white-space:nowrap; }
-/* The person's own entry on the corner (item 8). */
-.mc-corner .mc-me{ width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; background:#567D61; color:#fff;
-  font:700 12px var(--sfmono); letter-spacing:.02em; display:grid; place-items:center; }
+/* The person's own entry, and the only door to help now that the question mark
+   has gone into it.
+   It sits in the right gutter on the SAME axis as the spine, which is what
+   Jorge asked for on 16 September. There were three things stacked down the
+   right side on three different axes: the initials with their centre 68px from
+   the edge, the question mark at 61px, and the spine at 22px. One axis is left.
+
+   Fixed, not in the card's flow, because the card's padding decides where the
+   flow puts it and the spine is fixed to the screen: aligning two things that
+   are measured from different edges only holds until the padding changes. It
+   also means the way to help does not scroll off, which is what the question
+   mark it replaces already did. */
+:root{ --mc-axis:30px; }   /* from the right edge to the gutter's centre line */
+.mc-me{ width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; background:#567D61; color:#fff;
+  font:700 12px var(--sfmono); letter-spacing:.02em; display:grid; place-items:center;
+  position:fixed; z-index:8; top:calc(var(--sat) + 14px); right:calc(var(--mc-axis) - 20px); }
 /* Three shapes, not nine (item 5). The phone's section strip is the desk's
    strip: a grey track, a white thumb that glides. The corner's three-ways are
    the rooms' status pill in mint. Up Next's tiles are the tool bar's pills. */
@@ -15215,7 +15239,15 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    there, by the phone's own measure, with a floor for phones that report none. */
 .mc{ width:min(430px, 100%); margin:0 auto; padding:max(28px, calc(14px + var(--sat))) 16px 84px; text-align:left; font-family:var(--font-ui);
   display:flex; flex-direction:column; gap:11px; }
-.mc-head{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; margin-top:4px; }
+/* The gutter is reserved, not shared. The initials used to sit IN this row, so
+   the row's own width kept the weekday clear of them; now they are fixed in the
+   right gutter and the row would happily run the weekday underneath.
+   Divided by --sftxt because the two are measured in different spaces: a fixed
+   element is placed against the screen, while this row lives inside the text
+   size's zoom. The division keeps the gap the same number of REAL pixels at
+   every text size, which is the thing that has to stay true. */
+.mc-head{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; margin-top:4px;
+  padding-right:calc((var(--mc-axis) + 26px) / var(--sftxt, 1)); }
 .mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
   font-size:9.5px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
 .mc-cal{ display:grid; grid-template-columns:repeat(7, 9px); gap:5px 6px; margin-top:7px; }
@@ -15446,7 +15478,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    always; everything else plays once on load or once when something changes. */
 .q-page.sf.mc-shell{ --mc-geist:'Geist','Sora',system-ui,-apple-system,'Segoe UI',sans-serif; }
 .mc{ position:relative; }
-.mc > *:not(.mc-aurora):not(.mc-spine){ position:relative; z-index:1; }
+.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ position:relative; z-index:1; }
 .mc-aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
 .mc-aurora i{ position:absolute; width:520px; height:520px; border-radius:50%; opacity:.7; display:block; will-change:transform; }
 .mc-aurora i:nth-child(1){ left:-140px; bottom:-120px; background:radial-gradient(closest-side,rgba(86,125,97,.9),rgba(86,125,97,.35) 40%,transparent 72%); animation:mcDrift1 18s ease-in-out infinite; }
@@ -15461,7 +15493,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @keyframes mcDrift4{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-110px,160px) scale(1.2); } }
 @keyframes mcGrid{ from{ transform:translate(0,0); } to{ transform:translate(22px,44px); } }
 @keyframes mcBreathe{ 0%,100%{ opacity:.18; } 50%{ opacity:.6; } }
-.mc > *:not(.mc-aurora):not(.mc-spine){ animation:mcRise .6s cubic-bezier(.2,.8,.3,1) both; }
+.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:mcRise .6s cubic-bezier(.2,.8,.3,1) both; }
 .mc > *:nth-child(4){ animation-delay:.05s; }
 .mc > *:nth-child(5),.mc > *:nth-child(6){ animation-delay:.12s; }
 .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; }
@@ -15483,6 +15515,12 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-head{ container-type:inline-size; container-name:mchead; }
 @container mchead (max-width:300px){
   .mc-corner{ flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px 10px; }
+  /* The weekday takes its own line once the row is tight. It is one unbreakable
+     word, so at a larger text size it cannot shrink and the row overflowed the
+     screen instead of wrapping, which is how WEDNESDAY ended up underneath the
+     initials in the gutter. Asked of this row, not of the screen: the text size
+     is a zoom, and a zoom does not move a media query. */
+  .mc-side{ flex-basis:100%; }
 }
 .mc-corner .mc-help{ position:static; }
 .mc-corner .mc-asof{ white-space:nowrap; }
@@ -15533,7 +15571,12 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-behind .mc-state{ background:rgba(216,72,60,.35); color:#FFD7D3; }
 .mc-on .mc-state{ background:rgba(228,201,141,.25); color:#E4C98D; }
 .mc-ahead .mc-state{ background:rgba(30,138,76,.4); color:#8FD8AF; }
-.mc-trail{ position:relative; z-index:1; margin-top:10px; height:92px; }
+/* The caption underneath is measured against THIS box, not the screen, because
+   the person's text size is a zoom and a zoom does not move a media query. A
+   container query does track it, which is the same reason the manager's corner
+   head uses one. */
+.mc-trail{ position:relative; z-index:1; margin-top:10px; height:92px;
+  container-type:inline-size; container-name:mctl; }
 .mc-trail svg{ width:100%; height:92px; overflow:visible; display:block; }
 .mc-trail .grid line{ stroke:rgba(255,255,255,.07); stroke-width:1; }
 .mc-trail .pace{ fill:none; stroke:rgba(255,255,255,.28); stroke-width:1.5; stroke-dasharray:3 5; }
@@ -15546,7 +15589,24 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @keyframes mcDot{ 50%{ transform:scale(1.33); } }
 .mc-trail .goalring{ fill:none; stroke:#E4C98D; stroke-width:2; }
 @keyframes mcGrow{ from{ transform:scaleX(0); } }
-.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between; font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); }
+/* It shrinks rather than wraps. Jorge's call on 16 September, over stacking it
+   and over shortening the words.
+   Why it had to change at all: this sits at bottom:-14px, so when it wrapped it
+   grew UPWARD and the sold line ran straight through the words. Measured at
+   390px with a real caption: one line at Normal, two at Large and 11.9px into
+   the chart, three at Largest and 13.8px in. A 360px phone wrapped at Normal.
+   One number does the whole job, because a container query unit ALREADY tracks
+   the zoom: cqw shrinks as the text size grows, so dividing by --sftxt as well
+   squared it and drove the caption to 3.89px. 2.9cqw is the largest coefficient
+   that clears the tightest case, a 320px phone at Largest, where the longest
+   caption wants 1.66 times the room it has.
+   The cost, which is the trade Jorge took over stacking the line: at 390px and
+   Normal this prints at 8.5px rather than 9.5px, about 11% smaller than today,
+   in exchange for never crossing the chart at any width or text size. */
+.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between;
+  font-family:var(--sfmono); font-size:min(9.5px, 2.9cqw);
+  font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); white-space:nowrap; }
+.mc-tl > span{ white-space:nowrap; }
 .mc-tl .mid{ color:#E4C98D; }
 .mc-behind .mc-tl .mid{ color:#F08A80; }
 .mc-ahead .mc-tl .mid{ color:#8FD8AF; }
@@ -15777,7 +15837,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-shell .sf-link-quiet{ color:rgba(237,242,234,.42); }
 .mc-shell .mcf-title{ color:#EDF2EA; }
 .mc{ padding-right:44px; }
-.mc-spine{ position:fixed; right:7px; top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
+.mc-spine{ position:fixed; right:calc(var(--mc-axis) - 11px); top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
   flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
 .mc-spine .rt{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.18em;
   color:rgba(237,242,234,.42); writing-mode:vertical-rl; }
@@ -15885,7 +15945,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mc-offc b{ font-size:17px; }
 .mc-offc .hint{ font-size:13px; }
 .mc-offb button{ padding:11px 20px; font-size:13px; min-height:44px; }
-.mc-spine{ width:26px; right:9px; }
+.mc-spine{ width:26px; right:calc(var(--mc-axis) - 13px); }
 .mc-spine .rt{ font-size:11px; }
 .mc-spine .sp{ width:5px; }
 .mc-spine .sp b{ width:13px; height:13px; }
