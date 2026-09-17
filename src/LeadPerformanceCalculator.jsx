@@ -14852,7 +14852,13 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    on a layer this size would run on every frame of a drag, on a phone, and
    that is the one place it cannot be afforded. */
 .ar-gnd{ position:fixed; inset:0; z-index:99; pointer-events:none; overflow:hidden; }
-.ar-gnd-base, .ar-blob{ position:absolute; left:-40%; top:0; width:180%; height:100%; }
+/* Wider than the screen, and offset left, so that at full travel the right
+   edge has not run inside it: the furthest any blob goes is
+   (tabs - 1) x 100vw x 0.28, which is 56vw on a store with all three, against
+   the 80vw of slack this leaves. The blobs are placed in vw from the SCREEN's
+   left rather than in percentages of this box, so widening the box does not
+   move them: the 40vw in each position is what cancels the offset. */
+.ar-gnd-base, .ar-blob{ position:absolute; left:-40vw; top:0; width:220vw; height:100%; }
 .ar-blob{ will-change:transform; }
 .ar-gnd-c, .ar-blob-c{ position:absolute; inset:0; }
 /* The tab a layer is painting, and the accents that tab paints in. These are
@@ -14866,7 +14872,11 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
   --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --gnd:var(--gnd-floor); }
 .ar-gnd-c[data-tab="line"], .ar-blob-c[data-tab="line"]{
   --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --gnd:var(--gnd-line); }
-.ar-gnd-c{ background:var(--gnd); }
+.ar-gnd-c{ background:radial-gradient(1000px 680px at calc(40vw + 15vw) -10%,
+    color-mix(in srgb, var(--a2) 6%, transparent), transparent 60%), var(--gnd); }
+@supports not (background: color-mix(in srgb, red 10%, transparent)){
+  .ar-gnd-c{ background:var(--gnd); }
+}
 /* Bigger and hazier than the three that were inside the rooms, which is
    Jorge's call on the demo of 17 September. The geometry is otherwise theirs.
 
@@ -14875,31 +14885,39 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    larger area, and the line's bottom half came out a flat bright cyan, worse
    than what it replaced. Bigger and hazier is not the same instruction as
    brighter. Roughly the same light, spread further and falling off sooner. */
-.ar-blob[data-i="0"] > .ar-blob-c{ background:radial-gradient(118% 64% at 14% 104%,
+.ar-blob[data-i="0"] > .ar-blob-c{ background:radial-gradient(118vw 64% at calc(40vw + 14vw) 104%,
   color-mix(in srgb, var(--a1) 52%, transparent) 0%,
   color-mix(in srgb, var(--a1) 28%, transparent) 32%,
   color-mix(in srgb, var(--a1) 9%, transparent) 58%, transparent 82%); }
-.ar-blob[data-i="1"] > .ar-blob-c{ background:radial-gradient(100% 54% at 94% 90%,
+.ar-blob[data-i="1"] > .ar-blob-c{ background:radial-gradient(100vw 54% at calc(40vw + 94vw) 90%,
   color-mix(in srgb, var(--a2) 34%, transparent) 0%,
   color-mix(in srgb, var(--a2) 18%, transparent) 34%,
   color-mix(in srgb, var(--a2) 6%, transparent) 60%, transparent 84%); }
-.ar-blob[data-i="2"] > .ar-blob-c{ background:radial-gradient(88% 44% at 50% 118%,
+.ar-blob[data-i="2"] > .ar-blob-c{ background:radial-gradient(88vw 44% at calc(40vw + 50vw) 118%,
   color-mix(in srgb, var(--led) 22%, transparent) 0%,
   color-mix(in srgb, var(--led) 11%, transparent) 36%, transparent 78%); }
 /* The corner's own glow is one wide light under the middle rather than three,
    and that is its signature. It keeps it. */
 .ar-blob[data-i="2"] > .ar-blob-c[data-tab="home"]{
-  background:radial-gradient(closest-side at 50% 112%,
+  background:radial-gradient(closest-side at calc(40vw + 50vw) 112%,
     rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%); }
 /* Safari 15 and older have no color-mix, the same fallback the rooms carry. */
 @supports not (background: color-mix(in srgb, red 10%, transparent)){
   .ar-blob[data-i="0"] > .ar-blob-c{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
   .ar-blob[data-i="1"] > .ar-blob-c, .ar-blob[data-i="2"] > .ar-blob-c{ background:none; }
 }
-/* Inside the stack the room no longer paints its own blobs, and its own
-   background stops short of the foot so the ones out here can be seen. This is
-   the cost Jorge accepted: it repaints the bottom of every salesperson screen
-   at rest, not only mid swipe.
+/* Inside the stack the room paints no background at all: not its blobs, not
+   its ground. All of it is out here, on one layer behind both rooms.
+
+   The first version only opened the bottom of the room, which left the top of
+   two rooms butting together in mid swipe and a hard vertical seam down the
+   screen. Jorge asked for no seam, and there is only one way to have none: the
+   rooms cannot carry ground of their own, because two grounds meeting IS the
+   seam. One ground, behind both, with the rooms as content on top of it.
+
+   This is the cost Jorge accepted, and it is now its full size: every
+   salesperson screen takes its ground from out here, at rest as well as mid
+   swipe.
 
    Not in sunlight. There every room is the same flat green, #2E4A38, with one
    soft light in it: there is no second colour for a blob to travel to, so the
@@ -14912,11 +14930,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    the corner's own text unreadable on it. The light corner has its own moving
    lights already, .mc-aurora, so it keeps everything it had. */
 html:not(.sun) .ar-stack .q-page.sf:not(.mc-light)::before{ display:none; }
-html:not(.sun) .ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background-color:transparent;
-  background-image:linear-gradient(to bottom, var(--gnd, #06090F) 0%, var(--gnd, #06090F) 28%, transparent 78%); }
-.ar-stack > .ar-room > .q-page.sf{ --gnd:var(--gnd-floor); }
-.ar-stack > .ar-room > .q-page.sf.mc-shell{ --gnd:var(--gnd-home); }
-.ar-stack > .ar-room > .q-page.sf.sf-line{ --gnd:var(--gnd-line); }
+html:not(.sun) .ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background:transparent; }
 html.sun .ar-gnd{ display:none; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
@@ -14944,7 +14958,12 @@ html.sun .ar-gnd{ display:none; }
    two directions. */
 .ar-room.ar-in > .q-page.sf{ z-index:102;
   animation:arPageIn var(--t-wipe) cubic-bezier(.35,.12,.2,1) both;
-  box-shadow:0 0 44px 10px rgba(0,0,0,.6); will-change:transform; }
+  /* The arriving sheet used to cast a dark edge, which is what told two opaque
+     sheets apart. They are not opaque any more: one ground lies behind both,
+     and a shadow on it is a seam drawn on purpose. Jorge, 17 September: no
+     seam between the rooms. The sheen below still crosses the arriving sheet,
+     because a light travelling over a room is not a line between two. */
+  will-change:transform; }
 .ar-room.ar-out > .q-page.sf{ z-index:100;
   animation:arPageOut var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; will-change:transform, filter; }
 @keyframes arPageIn{

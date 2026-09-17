@@ -148,6 +148,8 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.35,\.12,\.2,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the page curve");
   assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ z-index:102;\n\s*animation:arPageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core) && /\.ar-room\.ar-out > \.q-page\.sf\{ z-index:100;\n\s*animation:arPageOut var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core), "the room's own sheet is what travels, on one clock and one curve");
   assert.ok(/\.ar-bar\{ position:fixed; z-index:105;/.test(core) && /\.ar-fly\{ position:fixed; z-index:106;/.test(core), "the bar and the mark stay above a room in mid-travel");
+  assert.ok(!/box-shadow:0 0 44px 10px rgba\(0,0,0,\.6\)/.test(core),
+    "and the arriving sheet casts no dark edge, because with one ground behind both rooms a shadow on it is a seam");
   /* The ground behind the switch was one flat dark, then the arriving room's
      colour dropped in whole. Neither travelled. It is a backdrop now: the
      blobs that used to sit inside each room live behind both of them, each on
@@ -160,7 +162,7 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and the flat ground that used to drop in whole is gone");
   assert.ok(/html:not\(\.sun\) \.ar-stack \.q-page\.sf:not\(\.mc-light\)::before\{ display:none; \}/.test(core),
     "a room inside the stack no longer paints its own blobs");
-  assert.ok(/\.q-page\.sf:not\(\.mc-light\)\{ background-color:transparent;/.test(core),
+  assert.ok(/\.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
     "and the light corner is left alone, because it keeps its own background and its own moving lights");
   assert.ok(/html\.sun \.ar-gnd\{ display:none; \}/.test(core),
     "and daylight stands the backdrop down, because there every room is the same green and nothing has anywhere to travel to");
@@ -170,8 +172,8 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "every blob moves in whole pixels, because a fractional offset resamples a soft edge every frame and flickers");
   assert.ok(!/\.ar-blob[^{]*\{[^}]*filter:\s*blur/.test(core),
     "the haze is in the gradient's stops, not a filter blur that would run every frame of a drag");
-  assert.ok(/html:not\(\.sun\) \.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background-color:transparent;\n\s*background-image:linear-gradient\(to bottom, var\(--gnd, #06090F\) 0%, var\(--gnd, #06090F\) 28%, transparent 78%\);/.test(core),
-    "and the room stops short of the foot, which is what lets the backdrop be seen at all");
+  assert.ok(/html:not\(\.sun\) \.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
+    "and a room inside the stack carries no ground of its own, because two grounds meeting is exactly what a seam is");
   assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
   assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
     "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
