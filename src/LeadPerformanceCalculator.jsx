@@ -7692,10 +7692,23 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const gndRef = useRef(null);
   const posRef = useRef(0);
   const animRef = useRef(0);
-  /* How much of the thumb each blob takes: far moves least. */
-  const BLOB_SPEED = [0.10, 0.18, 0.28];
+  /* How much of the thumb each blob takes at the END of a leg: far moves least.
+     The spread is what reads as depth, and it is now close to the multiplane's
+     own, which ran its sheets at a fifth, a half and full speed. Ours are the
+     two sheets BEHIND: the room itself is the one travelling at full speed, so
+     it completes the set rather than competing with it. */
+  const BLOB_SPEED = [0.12, 0.30, 0.55];
   /* When each blob starts its colour journey, as a fraction of the leg. */
   const BLOB_LEAD = [0, 0.16, 0.32];
+  /* Subtle at first, full by the end. Jorge, 17 September: the effect should
+     start very quiet and build into the multiplane at the top of the research
+     page. A straight line from nothing to full does not do that, because the
+     first inch of thumb is where a gesture is least committed and most of what
+     a person notices. Squared, the backdrop has moved a quarter of its distance
+     at the halfway mark and the rest in the second half, so a small drag that
+     springs back barely disturbs the ground and a full one arrives at the whole
+     effect. It lands on exactly the same number at the end either way. */
+  const ramp = (v, last) => (last <= 0 ? 0 : (v * v) / last);
   const paintGround = (pos) => {
     const el = gndRef.current;
     if (!el || !tabs.length) return;
@@ -7719,7 +7732,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       const k = Math.min(1, Math.max(0, (f - lead) / (1 - lead)));
       node.children[1].style.opacity = String(k * k * (3 - 2 * k));
       /* whole pixels: a fractional offset resamples a soft edge every frame */
-      node.style.transform = "translate3d(" + Math.round(-at * w * BLOB_SPEED[b]) + "px,0,0)";
+      node.style.transform = "translate3d(" + Math.round(-ramp(at, last) * w * BLOB_SPEED[b]) + "px,0,0)";
     }
   };
   useLayoutEffect(() => {
@@ -11829,7 +11842,7 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
 html, body { margin:0; padding:0; background:var(--bg); }
 /* The three grounds, named once. The rooms are genuinely different places and
    the colour is how a person knows which one they are standing in. */
-:root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }
+:root{ --gnd-line:#06090F; --gnd-home:#1B1A14; --gnd-floor:#070A08; }
 /* Portalled overlays — the help sheet, the day screen — sit outside .lpc,
          which is where the app's face is set, so they were rendering in the
          browser's default serif. */
@@ -14855,10 +14868,10 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 /* Wider than the screen, and offset left, so that at full travel the right
    edge has not run inside it: the furthest any blob goes is
    (tabs - 1) x 100vw x 0.28, which is 56vw on a store with all three, against
-   the 80vw of slack this leaves. The blobs are placed in vw from the SCREEN's
+   the 140vw of slack this leaves. The blobs are placed in vw from the SCREEN's
    left rather than in percentages of this box, so widening the box does not
    move them: the 40vw in each position is what cancels the offset. */
-.ar-gnd-base, .ar-blob{ position:absolute; left:-40vw; top:0; width:220vw; height:100%; }
+.ar-gnd-base, .ar-blob{ position:absolute; left:-40vw; top:0; width:280vw; height:100%; }
 .ar-blob{ will-change:transform; }
 .ar-gnd-c, .ar-blob-c{ position:absolute; inset:0; }
 /* The tab a layer is painting, and the accents that tab paints in. These are
@@ -14867,7 +14880,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    they are repeated here because a backdrop has to hold two tabs' colours at
    once and cannot inherit either. Change one, change both. */
 .ar-gnd-c[data-tab="home"], .ar-blob-c[data-tab="home"]{
-  --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --gnd:var(--gnd-home); }
+  --a1:#8A7A4E; --a2:#C7B382; --led:#E4C98D; --gnd:var(--gnd-home); }
 .ar-gnd-c[data-tab="floor"], .ar-blob-c[data-tab="floor"]{
   --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --gnd:var(--gnd-floor); }
 .ar-gnd-c[data-tab="line"], .ar-blob-c[data-tab="line"]{
@@ -14900,7 +14913,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    and that is its signature. It keeps it. */
 .ar-blob[data-i="2"] > .ar-blob-c[data-tab="home"]{
   background:radial-gradient(closest-side at calc(40vw + 50vw) 112%,
-    rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%); }
+    rgba(228,201,141,.34), rgba(228,201,141,.10) 55%, transparent 76%); }
 /* Safari 15 and older have no color-mix, the same fallback the rooms carry. */
 @supports not (background: color-mix(in srgb, red 10%, transparent)){
   .ar-blob[data-i="0"] > .ar-blob-c{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
