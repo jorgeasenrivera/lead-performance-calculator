@@ -196,9 +196,13 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "the haze is in the gradient's stops, not a filter blur that would run every frame of a drag");
   assert.ok(/html:not\(\.sun\) \.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
     "and a room inside the stack carries no ground of its own, because two grounds meeting is exactly what a seam is");
-  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#1B1A14; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
-  assert.ok(/--a1:#8A7A4E; --a2:#C7B382; --led:#E4C98D; --gnd:var\(--gnd-home\);/.test(core),
-    "and the corner is warm sand, its own place rather than a darker shade of the floor");
+  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
+  /* Warm sand was tried on 17 September and dropped the same day: the corner's
+     own four lights are green and sit in front of this ground, so a warm one
+     behind them read as two ideas at once. */
+  assert.ok(/--a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --gnd:var\(--gnd-home\);/.test(core) &&
+    !/#8A7A4E|#C7B382/.test(core),
+    "and the corner is green, with nothing left of the warm sand it was briefly");
   assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
     "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
   assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
