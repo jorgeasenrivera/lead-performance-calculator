@@ -11862,7 +11862,7 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
 html, body { margin:0; padding:0; background:var(--bg); }
 /* The three grounds, named once. The rooms are genuinely different places and
    the colour is how a person knows which one they are standing in. */
-:root{ --gnd-line:#06090F; --gnd-home:#1B1A14; --gnd-floor:#070A08; }
+:root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }
 /* Portalled overlays — the help sheet, the day screen — sit outside .lpc,
          which is where the app's face is set, so they were rendering in the
          browser's default serif. */
@@ -14925,8 +14925,13 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    .q-page.sf.mc-shell for the corner and .q-page.sf.sf-line for the line;
    they are repeated here because a backdrop has to hold two tabs' colours at
    once and cannot inherit either. Change one, change both. */
+/* Back to green on 17 September. The warm sand was tried and dropped: the
+   corner carries four large coloured lights of its own, .mc-aurora i, three of
+   them green, and they sit in FRONT of this ground. A warm ground behind green
+   lights is two ideas at once, which is what Jorge saw. Warming the lights to
+   match was the other way out and he chose this one. */
 .ar-gnd-c[data-tab="home"], .ar-blob-c[data-tab="home"]{
-  --a1:#8A7A4E; --a2:#C7B382; --led:#E4C98D; --gnd:var(--gnd-home); }
+  --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --gnd:var(--gnd-home); }
 .ar-gnd-c[data-tab="floor"], .ar-blob-c[data-tab="floor"]{
   --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --gnd:var(--gnd-floor); }
 .ar-gnd-c[data-tab="line"], .ar-blob-c[data-tab="line"]{
@@ -14959,7 +14964,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    and that is its signature. It keeps it. */
 .ar-blob[data-i="2"] > .ar-blob-c[data-tab="home"]{
   background:radial-gradient(closest-side at calc(40vw + 50vw) 112%,
-    rgba(228,201,141,.34), rgba(228,201,141,.10) 55%, transparent 76%); }
+    rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%); }
 /* Safari 15 and older have no color-mix, the same fallback the rooms carry. */
 @supports not (background: color-mix(in srgb, red 10%, transparent)){
   .ar-blob[data-i="0"] > .ar-blob-c{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
