@@ -166,15 +166,20 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and the light corner is left alone, because it keeps its own background and its own moving lights");
   assert.ok(/html\.sun \.ar-gnd\{ display:none; \}/.test(core),
     "and daylight stands the backdrop down, because there every room is the same green and nothing has anywhere to travel to");
-  assert.ok(/const BLOB_SPEED = \[0\.10, 0\.18, 0\.28\];/.test(core) && /const BLOB_LEAD = \[0, 0\.16, 0\.32\];/.test(core),
+  assert.ok(/const BLOB_SPEED = \[0\.12, 0\.30, 0\.55\];/.test(core) && /const BLOB_LEAD = \[0, 0\.16, 0\.32\];/.test(core),
     "three blobs, three speeds, and three moments to turn colour: two layers read as a slide, three read as depth");
-  assert.ok(/node\.style\.transform = "translate3d\(" \+ Math\.round\(-at \* w \* BLOB_SPEED\[b\]\) \+ "px,0,0\)";/.test(core),
+  assert.ok(/const ramp = \(v, last\) => \(last <= 0 \? 0 : \(v \* v\) \/ last\);/.test(core) &&
+    /Math\.round\(-ramp\(at, last\) \* w \* BLOB_SPEED\[b\]\)/.test(core),
+    "and the travel is squared, so it starts very quiet and arrives at the full effect rather than running at one rate throughout");
+  assert.ok(/Math\.round\(-ramp\(at, last\) \* w \* BLOB_SPEED\[b\]\) \+ "px,0,0\)";/.test(core),
     "every blob moves in whole pixels, because a fractional offset resamples a soft edge every frame and flickers");
   assert.ok(!/\.ar-blob[^{]*\{[^}]*filter:\s*blur/.test(core),
     "the haze is in the gradient's stops, not a filter blur that would run every frame of a drag");
   assert.ok(/html:not\(\.sun\) \.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
     "and a room inside the stack carries no ground of its own, because two grounds meeting is exactly what a seam is");
-  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
+  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#1B1A14; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
+  assert.ok(/--a1:#8A7A4E; --a2:#C7B382; --led:#E4C98D; --gnd:var\(--gnd-home\);/.test(core),
+    "and the corner is warm sand, its own place rather than a darker shade of the floor");
   assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
     "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
   assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
