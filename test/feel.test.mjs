@@ -166,6 +166,25 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and the light corner is left alone, because it keeps its own background and its own moving lights");
   assert.ok(/html\.sun \.ar-gnd\{ display:none; \}/.test(core),
     "and daylight stands the backdrop down, because there every room is the same green and nothing has anywhere to travel to");
+  assert.ok(/const DOT_SPEED = \[0\.05, 0\.13, 0\.24\];/.test(core) && /\.ar-stack \.mc-aurora u\{ display:none; \}/.test(core),
+    "three dot fields at three speeds, out behind the rooms, rather than one inside the corner that cannot travel");
+  assert.ok(/rgba\(255,255,255,\.07\) 1px, transparent 2\.4px\) 0 0\/22px 22px/.test(core) &&
+    /rgba\(255,255,255,\.10\) 1\.7px, transparent 3\.6px\) 0 0\/54px 54px/.test(core),
+    "tighter, smaller and fainter further back; looser, larger and a shade brighter nearer, each fainter than the single field it replaces");
+  /* The first version of this guard asserted every dot was slower than every
+     blob, which is simply not true: the nearest dots run at 0.24 against the
+     far blob's 0.12. The interleaving is the point, so the guard now checks
+     what is actually meant. */
+  {
+    const dots = (core.match(/const DOT_SPEED = \[([^\]]+)\]/) || [])[1];
+    const blobs = (core.match(/const BLOB_SPEED = \[([^\]]+)\]/) || [])[1];
+    assert.ok(dots && blobs, "both sets of speeds are named in one place each");
+    const D = dots.split(",").map(Number), B = blobs.split(",").map(Number);
+    assert.ok(D.every((v, i) => i === 0 || v > D[i - 1]), "the dot fields run slowest first");
+    assert.ok(B.every((v, i) => i === 0 || v > B[i - 1]), "and so do the blobs");
+    assert.ok(D[0] < Math.min(...B), "the furthest dot field is the slowest thing on the screen");
+    assert.ok(Math.max(...B) < 1, "and nothing behind the rooms keeps up with a room, which travels at 1");
+  }
   assert.ok(/const BLOB_SPEED = \[0\.12, 0\.30, 0\.55\];/.test(core) && /const BLOB_LEAD = \[0, 0\.16, 0\.32\];/.test(core),
     "three blobs, three speeds, and three moments to turn colour: two layers read as a slide, three read as depth");
   assert.ok(/const ramp = \(v, last\) => \(last <= 0 \? 0 : \(v \* v\) \/ last\);/.test(core) &&

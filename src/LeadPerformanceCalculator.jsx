@@ -7692,6 +7692,14 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const gndRef = useRef(null);
   const posRef = useRef(0);
   const animRef = useRef(0);
+  /* The dot fields, furthest first. The furthest is the slowest thing on the
+     screen, slower than any blob; the nearest sits in FRONT of the far blob, at
+     0.24 against its 0.12. That interleaving is deliberate and is what a
+     multiplane actually looked like: sheets at a spread of distances, not two
+     groups stacked. Speeds across everything, back to front:
+       dots 0.05, blob 0.12, dots 0.13, dots 0.24, blob 0.30, blob 0.55,
+     and the room itself at 1. */
+  const DOT_SPEED = [0.05, 0.13, 0.24];
   /* How much of the thumb each blob takes at the END of a leg: far moves least.
      The spread is what reads as depth, and it is now close to the multiplane's
      own, which ran its sheets at a fifth, a half and full speed. Ours are the
@@ -7729,8 +7737,12 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     base.children[1].dataset.tab = to;
     base.children[1].style.opacity = String(f);
     const w = window.innerWidth || 1;
+    for (let d = 0; d < 3; d++) {
+      const dot = el.children[d + 1];
+      if (dot) dot.style.transform = "translate3d(" + Math.round(-ramp(at, last) * w * DOT_SPEED[d]) + "px,0,0)";
+    }
     for (let b = 0; b < 3; b++) {
-      const node = el.children[b + 1];
+      const node = el.children[b + 4];
       if (!node) continue;
       node.children[0].dataset.tab = from;
       node.children[1].dataset.tab = to;
@@ -7858,6 +7870,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           price a phone should pay for a background. */}
       <div className="ar-gnd" ref={gndRef} aria-hidden="true">
         <div className="ar-gnd-base"><span className="ar-gnd-c" /><span className="ar-gnd-c" /></div>
+        {[0, 1, 2].map((i) => (<div className="ar-dots" data-i={i} key={"d" + i} />))}
         {[0, 1, 2].map((i) => (
           <div className="ar-blob" data-i={i} key={i}>
             <span className="ar-blob-c" /><span className="ar-blob-c" />
@@ -14878,8 +14891,34 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    the 140vw of slack this leaves. The blobs are placed in vw from the SCREEN's
    left rather than in percentages of this box, so widening the box does not
    move them: the 40vw in each position is what cancels the offset. */
-.ar-gnd-base, .ar-blob{ position:absolute; left:-40vw; top:0; width:280vw; height:100%; }
-.ar-blob{ will-change:transform; }
+.ar-gnd-base, .ar-blob, .ar-dots{ position:absolute; left:-40vw; top:0; width:280vw; height:100%; }
+.ar-dots{ pointer-events:none; }
+.ar-blob, .ar-dots{ will-change:transform; }
+/* The dots, and they are not a new idea: the corner already had a field of
+   them, .mc-aurora u, 22px apart in white at .16 over half opacity. They were
+   inside the room, so like the blobs they could not travel. This is the same
+   grid, out here, one field for all three rooms, and it is the furthest thing
+   on the screen so it moves least of anything. Jorge asked for them a shade
+   more transparent than the demo's, because the corner is already dotted and
+   two fields at demo strength is busy.
+
+   The falloff is wider than the corner's 1px to 1.6px. That edge is under a
+   pixel across, and a soft edge smaller than a pixel shimmers when it moves,
+   which is the flicker Jorge caught in the demo. Masked top and bottom the way
+   the corner's is, so the dots never reach the head or the bar. */
+/* Three of them, not one, which is the multiplane's whole trick: a single
+   field sliding is a slide, three at three speeds is depth. Further back is a
+   tighter grid of smaller, fainter dots; nearer is looser, larger and a shade
+   brighter. Each is fainter than the single field it replaces, so three of
+   them together sit about where one did and none of them is busy on its own. */
+.ar-dots[data-i="0"]{ background:radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 2.4px) 0 0/22px 22px; }
+.ar-dots[data-i="1"]{ background:radial-gradient(circle, rgba(255,255,255,.08) 1.3px, transparent 2.9px) 0 0/34px 34px; }
+.ar-dots[data-i="2"]{ background:radial-gradient(circle, rgba(255,255,255,.10) 1.7px, transparent 3.6px) 0 0/54px 54px; }
+.ar-dots{ -webkit-mask:linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent);
+  mask:linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent); }
+/* One field, not two: inside the stack the corner stops drawing its own. Its
+   coloured lights stay, because those are its atmosphere and they breathe. */
+.ar-stack .mc-aurora u{ display:none; }
 .ar-gnd-c, .ar-blob-c{ position:absolute; inset:0; }
 /* The tab a layer is painting, and the accents that tab paints in. These are
    the same values the rooms set on themselves, at .q-page.sf for the floor,
