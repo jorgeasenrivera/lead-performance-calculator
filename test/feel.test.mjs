@@ -185,7 +185,17 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
   assert.ok(/transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\); will-change:transform; \}/.test(core), "the bar's pill lands with the room");
   assert.ok(/crossTimer\.current = setTimeout\(\(\) => setCross\(null\), MOTION\.wipe \+ 60\);/.test(core), "the classes are held until the whole gesture is over");
-  assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades, so two rooms are never readable through each other");
+  /* This guard used to check only that no class was named arFadeIn or
+     arFadeOut, which is a proxy for the property rather than the property. It
+     passed all the way through #356 making both sheets transparent, and two
+     rooms then WERE readable through each other on every cross: Jorge
+     photographed the two "isn't open yet" screens printed over one another. It
+     checks the real thing now. */
+  assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades");
+  assert.ok(/html:not\(\.sun\) \.ar-stack\.x > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{\n\s*background:var\(--ar-x-gnd, var\(--gnd-floor\)\);/.test(core),
+    "and while the rooms cross they are opaque, so two rooms are never readable through each other");
+  assert.ok(/stack\.style\.setProperty\("--ar-x-gnd", "var\(--gnd-" \+ \(f >= 0\.5 \? to : from\) \+ "\)"\)/.test(core),
+    "both sheets take the same ground while they cross, which is what keeps that from being a seam");
   assert.ok(!/arDotsIn|arDotsOut|steps\(5,end\)|steps\(3,end\)|@property --ar-r/.test(core), "nothing in the switch is stepped");
   assert.ok(/const roomEl = dest\.closest\("\.q-page\.sf"\) \|\| dest\.closest\("\.ar-room"\);/.test(core), "the mark lands where the room comes to rest, not where it started");
   assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),

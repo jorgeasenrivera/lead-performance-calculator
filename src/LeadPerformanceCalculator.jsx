@@ -7717,6 +7717,13 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     const i = Math.max(0, Math.min(last - 1, Math.floor(at)));
     const from = tabs[i], to = tabs[Math.min(last, i + 1)];
     const f = last === 0 ? 0 : Math.min(1, Math.max(0, at - i));
+    /* Which ground the sheets paint while they cross, so both take the same one
+       and neither can be read through the other. After f, not before it: the
+       first version of this line read f above its own declaration, which is a
+       dead zone and took the whole screen out. The tests did not catch it
+       because they read the source rather than run it. */
+    const stack = el.parentElement;
+    if (stack) stack.style.setProperty("--ar-x-gnd", "var(--gnd-" + (f >= 0.5 ? to : from) + ")");
     const base = el.firstChild;
     base.children[0].dataset.tab = from;
     base.children[1].dataset.tab = to;
@@ -14944,6 +14951,21 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    lights already, .mc-aurora, so it keeps everything it had. */
 html:not(.sun) .ar-stack .q-page.sf:not(.mc-light)::before{ display:none; }
 html:not(.sun) .ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background:transparent; }
+/* Except while the rooms are crossing, and this is a fault of mine from #356.
+   A drag is safe transparent because the two sheets TILE: one ends exactly
+   where the other begins, so nothing is ever behind anything. The cross does
+   not tile, it OVERLAPS, and two transparent sheets on top of each other are
+   both readable at once. Jorge photographed it on 17 September: "The floor
+   isn't open yet" and "The line isn't open yet" printed through each other.
+   A committed swipe runs the cross too, so this is not only a button.
+
+   Both sheets take the ARRIVING room's ground for the length of it. The same
+   colour on both is what keeps it from being a seam, and opaque is what keeps
+   them from being read through. The backdrop is hidden for those few hundred
+   milliseconds, which is the trade: a tap is a push, and there is nothing to
+   see behind a push. */
+html:not(.sun) .ar-stack.x > .ar-room > .q-page.sf:not(.mc-light){
+  background:var(--ar-x-gnd, var(--gnd-floor)); }
 html.sun .ar-gnd{ display:none; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
