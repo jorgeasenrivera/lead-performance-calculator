@@ -156,8 +156,27 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
      its own layer so each can move at its own speed, and each carries its
      colour from one room to the next rather than switching. Jorge's call of
      17 September, option B. */
-  assert.ok(/\.ar-gnd\{ position:fixed; inset:0; z-index:99; pointer-events:none; overflow:hidden; \}/.test(core),
+  /* One canvas, not seven elements. Every element that moves on its own gets a
+     GPU texture of its own, at width x height x dpr squared x four bytes, and
+     seven of them at a device ratio of three came to 221 MB: over a WKWebView's
+     ceiling, which an app cannot raise. That was the lag, the dots arriving
+     late and the rooms loading in after the switch. Nothing a person sees
+     changed. */
+  assert.ok(/<canvas className="ar-gnd" ref=\{gndRef\} aria-hidden="true" \/>/.test(core),
+    "the backdrop is one canvas");
+  assert.ok(!/className="ar-blob"|className="ar-dots"|className="ar-gnd-base"/.test(core),
+    "and none of the seven layers it replaced is left, because seven textures is what cost the phone its frames");
+  assert.ok(/\.ar-gnd\{ position:fixed; inset:0; z-index:99; pointer-events:none;/.test(core),
     "the backdrop sits under both rooms");
+  assert.ok(!/\.ar-gnd\{[^}]*will-change/.test(core),
+    "the canvas itself never moves, so it needs no will-change: its contents move inside it, which is the whole saving");
+  /* Measured rather than reasoned, and the guess was wrong twice before this
+     number: neither clipping the fills nor taking out a forced layout moved it.
+     What moves it is how many pixels the drawing is rasterised into. At two to
+     the CSS pixel a room switch ran 377 ms against a 150 ms bar; at one it runs
+     about 104, and the texture is 1.3 MB where the seven layers were 221.5. */
+  assert.ok(/    const s = 1;\n/.test(core) && /const bw = Math\.round\(w \* s\), bh = Math\.round\(h \* s\);/.test(core),
+    "and it is drawn one backing pixel to the CSS pixel, which is the whole difference between this being fast and being slower than what it replaced");
   assert.ok(!/\.ar-stack\.x::before|animation:arGround/.test(core),
     "and the flat ground that used to drop in whole is gone");
   assert.ok(/html:not\(\.sun\) \.ar-stack \.q-page\.sf:not\(\.mc-light\)::before\{ display:none; \}/.test(core),
@@ -168,9 +187,11 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and daylight stands the backdrop down, because there every room is the same green and nothing has anywhere to travel to");
   assert.ok(/const DOT_SPEED = \[0\.05, 0\.13, 0\.24\];/.test(core) && /\.ar-stack \.mc-aurora u\{ display:none; \}/.test(core),
     "three dot fields at three speeds, out behind the rooms, rather than one inside the corner that cannot travel");
-  assert.ok(/rgba\(255,255,255,\.07\) 1px, transparent 2\.4px\) 0 0\/22px 22px/.test(core) &&
-    /rgba\(255,255,255,\.10\) 1\.7px, transparent 3\.6px\) 0 0\/54px 54px/.test(core),
+  assert.ok(/\{ step: 22, r: 1\.0, edge: 2\.4, a: 0\.07 \}/.test(core) &&
+    /\{ step: 54, r: 1\.7, edge: 3\.6, a: 0\.10 \}/.test(core),
     "tighter, smaller and fainter further back; looser, larger and a shade brighter nearer, each fainter than the single field it replaces");
+  assert.ok(/ctx\.createPattern\(c, "repeat"\)/.test(core) && !/width:280vw/.test(core),
+    "and a field is a repeating pattern now, so it wraps rather than needing 280vw of spare width to slide inside");
   /* The first version of this guard asserted every dot was slower than every
      blob, which is simply not true: the nearest dots run at 0.24 against the
      far blob's 0.12. The interleaving is the point, so the guard now checks
@@ -188,19 +209,29 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/const BLOB_SPEED = \[0\.12, 0\.30, 0\.55\];/.test(core) && /const BLOB_LEAD = \[0, 0\.16, 0\.32\];/.test(core),
     "three blobs, three speeds, and three moments to turn colour: two layers read as a slide, three read as depth");
   assert.ok(/const ramp = \(v, last\) => \(last <= 0 \? 0 : \(v \* v\) \/ last\);/.test(core) &&
-    /Math\.round\(-ramp\(at, last\) \* w \* BLOB_SPEED\[b\]\)/.test(core),
+    /const dx = -Math\.round\(trav \* w \* BLOB_SPEED\[b\]\);/.test(core),
     "and the travel is squared, so it starts very quiet and arrives at the full effect rather than running at one rate throughout");
-  assert.ok(/Math\.round\(-ramp\(at, last\) \* w \* BLOB_SPEED\[b\]\) \+ "px,0,0\)";/.test(core),
-    "every blob moves in whole pixels, because a fractional offset resamples a soft edge every frame and flickers");
-  assert.ok(!/\.ar-blob[^{]*\{[^}]*filter:\s*blur/.test(core),
+  assert.ok(/const dx = -Math\.round\(trav \* w \* BLOB_SPEED\[b\]\);/.test(core) &&
+    /-Math\.round\(trav \* w \* DOT_SPEED\[d\] \* s\)/.test(core),
+    "every layer moves in whole pixels, because a fractional offset resamples a soft edge every frame and flickers");
+  assert.ok(!/filter:\s*blur/.test(core.slice(core.indexOf("const BLOBS = ["), core.indexOf("const paintGround"))),
     "the haze is in the gradient's stops, not a filter blur that would run every frame of a drag");
+  assert.ok(/const x0 = Math\.max\(-rx, -cx\), x1 = Math\.min\(rx, w - cx\);/.test(core) &&
+    /ctx\.fillRect\(x0, y0, x1 - x0, y1 - y0\);/.test(core),
+    "and a light fills only where its box and the screen overlap, every one of them being wider and taller than the screen with most of it below the bottom");
+  /* The ground had no colour until the first animation frame, which is the
+     black Jorge saw between rooms. A layout effect runs before the browser
+     paints, so there is no such frame now. */
+  assert.ok(/useLayoutEffect\(\(\) => \{\n    if \(!tabs\.length\) return undefined;/.test(core) &&
+    /\}, \[tabKey, active, drag\]\);/.test(core),
+    "the backdrop is painted before the browser paints, and only when something it draws has changed, rather than on every render of the app");
   assert.ok(/html:not\(\.sun\) \.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
     "and a room inside the stack carries no ground of its own, because two grounds meeting is exactly what a seam is");
-  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once");
+  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once, for the page behind the app");
   /* Warm sand was tried on 17 September and dropped the same day: the corner's
      own four lights are green and sit in front of this ground, so a warm one
      behind them read as two ideas at once. */
-  assert.ok(/--a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --gnd:var\(--gnd-home\);/.test(core) &&
+  assert.ok(/home:  \{ gnd: "#15211B", a1: "#6E9678", a2: "#A9C4AC", led: "#8FD8AF" \}/.test(core) &&
     !/#8A7A4E|#C7B382/.test(core),
     "and the corner is green, with nothing left of the warm sand it was briefly");
   assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
