@@ -166,6 +166,10 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and the light corner is left alone, because it keeps its own background and its own moving lights");
   assert.ok(/html\.sun \.ar-gnd\{ display:none; \}/.test(core),
     "and daylight stands the backdrop down, because there every room is the same green and nothing has anywhere to travel to");
+  assert.ok(/const DOT_SPEED = 0\.07;/.test(core) && /\.ar-stack \.mc-aurora u\{ display:none; \}/.test(core),
+    "one dot field, out behind the rooms and the slowest thing on the screen, rather than one inside the corner that cannot travel and a second behind it");
+  assert.ok(/rgba\(255,255,255,\.14\) 1px, transparent 2\.4px\) 0 0\/22px 22px/.test(core),
+    "the corner's own 22px grid, a shade more transparent, with a falloff wider than a pixel so it does not shimmer as it moves");
   assert.ok(/const BLOB_SPEED = \[0\.12, 0\.30, 0\.55\];/.test(core) && /const BLOB_LEAD = \[0, 0\.16, 0\.32\];/.test(core),
     "three blobs, three speeds, and three moments to turn colour: two layers read as a slide, three read as depth");
   assert.ok(/const ramp = \(v, last\) => \(last <= 0 \? 0 : \(v \* v\) \/ last\);/.test(core) &&
