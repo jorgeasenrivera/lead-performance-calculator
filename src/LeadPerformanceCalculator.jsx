@@ -7692,6 +7692,8 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const gndRef = useRef(null);
   const posRef = useRef(0);
   const animRef = useRef(0);
+  const dotsRef = useRef(null);
+  const ctxRef = useRef(null);
   /* The dot fields, furthest first. The furthest is the slowest thing on the
      screen, slower than any blob; the nearest sits in FRONT of the far blob, at
      0.24 against its 0.12. That interleaving is deliberate and is what a
@@ -7717,43 +7719,257 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      springs back barely disturbs the ground and a full one arrives at the whole
      effect. It lands on exactly the same number at the end either way. */
   const ramp = (v, last) => (last <= 0 ? 0 : (v * v) / last);
+
+  /* ---- the ground behind the rooms, on one canvas ----
+     This was seven stacked elements with gradients on them, and it shipped, and
+     on Jorge's phone it was slow enough to be the whole story. The reason is
+     not the gradients, it is that every element that moves on its own gets its
+     own GPU texture, and a texture costs width x height x dpr squared x four
+     bytes. Seven of them across a 1092 by 844 window at a device ratio of three
+     came to 221 MB. A WKWebView has a memory ceiling it cannot raise, it moves
+     with the device and with whatever else the phone is doing, and over it the
+     system stops rasterising on time: that is the stutter, the dots arriving
+     late, and the rooms loading in after the switch.
+
+     One canvas instead. It is one texture the size of the screen, the drawing
+     happens on the CPU into it, and nothing else on the screen is composited
+     for the backdrop's sake. Capped at two device pixels to the CSS pixel it is
+     about five megabytes, and the cap costs nothing a person can see because
+     the sharpest thing out here is a dot two pixels across.
+
+     Everything the seven layers did, this does. The names below are the same
+     numbers that were in the stylesheet, moved here because the canvas is now
+     the only thing that paints them and one source beats two that drift. */
+  const GND = {
+    home:  { gnd: "#15211B", a1: "#6E9678", a2: "#A9C4AC", led: "#8FD8AF" },
+    floor: { gnd: "#070A08", a1: "#0FB37E", a2: "#0BC5C5", led: "#7CF0D0" },
+    line:  { gnd: "#06090F", a1: "#5566F0", a2: "#37B6F0", led: "#9DC3FF" },
+  };
+  /* Bigger and hazier than the three that used to sit inside the rooms, which
+     is Jorge's call on the demo of 17 September. rx and cx are fractions of the
+     screen's width, ry and cy fractions of its height, and the stops are the
+     colour's alpha at that distance out. The haze is in the stops rather than a
+     blur, because a blur over an area this size runs on every frame of a drag.
+
+     The peaks come DOWN as the areas go up, and that is deliberate rather than
+     timid: the first version kept the rooms' old centre strengths over a much
+     larger area, and the line's bottom half came out a flat bright cyan, worse
+     than what it replaced. Bigger and hazier is not the same as brighter. */
+  const BLOBS = [
+    { k: "a1", rx: 1.18, ry: 0.64, cx: 0.14, cy: 1.04,
+      stops: [[0, 0.52], [0.32, 0.28], [0.58, 0.09], [0.82, 0]] },
+    { k: "a2", rx: 1.00, ry: 0.54, cx: 0.94, cy: 0.90,
+      stops: [[0, 0.34], [0.34, 0.18], [0.60, 0.06], [0.84, 0]] },
+    /* The corner's own glow is one wide flat light under the middle rather than
+       three, and that is its signature. It keeps it. */
+    { k: "led", rx: 0.88, ry: 0.44, cx: 0.50, cy: 1.18,
+      stops: [[0, 0.22], [0.36, 0.11], [0.78, 0]],
+      home: { c: "#7FA98A", rx: 0.90, ry: 0.12, cx: 0.50, cy: 1.12,
+        stops: [[0, 0.42], [0.55, 0.12], [0.76, 0]] } },
+  ];
+  /* Three fields, not one, which is the multiplane's whole trick: a single
+     field sliding is a slide, three at three speeds is depth. Further back is a
+     tighter grid of smaller, fainter dots; nearer is looser, larger and a shade
+     brighter. Each is fainter than the single field it replaces, so the three
+     together sit about where the corner's one did and none is busy on its own.
+     The falloff is wider than the corner's was, because an edge under a pixel
+     across shimmers when it moves, and that was the flicker Jorge caught. */
+  const DOTS = [
+    { step: 22, r: 1.0, edge: 2.4, a: 0.07 },
+    { step: 34, r: 1.3, edge: 2.9, a: 0.08 },
+    { step: 54, r: 1.7, edge: 3.6, a: 0.10 },
+  ];
+  const rgba = (c, a) => {
+    const n = parseInt(c.slice(1), 16);
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+  };
+  /* A light, drawn as an ellipse. The gradient painter only draws circles, so
+     the space is squashed vertically around the centre and a circle in that
+     space comes out as the ellipse. The fill covers the light's own box rather
+     than the screen: six screen fills a frame is the sort of cost this rebuild
+     exists to remove. */
+  const drawBlob = (ctx, g, colour, w, h, dx, alpha) => {
+    if (alpha <= 0) return;
+    const rx = g.rx * w, ry = g.ry * h, cx = g.cx * w + dx, cy = g.cy * h;
+    /* Where the light's box and the screen overlap, in the squashed space. Only
+       this gets filled. Every one of these lights is wider and taller than the
+       screen, and most of each sits below the bottom of it, so filling the
+       whole box was filling about eight screens a frame between the six of
+       them: the first cut of this rebuild did exactly that and put a room
+       switch 200 ms over its bar. */
+    const q = rx / ry;
+    const x0 = Math.max(-rx, -cx), x1 = Math.min(rx, w - cx);
+    const y0 = Math.max(-rx, (0 - cy) * q), y1 = Math.min(rx, (h - cy) * q);
+    if (x1 <= x0 || y1 <= y0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(1, 1 / q);
+    const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    for (let s = 0; s < g.stops.length; s++) grd.addColorStop(g.stops[s][0], rgba(colour, g.stops[s][1]));
+    ctx.fillStyle = grd;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.restore();
+  };
+  /* One wash off the top, the room's second accent at six per cent. It does not
+     travel: it is the sky, and the sky does not slide past a window. */
+  const drawWash = (ctx, colour, w, h, alpha) => {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(0.15 * w, -0.10 * h);
+    ctx.scale(1, 0.68);
+    const grd = ctx.createRadialGradient(0, 0, 0, 0, 0, 1000);
+    grd.addColorStop(0, rgba(colour, 0.06));
+    grd.addColorStop(0.6, rgba(colour, 0));
+    ctx.fillStyle = grd;
+    ctx.fillRect(-1000, -1000, 2000, 2000);
+    ctx.restore();
+  };
+  /* Each field is built once, as a single column of dots one tile wide and the
+     full height of the screen, with the top and bottom fade already burned into
+     it so the dots never reach the head or the bar. Tiled across, that column
+     is the field. It is why the canvas needs none of the 280vw of spare width
+     the seven layers carried: a repeating pattern wraps, so all that matters is
+     where the field sits inside one tile. */
+  const buildDots = (ctx, bw, bh, s) => DOTS.map((d) => {
+    const step = Math.max(2, Math.round(d.step * s));
+    const c = document.createElement("canvas");
+    c.width = step; c.height = bh;
+    const x = c.getContext("2d");
+    if (!x) return null;
+    /* One dot, drawn once, then stamped down the column. It was a gradient and
+       a loop of fillRects, and a canvas gradient is anchored in the space it
+       was made in, not in the rectangle being filled: every row after the first
+       came out empty and the fields simply were not there. */
+    const tile = document.createElement("canvas");
+    tile.width = step; tile.height = step;
+    const tx = tile.getContext("2d");
+    if (!tx) return null;
+    const grd = tx.createRadialGradient(step / 2, step / 2, 0, step / 2, step / 2, d.edge * s);
+    grd.addColorStop(0, "rgba(255,255,255," + d.a + ")");
+    grd.addColorStop(Math.min(0.99, d.r / d.edge), "rgba(255,255,255," + d.a + ")");
+    grd.addColorStop(1, "rgba(255,255,255,0)");
+    tx.fillStyle = grd;
+    tx.fillRect(0, 0, step, step);
+    for (let y = 0; y < bh; y += step) x.drawImage(tile, 0, y);
+    const m = x.createLinearGradient(0, 0, 0, bh);
+    m.addColorStop(0, "rgba(0,0,0,0)");
+    m.addColorStop(0.26, "#000");
+    m.addColorStop(0.74, "#000");
+    m.addColorStop(1, "rgba(0,0,0,0)");
+    x.globalCompositeOperation = "destination-in";
+    x.fillStyle = m;
+    x.fillRect(0, 0, step, bh);
+    return { step, pat: ctx.createPattern(c, "repeat") };
+  });
   const paintGround = (pos) => {
-    const el = gndRef.current;
-    if (!el || !tabs.length) return;
-    const last = tabs.length - 1;
+    const cv = gndRef.current;
+    if (!cv || !cv.getContext) return;
+    /* A store can have neither room, which Jorge asked about directly: some
+       have the floor, some the line, some both and some nothing at all. With
+       nothing there is no list to travel along, so the ground is simply the
+       colour of the room the person is standing in, painted and left alone. */
+    const seq = tabs.length ? tabs : [active];
+    /* The screen's size, from the window rather than from the canvas. The two
+       are the same number, because the canvas is fixed at inset 0, but asking
+       an ELEMENT for its size makes the browser stop and lay the page out to
+       answer, and this runs on every frame of an animation. I first thought
+       that forced layout was what made the first cut of this slow. It was not:
+       taking it out moved the room switch from 369 ms to 321, inside the noise.
+       It is still the wrong way round to ask, so it stays this way. */
+    const w = window.innerWidth || 0;
+    const h = window.innerHeight || 0;
+    if (!w || !h) return;
+    /* One backing pixel to the CSS pixel, and this is the number the whole
+       rebuild turns on. Everything else was guesswork that measured flat: at
+       two, a room switch ran 377 ms against its 150 ms bar; at one it runs 104.
+       Not the fill area, which I clipped first and which changed nothing, and
+       not a forced layout: the cost is simply how many pixels the drawing has
+       to be rasterised into, four times as many at two as at one.
+
+       What it costs to look at is a pixel of extra softness on edges that are
+       already soft. The blobs are haze and cannot tell. The dots keep their
+       size, 2 CSS px of core inside 4.8 of falloff, and give up about a device
+       pixel of sharpness at that outer edge, which on a dot drawn at seven per
+       cent white is not something a screen shows. The colours, the geometry
+       and the speeds are the ones Jorge approved, unchanged.
+
+       And it is 1.3 MB of texture where the seven layers were 221.5. */
+    const s = 1;
+    const bw = Math.round(w * s), bh = Math.round(h * s);
+    let ctx = ctxRef.current;
+    if (!ctx || ctx.canvas !== cv) { ctx = cv.getContext("2d"); ctxRef.current = ctx; }
+    if (!ctx) return;
+    if (cv.width !== bw || cv.height !== bh) {
+      cv.width = bw; cv.height = bh;
+      dotsRef.current = null;
+    }
+    const last = seq.length - 1;
     const at = Math.min(last, Math.max(0, pos));
     const i = Math.max(0, Math.min(last - 1, Math.floor(at)));
-    const from = tabs[i], to = tabs[Math.min(last, i + 1)];
+    const from = seq[i], to = seq[Math.min(last, i + 1)];
     const f = last === 0 ? 0 : Math.min(1, Math.max(0, at - i));
     /* Which ground the sheets paint while they cross, so both take the same one
        and neither can be read through the other. After f, not before it: the
        first version of this line read f above its own declaration, which is a
        dead zone and took the whole screen out. The tests did not catch it
        because they read the source rather than run it. */
-    const stack = el.parentElement;
+    const stack = cv.parentElement;
     if (stack) stack.style.setProperty("--ar-x-gnd", "var(--gnd-" + (f >= 0.5 ? to : from) + ")");
-    const base = el.firstChild;
-    base.children[0].dataset.tab = from;
-    base.children[1].dataset.tab = to;
-    base.children[1].style.opacity = String(f);
-    const w = window.innerWidth || 1;
-    for (let d = 0; d < 3; d++) {
-      const dot = el.children[d + 1];
-      if (dot) dot.style.transform = "translate3d(" + Math.round(-ramp(at, last) * w * DOT_SPEED[d]) + "px,0,0)";
+    const A = GND[from] || GND.floor, B = GND[to] || A;
+
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    /* The ground itself, then the room being arrived at laid over it at how far
+       the thumb has come. Opaque, and covering the whole canvas, so there is no
+       frame in which anything behind this shows through. */
+    ctx.fillStyle = A.gnd;
+    ctx.fillRect(0, 0, w, h);
+    drawWash(ctx, A.a2, w, h, 1);
+    /* The arriving room's ground and its wash go on together, in that order,
+       because the ground is opaque and has to cover the wash it is replacing.
+       Painted the other way round the two washes added up, and the top of the
+       line came out a few points brighter than it should be. */
+    if (f > 0) {
+      ctx.globalAlpha = f;
+      ctx.fillStyle = B.gnd;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
+      drawWash(ctx, B.a2, w, h, f);
     }
+    const trav = ramp(at, last);
     for (let b = 0; b < 3; b++) {
-      const node = el.children[b + 4];
-      if (!node) continue;
-      node.children[0].dataset.tab = from;
-      node.children[1].dataset.tab = to;
+      const g = BLOBS[b];
+      /* whole pixels: a fractional offset resamples a soft edge every frame */
+      const dx = -Math.round(trav * w * BLOB_SPEED[b]);
       /* the same journey, started late: a blob travels, it never switches */
       const lead = BLOB_LEAD[b];
       const k = Math.min(1, Math.max(0, (f - lead) / (1 - lead)));
-      node.children[1].style.opacity = String(k * k * (3 - 2 * k));
-      /* whole pixels: a fractional offset resamples a soft edge every frame */
-      node.style.transform = "translate3d(" + Math.round(-ramp(at, last) * w * BLOB_SPEED[b]) + "px,0,0)";
+      const gA = g[from] || g, gB = g[to] || g;
+      drawBlob(ctx, gA, gA.c || A[g.k], w, h, dx, 1);
+      drawBlob(ctx, gB, gB.c || B[g.k], w, h, dx, k * k * (3 - 2 * k));
+    }
+    /* The dots last, in device pixels rather than CSS ones, so a dot lands on
+       the grid the screen actually has. */
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!dotsRef.current) dotsRef.current = buildDots(ctx, bw, bh, s);
+    for (let d = 0; d < 3; d++) {
+      const p = dotsRef.current[d];
+      if (!p || !p.pat) continue;
+      const off = -Math.round(trav * w * DOT_SPEED[d] * s) % p.step;
+      ctx.save();
+      ctx.translate(off, 0);
+      ctx.fillStyle = p.pat;
+      ctx.fillRect(-off, 0, bw, bh);
+      ctx.restore();
     }
   };
+  /* The effects below run on a schedule of their own and must not close over a
+     stale paint, so they reach it through a ref that every render refreshes. */
+  const paintRef = useRef(paintGround);
+  paintRef.current = paintGround;
+  const tabKey = tabs.join(",");
   useLayoutEffect(() => {
     if (!tabs.length) return undefined;
     const last = tabs.length - 1;
@@ -7763,33 +7979,34 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       const w = window.innerWidth || 1;
       const seg = Math.min(1, Math.abs(drag.dx) / w);
       posRef.current = target + (drag.dx < 0 ? seg : -seg);
-      paintGround(posRef.current);
+      paintRef.current(posRef.current);
       return undefined;
     }
     const from = posRef.current;
     let reduce = false;
     try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
     if (reduce || Math.abs(from - target) < 0.002) {
-      posRef.current = target; paintGround(target); return undefined;
+      posRef.current = target; paintRef.current(target); return undefined;
     }
     const t0 = performance.now();
     const step = (now) => {
       const k = Math.min(1, (now - t0) / MOTION.wipe);
       const e = 1 - Math.pow(1 - k, 3);
       posRef.current = from + (target - from) * e;
-      paintGround(posRef.current);
+      paintRef.current(posRef.current);
       if (k < 1) animRef.current = requestAnimationFrame(step);
     };
     animRef.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(animRef.current);
-  });
+  }, [tabKey, active, drag]);
   useEffect(() => () => cancelAnimationFrame(animRef.current), []);
-  /* The phone turning, or the keyboard changing the width, moves every blob. */
+  /* The phone turning, or the keyboard changing the width, moves every blob and
+     rebuilds the dot columns, which are cut to the height of the screen. */
   useEffect(() => {
-    const onSize = () => paintGround(posRef.current);
+    const onSize = () => { dotsRef.current = null; paintRef.current(posRef.current); };
     window.addEventListener("resize", onSize);
     return () => window.removeEventListener("resize", onSize);
-  });
+  }, []);
 
   /* The listeners are attached once and read the current handlers through a
      ref, because they close over the tab the person is standing in and that
@@ -7865,18 +8082,11 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
         ref={stackRef}
         style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" }
           : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%" } : null}>
-      {/* Behind both rooms, and painted by hand rather than by React: this
-          moves on every frame of a drag, and a re-render per frame is not a
-          price a phone should pay for a background. */}
-      <div className="ar-gnd" ref={gndRef} aria-hidden="true">
-        <div className="ar-gnd-base"><span className="ar-gnd-c" /><span className="ar-gnd-c" /></div>
-        {[0, 1, 2].map((i) => (<div className="ar-dots" data-i={i} key={"d" + i} />))}
-        {[0, 1, 2].map((i) => (
-          <div className="ar-blob" data-i={i} key={i}>
-            <span className="ar-blob-c" /><span className="ar-blob-c" />
-          </div>
-        ))}
-      </div>
+      {/* Behind both rooms: one canvas, painted by hand rather than by React,
+          because this moves on every frame of a drag and a re-render per frame
+          is not a price a phone should pay for a background. It was seven
+          elements and 221 MB of GPU texture; paintGround says what happened. */}
+      <canvas className="ar-gnd" ref={gndRef} aria-hidden="true" />
       <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")
         + (drag ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
         hidden={room !== "line" && !(cross && cross.from === "line") && !(drag && drag.room === "line")}
@@ -14863,113 +15073,34 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .ar-stack{ touch-action:pan-y; }
 
 /* ---- the ground behind the rooms ----
-   The blobs at the foot of a salesperson screen used to be painted by each
-   room, inside it, in .q-page.sf::before. Three of them, in that room's own
-   accents. Because they belonged to the room they moved with it and swapped
-   with it, so the most characteristic thing about a place was the one thing
-   that never travelled: at any point mid swipe you saw two sets of blobs
-   meeting at a hard seam, which is what Jorge photographed on 17 September.
+   The blobs used to be inside each room, on .q-page.sf::before, which meant
+   they could not travel: a swipe carried one room's set off and brought the
+   next room's set on, and at any point mid swipe you saw two sets meeting at a
+   hard seam. That is what Jorge photographed on 17 September. They live out
+   here now, behind both rooms, on one thing.
 
-   They live out here now, on one layer behind both rooms, and each one is its
-   own element so each can move at its own speed. That is the whole point:
-   several gradients on a single element can only ever move as one sheet, and
-   moving as one sheet is the thing being fixed. Approved as option B on the
-   17 September research page, after four rounds.
+   That thing was seven stacked elements, and it shipped, and on the phone it
+   was slow. Every element that moves on its own gets a GPU texture of its own,
+   and seven of them across this window at a device ratio of three came to
+   221 MB, over the ceiling a WKWebView has and cannot raise. It is one canvas
+   now, about five megabytes, and everything it draws is in paintGround: the
+   colours, the three lights, the three dot fields and their speeds. They are
+   there rather than here because the canvas is the only thing that paints them
+   and one source beats two that drift.
 
-   Far is bigger, dimmer, hazier and slower; near is smaller, brighter,
-   sharper and faster. Each blob starts its colour journey after the one
-   before it, so they never all turn together, which is a second depth cue
-   costing nothing.
+   Not a word of the effect changed. Approved as option B on the 17 September
+   research page, after four rounds.
 
-   The haze is in the gradient's own stops rather than a filter blur. A blur
-   on a layer this size would run on every frame of a drag, on a phone, and
-   that is the one place it cannot be afforded. */
-.ar-gnd{ position:fixed; inset:0; z-index:99; pointer-events:none; overflow:hidden; }
-/* Wider than the screen, and offset left, so that at full travel the right
-   edge has not run inside it: the furthest any blob goes is
-   (tabs - 1) x 100vw x 0.28, which is 56vw on a store with all three, against
-   the 140vw of slack this leaves. The blobs are placed in vw from the SCREEN's
-   left rather than in percentages of this box, so widening the box does not
-   move them: the 40vw in each position is what cancels the offset. */
-.ar-gnd-base, .ar-blob, .ar-dots{ position:absolute; left:-40vw; top:0; width:280vw; height:100%; }
-.ar-dots{ pointer-events:none; }
-.ar-blob, .ar-dots{ will-change:transform; }
-/* The dots, and they are not a new idea: the corner already had a field of
-   them, .mc-aurora u, 22px apart in white at .16 over half opacity. They were
-   inside the room, so like the blobs they could not travel. This is the same
-   grid, out here, one field for all three rooms, and it is the furthest thing
-   on the screen so it moves least of anything. Jorge asked for them a shade
-   more transparent than the demo's, because the corner is already dotted and
-   two fields at demo strength is busy.
-
-   The falloff is wider than the corner's 1px to 1.6px. That edge is under a
-   pixel across, and a soft edge smaller than a pixel shimmers when it moves,
-   which is the flicker Jorge caught in the demo. Masked top and bottom the way
-   the corner's is, so the dots never reach the head or the bar. */
-/* Three of them, not one, which is the multiplane's whole trick: a single
-   field sliding is a slide, three at three speeds is depth. Further back is a
-   tighter grid of smaller, fainter dots; nearer is looser, larger and a shade
-   brighter. Each is fainter than the single field it replaces, so three of
-   them together sit about where one did and none of them is busy on its own. */
-.ar-dots[data-i="0"]{ background:radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 2.4px) 0 0/22px 22px; }
-.ar-dots[data-i="1"]{ background:radial-gradient(circle, rgba(255,255,255,.08) 1.3px, transparent 2.9px) 0 0/34px 34px; }
-.ar-dots[data-i="2"]{ background:radial-gradient(circle, rgba(255,255,255,.10) 1.7px, transparent 3.6px) 0 0/54px 54px; }
-.ar-dots{ -webkit-mask:linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent);
-  mask:linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent); }
-/* One field, not two: inside the stack the corner stops drawing its own. Its
-   coloured lights stay, because those are its atmosphere and they breathe. */
+   The canvas needs no will-change and no transform. It does not move. Its
+   contents move, inside it, and that is the difference between a backdrop that
+   costs one texture and one that costs seven. */
+.ar-gnd{ position:fixed; inset:0; z-index:99; pointer-events:none;
+  width:100%; height:100%; display:block; }
+/* One field of dots, not two: inside the stack the corner stops drawing its
+   own, because the canvas now carries three of them for all three rooms. The
+   corner's coloured lights stay, because those are its atmosphere and they
+   breathe. */
 .ar-stack .mc-aurora u{ display:none; }
-.ar-gnd-c, .ar-blob-c{ position:absolute; inset:0; }
-/* The tab a layer is painting, and the accents that tab paints in. These are
-   the same values the rooms set on themselves, at .q-page.sf for the floor,
-   .q-page.sf.mc-shell for the corner and .q-page.sf.sf-line for the line;
-   they are repeated here because a backdrop has to hold two tabs' colours at
-   once and cannot inherit either. Change one, change both. */
-/* Back to green on 17 September. The warm sand was tried and dropped: the
-   corner carries four large coloured lights of its own, .mc-aurora i, three of
-   them green, and they sit in FRONT of this ground. A warm ground behind green
-   lights is two ideas at once, which is what Jorge saw. Warming the lights to
-   match was the other way out and he chose this one. */
-.ar-gnd-c[data-tab="home"], .ar-blob-c[data-tab="home"]{
-  --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --gnd:var(--gnd-home); }
-.ar-gnd-c[data-tab="floor"], .ar-blob-c[data-tab="floor"]{
-  --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --gnd:var(--gnd-floor); }
-.ar-gnd-c[data-tab="line"], .ar-blob-c[data-tab="line"]{
-  --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --gnd:var(--gnd-line); }
-.ar-gnd-c{ background:radial-gradient(1000px 680px at calc(40vw + 15vw) -10%,
-    color-mix(in srgb, var(--a2) 6%, transparent), transparent 60%), var(--gnd); }
-@supports not (background: color-mix(in srgb, red 10%, transparent)){
-  .ar-gnd-c{ background:var(--gnd); }
-}
-/* Bigger and hazier than the three that were inside the rooms, which is
-   Jorge's call on the demo of 17 September. The geometry is otherwise theirs.
-
-   The peaks come DOWN as the areas go up, and that is deliberate rather than
-   timid: the first version kept the rooms' old centre strengths over a much
-   larger area, and the line's bottom half came out a flat bright cyan, worse
-   than what it replaced. Bigger and hazier is not the same instruction as
-   brighter. Roughly the same light, spread further and falling off sooner. */
-.ar-blob[data-i="0"] > .ar-blob-c{ background:radial-gradient(118vw 64% at calc(40vw + 14vw) 104%,
-  color-mix(in srgb, var(--a1) 52%, transparent) 0%,
-  color-mix(in srgb, var(--a1) 28%, transparent) 32%,
-  color-mix(in srgb, var(--a1) 9%, transparent) 58%, transparent 82%); }
-.ar-blob[data-i="1"] > .ar-blob-c{ background:radial-gradient(100vw 54% at calc(40vw + 94vw) 90%,
-  color-mix(in srgb, var(--a2) 34%, transparent) 0%,
-  color-mix(in srgb, var(--a2) 18%, transparent) 34%,
-  color-mix(in srgb, var(--a2) 6%, transparent) 60%, transparent 84%); }
-.ar-blob[data-i="2"] > .ar-blob-c{ background:radial-gradient(88vw 44% at calc(40vw + 50vw) 118%,
-  color-mix(in srgb, var(--led) 22%, transparent) 0%,
-  color-mix(in srgb, var(--led) 11%, transparent) 36%, transparent 78%); }
-/* The corner's own glow is one wide light under the middle rather than three,
-   and that is its signature. It keeps it. */
-.ar-blob[data-i="2"] > .ar-blob-c[data-tab="home"]{
-  background:radial-gradient(closest-side at calc(40vw + 50vw) 112%,
-    rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%); }
-/* Safari 15 and older have no color-mix, the same fallback the rooms carry. */
-@supports not (background: color-mix(in srgb, red 10%, transparent)){
-  .ar-blob[data-i="0"] > .ar-blob-c{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
-  .ar-blob[data-i="1"] > .ar-blob-c, .ar-blob[data-i="2"] > .ar-blob-c{ background:none; }
-}
 /* Inside the stack the room paints no background at all: not its blobs, not
    its ground. All of it is out here, on one layer behind both rooms.
 
