@@ -7472,13 +7472,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const crossTimer = useRef(null);
   const flight = useRef(null);
   const markOf = (r) => document.querySelector(`.ar-room[data-room="${r}"] ` + (r === "line" ? ".sfc-you" : ".mcf-you"));
-  /* Which ground the room is arriving onto, decided here rather than read off
-     the page: the arriving room has not been drawn yet, and the whole point is
-     that its colour is down before it lands. The floor room has two of them,
-     because Home and Live Floor are two tabs of the one room. */
-  const groundOf = (r, t) => (r === "line" ? "var(--gnd-line)"
-    : (t === "corner" ? "var(--gnd-home)" : "var(--gnd-floor)"));
-  const crossRooms = (from, to, toGround) => {
+  const crossRooms = (from, to) => {
     let reduce = false;
     try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
     if (reduce) return;
@@ -7494,7 +7488,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     } catch (e) {}
     /* Which way the bar moved. The line sits right of the floor, so going to
        it brings the new room in from the right, as a page does. */
-    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now(), bg: toGround || null });
+    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now() });
     clearTimeout(crossTimer.current);
     /* Held until the whole gesture is over, not until the dots were: pulling
        these classes early is what made the old room disappear mid-flight. */
@@ -7539,8 +7533,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
       const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
       requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
-      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor",
-        groundOf(r, toTab === undefined ? tab : toTab));
+      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor");
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
@@ -7682,6 +7675,90 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     setDrag(null);
     if (took) go(s0.to, true);
   };
+  /* ---- the ground behind the rooms ----
+     One number drives it: where the person is along `tabs`, as a float. At
+     rest it is the index of the tab they are standing in. Mid drag it is that
+     index plus how far the thumb has gone. On a tap it travels there over the
+     wipe.
+
+     Worth being straight about a limit this inherits. The swipe only follows
+     the thumb between the floor and the line, because Home and Live Floor are
+     two tabs of ONE sheet and there is no second sheet to pull; that pair
+     commits on lift. So on the common store, which is floor only, the backdrop
+     travels on the clock rather than under the thumb. Making that pair follow
+     the thumb means rendering the corner and the floor as two sheets, which
+     the gesture's own comment above already calls a bigger change worth doing
+     on its own. */
+  const gndRef = useRef(null);
+  const posRef = useRef(0);
+  const animRef = useRef(0);
+  /* How much of the thumb each blob takes: far moves least. */
+  const BLOB_SPEED = [0.10, 0.18, 0.28];
+  /* When each blob starts its colour journey, as a fraction of the leg. */
+  const BLOB_LEAD = [0, 0.16, 0.32];
+  const paintGround = (pos) => {
+    const el = gndRef.current;
+    if (!el || !tabs.length) return;
+    const last = tabs.length - 1;
+    const at = Math.min(last, Math.max(0, pos));
+    const i = Math.max(0, Math.min(last - 1, Math.floor(at)));
+    const from = tabs[i], to = tabs[Math.min(last, i + 1)];
+    const f = last === 0 ? 0 : Math.min(1, Math.max(0, at - i));
+    const base = el.firstChild;
+    base.children[0].dataset.tab = from;
+    base.children[1].dataset.tab = to;
+    base.children[1].style.opacity = String(f);
+    const w = window.innerWidth || 1;
+    for (let b = 0; b < 3; b++) {
+      const node = el.children[b + 1];
+      if (!node) continue;
+      node.children[0].dataset.tab = from;
+      node.children[1].dataset.tab = to;
+      /* the same journey, started late: a blob travels, it never switches */
+      const lead = BLOB_LEAD[b];
+      const k = Math.min(1, Math.max(0, (f - lead) / (1 - lead)));
+      node.children[1].style.opacity = String(k * k * (3 - 2 * k));
+      /* whole pixels: a fractional offset resamples a soft edge every frame */
+      node.style.transform = "translate3d(" + Math.round(-at * w * BLOB_SPEED[b]) + "px,0,0)";
+    }
+  };
+  useLayoutEffect(() => {
+    if (!tabs.length) return undefined;
+    const last = tabs.length - 1;
+    const target = Math.min(last, Math.max(0, tabs.indexOf(active)));
+    if (drag && drag.dx) {
+      cancelAnimationFrame(animRef.current);
+      const w = window.innerWidth || 1;
+      const seg = Math.min(1, Math.abs(drag.dx) / w);
+      posRef.current = target + (drag.dx < 0 ? seg : -seg);
+      paintGround(posRef.current);
+      return undefined;
+    }
+    const from = posRef.current;
+    let reduce = false;
+    try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (reduce || Math.abs(from - target) < 0.002) {
+      posRef.current = target; paintGround(target); return undefined;
+    }
+    const t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / MOTION.wipe);
+      const e = 1 - Math.pow(1 - k, 3);
+      posRef.current = from + (target - from) * e;
+      paintGround(posRef.current);
+      if (k < 1) animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animRef.current);
+  });
+  useEffect(() => () => cancelAnimationFrame(animRef.current), []);
+  /* The phone turning, or the keyboard changing the width, moves every blob. */
+  useEffect(() => {
+    const onSize = () => paintGround(posRef.current);
+    window.addEventListener("resize", onSize);
+    return () => window.removeEventListener("resize", onSize);
+  });
+
   /* The listeners are attached once and read the current handlers through a
      ref, because they close over the tab the person is standing in and that
      changes under them on every switch. */
@@ -7754,9 +7831,19 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           tapped or focused, and it polls slowly until it is looked at. */}
       <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")}
         ref={stackRef}
-        style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%", "--ar-to-bg": cross.bg || undefined }
-          : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%",
-            "--ar-to-bg": groundOf(drag.room, drag.to === "home" ? "corner" : "floor") } : null}>
+        style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" }
+          : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%" } : null}>
+      {/* Behind both rooms, and painted by hand rather than by React: this
+          moves on every frame of a drag, and a re-render per frame is not a
+          price a phone should pay for a background. */}
+      <div className="ar-gnd" ref={gndRef} aria-hidden="true">
+        <div className="ar-gnd-base"><span className="ar-gnd-c" /><span className="ar-gnd-c" /></div>
+        {[0, 1, 2].map((i) => (
+          <div className="ar-blob" data-i={i} key={i}>
+            <span className="ar-blob-c" /><span className="ar-blob-c" />
+          </div>
+        ))}
+      </div>
       <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")
         + (drag ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
         hidden={room !== "line" && !(cross && cross.from === "line") && !(drag && drag.room === "line")}
@@ -14739,22 +14826,98 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
   transform:translate3d(var(--ar-drag, 0px), 0, 0); }
 .ar-stack.ar-dragging > .ar-room.ar-nxt > .q-page.sf{ z-index:101;
   transform:translate3d(calc(var(--ar-drag, 0px) + var(--ar-nxt, 100%)), 0, 0); }
-.ar-stack.ar-dragging::before{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
-  background:var(--ar-to-bg, var(--gnd-line)); }
 /* The gesture owns the across, the page keeps the down. */
 .ar-stack{ touch-action:pan-y; }
 
-/* The ground leads. This layer sits UNDER both rooms, and it now carries the
-   colour of the one arriving rather than one flat dark for every switch. It
-   fades in over a little over half the wipe, so the new room's ground is
-   already down by the time the room itself lands on it: the place changes
-   first and the screen follows, which is Jorge's call of 16 September over the
-   quieter version where the two simply crossfade together. */
-.ar-stack.x::before{ content:""; position:fixed; inset:0; z-index:99; pointer-events:none;
-  background:var(--ar-to-bg, var(--gnd-line));
-  animation:arGround calc(var(--t-wipe) * .55) cubic-bezier(.35,.12,.2,1) both; }
-@keyframes arGround{ from{ opacity:0; } to{ opacity:1; } }
-html.sun .ar-stack.x::before{ background:#2E4A38; }
+/* ---- the ground behind the rooms ----
+   The blobs at the foot of a salesperson screen used to be painted by each
+   room, inside it, in .q-page.sf::before. Three of them, in that room's own
+   accents. Because they belonged to the room they moved with it and swapped
+   with it, so the most characteristic thing about a place was the one thing
+   that never travelled: at any point mid swipe you saw two sets of blobs
+   meeting at a hard seam, which is what Jorge photographed on 17 September.
+
+   They live out here now, on one layer behind both rooms, and each one is its
+   own element so each can move at its own speed. That is the whole point:
+   several gradients on a single element can only ever move as one sheet, and
+   moving as one sheet is the thing being fixed. Approved as option B on the
+   17 September research page, after four rounds.
+
+   Far is bigger, dimmer, hazier and slower; near is smaller, brighter,
+   sharper and faster. Each blob starts its colour journey after the one
+   before it, so they never all turn together, which is a second depth cue
+   costing nothing.
+
+   The haze is in the gradient's own stops rather than a filter blur. A blur
+   on a layer this size would run on every frame of a drag, on a phone, and
+   that is the one place it cannot be afforded. */
+.ar-gnd{ position:fixed; inset:0; z-index:99; pointer-events:none; overflow:hidden; }
+.ar-gnd-base, .ar-blob{ position:absolute; left:-40%; top:0; width:180%; height:100%; }
+.ar-blob{ will-change:transform; }
+.ar-gnd-c, .ar-blob-c{ position:absolute; inset:0; }
+/* The tab a layer is painting, and the accents that tab paints in. These are
+   the same values the rooms set on themselves, at .q-page.sf for the floor,
+   .q-page.sf.mc-shell for the corner and .q-page.sf.sf-line for the line;
+   they are repeated here because a backdrop has to hold two tabs' colours at
+   once and cannot inherit either. Change one, change both. */
+.ar-gnd-c[data-tab="home"], .ar-blob-c[data-tab="home"]{
+  --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --gnd:var(--gnd-home); }
+.ar-gnd-c[data-tab="floor"], .ar-blob-c[data-tab="floor"]{
+  --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --gnd:var(--gnd-floor); }
+.ar-gnd-c[data-tab="line"], .ar-blob-c[data-tab="line"]{
+  --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --gnd:var(--gnd-line); }
+.ar-gnd-c{ background:var(--gnd); }
+/* Bigger and hazier than the three that were inside the rooms, which is
+   Jorge's call on the demo of 17 September. The geometry is otherwise theirs.
+
+   The peaks come DOWN as the areas go up, and that is deliberate rather than
+   timid: the first version kept the rooms' old centre strengths over a much
+   larger area, and the line's bottom half came out a flat bright cyan, worse
+   than what it replaced. Bigger and hazier is not the same instruction as
+   brighter. Roughly the same light, spread further and falling off sooner. */
+.ar-blob[data-i="0"] > .ar-blob-c{ background:radial-gradient(118% 64% at 14% 104%,
+  color-mix(in srgb, var(--a1) 52%, transparent) 0%,
+  color-mix(in srgb, var(--a1) 28%, transparent) 32%,
+  color-mix(in srgb, var(--a1) 9%, transparent) 58%, transparent 82%); }
+.ar-blob[data-i="1"] > .ar-blob-c{ background:radial-gradient(100% 54% at 94% 90%,
+  color-mix(in srgb, var(--a2) 34%, transparent) 0%,
+  color-mix(in srgb, var(--a2) 18%, transparent) 34%,
+  color-mix(in srgb, var(--a2) 6%, transparent) 60%, transparent 84%); }
+.ar-blob[data-i="2"] > .ar-blob-c{ background:radial-gradient(88% 44% at 50% 118%,
+  color-mix(in srgb, var(--led) 22%, transparent) 0%,
+  color-mix(in srgb, var(--led) 11%, transparent) 36%, transparent 78%); }
+/* The corner's own glow is one wide light under the middle rather than three,
+   and that is its signature. It keeps it. */
+.ar-blob[data-i="2"] > .ar-blob-c[data-tab="home"]{
+  background:radial-gradient(closest-side at 50% 112%,
+    rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%); }
+/* Safari 15 and older have no color-mix, the same fallback the rooms carry. */
+@supports not (background: color-mix(in srgb, red 10%, transparent)){
+  .ar-blob[data-i="0"] > .ar-blob-c{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
+  .ar-blob[data-i="1"] > .ar-blob-c, .ar-blob[data-i="2"] > .ar-blob-c{ background:none; }
+}
+/* Inside the stack the room no longer paints its own blobs, and its own
+   background stops short of the foot so the ones out here can be seen. This is
+   the cost Jorge accepted: it repaints the bottom of every salesperson screen
+   at rest, not only mid swipe.
+
+   Not in sunlight. There every room is the same flat green, #2E4A38, with one
+   soft light in it: there is no second colour for a blob to travel to, so the
+   backdrop would spend the work and show nothing. Daylight keeps exactly what
+   it has, its own glow included, and the backdrop stands down.
+
+   Not on the light corner either, and this one was caught by walking the
+   screens rather than by reasoning: the first version of this rule outranked
+   .mc-shell.mc-light and painted #F1EEE4 over in the dark ground, which left
+   the corner's own text unreadable on it. The light corner has its own moving
+   lights already, .mc-aurora, so it keeps everything it had. */
+html:not(.sun) .ar-stack .q-page.sf:not(.mc-light)::before{ display:none; }
+html:not(.sun) .ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background-color:transparent;
+  background-image:linear-gradient(to bottom, var(--gnd, #06090F) 0%, var(--gnd, #06090F) 28%, transparent 78%); }
+.ar-stack > .ar-room > .q-page.sf{ --gnd:var(--gnd-floor); }
+.ar-stack > .ar-room > .q-page.sf.mc-shell{ --gnd:var(--gnd-home); }
+.ar-stack > .ar-room > .q-page.sf.sf-line{ --gnd:var(--gnd-line); }
+html.sun .ar-gnd{ display:none; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
    the drag. A transition a thumb started by TAPPING starts from rest. The
@@ -14802,7 +14965,6 @@ html.sun .ar-stack.x::before{ background:#2E4A38; }
 @media (prefers-reduced-motion: reduce){
   .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; box-shadow:none; }
   .ar-room.ar-in > .q-page.sf::after{ animation:none; display:none; }
-  .ar-stack.x::before{ display:none; animation:none; }
   .ar-room.ar-out{ display:none; } }
 /* The rooms in sunlight: the curtain's deep green for the ground, cream for
    what sits on it, the pill in mint with ink on it, and the two help cards
