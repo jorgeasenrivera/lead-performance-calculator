@@ -809,9 +809,17 @@ private struct Cord: View {
   let line: [QueueAttributes.Pip]
   let lit: Bool
   var mini: Bool = false
-  /* the draft's curve, in a 348 by 52 box; scaled to the lane */
-  private let p0 = CGPoint(x: -6, y: 40), p1 = CGPoint(x: 96, y: 66), p2 = CGPoint(x: 196, y: -14), p3 = CGPoint(x: 314, y: 26)
-  private let flat0 = CGPoint(x: -6, y: 30), flat1 = CGPoint(x: 96, y: 48), flat2 = CGPoint(x: 196, y: -6), flat3 = CGPoint(x: 314, y: 19)
+  /* The draft's curve, drawn in a 348 by 52 box for the big lane and a 348 by
+     38 one for the small, then scaled into whatever height the lane gives it.
+     Those design heights are deliberately separate from the frame height
+     below: while the two were the same number the scale came out at 1 and the
+     division did nothing, so shrinking the frame in #354 left the curve at its
+     old size, hanging below its box and below the handset. That was mine.
+     The left of the curve was also lifted on 17 September, because it sagged
+     well under the handset it runs to: Jorge asked for it in line. */
+  private let design: Double = 52, designFlat: Double = 38
+  private let p0 = CGPoint(x: -6, y: 31), p1 = CGPoint(x: 96, y: 49), p2 = CGPoint(x: 196, y: -14), p3 = CGPoint(x: 314, y: 26)
+  private let flat0 = CGPoint(x: -6, y: 23), flat1 = CGPoint(x: 96, y: 36), flat2 = CGPoint(x: 196, y: -6), flat3 = CGPoint(x: 314, y: 19)
   private func pt(_ t: Double, _ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint, sx: Double, sy: Double) -> CGPoint {
     /* Written as four weights and a sum on purpose. The one-line form with
        the literals inline is the expression Swift's type checker gave up on
@@ -831,7 +839,7 @@ private struct Cord: View {
   var body: some View {
     let boxH: Double = mini ? 26 : 42
     GeometryReader { geo in
-      let sx = geo.size.width / 348, sy = geo.size.height / boxH
+      let sx = geo.size.width / 348, sy = geo.size.height / (mini ? designFlat : design)
       let a = mini ? flat0 : p0, b = mini ? flat1 : p1, c = mini ? flat2 : p2, d = mini ? flat3 : p3
       let curve = Path { path in
         path.move(to: CGPoint(x: a.x * sx, y: a.y * sy))
