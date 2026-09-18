@@ -856,3 +856,17 @@ test("the you're up takeover is the whole screen on every tab", () => {
   assert.ok(/\.sf-uptake\{ position:absolute; inset:0;/.test(core),
     "the takeover stays absolute in its stage rather than fixed, because the rooms are transformed while they travel and a fixed box would jump between the stage and the screen mid-slide");
 });
+
+test("the corner's closing sheet prints points, not the stored fraction", () => {
+  /* Jorge, 18 September: 6 of 55 shown as 0.11%, 4 of 24 as 0.17%, 9 of 36 as
+     0.25%. The month stats carry the rate as a fraction and the manager's side
+     multiplies by a hundred to print it; the corner did not. */
+  assert.ok(/const asPoints = \(v\) => \(v == null \? null : Math\.round\(v \* 1000\) \/ 10\);/.test(core),
+    "the fraction becomes points to one decimal");
+  assert.ok(/pct: asPoints\(ms\.internetPct\)/.test(core) && /pct: asPoints\(ms\.phonePct\)/.test(core) && /pct: asPoints\(ms\.showroomPct\)/.test(core),
+    "for all three channels");
+  assert.ok(/const prev = Object\.fromEntries\(Object\.entries\(\(ms && ms\.prevPct\) \|\| \{\}\)\.map\(\(\[k, v\]\) => \[k, asPoints\(v\)\]\)\);/.test(core),
+    "and the previous reading is in the same unit, so the triangle's difference is real");
+  assert.ok(/\.mc-rail\{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:#0E1812;/.test(core),
+    "and the rail on Home sits on a solid dark ground, so the light's dots are not the backdrop's dots");
+});

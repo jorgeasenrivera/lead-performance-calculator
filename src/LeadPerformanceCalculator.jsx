@@ -10095,12 +10095,19 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   })();
   const title = (k) => k.split(" ").map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
   const chColors = { internet: "#5B9BE8", phone: "#F09B3C", showroom: "#3DC383" };
+  /* The month stats carry a channel's rate as a fraction, 0.11 for 6 of 55,
+     which is how the manager's side formats it (fmtPct there multiplies by a
+     hundred). This sheet printed the fraction with a percent sign after it:
+     Jorge, 18 September, "0.11%" for 6 of 55. Points from here on, to one
+     decimal, and the previous reading in the same unit so the triangle's
+     difference means what it says. */
+  const asPoints = (v) => (v == null ? null : Math.round(v * 1000) / 10);
   const closing = ms ? [
-    { k: "internet", label: "Internet", pct: ms.internetPct, leads: ms.internetLeads, u: ms.internetUnits },
-    { k: "phone", label: "Phone", pct: ms.phonePct, leads: ms.phoneLeads, u: ms.phoneUnits },
-    { k: "showroom", label: "Showroom", pct: ms.showroomPct, leads: ms.showroomLeads, u: ms.showroomUnits },
+    { k: "internet", label: "Internet", pct: asPoints(ms.internetPct), leads: ms.internetLeads, u: ms.internetUnits },
+    { k: "phone", label: "Phone", pct: asPoints(ms.phonePct), leads: ms.phoneLeads, u: ms.phoneUnits },
+    { k: "showroom", label: "Showroom", pct: asPoints(ms.showroomPct), leads: ms.showroomLeads, u: ms.showroomUnits },
   ].filter((c) => c.pct != null || c.u) : [];
-  const prev = (ms && ms.prevPct) || {};
+  const prev = Object.fromEntries(Object.entries((ms && ms.prevPct) || {}).map(([k, v]) => [k, asPoints(v)]));
   const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0));
 
   return (
@@ -16391,12 +16398,16 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-chip2 .pix{ color:#E4C98D; }
 /* the rail */
 .mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -18px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
-.mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); overflow:hidden; }
+/* A dark, solid ground under the rail. It was a seven per cent white over the
+   dotted backdrop, and the light's dots running in from the edge read as part
+   of the ground's own field: Jorge, 18 September. Opaque, so nothing shows
+   through it, and a shade under the room's ink so it sits in the page. */
+.mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:#0E1812; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); overflow:hidden; }
 /* the light along the line: dots in from the left edge, a stop at every
    person, as far as the head, then again; the phone room's cord's logic */
 .mc-rail > s.lt, .mcf-track > s.lt, .fr-rail > s.lt{ position:absolute; left:-3px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%;
   background:rgba(143,216,175,.7); box-shadow:0 0 6px rgba(143,216,175,.7); opacity:0; pointer-events:none; }
-.mc-rail.up{ background:rgba(143,216,175,.1); }
+.mc-rail.up{ background:#16291F; }
 .mc-rail.up .lt{ background:#8FD8AF; box-shadow:0 0 10px rgba(143,216,175,1); }
 .mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; left:calc(100% - var(--edge,19px) - var(--p,0) * 1%); transition:left .65s cubic-bezier(.3,1.3,.4,1); }
 .mc-pip.hd{ width:30px; height:30px; font-size:9.5px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
