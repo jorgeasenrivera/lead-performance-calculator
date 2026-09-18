@@ -7438,8 +7438,27 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const seen = useRef({ floor: false, line: false });
   if (room) seen.current[room === "line" ? "line" : "floor"] = true;
   /* And the other one is built quietly a moment after the first has settled,
-     so the first tap across is as quick as every tap after it. */
+     so the first tap across is as quick as every tap after it.
+
+     "A moment after the first has settled" was written as a flat 2.5 seconds,
+     which is not the same thing and was usually far too late: building the room
+     is what starts its fetch, so a person who crossed before 2.5 s arrived on a
+     room that had not asked for its data yet and watched the sf-loading
+     skeleton for most of a second before the real screen replaced it. Jorge, 18
+     September: the first time either page loads on the swipe it loads for a bit
+     and then comes in, and it should be seamless. Measured on the built app at
+     a dealership's lag: "NOBODY YET" for 960 ms, then "LINE NOT OPEN".
+
+     So it waits for the thing it always meant to wait for. The first room says
+     when it is ready; a short beat after that, while nobody has had time to
+     reach for the bar, the other one is built and fetches. The flat timer stays
+     as a backstop for a room that never reports ready at all. */
   const [warm, setWarm] = useState(false);
+  useEffect(() => {
+    if (!ready) return undefined;
+    const t = setTimeout(() => setWarm(true), 250);
+    return () => clearTimeout(t);
+  }, [ready]);
   useEffect(() => { const t = setTimeout(() => setWarm(true), 2500); return () => clearTimeout(t); }, []);
   if (warm) { if (list.includes("line")) seen.current.line = true; if (list.includes("floor")) seen.current.floor = true; }
   const scrolls = useRef({ floor: 0, line: 0 });
@@ -7474,7 +7493,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const crossTimer = useRef(null);
   const flight = useRef(null);
   const markOf = (r) => document.querySelector(`.ar-room[data-room="${r}"] ` + (r === "line" ? ".sfc-you" : ".mcf-you"));
-  const crossRooms = (from, to) => {
+  const crossRooms = (from, to, dx) => {
     let reduce = false;
     try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
     if (reduce) return;
@@ -7490,7 +7509,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     } catch (e) {}
     /* Which way the bar moved. The line sits right of the floor, so going to
        it brings the new room in from the right, as a page does. */
-    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now() });
+    setCross({ from, to, src, dir: to === "line" ? 1 : -1, dx, n: Date.now() });
     clearTimeout(crossTimer.current);
     /* Held until the whole gesture is over, not until the dots were: pulling
        these classes early is what made the old room disappear mid-flight. */
@@ -7530,12 +7549,12 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     anim.onfinish = done; anim.oncancel = done;
     flight.current = anim;
   }, [cross && cross.n]);   // eslint-disable-line
-  const pick = (r, toTab) => {
+  const pick = (r, toTab, dx) => {
     if (r !== room) {
       try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
       const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
       requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
-      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor");
+      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor", dx);
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
@@ -7571,16 +7590,16 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      confirms the gesture, but the gesture is not the point, the room is. */
   const landBuzz = useRef(null);
   useEffect(() => () => clearTimeout(landBuzz.current), []);
-  const go = (t, bySwipe) => {
+  const go = (t, bySwipe, dx) => {
     if (bySwipe) {
       clearTimeout(landBuzz.current);
       landBuzz.current = setTimeout(() => buzz(8), MOTION.wipe);
     } else buzz(8);
-    if (t === "line") { pick("line", null); return; }
+    if (t === "line") { pick("line", null, dx); return; }
     /* The destination tab is handed in, because setTab has not run yet when the
        cross is set up and the ground would otherwise be the one being left. */
     const nextTab = t === "home" ? "corner" : "floor";
-    pick("floor", nextTab);
+    pick("floor", nextTab, dx);
     setTab(nextTab);
   };
   const GLYPH = { home: "home", floor: "door", line: "phone" };
@@ -7668,7 +7687,9 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     const v = Math.abs(dx) / Math.max(1, Date.now() - s0.t0);
     const took = Math.abs(dx) > window.innerWidth * TAKE || v > FLICK;
     setDrag(null);
-    if (took) go(s0.to, true);
+    /* Where the thumb actually left the sheets, handed on so the finish can
+       carry on from there rather than starting again somewhere else. */
+    if (took) go(s0.to, true, dx);
   };
   /* ---- the ground behind the rooms ----
      One number drives it: where the person is along `tabs`, as a float. At
@@ -8083,9 +8104,19 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? (cross.dir < 0 ? " x x-l" : " x") : "") + (drag ? " ar-dragging" : "")}
+      <div className={"ar-stack" + (cross ? (cross.dx != null ? " x x-drag" : cross.dir < 0 ? " x x-l" : " x") : "")
+        + (drag ? " ar-dragging" : "")}
         ref={stackRef}
-        style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" }
+        /* A finish that a thumb started begins where the thumb left off. The
+           two sheets tile all the way through it, so the arriving one starts a
+           screen to the side of the one being left and they travel the same
+           distance at the same rate. A tap has no such starting point and
+           keeps the push it always had. */
+        style={cross && cross.dx != null
+          ? { "--ar-out0": cross.dx + "px",
+              "--ar-in0": "calc(" + cross.dx + "px + " + (cross.dir > 0 ? 100 : -100) + "%)",
+              "--ar-out1": (cross.dir > 0 ? -100 : 100) + "%" }
+          : cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" }
           : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%" } : null}>
       {/* Behind both rooms: one canvas, painted by hand rather than by React,
           because this moves on every frame of a drag and a re-render per frame
@@ -15218,6 +15249,31 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
   from{ transform:translate3d(0, 0, 0); filter:brightness(1); clip-path:inset(0 0 0 74%); }
   to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7);
       clip-path:inset(0 0 0 91.16%); } }
+/* ---- and the finish to a swipe, which is a different shape ----
+   A tap is a push: the arriving sheet comes in over the one being left, which
+   is why that one has to be cut. A SWIPE is not a push. The two sheets have
+   been tiling under the thumb the whole way, one ending exactly where the
+   other begins, and the honest finish is to carry that on to the end.
+
+   It was not carried on. The finish threw away where the thumb had got to and
+   restarted from the tap's 26 per cent, so on letting go the pages jumped
+   BACKWARDS: measured on the built app, the leaving sheet from -250px to 0 and
+   the arriving one from 143px to 102 in a single frame. And at that instant
+   the leaving sheet's title sat at x 48 to 345 inside a cut that showed
+   everything left of 102, which is Jorge's peek of letters near the edge on
+   18 September. One fault, both of the things he saw.
+
+   Tiling needs no cut, because nothing is ever behind anything. The two travel
+   the same distance on the same curve, so they stay exactly edge to edge from
+   the moment of release to the end. */
+.ar-stack.x-drag > .ar-room.ar-in > .q-page.sf{ animation-name:arPageInD; }
+.ar-stack.x-drag > .ar-room.ar-out > .q-page.sf{ animation-name:arPageOutD; }
+@keyframes arPageInD{
+  from{ transform:translate3d(var(--ar-in0, 100%), 0, 0); }
+  to{ transform:translate3d(0, 0, 0); } }
+@keyframes arPageOutD{
+  from{ transform:translate3d(var(--ar-out0, 0px), 0, 0); filter:brightness(1); }
+  to{ transform:translate3d(var(--ar-out1, -100%), 0, 0); filter:brightness(.7); } }
 /* There was a sheen here, a band of white light that rode across the arriving
    sheet once on every switch. It is gone, and Jorge's reason for taking it out
    is the better argument: the backdrop now shows the movement. Three fields of
@@ -15247,7 +15303,21 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    and scrolled by it. Here the reserve comes out of the height instead. The
    other rooms keep the band, which is what was asked for. */
 .lpc:has(> .ar-bar) .q-page.sf.mc-floor .q-stage,
-.lpc:has(> .ar-bar) .q-page.sf.mc-floor .sf-live{ min-height:calc(var(--dvh) - 72px); }
+.lpc:has(> .ar-bar) .q-page.sf.mc-floor .sf-live,
+/* And the line takes the same reserve, which is what puts the two rooms' words
+   at the same height. The floor had it and the line did not, so the line's
+   column ran 72px taller, and with the words centred in it they sat 36px
+   lower. Measured on the built app with both rooms shut: the floor's header
+   638px tall with its title at y=365, the line's 710 with its title at 401.
+   Jorge, 18 September: both of the written elements should be at the same
+   height between the pages.
+
+   It also takes the line's empty band away, the one C22 took off the floor for
+   the same reason, which was never a decision about the floor so much as about
+   a page that holds two boxes each claiming the whole screen. The line holds
+   the same two. */
+.lpc:has(> .ar-bar) .q-page.sf.sf-line .q-stage,
+.lpc:has(> .ar-bar) .q-page.sf.sf-line .sf-live{ min-height:calc(var(--dvh) - 72px); }
 .lpc:has(> .ar-bar) .sf-live{ padding-bottom:74px; }
 .lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
 /* Both rooms switched off. Somebody did that deliberately, so it is said
@@ -16172,15 +16242,23 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    stagger is unchanged: the head first, then down the page in four steps.
 
    It ran unconditionally before, which was a gap rather than a decision, so
-   less motion now gets none of it like everything else in the app. */
-.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:mcSlide .6s cubic-bezier(.2,.8,.3,1) both; }
+   less motion now gets none of it like everything else in the app.
+
+   Twenty-two pixels rather than fourteen, and the curve now spends almost all
+   of itself slowing down: Jorge, 18 September, they should have more of a
+   LANDING coming off the Live Floor. Fourteen at an even ease was an arrival
+   you could miss. The spine lands with them, which it did not before, because
+   it was excluded along with the two things that genuinely cannot move, the
+   aurora and the mark. It is not one of those: it is a card standing on its
+   edge, and it should arrive like one. */
+.mc > *:not(.mc-aurora):not(.mc-me){ animation:mcSlide .62s cubic-bezier(.16,1,.3,1) both; }
 .mc > *:nth-child(4){ animation-delay:.05s; }
 .mc > *:nth-child(5),.mc > *:nth-child(6){ animation-delay:.12s; }
 .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; }
 .mc > *:nth-child(9),.mc > *:nth-child(10){ animation-delay:.28s; }
-@keyframes mcSlide{ from{ opacity:0; transform:translateX(14px); } to{ opacity:1; transform:none; } }
+@keyframes mcSlide{ from{ opacity:0; transform:translateX(22px); } to{ opacity:1; transform:none; } }
 @media (prefers-reduced-motion: reduce){
-  .mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:none; } }
+  .mc > *:not(.mc-aurora):not(.mc-me){ animation:none; } }
 /* head */
 .mc-head{ align-items:flex-start; }
 .mc-side{ gap:8px; }
@@ -16671,7 +16749,11 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-flash-s{ font-size:15px; }
 .mc-flash-b{ padding:12px 26px; font-size:14px; min-height:48px; }
 /* ---- the moments -------------------------------------------------------- */
-.mc-shell .help-fab{ display:none; }
+/* No help button in the rooms. It was hidden on the corner and the floor,
+   which both carry .mc-shell, and the line does not, so the line was the only
+   screen in the stack still showing one: Jorge, 18 September. The way to help
+   is the row in the You sheet, which every room reaches. */
+.mc-shell .help-fab, .ar-stack .help-fab{ display:none; }
 .mc-head{ position:relative; }
 .mc-help{ position:absolute; top:-2px; right:-8px; width:26px; height:26px; border-radius:50%;
   border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05); color:rgba(237,242,234,.8);
