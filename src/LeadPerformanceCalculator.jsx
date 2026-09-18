@@ -486,7 +486,6 @@ const PIX = {
   away:      ["1111100","1000000","1000100","1000110","1011111","1000110","1000100"],
   swap:      ["0001000","0011100","0111110","0000000","0111110","0011100","0001000"],
   home:      ["0001000","0011100","0111110","1111111","0110110","0110110","0111110"],
-  sun:       ["0001000","0100010","0011100","1011101","0011100","0100010","0001000"],
   cup:       ["0000000","1111100","1111110","1111101","1111110","0111100","0000000"],
   walk:      ["0011000","0011000","0001000","0111110","0001000","0010100","0100010"],
   /* ---- one per job: the second set ---- */
@@ -7540,13 +7539,6 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
-  /* The rooms in sunlight: the curtain's deep green as the ground, with
-     cream on it, for a phone out on the lot. A switch on the corner; the
-     note is read here so the ground is right from the first room. */
-  useEffect(() => {
-    try { document.documentElement.classList.toggle("sun", localStorage.getItem("lpcf:pref:sun") === "1"); } catch (e) {}
-    return () => { try { document.documentElement.classList.remove("sun"); } catch (e) {} };
-  }, []);
   useLiveStanding({ config, store, date, account, room });
 
   /* Both switched off. A real state — somebody has done it deliberately — and
@@ -11047,14 +11039,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [, prefTick] = useState(0);
   const prefOn = (k) => { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
   const flipPref = (k) => { try { localStorage.setItem(k, prefOn(k) ? "0" : "1"); } catch (e) {} buzz(8); prefTick((n) => n + 1); };
-  /* Off unless switched on: the night look is the default. */
-  const sunOn = () => { try { return localStorage.getItem("lpcf:pref:sun") === "1"; } catch (e) { return false; } };
-  const flipSun = () => {
-    const on = !sunOn();
-    try { localStorage.setItem("lpcf:pref:sun", on ? "1" : "0"); } catch (e) {}
-    try { document.documentElement.classList.toggle("sun", on); } catch (e) {}
-    buzz(8); prefTick((n) => n + 1);
-  };
   const [sysLight, setSysLight] = useState(() => { try { return window.matchMedia("(prefers-color-scheme: light)").matches; } catch (e) { return false; } });
   useEffect(() => {
     let mq; try { mq = window.matchMedia("(prefers-color-scheme: light)"); } catch (e) { return; }
@@ -11472,11 +11456,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   <span className={"mc-sw" + (prefOn(k) ? " on" : "")} aria-hidden="true" />
                 </button>
               ))}
-              <button type="button" className="mc-set-row" role="switch" aria-checked={sunOn()} onClick={flipSun}>
-                <span className="ic"><PixIcon glyph="sun" size={16} /></span>
-                <span>Sunlight<span className="hint">Deep green rooms for out on the lot</span></span>
-                <span className={"mc-sw" + (sunOn() ? " on" : "")} aria-hidden="true" />
-              </button>
             </div>
 
             <div className="mc-cap">REACH</div>
@@ -15133,7 +15112,6 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 /* The dots sit on the ground, in front of the lights, and the two canvases are
    siblings at the same level so DOM order is what puts them in that order. */
 .ar-gnd-d{ z-index:99; }
-html.sun .ar-gnd-d{ display:none; }
 /* One field of dots, not two: inside the stack the corner stops drawing its
    own, because the canvas now carries three of them for all three rooms. The
    corner's coloured lights stay, because those are its atmosphere and they
@@ -15152,24 +15130,23 @@ html.sun .ar-gnd-d{ display:none; }
    salesperson screen takes its ground from out here, at rest as well as mid
    swipe.
 
-   Not in sunlight. There every room is the same flat green, #2E4A38, with one
-   soft light in it: there is no second colour for a blob to travel to, so the
-   backdrop would spend the work and show nothing. Daylight keeps exactly what
-   it has, its own glow included, and the backdrop stands down.
+   Sunlight used to be the exception: one flat green for every room, no second
+   colour for a blob to travel to, so the backdrop stood down and showed
+   nothing. It was removed on 18 September, Jorge's call, and the backdrop now
+   has no case in which it is switched off.
 
-   Not on the light corner either, and this one was caught by walking the
+   The light corner is still an exception, and this one was caught by walking the
    screens rather than by reasoning: the first version of this rule outranked
    .mc-shell.mc-light and painted #F1EEE4 over in the dark ground, which left
    the corner's own text unreadable on it. The light corner has its own moving
    lights already, .mc-aurora, so it keeps everything it had. */
-html:not(.sun) .ar-stack .q-page.sf:not(.mc-light)::before{ display:none; }
-html:not(.sun) .ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background:transparent; }
+.ar-stack .q-page.sf:not(.mc-light)::before{ display:none; }
+.ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background:transparent; }
 /* A cross used to be the exception, both sheets going opaque so neither could
    be read through the other. It is not an exception any more: the one leaving
    is cut to where the arriving one has not reached, so nothing overlaps and
    every sheet stays transparent, at rest, mid drag and mid cross alike. The
    cut is at .ar-room.ar-out below. */
-html.sun .ar-gnd{ display:none; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
    the drag. A transition a thumb started by TAPPING starts from rest. The
@@ -15253,32 +15230,6 @@ html.sun .ar-gnd{ display:none; }
 @media (prefers-reduced-motion: reduce){
   .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; box-shadow:none; }
   .ar-room.ar-out{ display:none; } }
-/* The rooms in sunlight: the curtain's deep green for the ground, cream for
-   what sits on it, the pill in mint with ink on it, and the two help cards
-   filled rather than outlined so a control is a control in glare. Only the
-   tokens and colours change; layout, spacing and every animation stay. */
-html.sun .q-page.sf.mc-floor, html.sun .q-page.sf.sf-line{
-  --sfink:#F6E3C3; --sfink2:#DCE7DE; --sfink3:#9FB5A6; --sfcard:rgba(255,255,255,.08); --sfstroke:rgba(255,255,255,.14);
-  --led:#F6E3C3; --ld-off:rgba(246,227,195,.16); --glow:rgba(143,216,175,.28);
-  background:#2E4A38; color:var(--sfink); }
-html.sun .q-page.sf.mc-floor::before, html.sun .q-page.sf.sf-line::before{
-  background:radial-gradient(60% 60% at 60% 90%, rgba(143,216,175,.28), transparent 70%); }
-html.sun .mc-floor .mcf-cap, html.sun .sf-line .mcf-cap, html.sun .sf-line .sfl-cap{ color:#BFD3C4; }
-html.sun .mc-floor .mcf-tmr .v, html.sun .sf-line .mcf-tmr .v{ color:#F6E3C3; }
-html.sun .mc-floor .mcf-tmr .l, html.sun .sf-line .mcf-tmr .l, html.sun .mc-floor .mcf-sub, html.sun .sf-line .mcf-sub{ color:#BFD3C4; }
-html.sun .mc-floor .mcf-title, html.sun .sf-line .mcf-title, html.sun .sf-line .sfl-title{ color:#F6E3C3; }
-html.sun .mc-floor .mcf-track{ background:rgba(255,255,255,.08); }
-html.sun .mc-floor .mcf-pip{ background:#5B7A66; color:#F6E3C3; }
-html.sun .mc-floor .sf-seg, html.sun .sf-line .sf-seg{ background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.14); }
-html.sun .mc-floor .sf-seg-btn, html.sun .sf-line .sf-seg-btn{ color:#DCE7DE; }
-html.sun .mc-floor .sf-seg-pill, html.sun .sf-line .sf-seg-pill{ background:#8FD8AF; box-shadow:none; }
-html.sun .mc-floor .sf-seg-btn.on, html.sun .sf-line .sf-seg-btn.on{ color:#12251B; }
-html.sun .mc-floor .fba-btn.fly{ background:#F6E3C3; border-color:#F6E3C3; color:#5A3D0E; }
-html.sun .mc-floor .fba-btn.to{ background:#F3D4CC; border-color:#F3D4CC; color:#7A2A22; }
-html.sun .sf-line .sfd:not(.open):not(.free):not(.you) b{ color:#F6E3C3; }
-html.sun .sf-line .sfd:not(.open):not(.free):not(.you) em{ color:#BFD3C4; }
-html.sun .sf-line .sft{ background:rgba(255,255,255,.08); color:#DCE7DE; }
-html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @media (prefers-reduced-motion: reduce){ .ar-ind, .ar-bar{ transition:none; } }
 /* The bar floats, so the last card in the shell has to end above it. Padding on
    the scroll container was the first try and it does nothing: when the content
@@ -16200,12 +16151,26 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @keyframes mcDrift4{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-110px,160px) scale(1.2); } }
 @keyframes mcGrid{ from{ transform:translate(0,0); } to{ transform:translate(22px,44px); } }
 @keyframes mcBreathe{ 0%,100%{ opacity:.18; } 50%{ opacity:.6; } }
-.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:mcRise .6s cubic-bezier(.2,.8,.3,1) both; }
+/* Everything on the corner arrives from the right and settles to the left, in
+   the same direction the room itself came from. Jorge's call of 18 September:
+   they used to lift, and a lift says the screen was BUILT while a slide says it
+   ARRIVED. Coming off the Live Floor it is the second one that is true.
+
+   Fourteen pixels, which is subtle on purpose. The room has already travelled
+   the whole width of the screen to get here and this is the last inch of that
+   same movement, not a second animation with something of its own to say. The
+   stagger is unchanged: the head first, then down the page in four steps.
+
+   It ran unconditionally before, which was a gap rather than a decision, so
+   less motion now gets none of it like everything else in the app. */
+.mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:mcSlide .6s cubic-bezier(.2,.8,.3,1) both; }
 .mc > *:nth-child(4){ animation-delay:.05s; }
 .mc > *:nth-child(5),.mc > *:nth-child(6){ animation-delay:.12s; }
 .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; }
 .mc > *:nth-child(9),.mc > *:nth-child(10){ animation-delay:.28s; }
-@keyframes mcRise{ from{ opacity:0; transform:translateY(14px); } }
+@keyframes mcSlide{ from{ opacity:0; transform:translateX(14px); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){
+  .mc > *:not(.mc-aurora):not(.mc-spine):not(.mc-me){ animation:none; } }
 /* head */
 .mc-head{ align-items:flex-start; }
 .mc-side{ gap:8px; }
