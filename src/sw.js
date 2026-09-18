@@ -72,10 +72,17 @@ self.addEventListener("activate", (e) => {
    Nothing bounded that. Now a cache that has not answered in a second and a
    half is treated as empty and the page comes from the network instead, which
    is slower than the cache and enormously faster than waiting. */
+/* This build's cache first, then any cache still kept. The last two builds
+   stay on the phone (activate, above) so that a page still running the
+   previous build can finish being that page, but the lookup only ever read
+   THIS build's cache, so that page's own chunk, fetched an hour ago and put
+   away, missed here and went to a server that no longer had it. The Board's
+   wall hit that eleven times on 18 September, once per deploy, and went
+   white each time. */
 const cached = (key, opts) => new Promise((resolve) => {
   const t = setTimeout(() => resolve(undefined), 1500);
-  caches.open(CACHE).then((c) => c.match(key, opts)).then((hit) => { clearTimeout(t); resolve(hit); },
-    () => { clearTimeout(t); resolve(undefined); });
+  caches.open(CACHE).then((c) => c.match(key, opts)).then((hit) => hit || caches.match(key, opts))
+    .then((hit) => { clearTimeout(t); resolve(hit); }, () => { clearTimeout(t); resolve(undefined); });
 });
 
 /* The page says when: it holds an installed build until the app is in the

@@ -2942,7 +2942,7 @@ export default function LeadPerformanceCalculator() {
       return b ? { store: b } : null;
     } catch { return null; }
   })();
-  if (boardParams) return <BoardBoundary><React.Suspense fallback={null}><BoardScreen storeId={boardParams.store} /></React.Suspense></BoardBoundary>;
+  if (boardParams) return <BoardBoundary><React.Suspense fallback={<BoardHold />}><BoardScreen storeId={boardParams.store} /></React.Suspense></BoardBoundary>;
   // --- live floor: public sign-in intercept (before any auth) ---
   const floorParams = (() => {
     try {
@@ -3986,6 +3986,12 @@ function QueueBoard({ storeId, kind }) {
    catch inside the cooldown instead schedules the retry itself, once, for when
    the cooldown ends. */
 const BOARD_RELOAD_COOLDOWN_MS = 60000;
+/* What the wall shows while the board is not there: its own ground, the same
+   #0B1622 the board screen paints under the frame. It was null, which on a
+   television is a white screen, for the seconds a chunk takes and for the
+   minute the reload guard waits. Jorge, 18 September: the TV keeps going
+   white. Nothing written on it, because a wall should not flash words. */
+const BoardHold = () => <div style={{ position: "fixed", inset: 0, background: "#0B1622" }} aria-hidden="true" />;
 class BoardBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
@@ -4002,7 +4008,7 @@ class BoardBoundary extends React.Component {
       }
     } catch (e) {}
   }
-  render() { return this.state.err ? null : this.props.children; }
+  render() { return this.state.err ? <BoardHold /> : this.props.children; }
 }
 
 // Reload when a new build ships, so a screen that has been up for weeks is never

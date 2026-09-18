@@ -977,3 +977,19 @@ test("the first batch under the sheets: D4, R2, and a press WebKit can run", () 
   assert.ok(/new PointerEvent\(type, \{ bubbles: true, cancelable: true, composed: true, pointerType: "touch"/.test(feel),
     "the press is a pointer event with a finger's type, which both browsers run");
 });
+
+test("the Board's wall does not go white on a deploy", () => {
+  /* Jorge, 18 September. app_errors: eleven chunk fetches failed on the
+     Driver's Mart wall, one pair per deploy, including on the build it had
+     just reloaded onto. */
+  const sw = fs.readFileSync(new URL("../src/sw.js", import.meta.url), "utf8");
+  assert.ok(/caches\.open\(CACHE\)\.then\(\(c\) => c\.match\(key, opts\)\)\.then\(\(hit\) => hit \|\| caches\.match\(key, opts\)\)/.test(sw),
+    "the worker looks in this build's cache and then in any cache still kept, so a page on the previous build finds its own chunk");
+  const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+  assert.ok(/git diff --quiet HEAD\^ HEAD -- \. ':\(exclude\)docs' ':\(exclude\)\*\.md'/.test(vercel.ignoreCommand || ""),
+    "and a commit that touches only docs and markdown does not deploy, so the wall does not reload for a board row");
+  assert.ok(/const BoardHold = \(\) => <div style=\{\{ position: "fixed", inset: 0, background: "#0B1622" \}\}/.test(core)
+    && /render\(\) \{ return this\.state\.err \? <BoardHold \/> : this\.props\.children; \}/.test(core)
+    && /<React\.Suspense fallback=\{<BoardHold \/>\}><BoardScreen/.test(core),
+    "and while the board is not there the wall holds its own ground rather than white");
+});
