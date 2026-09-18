@@ -7449,7 +7449,10 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      numbered circle on the line's cord, lifts off one room and lands on the
      other; under it the rooms travel sideways in the direction the bar moved,
      the arriving one in from its edge and the leaving one a third of the way
-     after it, with a sheen riding the arriving edge.
+     after it. What says the rooms moved is the backdrop behind them, not a
+     light crossing them: there was a sheen doing that too and Jorge had it
+     taken out on 18 September, because the parallax already shows the
+     movement and the sheen showed it again as a wipe.
 
      It used to be a dot dissolve, and it read as four separate events rather
      than one gesture, for four reasons worth keeping written down:
@@ -12099,8 +12102,8 @@ html:has(.q-page.sf.mc-shell), body:has(.q-page.sf.mc-shell) { background:var(--
 html:has(.q-page.sf.mc-floor), body:has(.q-page.sf.mc-floor) { background:var(--gnd-floor); }
 /* The ground travels. Each room paints its own and the swap used to be
    instant, so the most characteristic thing about a room was the one thing
-   that did not move while the rooms themselves slid, dimmed and caught a
-   sheen. This carries the corner and the floor into each other, which is the
+   that did not move while the rooms themselves slid and dimmed. This carries
+   the corner and the floor into each other, which is the
    half of the change that needs no cross at all: they are two tabs of one
    room, so nothing slides between them. */
 html:has(.q-page.sf), body:has(.q-page.sf) {
@@ -15078,7 +15081,8 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    two are one surface rather than two pictures. Both are on the wipe token
    and one curve with no overshoot: a page arrives, it does not bounce.
    Over them the salesperson's own mark flies between the rail and the cord,
-   on the same clock, and a sheen rides the arriving edge. */
+   on the same clock. Nothing else crosses the screen: what tells a person the
+   rooms moved is the ground behind them travelling at six speeds. */
 /* The layer that moves is the room's own page, not the div around it. A room
    is a fixed, full-screen sheet at z-index 100; the div in the markup is a
    zero-height handle. Putting the travel on the div would have made the div a
@@ -15195,8 +15199,8 @@ html.sun .ar-gnd{ display:none; }
   /* The arriving sheet used to cast a dark edge, which is what told two opaque
      sheets apart. They are not opaque any more: one ground lies behind both,
      and a shadow on it is a seam drawn on purpose. Jorge, 17 September: no
-     seam between the rooms. The sheen below still crosses the arriving sheet,
-     because a light travelling over a room is not a line between two. */
+     seam between the rooms. It carried a sheen as well, and that is gone too:
+     18 September, the backdrop shows the movement without it. */
   will-change:transform; }
 /* The one leaving is CUT to the part of the screen the arriving one has not
    reached yet, rather than the two of them being made opaque.
@@ -15237,18 +15241,17 @@ html.sun .ar-gnd{ display:none; }
   from{ transform:translate3d(0, 0, 0); filter:brightness(1); clip-path:inset(0 0 0 74%); }
   to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7);
       clip-path:inset(0 0 0 91.16%); } }
-/* The sheen the switch is named for: a soft band of the room's own light that
-   crosses the arriving sheet once and is gone before it lands. */
-.ar-room.ar-in > .q-page.sf::after{ content:""; position:absolute; inset:0; z-index:3; pointer-events:none;
-  background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.13) 46%, rgba(255,255,255,.04) 60%, transparent 72%);
-  animation:arSheen var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; }
-@keyframes arSheen{ from{ transform:translate3d(-160%, 0, 0); opacity:.85; }
-  80%{ opacity:.22; } to{ transform:translate3d(160%, 0, 0); opacity:0; } }
+/* There was a sheen here, a band of white light that rode across the arriving
+   sheet once on every switch. It is gone, and Jorge's reason for taking it out
+   is the better argument: the backdrop now shows the movement. Three fields of
+   dots and three lights travelling at six speeds behind the rooms is the thing
+   that says a room moved, and a white band crossing the screen on top of that
+   says it a second time, in the language of a wipe rather than of depth. Two
+   answers to one question, and the weaker one was the loud one. */
 .ar-fly{ position:fixed; z-index:106; border-radius:50%; display:grid; place-items:center; box-sizing:border-box;
   font-family:var(--font-mono); font-size:8.5px; font-weight:700; pointer-events:none; will-change:transform; }
 @media (prefers-reduced-motion: reduce){
   .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; box-shadow:none; }
-  .ar-room.ar-in > .q-page.sf::after{ animation:none; display:none; }
   .ar-room.ar-out{ display:none; } }
 /* The rooms in sunlight: the curtain's deep green for the ground, cream for
    what sits on it, the pill in mint with ink on it, and the two help cards
