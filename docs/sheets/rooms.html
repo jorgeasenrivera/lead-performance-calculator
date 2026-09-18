@@ -59,7 +59,7 @@
     <div class="eyebrow">1 · What is on the screen</div>
     <div class="item">
       <ul>
-        <li><b>Home</b> and <b>Live Floor</b> are two tabs of one sheet: the same page, different content, one scroll box.</li>
+        <li><b>Home</b> and <b>Live Floor</b> are two panes of one page since C29: side by side, a screen wide each, each its own scroll box. The page holds the data; the panes hold the corner and the floor.</li>
         <li><b>Phone Line</b> is its own sheet, kept alive once opened.</li>
         <li><b>The ground</b> is two canvases fixed behind everything: haze and lights at one pixel per point, dots at the screen's own pixels. Each tab has a palette: Home green, Live Floor dark with teal, Phone Line blue. The ground is painted from a position along the tab list, so between two tabs it is a blend.</li>
         <li><b>The bar</b> at the foot is one control for all three, with a pill that glides to the chosen tab.</li>
@@ -93,12 +93,12 @@
       <div class="tbl"><table>
         <thead><tr><th>Move</th><th>What moves</th><th>What holds</th><th class="n">Time</th><th>Notes</th></tr></thead>
         <tbody>
-          <tr><td>Tap Home ↔ Live Floor</td><td>The stage slides in from the side (right for Floor, left for Home); the ground blends; the pill glides.</td><td>The corner's cards stay still on the slide (no lift, no fade); each tab keeps its own scroll.</td><td class="n">380</td><td>Since #385 the slide's class comes off when the animation ends, not on a timer.</td></tr>
+          <tr><td>Tap Home ↔ Live Floor</td><td>The two panes tile, a full width, the same travel as two rooms; the ground blends; the pill glides.</td><td>Everything inside both panes; each keeps its own scroll.</td><td class="n">380</td><td>C29. The stage slide of #385 is gone with the shape that needed it. The corner's cards slide in only when the corner is born in the frame (open, sign-in); the floor's title likewise, once.</td></tr>
           <tr><td>Tap to or from Phone Line</td><td>The two rooms tile: the one leaving travels out, the one arriving travels in, both a full width; your mark flies from one rail to the other; the ground blends.</td><td>Each room's content.</td><td class="n">380</td><td>Tiling, not overlapping, so nothing is cut and nothing needs to be opaque.</td></tr>
           <tr><td>Swipe Floor ↔ Phone Line</td><td>The rooms follow the thumb as two sheets; on release they finish the travel; the mark flies; the ground follows the thumb, then finishes.</td><td>As above.</td><td class="n">thumb, then 380</td><td>Gives way to the left edge (iOS back), to anything scrolling sideways, and to a mostly vertical drag.</td></tr>
-          <tr><td>Swipe Home ↔ Live Floor</td><td>Nothing follows the thumb: they are one sheet. On release it commits as a tap.</td><td></td><td class="n">380</td><td>C29, open: make them two sheets so this follows the thumb like the others.</td></tr>
+          <tr><td>Swipe Home ↔ Live Floor</td><td>The panes follow the thumb; the ground follows it; the pill follows it, a slot per screen. On release they finish from where the thumb left them, or spring back.</td><td>As above.</td><td class="n">thumb, then 380</td><td>C29. Same thresholds as the rooms. Refused before sign-in (one pane) and while You're up holds the floor.</td></tr>
           <tr><td>First open</td><td>The curtain over the room until its first data; then the curtain leaves.</td><td>The bar rises once the first room is there.</td><td class="n">exit 140</td><td>The other room is built 250 ms after the first says it is ready, so the first tap across is quick.</td></tr>
-          <tr><td>You're up</td><td>The takeover appears over the stage, whichever tab.</td><td>The bar.</td><td class="n">500</td><td>Full screen on both tabs since #374.</td></tr>
+          <tr><td>You're up</td><td>The view travels to the floor on the wipe if it was on Home, and the takeover appears over the floor's stage.</td><td>The bar. Home is refused, from the bar and from a swipe, until it is taken.</td><td class="n">380, then 500</td><td>Full screen since #374; snaps to the floor since C29 (S4).</td></tr>
           <tr><td>Reduced motion</td><td>Nothing slides; the ground snaps to the tab's palette.</td><td></td><td class="n">0</td><td></td></tr>
         </tbody>
       </table></div>
@@ -119,7 +119,7 @@
     <div class="item">
       <h3>R1 · Tap between Home and Live Floor: the stage slides, the cards stay still</h3>
       <p>As it is. The stage comes in from the side on the wipe; the corner's cards do not lift or fade on top of it.</p>
-      <p class="note"><b>Decided 18 September: Keep.</b></p>
+      <p class="note"><b>Decided 18 September: Keep.</b> Superseded the same day by R3: the pane travels instead of the stage, and the cards still do not move on top of it.</p>
       <div class="decide" data-item="R1 Tap Home and Live Floor: stage slides, cards still"><span>Decide</span><button type="button" data-v="Keep">Keep</button><button type="button" data-v="Change" class="later">Change</button></div>
     </div>
 
@@ -133,7 +133,7 @@
     <div class="item">
       <h3>R3 · Home and Live Floor as two sheets (C29)</h3>
       <p>Then a swipe between them follows the thumb like every other swipe, and the tab slide becomes the same tiling travel the rooms use. It is the biggest single change on this sheet and touches the corner, the floor and the ground.</p>
-      <p class="note"><b>Decided 18 September: Next batch.</b></p>
+      <p class="note"><b>Decided 18 September: Next batch.</b> Then, on the C29 proposal the same day: two panes on one track inside the floor page (S1), the travel is the corner's arrival (S2), the pills follow the thumb (S3), You're up snaps to the floor (S4). Built in C29; the rows above read as built.</p>
       <div class="decide" data-item="R3 Home and Live Floor as two sheets (C29)"><span>Decide</span><button type="button" data-v="Next batch">Next batch</button><button type="button" data-v="Later" class="later">Later</button><button type="button" data-v="Never" class="no">Never</button></div>
     </div>
 
