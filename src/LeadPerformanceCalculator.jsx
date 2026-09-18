@@ -10163,7 +10163,24 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     { k: "showroom", label: "Showroom", pct: asPoints(ms.showroomPct), leads: ms.showroomLeads, u: ms.showroomUnits },
   ].filter((c) => c.pct != null || c.u) : [];
   const prev = Object.fromEntries(Object.entries((ms && ms.prevPct) || {}).map(([k, v]) => [k, asPoints(v)]));
-  const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0));
+  /* The wall's own standard for each channel, in points, so the sheet grades
+     the way the TV does and draws the line the person is being held to.
+     Jorge's decisions of 18 September: the standard on every bar (A1), the
+     opened channel shows the month, the run and the move (A2), and one line
+     of coaching from the standard (A4). */
+  const clThr = normThresholds(boardThr);
+  const stdOf = (k) => clThr[k] || DEFAULT_THRESHOLDS[k] || { green: 20, yellow: 10 };
+  const gradeOf = (c) => (c.pct == null ? null : c.pct >= stdOf(c.k).green ? "g" : c.pct >= stdOf(c.k).yellow ? "y" : "r");
+  const GRADE_INK = { g: "#8FD8AF", y: "#E4C98D", r: "#F08A80" };
+  const CL_NOUN = { internet: "leads", phone: "calls", showroom: "ups" };
+  const coachOf = (c) => {
+    if (c.leads == null || !(c.leads > 0)) return null;
+    const goal = stdOf(c.k).green;
+    const need = Math.ceil((goal / 100) * c.leads) - (c.u || 0);
+    if (need <= 0) return `Over the ${goal}% standard on ${c.label.toLowerCase()}. Keep it there.`;
+    return `${need} more out of your ${c.leads} ${CL_NOUN[c.k] || "leads"} gets you to the ${goal}% standard.`;
+  };
+  const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0), ...closing.map((c) => stdOf(c.k).green));
 
   return (
     <div className={"mc" + (offDim ? " mc-off" : "") + (arrived ? " mc-still" : "")}>
@@ -10394,8 +10411,11 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                       className={"mc-cl" + (openCh === c.k ? " on" : "")}
                       aria-expanded={openCh === c.k}
                       onClick={() => { buzz(8); setOpenCh(openCh === c.k ? null : c.k); }}>
-                      <b style={{ color: chColors[c.k] }}>{c.pct != null ? c.pct + "%" : "\u00b7"}</b>
-                      <span className="vb"><i style={{ height: Math.round(((c.pct || 0) / maxPct) * 100) + "%", background: chColors[c.k] }} /></span>
+                      <b style={{ color: GRADE_INK[gradeOf(c)] || chColors[c.k] }}>{c.pct != null ? c.pct + "%" : "\u00b7"}</b>
+                      <span className="vb">
+                        <i style={{ height: Math.round(((c.pct || 0) / maxPct) * 100) + "%", background: GRADE_INK[gradeOf(c)] || chColors[c.k] }} />
+                        <u className="thr" data-l={stdOf(c.k).green} style={{ bottom: Math.round((stdOf(c.k).green / maxPct) * 100) + "%" }} />
+                      </span>
                       <span className="lb" style={{ color: chColors[c.k] }}>{c.label}</span>
                       {prev[c.k] != null && c.pct != null && (
                         <span className={"dl " + (c.pct >= prev[c.k] ? "up" : "dn")}>
@@ -10413,12 +10433,25 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                       </b>
                       <button type="button" className="mc-clopen-x" onClick={() => setOpenCh(null)}>Hide</button>
                     </div>
-                    <ChannelLine series={channelSeries(days, openCh)} col={chColors[openCh]} />
+                    {(() => {
+                      const c = closing.find((x) => x.k === openCh) || {};
+                      const move = prev[openCh] != null && c.pct != null ? Math.round((c.pct - prev[openCh]) * 10) / 10 : null;
+                      const coach = coachOf(c);
+                      return (
+                        <>
+                          <div className="mc-clbig">
+                            <div><b>{c.leads != null ? c.leads : "\u00b7"}</b><small>{(CL_NOUN[openCh] || "leads").toUpperCase()}</small></div>
+                            <div><b>{c.u || 0}</b><small>DELIVERED</small></div>
+                            <div><b style={{ color: GRADE_INK[gradeOf(c)] || chColors[openCh] }}>{c.pct != null ? c.pct + "%" : "\u00b7"}</b><small>CLOSING</small></div>
+                            {move != null && <div><b className={move > 0 ? "up" : move < 0 ? "dn" : ""}>{move > 0 ? "+" : ""}{move}</b><small>SINCE LAST</small></div>}
+                          </div>
+                          {coach && <div className="mc-clcoach">{coach}</div>}
+                        </>
+                      );
+                    })()}
+                    <ChannelLine series={channelSeries(days, openCh)} col={chColors[openCh]} target={stdOf(openCh).green} />
                   </div>
                 )}
-                <div className="mc-clfoot">
-                  {closing.map((c) => c.leads != null ? `${c.label.toLowerCase()} ${c.u || 0} of ${c.leads}` : null).filter(Boolean).join(" \u00b7 ")}
-                </div>
               </>
             )}
             {sheet === "sched" && (
@@ -11367,11 +11400,20 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           {/* The segmented control the phone line uses. It was written to serve
               this screen too — its own comment says the floor's track is three
               wide rather than four — and was simply never wired in here. */}
-          <SfStatusSelect value={st} variant={FLOOR_SEG} flags={FLOOR_SELF_FLAGS}
-            onPick={setFlag} />
+          {/* Here, Lunch and Away are for standing in line. With a guest, Here
+              is where you already are; they come back the moment the guest has
+              left. And FlyBy and T.O. ask a manager to come to a guest, so
+              they are drawn only while there is one. Jorge's decisions of 18
+              September, B1 and B4. */}
+          {st !== "customer" && (
+            <SfStatusSelect value={st} variant={FLOOR_SEG} flags={FLOOR_SELF_FLAGS}
+              onPick={setFlag} />
+          )}
           <SeatBlock store={store} meId={meId} plan={floorPlanOf(cfg, store)} row={row} commit={commit} />
-          <AssistBlock meId={meId} meName={meFull || meLabel}
-            fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} commit={commit} />
+          {st === "customer" && (
+            <AssistBlock meId={meId} meName={meFull || meLabel}
+              fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} commit={commit} />
+          )}
           <div className="sf-links">
             {/* The corner is the main page and already carries the day, so this
                 goes back there rather than opening a second copy of it. */}
@@ -16310,12 +16352,21 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-cl .vb{ display:block; position:relative; height:110px; margin:6px auto; width:26px;
   border-radius:8px; background:rgba(255,255,255,.08); }
 .mc-cl .vb i{ position:absolute; left:0; right:0; bottom:0; border-radius:8px; }
+/* the store's standard, across the bar, with its number beside it */
+.mc-cl .vb u{ position:absolute; left:-5px; right:-5px; height:2px; background:rgba(237,242,234,.82); }
+.mc-cl .vb u::after{ content:attr(data-l); position:absolute; left:calc(100% + 4px); top:-6px; font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.06em; color:rgba(237,242,234,.6); }
+/* the opened channel: the month in figures, then a line of coaching, then the run */
+.mc-clbig{ display:flex; flex-wrap:wrap; gap:14px 18px; margin-top:10px; }
+.mc-clbig b{ display:block; font-family:var(--sfmono); font-size:20px; font-weight:700; letter-spacing:-.02em; line-height:1.1; }
+.mc-clbig b.up{ color:#8fd8af; }
+.mc-clbig b.dn{ color:#f08a80; }
+.mc-clbig small{ display:block; margin-top:2px; font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.14em; color:rgba(237,242,234,.5); }
+.mc-clcoach{ margin-top:10px; font-size:13.5px; line-height:1.4; color:#EDF2EA; }
 .mc-cl .lb{ display:block; font-size:10.5px; font-weight:600; }
 .mc-cl .dl{ display:inline-flex; align-items:center; gap:4px; margin-top:4px;
   font-family:var(--sfmono); font-size:9px; font-weight:700; }
 .mc-cl .dl.up{ color:#8fd8af; }
 .mc-cl .dl.dn{ color:#f08a80; }
-.mc-clfoot{ margin-top:10px; font-size:11px; color:rgba(237,242,234,.5); }
 /* ---- the thirty-day channel line ----
    Lives inside the closing sheet, under whichever bar was pressed. The bar is
    a button now, so it needs the button reset the rest of this sheet's controls
@@ -17261,11 +17312,14 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .fbp-tbl.moving{box-shadow:0 0 0 4px rgba(143,227,179,.6);border-style:dashed;}
 /* ---- the hover card ---- */
 /* ---- the seat, on the phone ---- */
-.fba-seated{display:flex;align-items:center;gap:8px;margin-top:10px;background:#fff;border:1px solid rgba(34,49,38,.12);
-  border-radius:13px;padding:12px 14px;font:500 14.5px var(--font-ui);color:#5A6B5E;}
-.fba-seated b{color:#223126;}
-.fba-seated button{margin-left:auto;border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;
-  padding:9px 14px;font:600 13px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+/* One line in the room's own ink, under the big button, rather than a white
+   card of its own: the table is part of the same fact, with a guest, here.
+   Jorge's decision of 18 September, B2. */
+.fba-seated{display:flex;align-items:center;gap:8px;margin-top:6px;background:none;border:0;
+  border-radius:0;padding:8px 6px;font:500 14px var(--font-ui);color:rgba(237,242,234,.7);}
+.fba-seated b{color:#EDF2EA;}
+.fba-seated button{margin-left:auto;border:0;background:none;border-radius:0;
+  padding:6px 2px;font:600 13.5px var(--font-ui);color:var(--led);text-decoration:underline;text-underline-offset:3px;cursor:pointer;}
 .fba-seatask{margin-top:10px;background:#fff;border:1px solid rgba(34,49,38,.12);border-radius:15px;padding:12px 13px;}
 .fba-seatask > b{display:block;font:700 16px var(--font-display);color:#223126;}
 .fba-seatask > span{display:block;font:500 13.5px var(--font-ui);color:#8B988E;margin:3px 0 10px;}
