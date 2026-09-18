@@ -15397,6 +15397,19 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .lpc:has(> .ar-bar) .q-page.sf.sf-line .q-stage,
 .lpc:has(> .ar-bar) .q-page.sf.sf-line .sf-live{ min-height:calc(var(--dvh) - 72px); }
 .lpc:has(> .ar-bar) .sf-live{ padding-bottom:74px; }
+/* The "you're up" takeover is the whole screen, on either tab and in either
+   room. Live Floor's stage and the line's give up the reserve above, and the
+   takeover, which is sized to the stage it sits in, stopped 72px short of the
+   foot with the dark ground showing under the bar: Jorge, 18 September, two
+   screenshots, one per tab, the card 36px lower on Home because Home's stage
+   is the full height. Measured at 393x852: the takeover 0 to 780 on Live
+   Floor, 0 to 852 on Home. Under the takeover there is nothing to scroll to,
+   so the page's own reserve goes with it. */
+.lpc:has(> .ar-bar) .q-page.sf:has(.sf-uptake){ padding-bottom:0; }
+.lpc:has(> .ar-bar) .q-page.sf.mc-floor .q-stage:has(.sf-uptake),
+.lpc:has(> .ar-bar) .q-page.sf.mc-floor .sf-live:has(> .sf-uptake),
+.lpc:has(> .ar-bar) .q-page.sf.sf-line .q-stage:has(.sf-uptake),
+.lpc:has(> .ar-bar) .q-page.sf.sf-line .sf-live:has(> .sf-uptake){ min-height:var(--dvh); }
 .lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
 /* Both rooms switched off. Somebody did that deliberately, so it is said
    plainly rather than drawn as an empty shell they will tap at. */
