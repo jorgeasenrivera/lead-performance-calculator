@@ -3975,7 +3975,17 @@ function QueueBoard({ storeId, kind }) {
    if the error is not a stale chunk. managerChunk() clears the flag once a chunk
    actually loads, so the guard covers one reload rather than the tab's whole
    life: without that, a kiosk that heals from one deploy would never heal from
-   the next. */
+   the next.
+
+   The flag is a timestamp rather than a bare "1" because a reload can itself land
+   on a chunk that is not live yet, if the deploy it is chasing is still rolling
+   out: that reload's fetch never resolves, so managerChunk() never clears the
+   flag, and BoardScreen never mounts again to give componentDidCatch another
+   error to catch. Left as a one-shot flag, the boundary's render() would return
+   null forever and the kiosk would stay blank until somebody walked up to it. A
+   catch inside the cooldown instead schedules the retry itself, once, for when
+   the cooldown ends. */
+const BOARD_RELOAD_COOLDOWN_MS = 60000;
 class BoardBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
@@ -3983,9 +3993,12 @@ class BoardBoundary extends React.Component {
     const frame = String((info && info.componentStack) || "").split("\n").map((l) => l.trim()).find(Boolean) || null;
     report("render", err, { screen: "board", component: frame });
     try {
-      if (!sessionStorage.getItem("lpcf:board-reloaded")) {
-        sessionStorage.setItem("lpcf:board-reloaded", "1");
+      const since = Date.now() - Number(sessionStorage.getItem("lpcf:board-reloaded") || 0);
+      if (!(since < BOARD_RELOAD_COOLDOWN_MS)) {
+        sessionStorage.setItem("lpcf:board-reloaded", String(Date.now()));
         window.location.reload();
+      } else {
+        setTimeout(() => window.location.reload(), BOARD_RELOAD_COOLDOWN_MS - since);
       }
     } catch (e) {}
   }
