@@ -139,7 +139,26 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   /* The arriving ground used to be handed down as a custom property so a flat
      layer could drop it in whole. The backdrop paints it now, travelling, so
      that whole path went with it rather than being left dead. */
-  assert.ok(/const crossRooms = \(from, to\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor"\);/.test(core), "a tab switch crosses the rooms");
+  assert.ok(/const crossRooms = \(from, to, dx\) => \{/.test(core) &&
+    /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor", dx\);/.test(core), "a tab switch crosses the rooms");
+  /* A finish that a thumb started carries on from where the thumb left off. It
+     used to throw that away and restart from the tap's 26 per cent, so the
+     pages jumped backwards on release: measured, the leaving sheet from -250px
+     to 0 in one frame. The same frame put its title inside the cut, which is
+     the peek of letters near the edge Jorge saw on 18 September. */
+  assert.ok(/if \(took\) go\(s0\.to, true, dx\);/.test(core) && /const go = \(t, bySwipe, dx\) => \{/.test(core),
+    "the release hands on where the thumb actually left the sheets");
+  assert.ok(/cross\.dx != null \? " x x-drag"/.test(core) &&
+    /"--ar-in0": "calc\(" \+ cross\.dx \+ "px \+ " \+ \(cross\.dir > 0 \? 100 : -100\) \+ "%\)"/.test(core),
+    "and the arriving sheet starts a screen to the side of the one being left, which is where the drag had them");
+  assert.ok(/@keyframes arPageInD\{\n\s*from\{ transform:translate3d\(var\(--ar-in0, 100%\), 0, 0\); \}/.test(core) &&
+    /@keyframes arPageOutD\{\n\s*from\{ transform:translate3d\(var\(--ar-out0, 0px\), 0, 0\); filter:brightness\(1\); \}/.test(core),
+    "a swipe finishes by tiling, the way it ran under the thumb");
+  {
+    const d = (core.match(/@keyframes arPageOutD\{[\s\S]*?\}\s*\}/) || [""])[0];
+    assert.ok(!/clip-path/.test(d),
+      "and it needs no cut, because two sheets that tile are never one behind the other and nothing can peek between them");
+  }
   assert.ok(!/groundOf|--ar-to-bg/.test(core), "and nothing is left handing a ground colour to a layer that no longer exists");
   assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches; \} catch \(e\) \{\}\n    if \(reduce\) return;/.test(core), "less motion asks for the cut");
   /* One gesture, one clock: the rooms, the mark and the bar's pill all run for
@@ -314,6 +333,18 @@ test("a new build is taken at the next open, not the one after", () => {
     "and a cached file is found whatever the response varied on, so the phone behaves the same as the preview");
 });
 
+/* Building a room is what starts its fetch, so a room built too late is a room
+   that shows its loading skeleton to the first person who crosses to it. The
+   wait was written as a flat 2.5 s where what was meant was "once the first
+   room has settled". Measured at a dealership's lag: a swipe 100 ms after the
+   bar appears used to show the skeleton, and does not now. */
+test("the other room is built once the first has settled, not on a guess at how long that takes", () => {
+  assert.ok(/if \(!ready\) return undefined;\n\s*const t = setTimeout\(\(\) => setWarm\(true\), 250\);/.test(core),
+    "the first room says when it is ready and the other is built a beat later");
+  assert.ok(/const t = setTimeout\(\(\) => setWarm\(true\), 2500\);/.test(core),
+    "and the flat timer stays as a backstop, for a room that never reports ready at all");
+});
+
 /* Sunlight was a second set of colours for the rooms, deep green with cream on
    it, behind a switch on the corner. Jorge had it removed on 18 September. The
    guard is inverted rather than deleted, because a feature that comes back by
@@ -341,10 +372,17 @@ test("Sunlight is gone, all of it, with nothing left behind to half-work", () =>
    screen was built and a slide says it arrived, and off the Live Floor the
    second one is what happened. */
 test("the corner's elements arrive from the right, not from below", () => {
-  assert.ok(/@keyframes mcSlide\{ from\{ opacity:0; transform:translateX\(14px\); \} to\{ opacity:1; transform:none; \} \}/.test(core),
+  assert.ok(/@keyframes mcSlide\{ from\{ opacity:0; transform:translateX\(22px\); \} to\{ opacity:1; transform:none; \} \}/.test(core),
     "they come in from the right and settle left");
-  assert.ok(/\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)\{ animation:mcSlide \.6s cubic-bezier\(\.2,\.8,\.3,1\) both; \}/.test(core),
-    "on the curve and the clock the lift used, because only the direction changed");
+  /* Twenty-two rather than fourteen, on a curve that spends almost all of
+     itself slowing down: Jorge, 18 September, they should have more of a
+     landing. And the spine lands with them, having been excluded alongside the
+     two things that genuinely cannot move. */
+  assert.ok(/\.mc > \*:not\(\.mc-aurora\):not\(\.mc-me\)\{ animation:mcSlide \.62s cubic-bezier\(\.16,1,\.3,1\) both; \}/.test(core) &&
+    !/:not\(\.mc-spine\)\{ animation/.test(core),
+    "the spine arrives with the cards, and the whole set lands rather than merely appearing");
+  assert.ok(/\.mc > \*:nth-child\(4\)\{ animation-delay:\.05s; \}/.test(core),
+    "on the stagger the lift used, because only the direction and the distance changed");
   assert.ok(/\.mc > \*:nth-child\(4\)\{ animation-delay:\.05s; \}/.test(core) &&
     /\.mc > \*:nth-child\(9\),\.mc > \*:nth-child\(10\)\{ animation-delay:\.28s; \}/.test(core),
     "and the stagger down the page is the one it had");
@@ -353,7 +391,7 @@ test("the corner's elements arrive from the right, not from below", () => {
      owner. */
   assert.ok((core.match(/@keyframes mcRise\{/g) || []).length === 1,
     "mcRise is declared once now, and belongs to the flash card alone");
-  assert.ok(/@media \(prefers-reduced-motion: reduce\)\{\n\s*\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)\{ animation:none; \} \}/.test(core),
+  assert.ok(/@media \(prefers-reduced-motion: reduce\)\{\n\s*\.mc > \*:not\(\.mc-aurora\):not\(\.mc-me\)\{ animation:none; \} \}/.test(core),
     "and less motion gets none of it, which it did not before");
 });
 
