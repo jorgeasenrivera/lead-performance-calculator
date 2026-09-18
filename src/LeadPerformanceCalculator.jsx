@@ -7596,9 +7596,21 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     if (next !== tab && room !== "line") {
       setTabSlide({ dir: next === "floor" ? 1 : -1, n: Date.now() });
       clearTimeout(tabTimer.current);
-      tabTimer.current = setTimeout(() => setTabSlide(null), MOTION.wipe + 60);
+      /* A backstop only. The slide's class used to come off on this timer at
+         the wipe plus 60 ms, and a phone that started the animation late (the
+         corner is a heavy first frame) was still mid-slide when it did: the
+         stage sat offset, then snapped into place. Jorge, 18 September, with
+         the screenshot. The class comes off when the animation says it has
+         ended (onAnimationEnd on the stack, below); the timer is for a phone
+         that never starts it, reduced motion for one. */
+      tabTimer.current = setTimeout(() => setTabSlide(null), MOTION.wipe + 900);
     }
     setTab(next);
+  };
+  const onStageEnd = (e) => {
+    if (!tabSlide || !e || !/^arStageIn/.test(String(e.animationName || ""))) return;
+    clearTimeout(tabTimer.current);
+    setTabSlide(null);
   };
   useLayoutEffect(() => {
     if (!cross || !cross.src) return;
@@ -8193,7 +8205,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
       <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")
-        + (tabSlide ? (tabSlide.dir > 0 ? " t t-r" : " t t-l") : "")}
+        + (tabSlide ? (tabSlide.dir > 0 ? " t t-r" : " t t-l") : "")} onAnimationEnd={onStageEnd}
         ref={stackRef}
         /* Every switch tiles, whether a thumb started it or a button did. A
            swipe begins where the thumb left off; a tap begins at nothing, a
@@ -11260,6 +11272,20 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
      which is the thing the person is actually here to find out. */
   const pageRef = useRef(null);
   useKeyboardInset(pageRef);
+  /* The page is the scroll box and both tabs share it, so the floor used to
+     arrive scrolled to wherever Home had been left: a blank screen for a
+     beat, then the floor coming down from the top as the browser clamped
+     it. Jorge, 18 September, with the screenshot. Each tab keeps its own
+     place now, put back before the first paint of the tab. */
+  const tabScroll = useRef({ corner: 0, floor: 0 });
+  useLayoutEffect(() => {
+    const el = pageRef.current;
+    if (!el) return undefined;
+    el.scrollTop = tabScroll.current[tab] || 0;
+    const on = () => { tabScroll.current[tab] = el.scrollTop; };
+    el.addEventListener("scroll", on, { passive: true });
+    return () => el.removeEventListener("scroll", on);
+  }, [tab]);
 
   const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
   const queueSpine = (
