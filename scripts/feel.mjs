@@ -302,14 +302,25 @@ async function run(b) {
     }, 200);
     setTimeout(() => { clearInterval(t); done(); }, 6000);
   }));
-  const cdp = await ctx.newCDPSession(p);
+  /* The press is driven as pointer events dispatched in the page, with the
+     pointer type a finger has, rather than through Chromium's debugging
+     channel: that channel does not exist in WebKit, and the first WebKit run
+     (18 September) died here. The app's press lives on window-level pointer
+     listeners, so this reaches exactly the code a finger reaches; what it
+     does not exercise is the browser's own hit-testing, which is not what
+     the two rows below measure. */
   const seg = (label) => `[...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((b) => b.textContent.includes("${label}"))`;
   const box = await p.evaluate(`(() => { const r = ${seg("Here")}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  const finger = (type) => p.evaluate(([type, at]) => {
+    const el = document.elementFromPoint(at.x, at.y) || document.body;
+    el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerType: "touch", pointerId: 1, isPrimary: true, button: 0, clientX: at.x, clientY: at.y }));
+    return true;
+  }, [type, box]);
   await p.evaluate(() => { window.__vib.length = 0; });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x, y: box.y }] });
+  await finger("pointerdown");
   await p.waitForTimeout(BAR.press);
   const held = await p.evaluate(`getComputedStyle(${seg("Here")}).scale`);
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await finger("pointerup");
   await p.waitForTimeout(500);
   const back = await p.evaluate(`getComputedStyle(${seg("Here")}).scale`);
   const vib = await p.evaluate(() => window.__vib);

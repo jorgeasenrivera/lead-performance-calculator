@@ -52,7 +52,7 @@
   <header>
     <div class="eyebrow">Sage · state sheet · 18 September</div>
     <h1>Rooms transition sheet</h1>
-    <p class="lede">Every way a salesperson's phone moves between Home, Live Floor and Phone Line, what moves, how long it takes, and what holds still. Read from <code>src/LeadPerformanceCalculator.jsx</code> as merged through #385. Decide once here; after that a fix to a transition is checked against this sheet.</p>
+    <p class="lede">Decided by Jorge on 18 September; the decisions are under each item. Every way a salesperson's phone moves between Home, Live Floor and Phone Line, what moves, how long it takes, and what holds still. Read from <code>src/LeadPerformanceCalculator.jsx</code> as merged through #385. Decide once here; after that a fix to a transition is checked against this sheet.</p>
   </header>
 
   <section>
@@ -109,7 +109,7 @@
     <div class="eyebrow">4 · What I found writing this down</div>
     <div class="item">
       <p class="fact"><b>The rooms' scroll memory does not work.</b> The code remembers where the floor and the line were scrolled to when you cross, but it reads <code>window.scrollY</code>, and the page is its own scroll box, so it always remembers zero. Each tab's scroll is kept properly since #385; each room's is not. Crossing to Phone Line and back lands at the top.</p>
-      <p class="fact"><b>The ground follows a touch that moves, and holds where the finger stops.</b> Any sideways movement while a tab is blending paints the ground at the finger's position and holds it there until the finger lifts. Between your two screenshots ten seconds apart that is the one thing in the code that could have held the floor's ground mid-blend.</p>
+      <p class="fact"><b>The ground follows the thumb only on a real swipe, and that finding was wrong.</b> This sheet first said any moving touch during a blend could hold the ground where the finger stopped. On reading the swipe code again: the ground follows a drag only when the rooms themselves are following it, a swipe between Live Floor and Phone Line, and it finishes on the clock the moment the finger lifts. A tap's blend between Home and Live Floor cannot be held by a touch. R4 below is therefore already how it works, and nothing changes for it. What held the floor's ground between the two screenshots is still not known.</p>
     </div>
   </section>
 
@@ -119,30 +119,35 @@
     <div class="item">
       <h3>R1 · Tap between Home and Live Floor: the stage slides, the cards stay still</h3>
       <p>As it is. The stage comes in from the side on the wipe; the corner's cards do not lift or fade on top of it.</p>
+      <p class="note"><b>Decided 18 September: Keep.</b></p>
       <div class="decide" data-item="R1 Tap Home and Live Floor: stage slides, cards still"><span>Decide</span><button type="button" data-v="Keep">Keep</button><button type="button" data-v="Change" class="later">Change</button></div>
     </div>
 
     <div class="item">
       <h3>R2 · Each room keeps its own scroll, the way each tab now does</h3>
       <p>Fix the memory so that crossing to Phone Line and back lands where you were, not at the top. Small, and it would go in the next batch.</p>
+      <p class="note"><b>Decided 18 September: Yes.</b></p>
       <div class="decide" data-item="R2 Each room keeps its own scroll"><span>Decide</span><button type="button" data-v="Yes">Yes</button><button type="button" data-v="No" class="no">No</button></div>
     </div>
 
     <div class="item">
       <h3>R3 · Home and Live Floor as two sheets (C29)</h3>
       <p>Then a swipe between them follows the thumb like every other swipe, and the tab slide becomes the same tiling travel the rooms use. It is the biggest single change on this sheet and touches the corner, the floor and the ground.</p>
+      <p class="note"><b>Decided 18 September: Next batch.</b></p>
       <div class="decide" data-item="R3 Home and Live Floor as two sheets (C29)"><span>Decide</span><button type="button" data-v="Next batch">Next batch</button><button type="button" data-v="Later" class="later">Later</button><button type="button" data-v="Never" class="no">Never</button></div>
     </div>
 
     <div class="item">
       <h3>R4 · The ground on a tap: blend on the clock, never follow a touch</h3>
-      <p>Today the ground follows any moving touch during a blend and holds where it stops. Change: a tap's blend runs on the clock and cannot be held; only a real swipe (one the rooms are following) moves the ground with the thumb. Removes the one way the code has to freeze a half-blended ground.</p>
+      <p>A tap's blend runs on the clock and cannot be held; only a real swipe, one the rooms are following, moves the ground with the thumb. Decided yes, and on a second reading of the code this is already exactly what it does (see section 4), so nothing changes for it.</p>
+      <p class="note"><b>Decided 18 September: Yes.</b></p>
       <div class="decide" data-item="R4 The ground blends on the clock; only a real swipe follows the thumb"><span>Decide</span><button type="button" data-v="Yes">Yes</button><button type="button" data-v="No" class="no">No</button></div>
     </div>
 
     <div class="item">
       <h3>R5 · The standing rule for a new transition</h3>
       <p>Proposed: every move runs on one clock, wipe; things that travel together land together; a move ends when its animation says so, never on a timer; and each surface keeps its own scroll. A change to any row in section 3 is written on this sheet in the same pull request.</p>
+      <p class="note"><b>Decided 18 September: Yes.</b></p>
       <div class="decide" data-item="R5 The standing rule: one clock, ends on its own end, scroll kept"><span>Decide</span><button type="button" data-v="Yes">Yes</button><button type="button" data-v="Change" class="later">Change something</button></div>
     </div>
 

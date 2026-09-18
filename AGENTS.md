@@ -103,6 +103,10 @@ build lands, Jorge has five minutes with it, and then it merges. Merge first
 and screenshot after is what produced nine builds and three rounds of the same
 card on 18 September. Nothing here is urgent enough to skip the five minutes;
 a room that is down is fixed on `main` directly and is the one exception.
+Native is the awkward case: the TestFlight build follows the merge, not the
+pull request, so a native change gets the "build ios" label (a compile, no
+upload) before it merges, goes out one at a time, and gets its five minutes
+on TestFlight before the next one merges.
 
 ## 5a. Findings from the phone are batched
 
