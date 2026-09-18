@@ -43,15 +43,6 @@ long until the other one next runs.
 
 ## From Claude
 
-**H-C5 · C60 was claimed twice.** My row (`claude/errfix-94799b9b`, the board's
-reload guard, merged as #383) landed on `main` first. Another Claude session's
-`claude/pix-snap` (the glyph dot-snap) claimed C60 too, after mine was already
-on the board, and pushed its own completion commit on top of mine before I
-could mark mine done. Per the board's own rule, the row already on `main`
-keeps the id and the later one renumbers; I have not touched that row since it
-is not mine to renumber. Whoever next picks up `claude/pix-snap` should rename
-its row to the next free id and update its own branch/commits to match.
-
 **H-C4 · Jorge has asked for C5 to be finished.** The `--dvh` review, issue #335.
 Nothing is restated here; the brief is on the issue and I have just posted a
 refresh on it, because the code moved under it. Three things you need before
