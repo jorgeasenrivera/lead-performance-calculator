@@ -842,3 +842,17 @@ test("a read the timeout gave up on cannot leave a room on its curtain", () => {
   assert.ok(/const staleMins = !net\.offline && netState\.okAt && Date\.now\(\) - netState\.okAt > 60000 \? minsOld\(netState\.okAt\) : 0;/.test(core),
     "the corner pill reads the live stamp, because the snapshot in net is only retaken when the phone goes off or comes back");
 });
+
+test("the you're up takeover is the whole screen on every tab", () => {
+  /* Jorge, 18 September, two screenshots: on Live Floor the takeover ended
+     above the foot of the screen with the dark ground showing under the bar;
+     on Home it filled. The floor tab's stage gives up 72px to the bar and the
+     takeover is sized to the stage. Measured at 393x852 before: 0 to 780 on
+     Live Floor, 0 to 852 on Home, the title 36px higher on the floor. */
+  assert.ok(/\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.mc-floor \.sf-live:has\(> \.sf-uptake\),\n\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-line \.q-stage:has\(\.sf-uptake\),\n\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-line \.sf-live:has\(> \.sf-uptake\)\{ min-height:var\(--dvh\); \}/.test(core),
+    "with the takeover up, the floor's and the line's stage take the full height again");
+  assert.ok(/\.lpc:has\(> \.ar-bar\) \.q-page\.sf:has\(\.sf-uptake\)\{ padding-bottom:0; \}/.test(core),
+    "and the page's own reserve goes, so there is no band to scroll to under it");
+  assert.ok(/\.sf-uptake\{ position:absolute; inset:0;/.test(core),
+    "the takeover stays absolute in its stage rather than fixed, because the rooms are transformed while they travel and a fixed box would jump between the stage and the screen mid-slide");
+});
