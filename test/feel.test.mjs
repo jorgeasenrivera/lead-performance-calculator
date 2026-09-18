@@ -243,8 +243,16 @@ test("Home and Live Floor travel, even sharing a sheet", () => {
   /* Coming off the line to Home changes the tab as well, and there the rooms
      are already travelling past each other. Two travels at once is worse than
      either. */
-  assert.ok(/if \(cross\) return undefined;\n\s*setTabSlide\(\{ dir, n: Date\.now\(\) \}\);/.test(core),
-    "it stands down when the rooms themselves are crossing");
+  assert.ok(/const chooseTab = \(next\) => \{\n\s*if \(next !== tab && room !== "line"\) \{/.test(core) &&
+    /onTab=\{chooseTab\} slid=\{!!tabSlide\}/.test(core),
+    "it stands down when the rooms themselves are crossing, and it is decided in the handler rather than an effect, because the corner is built in the render between");
+  /* The cards' own entrance fading in on top of the slide was two motions at
+     once: measured, the page 90 per cent off screen with its cards at half
+     opacity, and the cards still settling 500 ms after the page had stopped. */
+  assert.ok(/const \[arrived\] = useState\(!!still\);/.test(core) &&
+    /\(arrived \? " mc-still" : ""\)/.test(core) &&
+    /\.mc\.mc-still > \*:not\(\.mc-aurora\):not\(\.mc-me\)\{ animation:none; \}/.test(core),
+    "and a corner that arrived on the slide keeps its cards still, reading how it arrived once at birth so nothing restarts when the slide's class goes");
   assert.ok(/\(tabSlide \? \(tabSlide\.dir > 0 \? " t t-r" : " t t-l"\) : ""\)/.test(core),
     "and the direction is the bar's direction");
   /* Named tabSlide, not tabMove: Manager.jsx already has a tabMove() of its

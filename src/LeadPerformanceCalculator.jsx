@@ -7428,7 +7428,6 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      honest about being one. */
   const [tabSlide, setTabSlide] = useState(null);
   const tabTimer = useRef(null);
-  const lastTab = useRef(tab);
   useEffect(() => () => clearTimeout(tabTimer.current), []);
   const room = openRoom(config, store, want);
   useEffect(() => { setReportContext({ store, person: account || null, screen: room }); }, [store, account, room]);
@@ -7532,19 +7531,23 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     crossTimer.current = setTimeout(() => setCross(null), MOTION.wipe + 60);
   };
   useEffect(() => () => clearTimeout(crossTimer.current), []);
-  /* Only when the ROOM stayed put. Coming off the line to Home changes the tab
+  /* Decided in the same handler as the tab, not in an effect after it, and
+     the difference is the render in between. The corner is built fresh on
+     every switch, and it needs to know AS IT IS BUILT whether it is arriving
+     on a slide, because that decides whether its own cards animate. An effect
+     runs after that render has already committed, one too late.
+
+     Only when the ROOM stayed put. Coming off the line to Home changes the tab
      as well, and there the rooms are already travelling past each other; two
      travels at once is worse than either. */
-  useEffect(() => {
-    if (lastTab.current === tab) return undefined;
-    const dir = tab === "floor" ? 1 : -1;
-    lastTab.current = tab;
-    if (cross) return undefined;
-    setTabSlide({ dir, n: Date.now() });
-    clearTimeout(tabTimer.current);
-    tabTimer.current = setTimeout(() => setTabSlide(null), MOTION.wipe + 60);
-    return undefined;
-  }, [tab, cross]);
+  const chooseTab = (next) => {
+    if (next !== tab && room !== "line") {
+      setTabSlide({ dir: next === "floor" ? 1 : -1, n: Date.now() });
+      clearTimeout(tabTimer.current);
+      tabTimer.current = setTimeout(() => setTabSlide(null), MOTION.wipe + 60);
+    }
+    setTab(next);
+  };
   useLayoutEffect(() => {
     if (!cross || !cross.src) return;
     const a = cross.src;
@@ -7629,7 +7632,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
        cross is set up and the ground would otherwise be the one being left. */
     const nextTab = t === "home" ? "corner" : "floor";
     pick("floor", nextTab, dx);
-    setTab(nextTab);
+    chooseTab(nextTab);
   };
   const GLYPH = { home: "home", floor: "door", line: "phone" };
   const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
@@ -8167,7 +8170,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
         inert={room === "line" ? "" : undefined}>
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
-            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={chooseTab} slid={!!tabSlide} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
       </div>
       {tabs.length > 1 && (
@@ -9860,8 +9863,15 @@ const openToOf = (store) => {
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
-                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [] }) {
+                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
+  /* Whether this corner arrived on a slide, read ONCE, at birth. The slide's
+     class on the stack lasts 440 ms; the cards' own entrance runs 900 with its
+     stagger. A class that came and went on the corner itself would restart
+     that entrance the moment it was taken away, which is a second flash in
+     place of the first. So the fact is captured here and kept for the life of
+     this mount, and the corner never changes its mind about how it arrived. */
+  const [arrived] = useState(!!still);
   const [pickDay, setPickDay] = useState(null);
   /* Which channel's thirty days are open, inside the closing sheet. Null is the
      three bars; a key is one of them, expanded. */
@@ -10069,7 +10079,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0));
 
   return (
-    <div className={"mc" + (offDim ? " mc-off" : "")}>
+    <div className={"mc" + (offDim ? " mc-off" : "") + (arrived ? " mc-still" : "")}>
       {offToday && offState !== "in" && (
         <div className="mc-offc">
           <b>{offState === "no2" ? "Enjoy it." : offState === "no1" && activityNow ? "Numbers are coming in." : "Day off today"}</b>
@@ -10387,7 +10397,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    to type; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
 function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null, active = true,
-  tab: tabFrom = null, onTab = null , onReady = null }) {
+  tab: tabFrom = null, onTab = null, slid = false, onReady = null }) {
   const [row, setRow] = useState(undefined);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one
@@ -11205,7 +11215,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     );
     if (tab === "corner") {
       content = (
-        <MyCorner store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
+        <MyCorner still={slid} store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
           mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
           goals={boardExtra.goals} off={boardExtra.off} days={days}
           offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
@@ -11312,7 +11322,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     );
     if (tab === "corner" && !(isNext && !tookIt)) {
       content = (
-        <MyCorner store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
+        <MyCorner still={slid} store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
           mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
           goals={boardExtra.goals} off={boardExtra.off} days={days}
           offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
@@ -16296,6 +16306,13 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; }
 .mc > *:nth-child(9),.mc > *:nth-child(10){ animation-delay:.28s; }
 @keyframes mcSlide{ from{ opacity:0; transform:translateX(22px); } to{ opacity:1; transform:none; } }
+/* Not when the corner arrived on the stage's slide. Then the slide IS its
+   landing, on the rooms' own clock and curve, and the cards fading and easing
+   in on top of it were two things at once: measured, the page 90 per cent off
+   screen with its cards at half opacity, then the cards still settling 500 ms
+   after the page had stopped. Jorge, 18 September: the elements flash, and the
+   landing has less inertia than the other pages. One motion, the rooms'. */
+.mc.mc-still > *:not(.mc-aurora):not(.mc-me){ animation:none; }
 @media (prefers-reduced-motion: reduce){
   .mc > *:not(.mc-aurora):not(.mc-me){ animation:none; } }
 /* head */
