@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Activity state sheet</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{ --paper:#F3F5EF; --card:#FFFFFF; --ink:#131A12; --ink-2:#4A574B; --ink-3:#77836F; --rule:#DDE3D6;
+    --mint:#1E6B47; --mint-soft:#E4EFE7; --sand:#9A7B12; --sand-soft:#F6EFD8; --red:#A32C1E; --red-soft:#F7E3DF; --blue:#2F63B8;
+    --shadow:0 1px 2px rgba(19,26,18,.05), 0 8px 24px -16px rgba(19,26,18,.28); }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --paper:#0C120D; --card:#141C15; --ink:#E8EEE4; --ink-2:#A7B4A4; --ink-3:#7C8B79; --rule:#253024;
+    --mint:#6FD39B; --mint-soft:#152A1E; --sand:#D6B44E; --sand-soft:#2A2513; --red:#E8897A; --red-soft:#2E1A16; --blue:#7FA8EA; --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.8); } }
+  :root[data-theme="dark"]{ --paper:#0C120D; --card:#141C15; --ink:#E8EEE4; --ink-2:#A7B4A4; --ink-3:#7C8B79; --rule:#253024;
+    --mint:#6FD39B; --mint-soft:#152A1E; --sand:#D6B44E; --sand-soft:#2A2513; --red:#E8897A; --red-soft:#2E1A16; --blue:#7FA8EA; --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.8); }
+  *{ box-sizing:border-box; }
+  html{ background:var(--paper); }
+  body{ margin:0; background:var(--paper); color:var(--ink); font-family:"IBM Plex Sans",system-ui,sans-serif; font-size:16px; line-height:1.5; padding-block:32px 80px; padding-inline:16px; }
+  .wrap{ max-width:820px; margin:0 auto; display:flex; flex-direction:column; gap:28px; }
+  h1{ font-size:clamp(26px,5vw,34px); line-height:1.15; letter-spacing:-.02em; margin:0 0 6px; text-wrap:balance; }
+  h2{ font-size:20px; margin:0; }
+  h3{ font-size:16px; margin:0; }
+  p{ margin:0; max-width:66ch; }
+  .lede{ color:var(--ink-2); font-size:17px; }
+  .eyebrow{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); }
+  section{ display:flex; flex-direction:column; gap:14px; }
+  .item{ background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:18px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:12px; }
+  .fact{ border-left:3px solid var(--rule); padding-left:12px; color:var(--ink-2); font-size:15px; }
+  .fact b{ color:var(--ink); font-weight:600; }
+  .tbl{ overflow-x:auto; }
+  table{ border-collapse:collapse; width:100%; font-size:13.5px; font-variant-numeric:tabular-nums; }
+  th,td{ text-align:left; padding:7px 10px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th{ font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); font-weight:500; }
+  td.n{ text-align:right; font-family:"IBM Plex Mono",monospace; }
+  td.over{ color:var(--red); font-weight:600; }
+  td.ok{ color:var(--mint); }
+  .budget{ display:flex; flex-direction:column; gap:6px; }
+  .bar{ position:relative; height:10px; border-radius:6px; background:var(--rule); overflow:hidden; }
+  .bar i{ position:absolute; left:0; top:0; bottom:0; border-radius:6px; background:var(--mint); }
+  .bar i.over{ background:var(--red); }
+  .bar u{ position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--ink); }
+  ul{ margin:0; padding-left:20px; display:flex; flex-direction:column; gap:6px; }
+  li{ max-width:66ch; }
+  .decide{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding-top:8px; border-top:1px dashed var(--rule); }
+  .decide span{ font-size:13px; color:var(--ink-3); margin-right:4px; }
+  .decide button{ font:inherit; font-size:14px; font-weight:500; padding:7px 14px; border-radius:999px; border:1px solid var(--rule); background:transparent; color:var(--ink); cursor:pointer; }
+  .decide button:focus-visible{ outline:2px solid var(--mint); outline-offset:2px; }
+  .decide button.on{ background:var(--mint-soft); border-color:var(--mint); color:var(--mint); }
+  .decide button.on.no{ background:var(--red-soft); border-color:var(--red); color:var(--red); }
+  .decide button.on.later{ background:var(--sand-soft); border-color:var(--sand); color:var(--sand); }
+  .note{ font-size:14px; color:var(--ink-3); }
+  .foot{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .foot button{ font:inherit; font-weight:600; padding:10px 16px; border-radius:10px; border:1px solid var(--mint); background:var(--mint); color:#fff; cursor:pointer; }
+  .foot output{ font-size:14px; color:var(--ink-3); }
+  code{ font-family:"IBM Plex Mono",monospace; font-size:.92em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Sage · state sheet · 18 September</div>
+    <h1>Live Activity state sheet</h1>
+    <p class="lede">Every card the lock screen can show, what each carries, and what it costs against the 160 points iOS allows. Read from <code>native/targets/queue/QueueActivity.swift</code> as merged through #384. Decide once here; after that a fix to the card is checked against this sheet, not against the last screenshot.</p>
+  </header>
+
+  <section>
+    <div class="eyebrow">1 · The budget and the pieces</div>
+    <div class="item">
+      <p class="fact"><b>160 points</b> is the lock screen's allowance for a Live Activity. Anything taller is cut off at the top, which is what the 18 September screenshots showed twice. The Dynamic Island has its own three shapes and no height problem.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Piece</th><th class="n">Big lane</th><th class="n">Small lane</th><th class="n">Strip</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Padding, top and bottom</td><td class="n">20</td><td class="n">18</td><td class="n">16</td><td>10 on the top lane, 8 under the divider</td></tr>
+          <tr><td>Headline</td><td class="n">27 / 21</td><td class="n">18</td><td class="n">18</td><td>22 pt when up or on an offer, 17 pt otherwise, 15 pt small</td></tr>
+          <tr><td>Caption</td><td class="n">16</td><td class="n">15</td><td class="n">0</td><td>plus a 2 pt gap under the headline; a strip has none</td></tr>
+          <tr><td>Rail (floor)</td><td class="n">28</td><td class="n">20</td><td class="n">0</td><td>the light funnels in to you</td></tr>
+          <tr><td>Cord (phone)</td><td class="n">42</td><td class="n">26</td><td class="n">0</td><td>a hot lane uses the small cord</td></tr>
+          <tr><td>Desk row</td><td class="n">15</td><td class="n">15</td><td class="n">0</td><td></td></tr>
+          <tr><td>Buttons</td><td class="n">30</td><td class="n">0</td><td class="n">0</td><td>only the big lane has them</td></tr>
+          <tr><td>Gap between pieces</td><td class="n">6</td><td class="n">6</td><td class="n">0</td><td></td></tr>
+          <tr><td>Divider between lanes</td><td class="n" colspan="3">1</td><td></td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">These are read from the fonts and paddings in the file, not measured on a phone. A 22 pt rounded bold line is 27 points tall on paper; the phone may give it 26 or 28. The margin below is what absorbs that.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">2 · The four cards</div>
+    <div class="item">
+      <h3>Which card, and why</h3>
+      <ul>
+        <li><b>Both quiet.</b> Neither lane is urgent: both small, floor on top, phone under it.</li>
+        <li><b>Floor hot.</b> You are up, the desk wants you, or a manager is being asked for: the floor lane big with buttons, the phone lane a one-line strip.</li>
+        <li><b>Phone hot.</b> A desk is being offered to you, or you are next for one: the phone lane big with buttons, the floor lane a strip.</li>
+        <li><b>One lane.</b> The store runs one room, or you are only on one line: that lane alone, big.</li>
+      </ul>
+      <p class="fact">Hot is decided by the server (<code>hotOf</code> in <code>api/_live-standing.mjs</code>), in this order: a desk offer, then up or nudged or asked on the floor, then next on the phone cord. The card never re-decides.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">3 · The floor lane, phase by phase</div>
+    <div class="item">
+      <div class="tbl"><table id="floor">
+        <thead><tr><th>Phase</th><th>Headline</th><th>Caption</th><th>Clock</th><th>Picture</th><th>Buttons</th><th class="n">Big, hot</th><th class="n">Big, alone</th><th class="n">Small</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="note">"Big, hot" is the lane with a strip under it, so the number is the whole card. "Big, alone" is the lane on its own. "Small" is the lane under a quiet phone lane.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">4 · The phone lane, state by state</div>
+    <div class="item">
+      <div class="tbl"><table id="phone">
+        <thead><tr><th>State</th><th>Headline</th><th>Caption</th><th>Picture</th><th>Buttons</th><th class="n">Big, hot</th><th class="n">Big, alone</th><th class="n">Small</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">5 · Both quiet, the tallest pairs</div>
+    <div class="item">
+      <div class="tbl"><table id="pairs"><thead><tr><th>Floor small</th><th>Phone small</th><th class="n">Card</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">6 · The island</div>
+    <div class="item">
+      <div class="tbl"><table>
+        <thead><tr><th>State</th><th>Compact, leading</th><th>Compact, trailing</th><th>Minimal</th></tr></thead>
+        <tbody>
+          <tr><td>Floor, waiting</td><td>door glyph, sand</td><td>ahead, or "next"</td><td>the number ahead</td></tr>
+          <tr><td>Floor, up</td><td>up arrow, mint</td><td>"up"</td><td>"!"</td></tr>
+          <tr><td>Floor, with a guest</td><td>person, gold</td><td>the visit's minutes</td><td>"·"</td></tr>
+          <tr><td>Floor, asked for</td><td>the ask's glyph in its colour</td><td>since asked</td><td>"!"</td></tr>
+          <tr><td>Phone, in line</td><td>handset, blue</td><td>ahead, or "next"</td><td>the number ahead</td></tr>
+          <tr><td>Phone, offer</td><td>handset, blue</td><td>the offer's countdown</td><td>"!"</td></tr>
+          <tr><td>Phone, at a desk</td><td>handset, blue</td><td>"desk N"</td><td>N</td></tr>
+          <tr><td>Phone, a desk free</td><td>handset, blue</td><td>"N free"</td><td>"○"</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">Glyphs are 7 by 7 dots snapped to whole pixels (#384); nothing glows (#376).</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">7 · Decisions</div>
+
+    <div class="item">
+      <div class="head"><h3>D1 · You're up keeps the rail and gives up its caption</h3></div>
+      <p>As merged in #382. The rail with its light funnelling in to you is the picture; the caption ("Table 3", where there is one) is what goes. The card comes to about 159 with the strip under it.</p>
+      <div class="decide" data-item="D1 You're up keeps the rail, gives up the caption"><span>Decide</span><button type="button" data-v="Keep">Keep</button><button type="button" data-v="Change" class="later">Change</button></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><h3>D2 · A desk offer shows the desk row, never the cord</h3></div>
+      <p>As merged in #377. "Desk 1 is yours" plus the row with your desk lit plus Take it. The cord said nothing the headline does not. About 141 with the strip.</p>
+      <div class="decide" data-item="D2 An offer shows the desk row, never the cord"><span>Decide</span><button type="button" data-v="Keep">Keep</button><button type="button" data-v="Change" class="later">Change</button></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><h3>D3 · Next on the phone line keeps a small cord and gives up its caption</h3></div>
+      <p>As merged in #382. "You're next for a desk" over the small cord with you at its head. The caption ("The first desk to free is yours") goes. About 157 with the strip, the tightest card there is.</p>
+      <div class="decide" data-item="D3 Next on the phone keeps a small cord, gives up the caption"><span>Decide</span><button type="button" data-v="Keep">Keep</button><button type="button" data-v="Change" class="later">Change</button></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><h3>D4 · A desk free draws the desk row only, not the cord as well</h3></div>
+      <p>Not merged; the one change proposed here. When a desk is free the small phone lane draws the cord <em>and</em> the desk row, because the state satisfies both rules at once. It is the double C24 found and shrank rather than removed. Under a floor lane with a rail and a caption that pair is about 158, the tallest quiet card. The desk row says which desks are open; the cord adds nobody is being called, which the headline already says. With the desk row only: about 126.</p>
+      <div class="decide" data-item="D4 A desk free draws the desk row only"><span>Decide</span><button type="button" data-v="Yes">Yes</button><button type="button" data-v="No" class="no">No</button></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><h3>D5 · The strip is the headline and the clock, nothing else</h3></div>
+      <p>As merged in #377. Under a hot lane the other lane is one line: its headline at 15 pt and its clock. No caption, no picture. It is what keeps every hot card under the line.</p>
+      <div class="decide" data-item="D5 The strip is headline and clock only"><span>Decide</span><button type="button" data-v="Keep">Keep</button><button type="button" data-v="Change" class="later">Change</button></div>
+    </div>
+
+    <div class="item">
+      <div class="head"><h3>D6 · The rule for anything new on the card</h3></div>
+      <p>Proposed as the standing rule: a hot lane carries its words, its buttons and one picture; a quiet lane carries its words and one picture; a strip carries its headline and clock. A new piece has to take the place of one of those, not sit beside it. Every row in sections 3 to 5 is checked against 160 before it is merged, and the numbers are written in the pull request.</p>
+      <div class="decide" data-item="D6 The standing rule: words, buttons, one picture"><span>Decide</span><button type="button" data-v="Yes">Yes</button><button type="button" data-v="Change" class="later">Change something</button></div>
+    </div>
+
+    <div class="foot">
+      <button id="copy" type="button">Copy the decisions</button>
+      <output id="out" for="copy" aria-live="polite">Nothing decided yet.</output>
+    </div>
+    <p class="note">The buttons remember on this phone only. Copy and paste the list back to me.</p>
+  </section>
+</div>
+<script>
+(function(){
+  /* The heights, from the same constants as the file, so the tables and the
+     decisions cannot disagree with each other. */
+  var P = { padBig: 20, padSmall: 18, padStrip: 16, hlUp: 27, hl: 21, hlSmall: 18, cap: 16, capSmall: 15, capGap: 2,
+            rail: 28, railSmall: 20, cord: 42, cordSmall: 26, desks: 15, buttons: 30, gap: 6, divider: 1 };
+  var strip = P.padStrip + P.hlSmall;                       // 34
+  function lane(big, hot, o){
+    var h = big ? P.padBig : P.padSmall;
+    h += big ? (o.up ? P.hlUp : P.hl) : P.hlSmall;
+    var cap = o.cap && !(hot && o.dropCapWhenHot);
+    if (cap) h += P.capGap + (big ? P.cap : P.capSmall);
+    (o.pieces || []).forEach(function(pc){
+      if (pc === "rail") h += P.gap + (big && !hot ? P.rail : (big && hot ? P.rail : P.railSmall));
+      if (pc === "cord") h += P.gap + (big && !hot ? P.cord : P.cordSmall);
+      if (pc === "desks") h += P.gap + P.desks;
+    });
+    if (big && o.buttons) h += P.gap + P.buttons;
+    return h;
+  }
+  var floor = [
+    { k:"Waiting", hl:"N ahead of you", cap:"", clock:"waiting", pic:"rail", btn:"Lunch · Away", pieces:["rail"], buttons:true, hot:false },
+    { k:"Next", hl:"You're next", cap:"", clock:"waiting", pic:"rail", btn:"Lunch · Away", pieces:["rail"], buttons:true, hot:false },
+    { k:"Up", hl:"You're up", cap:"Table N (dropped when hot)", clock:"", pic:"rail", btn:"Got them · Pass", pieces:["rail"], buttons:true, hot:true, up:true, cap1:true, dropCapWhenHot:true },
+    { k:"With a customer", hl:"With a customer", cap:"Table N", clock:"with them", pic:"", btn:"FlyBy · T.O. · They left", pieces:[], buttons:true, hot:false, cap1:true },
+    { k:"Asking (FlyBy or T.O.)", hl:"Requesting", cap:"Table N", clock:"since asked", pic:"", btn:"Never mind · They left", pieces:[], buttons:true, hot:true, cap1:true },
+    { k:"Claimed", hl:"Name is on the way", cap:"", clock:"since claimed", pic:"", btn:"They left", pieces:[], buttons:true, hot:true },
+    { k:"Has your guest left?", hl:"Has your guest left?", cap:"Table N", clock:"with them", pic:"", btn:"Yes, they left · Not yet", pieces:[], buttons:true, hot:false, cap1:true },
+    { k:"The desk wants you", hl:"The desk wants you / Meeting, now", cap:"where, or who asked", clock:"since asked", pic:"", btn:"On my way · With a guest", pieces:[], buttons:true, hot:true, cap1:true },
+    { k:"At lunch", hl:"At lunch", cap:"You'll be passed until you tap back in", clock:"since you left", pic:"", btn:"Back on the floor", pieces:[], buttons:true, hot:false, cap1:true },
+    { k:"Away", hl:"Out of the line", cap:"On the floor, not taking a turn", clock:"since you left", pic:"rail", btn:"Back in line", pieces:["rail"], buttons:true, hot:false, cap1:true },
+    { k:"Off the line", hl:"Off the line", cap:"Signed out for the day", clock:"", pic:"", btn:"", pieces:[], buttons:false, hot:false, cap1:true },
+  ];
+  var phone = [
+    { k:"In line, N ahead", hl:"N ahead for a desk", cap:"", pic:"cord", btn:"Lunch · Away", pieces:["cord"], buttons:true, hot:false },
+    { k:"Next for a desk", hl:"You're next for a desk", cap:"The first desk to free is yours (dropped when hot)", pic:"small cord", btn:"Lunch · Away", pieces:["cord"], buttons:true, hot:true, cap1:true, dropCapWhenHot:true },
+    { k:"A desk is free", hl:"Desk N is free", cap:"N desks open", pic:"cord + desk row (D4: desk row only)", btn:"Lunch · Away", pieces:["cord","desks"], buttons:true, hot:false, cap1:true },
+    { k:"Desk offered", hl:"Desk N is yours", cap:"", pic:"desk row", btn:"Take it", pieces:["desks"], buttons:true, hot:true, up:true },
+    { k:"At a desk", hl:"At desk N", cap:"", pic:"desk row", btn:"Lunch · Leave the desk", pieces:["desks"], buttons:true, hot:false },
+    { k:"At lunch / out", hl:"At lunch / Out of the line", cap:"Back in line when you're ready", pic:"", btn:"Back in line", pieces:[], buttons:true, hot:false, cap1:true },
+  ];
+  function cell(v, cls){ var td = document.createElement("td"); td.textContent = v; if (cls) td.className = cls; return td; }
+  function num(v, whole){ var td = cell(String(v), "n"); if (whole) td.className += v > 160 ? " over" : " ok"; return td; }
+  function fill(id, rows, withClock){
+    var tb = document.querySelector("#" + id + " tbody");
+    rows.forEach(function(r){
+      var o = { cap: !!r.cap1, pieces: r.pieces, buttons: r.buttons, up: !!r.up, dropCapWhenHot: !!r.dropCapWhenHot };
+      var tr = document.createElement("tr");
+      tr.appendChild(cell(r.k)); tr.appendChild(cell(r.hl)); tr.appendChild(cell(r.cap || "none"));
+      if (withClock) tr.appendChild(cell(r.clock || "none"));
+      tr.appendChild(cell(r.pic || "none")); tr.appendChild(cell(r.btn || "none"));
+      var hotCard = r.hot ? lane(true, true, o) + P.divider + strip : null;
+      tr.appendChild(hotCard != null ? num(hotCard, true) : cell("not hot", "n"));
+      tr.appendChild(num(lane(true, false, o), true));
+      tr.appendChild(num(lane(false, false, o), false));
+      tb.appendChild(tr);
+    });
+  }
+  fill("floor", floor, true); fill("phone", phone, false);
+  var pairs = [
+    ["Waiting, rail", "In line, cord", lane(false,false,{pieces:["rail"]}) + 1 + lane(false,false,{pieces:["cord"]})],
+    ["Away, rail and caption", "A desk is free, cord and desk row and caption", lane(false,false,{pieces:["rail"],cap:true}) + 1 + lane(false,false,{pieces:["cord","desks"],cap:true})],
+    ["Away, rail and caption", "A desk is free, desk row and caption (D4)", lane(false,false,{pieces:["rail"],cap:true}) + 1 + lane(false,false,{pieces:["desks"],cap:true})],
+    ["With a customer, caption", "At a desk, desk row", lane(false,false,{pieces:[],cap:true}) + 1 + lane(false,false,{pieces:["desks"]})],
+  ];
+  var pt = document.querySelector("#pairs tbody");
+  pairs.forEach(function(p){ var tr = document.createElement("tr"); tr.appendChild(cell(p[0])); tr.appendChild(cell(p[1])); tr.appendChild(num(p[2], true)); tr.appendChild(cell(p[2] > 160 ? "over" : p[2] > 150 ? "tight" : "fits")); pt.appendChild(tr); });
+
+  var KEY = "sage:sheet:activity"; var state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { state = {}; }
+  var groups = document.querySelectorAll(".decide");
+  function paint(){ var n = 0; groups.forEach(function(g){ var item = g.getAttribute("data-item"), v = state[item]; g.querySelectorAll("button").forEach(function(b){ b.classList.toggle("on", !!v && b.getAttribute("data-v") === v); }); if (v) n++; }); document.getElementById("out").textContent = n ? n + " of " + groups.length + " decided." : "Nothing decided yet."; }
+  groups.forEach(function(g){ g.addEventListener("click", function(e){ var b = e.target.closest("button"); if (!b) return; var item = g.getAttribute("data-item"), v = b.getAttribute("data-v"); if (state[item] === v) delete state[item]; else state[item] = v; try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (err) {} paint(); }); });
+  document.getElementById("copy").addEventListener("click", function(){ var lines = ["Live Activity sheet, decisions from Jorge, 18 September", ""]; groups.forEach(function(g){ var item = g.getAttribute("data-item"); lines.push(item + ": " + (state[item] || "undecided")); }); var text = lines.join("\n"); var done = function(){ document.getElementById("out").textContent = "Copied. Paste it back to me."; }; if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function(){ window.prompt("Copy this", text); }); else window.prompt("Copy this", text); });
+  paint();
+})();
+</script>
+</body>
+</html>

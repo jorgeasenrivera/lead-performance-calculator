@@ -88,3 +88,34 @@ jobs:
             const mine = comments.find((c) => c.body && c.body.startsWith(mark));
             if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+
+  # The same run in WebKit, which is what the app's WebView is. Chromium at
+  # phone width is not the phone: the 18 September glitches that reached Jorge
+  # (dots rounding on a 3x screen, a slide cut short on a slow first frame, the
+  # viewport a WebView reports) are the kind only WebKit shows. It reports and
+  # does not yet block: the bars were set against Chromium, and a bar WebKit
+  # misses from day one would stop every merge for a number nobody has looked
+  # at. Once it has run green on three merges, drop continue-on-error and it
+  # blocks like the other.
+  feel-webkit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Build against the mock
+        run: |
+          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          npm run build
+      - name: Measure in WebKit
+        shell: bash
+        run: |
+          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          FEEL_BROWSER=webkit FEEL_URL=http://127.0.0.1:5178/ npm run feel
