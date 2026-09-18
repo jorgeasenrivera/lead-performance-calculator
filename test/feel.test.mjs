@@ -930,3 +930,23 @@ test("a room opens itself at the store's time, and says the time while it waits"
     && /String\(error\.code\) !== "23505"/.test(api),
     "the server makes nothing before the time, and never a second row");
 });
+
+test("the decisions of 18 September: the closing sheet and the floor's buttons", () => {
+  /* From the proposal page, decided by Jorge: A1 yes, A2 yes, A3 no, A4 a
+     now, B1 yes, B2 yes, B3 no, B4 yes. */
+  assert.ok(/const gradeOf = \(c\) => \(c\.pct == null \? null : c\.pct >= stdOf\(c\.k\)\.green \? "g" : c\.pct >= stdOf\(c\.k\)\.yellow \? "y" : "r"\);/.test(core)
+    && /<u className="thr" data-l=\{stdOf\(c\.k\)\.green\}/.test(core),
+    "A1: the standard sits on every bar and the rate is graded the way the wall grades it");
+  assert.ok(/\.\.\.closing\.map\(\(c\) => stdOf\(c\.k\)\.green\)\);/.test(core),
+    "and the bars are scaled so the standard is always on them");
+  assert.ok(/<div className="mc-clbig">/.test(core) && /target=\{stdOf\(openCh\)\.green\}/.test(core) && !/className="mc-clfoot"/.test(core),
+    "A2: the opened channel shows the month in figures and the line carries the standard; the sentence at the foot is gone");
+  assert.ok(/const need = Math\.ceil\(\(goal \/ 100\) \* c\.leads\) - \(c\.u \|\| 0\);/.test(core) && /<div className="mc-clcoach">/.test(core),
+    "A4: one line of coaching from the standard");
+  assert.ok(/\{st !== "customer" && \(\n\s+<SfStatusSelect value=\{st\} variant=\{FLOOR_SEG\}/.test(core),
+    "B1: with a customer, no Here, Lunch or Away");
+  assert.ok(/\.fba-seated\{display:flex;align-items:center;gap:8px;margin-top:6px;background:none;border:0;/.test(core),
+    "B2: the table is one line in the room's ink");
+  assert.ok(/\{st === "customer" && \(\n\s+<AssistBlock meId=\{meId\}/.test(core),
+    "B4: FlyBy and T.O. only with a customer");
+});

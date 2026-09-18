@@ -78,6 +78,17 @@ async function ensureMock() {
 }
 
 /* ---- the floor as the check needs it: this account on the line, two ahead ---- */
+/* My own status on the day's row, written straight to the mock, so a step
+   can stand where the screen it tests is drawn. */
+async function setMine(status, table) {
+  const j = async (u) => (await fetch(u)).json();
+  const rows = await j(MOCK + "/rest/v1/floor_public?select=*");
+  const cur = rows.find((r) => r.id === floor.id);
+  const d = { ...(cur.data || {}) };
+  d.line = (d.line || []).map((x) => (x.id === floor.me.id ? { ...x, status, statusAt: new Date().toISOString(), table } : x));
+  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify([{ ...cur, data: d, updated_at: new Date().toISOString() }]) });
+}
 async function prepFloor() {
   const j = async (u) => (await fetch(u)).json();
   const all = await j(MOCK + "/rest/v1/app_data?select=key,value");
@@ -260,10 +271,15 @@ async function run(b) {
     if (errsNow.length) console.log("       page errors: " + errsNow.join(" | "));
   }
 
+  /* FlyBy and T.O. are drawn only with a customer (18 September, B4), so the
+     row puts me with one first, and back in line after, because the press
+     below taps the segment, which is drawn only in line (B1). */
+  await setMine("customer", 3); await p.waitForSelector(".fba-btn.fly", { timeout: 15000 });
   /* a FlyBy sent is a chip at once, and taken back at once */
   await p.locator(".fba-btn.fly").click(); await p.waitForSelector(".fba-sheet.ask");
   await p.locator('.fba-go:has-text("Send the FlyBy")').click(); t = Date.now(); await p.waitForSelector(".fba-chip", { timeout: 5000 }); row("FlyBy sent to chip", ms(t), BAR.chip);
   await p.waitForTimeout(300); await p.locator(".fba-x").click(); t = Date.now(); await p.waitForSelector(".fba-chip", { state: "detached", timeout: 5000 }); row("Never mind to chip gone", ms(t), BAR.chip);
+  await setMine("waiting", null); await p.waitForSelector(".fba-btn.fly", { state: "detached", timeout: 15000 });
   await p.waitForTimeout(600);
 
   /* the press: held, the segment has given by the bar; let go, it is back; one
