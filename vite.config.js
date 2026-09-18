@@ -21,7 +21,10 @@ function sageWorker() {
       const html = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
       const starts = [...new Set([...html.matchAll(/(?:src|href)="(\/(?:assets|fonts)\/[^"]+)"/g)].map((m) => m[1]))];
       const precache = ["/", ...starts];
-      const version = crypto.createHash("sha1").update(html + precache.join("\n")).digest("hex").slice(0, 12);
+      /* The build's moment first, then the hash: a cache name that SORTS. The
+         worker keeps the last two builds and drops older ones, and it can only
+         know which is older if the names say so. */
+      const version = Date.now().toString(36) + "-" + crypto.createHash("sha1").update(html + precache.join("\n")).digest("hex").slice(0, 12);
       const sw = fs.readFileSync(path.join("src", "sw.js"), "utf8")
         .replace("__VERSION__", version)
         .replace("__PRECACHE__", JSON.stringify(precache));

@@ -71,11 +71,19 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
        worker script on its own, but as a courtesy rather than on any schedule
        to rely on: a build nobody looks for is a build nobody gets. */
     reg.update().catch(() => {});
-    /* The page reloads onto the new build only when one has taken over from
-       another; the very first install has nothing to reload onto. */
-    let had = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (had) window.location.reload(); had = true; });
   }).catch(() => { /* a browser without it starts from the network, as before */ });
+  /* The page reloads onto the new build only when one has taken over from
+     another; the very first install has nothing to reload onto.
+
+     Listened for HERE, at the top, synchronously, not inside register().then.
+     A takeover can land 18 ms into a page: the page before this one was
+     backgrounded and took the build, the app was killed before the takeover
+     finished, and it finished during this page's own navigation. Measured. A
+     listener attached after register() resolves is attached after that event
+     has fired, and the page then runs the old build under the new worker with
+     nothing to tell it. Silent, one build behind, until the next open. */
+  let had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (had) window.location.reload(); had = true; });
 }
 
 /* Inside the phone app the strips above and below the page take the page's
@@ -117,8 +125,19 @@ try {
     setTimeout(draw, 300);
     navigator.serviceWorker.getRegistration().then((reg) => {
       /* Waiting means installed last time and never taken. Take it: the
-         controllerchange above reloads, and this page never draws. */
-      if (reg && reg.waiting) { reg.waiting.postMessage("SKIP_WAITING"); return; }
+         controllerchange above reloads, and this page never draws.
+
+         ONCE. The note survives the reload, and a page that comes back from
+         one and still finds a build waiting draws anyway. Without it, a build
+         whose takeover stalls would be taken, reloaded onto, found still
+         waiting, taken again, and so on for as long as anybody watched. */
+      let tried = false;
+      try { tried = sessionStorage.getItem("sage:swapped") === "1"; sessionStorage.removeItem("sage:swapped"); } catch (e) {}
+      if (reg && reg.waiting && !tried) {
+        try { sessionStorage.setItem("sage:swapped", "1"); } catch (e) {}
+        reg.waiting.postMessage("SKIP_WAITING");
+        return;
+      }
       draw();
     }).catch(draw);
   }

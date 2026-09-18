@@ -39,12 +39,43 @@ self.addEventListener("install", (e) => {
   })());
 });
 
+/* The last TWO builds stay on the phone, not one. This build's files and the
+   build before it; anything older goes.
+
+   Deleting the previous build's cache the moment this one took over was fine
+   when taking over happened on the way to the background, with every page
+   long since loaded. Since #369 it happens about ten milliseconds into a page
+   that was served FROM that cache and may still be fetching from it. Delete it
+   then and whatever is still in flight misses, goes to the network, and on a
+   lot with no signal hangs until the phone gives up, and location.reload() is
+   held until the page finishes loading, so the person waits with it. Keeping
+   the previous build costs about the size of the app, once, and means a page
+   from the old build can always finish being a page from the old build.
+
+   Names sort: the build stamps its moment into the version, so the two
+   newest are the two highest. Claim comes last and is not waited on by the
+   deletes, so a delete that stalls cannot hold the takeover. */
 self.addEventListener("activate", (e) => {
   e.waitUntil((async () => {
-    const names = await caches.keys();
-    await Promise.all(names.filter((n) => n.startsWith("sage-") && n !== CACHE).map((n) => caches.delete(n)));
+    try {
+      const names = (await caches.keys()).filter((n) => n.startsWith("sage-")).sort();
+      const keep = new Set([CACHE, ...names.filter((n) => n !== CACHE).slice(-1)]);
+      await Promise.all(names.filter((n) => !keep.has(n)).map((n) => caches.delete(n).catch(() => {})));
+    } catch (err) { /* a cache that cannot be listed is not worth the takeover */ }
     await self.clients.claim();
   })());
+});
+
+/* The cache, or nothing after a moment. WebKit's cache storage can take a long
+   time to open after the app's process has been killed, and every open of the
+   app waits on it: the page cannot even start until this handler answers.
+   Nothing bounded that. Now a cache that has not answered in a second and a
+   half is treated as empty and the page comes from the network instead, which
+   is slower than the cache and enormously faster than waiting. */
+const cached = (key, opts) => new Promise((resolve) => {
+  const t = setTimeout(() => resolve(undefined), 1500);
+  caches.open(CACHE).then((c) => c.match(key, opts)).then((hit) => { clearTimeout(t); resolve(hit); },
+    () => { clearTimeout(t); resolve(undefined); });
 });
 
 /* The page says when: it holds an installed build until the app is in the
@@ -66,12 +97,15 @@ self.addEventListener("fetch", (e) => {
      only when the phone has nothing, which is the first open ever. */
   if (req.mode === "navigate") {
     e.respondWith((async () => {
-      const c = await caches.open(CACHE);
-      const hit = await c.match("/", { ignoreVary: true });
+      const hit = await cached("/", { ignoreVary: true });
       if (hit) return hit;
       try {
         const res = await fetch(req);
-        if (res.ok) c.put("/", res.clone());
+        /* Cloned NOW, before the response is handed back, because a body can
+           only be read once and the browser starts reading the moment it has
+           it. A clone taken a tick later is a clone of a body already in use. */
+        const copy = res.ok ? res.clone() : null;
+        if (copy) caches.open(CACHE).then((c) => c.put("/", copy)).catch(() => {});
         return res;
       } catch (err) {
         return new Response("<!doctype html><title>Sage</title><p style=\"font-family:sans-serif;padding:40px\">Sage can't load without a connection yet. Try again when you have signal.</p>",
@@ -103,11 +137,11 @@ self.addEventListener("fetch", (e) => {
      It also means the offline promise above was never kept for assets. */
   if (url.pathname.startsWith("/assets/") || /\.(svg|png|ico|woff2?)$/.test(url.pathname)) {
     e.respondWith((async () => {
-      const c = await caches.open(CACHE);
-      const hit = await c.match(req, { ignoreVary: true });
+      const hit = await cached(req, { ignoreVary: true });
       if (hit) return hit;
       const res = await fetch(req);
-      if (res.ok) c.put(req, res.clone());
+      const copy = res.ok ? res.clone() : null;
+      if (copy) caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
       return res;
     })());
   }
