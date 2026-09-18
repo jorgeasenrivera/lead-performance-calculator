@@ -190,12 +190,14 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and it is drawn one backing pixel to the CSS pixel, which is the whole difference between this being fast and being slower than what it replaced");
   assert.ok(!/\.ar-stack\.x::before|animation:arGround/.test(core),
     "and the flat ground that used to drop in whole is gone");
-  assert.ok(/html:not\(\.sun\) \.ar-stack \.q-page\.sf:not\(\.mc-light\)::before\{ display:none; \}/.test(core),
+  assert.ok(/\.ar-stack \.q-page\.sf:not\(\.mc-light\)::before\{ display:none; \}/.test(core),
     "a room inside the stack no longer paints its own blobs");
   assert.ok(/\.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
     "and the light corner is left alone, because it keeps its own background and its own moving lights");
-  assert.ok(/html\.sun \.ar-gnd\{ display:none; \}/.test(core),
-    "and daylight stands the backdrop down, because there every room is the same green and nothing has anywhere to travel to");
+  /* Sunlight was the one case in which the backdrop switched itself off, and
+     Sunlight is gone. There is no case now. */
+  assert.ok(!/\.ar-gnd\{ display:none; \}/.test(core),
+    "and nothing switches the backdrop off any more");
   assert.ok(/const DOT_SPEED = \[0\.05, 0\.13, 0\.24\];/.test(core) && /\.ar-stack \.mc-aurora u\{ display:none; \}/.test(core),
     "three dot fields at three speeds, out behind the rooms, rather than one inside the corner that cannot travel");
   assert.ok(/\{ step: 22, r: 1\.0, edge: 2\.4, a: 0\.07 \}/.test(core) &&
@@ -236,7 +238,7 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/useLayoutEffect\(\(\) => \{\n    if \(!tabs\.length\) return undefined;/.test(core) &&
     /\}, \[tabKey, active, drag\]\);/.test(core),
     "the backdrop is painted before the browser paints, and only when something it draws has changed, rather than on every render of the app");
-  assert.ok(/html:not\(\.sun\) \.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
+  assert.ok(/\.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
     "and a room inside the stack carries no ground of its own, because two grounds meeting is exactly what a seam is");
   assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once, for the page behind the app");
   /* Warm sand was tried on 17 September and dropped the same day: the corner's
@@ -290,13 +292,47 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),
     "the room being left stays on screen for the whole gesture, and the one being dragged in is uncovered before the finger reaches it");
 });
-test("the rooms in sunlight: deep green ground, cream on it, only the tokens change, off by default", () => {
-  assert.ok(/html\.sun \.q-page\.sf\.mc-floor, html\.sun \.q-page\.sf\.sf-line\{[^}]*background:#2E4A38;/.test(core), "the ground is the curtain's deep green");
-  assert.ok(/html\.sun \.mc-floor \.sf-seg-pill, html\.sun \.sf-line \.sf-seg-pill\{ background:#8FD8AF; box-shadow:none; \}/.test(core), "the pill is mint");
-  assert.ok(/html\.sun \.mc-floor \.fba-btn\.fly\{ background:#F6E3C3;/.test(core) && /html\.sun \.mc-floor \.fba-btn\.to\{ background:#F3D4CC;/.test(core), "the help cards are filled chips");
-  assert.ok(/localStorage\.getItem\("lpcf:pref:sun"\) === "1"/.test(core), "off unless switched on");
-  assert.ok(/glyph="sun"/.test(core) && /Sunlight<span className="hint">/.test(core), "a switch on the corner");
-  assert.ok(!/html\.sun[^{]*\{[^}]*(padding|margin|font-size|animation)/.test(core), "layout, type sizes and animation stay");
+/* Sunlight was a second set of colours for the rooms, deep green with cream on
+   it, behind a switch on the corner. Jorge had it removed on 18 September. The
+   guard is inverted rather than deleted, because a feature that comes back by
+   halves is worse than one that never left: a stray html.sun rule with no
+   switch to set the class, or a switch with no rules behind it, would both look
+   like working code. */
+test("Sunlight is gone, all of it, with nothing left behind to half-work", () => {
+  assert.ok(!/html\.sun|\.sun\b/.test(core), "no rule is scoped to daylight");
+  assert.ok(!/lpcf:pref:sun/.test(core), "nothing is stored for it");
+  /* The identifiers and the label, not the word: the comment that says why it
+     was removed is worth keeping, and a guard that bans prose would delete the
+     reason along with the code. */
+  assert.ok(!/const sunOn|flipSun|Sunlight<span/.test(core), "there is no switch, and nothing reads one");
+  assert.ok(!/glyph="sun"/.test(core) && !/\n\s*sun:\s*\[/.test(core), "and its mark is out of the glyph table");
+  /* The two rules that existed only to keep the backdrop out of daylight's way
+     are unscoped now rather than deleted: the rooms still carry no ground of
+     their own, which is what keeps two grounds from meeting as a seam. */
+  assert.ok(/\.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core) &&
+    /\.ar-stack \.q-page\.sf:not\(\.mc-light\)::before\{ display:none; \}/.test(core),
+    "and what daylight used to be excepted from now simply always holds");
+});
+
+/* Everything on the corner used to lift 14px as it loaded. Jorge, 18 September:
+   it should come in from the right instead, subtly, because a lift says the
+   screen was built and a slide says it arrived, and off the Live Floor the
+   second one is what happened. */
+test("the corner's elements arrive from the right, not from below", () => {
+  assert.ok(/@keyframes mcSlide\{ from\{ opacity:0; transform:translateX\(14px\); \} to\{ opacity:1; transform:none; \} \}/.test(core),
+    "they come in from the right and settle left");
+  assert.ok(/\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)\{ animation:mcSlide \.6s cubic-bezier\(\.2,\.8,\.3,1\) both; \}/.test(core),
+    "on the curve and the clock the lift used, because only the direction changed");
+  assert.ok(/\.mc > \*:nth-child\(4\)\{ animation-delay:\.05s; \}/.test(core) &&
+    /\.mc > \*:nth-child\(9\),\.mc > \*:nth-child\(10\)\{ animation-delay:\.28s; \}/.test(core),
+    "and the stagger down the page is the one it had");
+  /* mcRise was declared twice, and the later one, the flash card's, silently
+     won for both. Taking the corner off it leaves one definition with one
+     owner. */
+  assert.ok((core.match(/@keyframes mcRise\{/g) || []).length === 1,
+    "mcRise is declared once now, and belongs to the flash card alone");
+  assert.ok(/@media \(prefers-reduced-motion: reduce\)\{\n\s*\.mc > \*:not\(\.mc-aurora\):not\(\.mc-spine\):not\(\.mc-me\)\{ animation:none; \} \}/.test(core),
+    "and less motion gets none of it, which it did not before");
 });
 
 test("the desk speaks the same vocabulary: tokens, one press, one focus ring, a tick on the phone", () => {
