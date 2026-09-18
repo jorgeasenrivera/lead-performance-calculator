@@ -932,25 +932,30 @@ private struct PhoneLaneView: View {
   let p: QueueAttributes.PhoneLane
   let big: Bool
   let top: Bool
+  /* `hot`: this lane leads with buttons, so it carries its words and at most
+     one flat row. `strip`: the other lane is hot, so this one is its headline
+     and its clock, one line. See V2Card for the arithmetic. */
+  var hot: Bool = false
+  var strip: Bool = false
   var body: some View {
-    let hot = p.state == "offer"
+    let offer = p.state == "offer"
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
           Text(phoneHeadline(p))
-            .font(.system(size: big ? (hot ? 22 : 17) : 15, weight: .bold, design: .rounded))
-            .foregroundStyle(hot ? led : .white).lineLimit(1).layoutPriority(2)
-          if let cap = phoneCaption(p) {
+            .font(.system(size: big ? (offer ? 22 : 17) : 15, weight: .bold, design: .rounded))
+            .foregroundStyle(offer ? led : .white).lineLimit(1).layoutPriority(2)
+          if !strip, let cap = phoneCaption(p) {
             Text(cap).font(.system(size: big ? 11.5 : 11, weight: .medium)).foregroundStyle(mist).lineLimit(1)
           }
         }
         Spacer(minLength: 6)
         PhoneClock(p: p, small: !big)
       }
-      if let line = p.line, !line.isEmpty, p.state == "cord" || p.state == "free" || p.state == "offer" {
-        Cord(line: line, lit: hot, mini: !big).padding(.leading, -14)
+      if !strip, !hot, let line = p.line, !line.isEmpty, p.state == "cord" || p.state == "free" || p.state == "offer" {
+        Cord(line: line, lit: offer, mini: !big).padding(.leading, -14)
       }
-      if let desks = p.desks, !desks.isEmpty, p.state == "desk" || p.state == "offer" || p.state == "free" {
+      if !strip, let desks = p.desks, !desks.isEmpty, p.state == "desk" || p.state == "offer" || p.state == "free" {
         DeskRow(desks: desks)
       }
       if #available(iOS 17.0, *), big {
@@ -958,8 +963,8 @@ private struct PhoneLaneView: View {
       }
     }
     .padding(.horizontal, 14)
-    .padding(.top, top ? 10 : 8)
-    .padding(.bottom, 10)
+    .padding(.top, strip ? 8 : (top ? 10 : 8))
+    .padding(.bottom, strip ? 8 : 10)
     .background(bloom(led, top: top))
   }
 }
@@ -968,13 +973,15 @@ private struct FloorLaneView: View {
   let s: QueueAttributes.ContentState      // the floor lane, as floorState() reads it
   let big: Bool
   let top: Bool
+  var hot: Bool = false
+  var strip: Bool = false
   var body: some View {
     let ph = phaseOf(s)
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
           HeadlineText(s: s, ph: ph, size: big ? (ph == .up ? 22 : 17) : 15).layoutPriority(2)
-          if let cap = caption(s, ph) {
+          if !strip, let cap = caption(s, ph) {
             Text(cap)
               .font(.system(size: big ? 11.5 : 11, weight: ph == .customer || ph == .asking || ph == .confirm || ph == .desk ? .bold : .medium))
               .foregroundStyle(ph == .customer || ph == .asking || ph == .confirm ? fly : (ph == .desk ? red : mist))
@@ -986,7 +993,7 @@ private struct FloorLaneView: View {
           Clock(from: from, label: label, tint: tint)
         }
       }
-      if showsRail(s, ph), let line = s.line, !line.isEmpty {
+      if !strip, !hot, showsRail(s, ph), let line = s.line, !line.isEmpty {
         Track(line: line, up: ph == .up, mini: !big).padding(.leading, -14)
       }
       if #available(iOS 17.0, *), big, ph != .gone {
@@ -994,8 +1001,8 @@ private struct FloorLaneView: View {
       }
     }
     .padding(.horizontal, 14)
-    .padding(.top, top ? 10 : 8)
-    .padding(.bottom, 10)
+    .padding(.top, strip ? 8 : (top ? 10 : 8))
+    .padding(.bottom, strip ? 8 : 10)
     .background(bloom(ph == .up ? mint : (ph == .desk ? red : (ph == .customer || ph == .asking || ph == .confirm ? fly : mint)), top: top))
   }
 }
@@ -1013,7 +1020,24 @@ private struct FloorLaneView: View {
    and the spacing all came down to the smallest that still reads: about
    184 pt. Worth saying plainly: that is still over 160, so a crowded card can
    still crop. Shrinking alone was never going to close a 73 pt gap, and the
-   proposal said so before the choice was made. */
+   proposal said so before the choice was made.
+
+   And it did crop, 18 September, with the phone lane leading on an offer:
+   its headline, its cord, its desk row and Take it over the floor lane and
+   its rail, and the headline cut off at the top. So a second rule, for the
+   card with a hot lane, which is the card that matters most:
+
+     the other lane is one line, its headline and its clock, about 35 pt;
+     the hot lane carries its words, its buttons and at most one flat row.
+
+   The arithmetic, in points, from the fonts and the paddings here: padding
+   20, headline 27, caption 16, buttons 30, two gaps 12, is 105 before any
+   picture; a desk row and its gap are 21, so an offer comes to 126 and the
+   whole card to about 162 at the very worst, most of it under 150. A cord or
+   a rail is 26 to 42 and does not fit, so a hot lane does not draw one: the
+   headline is the message ("You're up", "Desk 1 is yours") and the desk row
+   shows which desk. Both lanes small, and one lane alone and quiet, are as
+   they were. */
 private struct V2Card: View {
   let s: QueueAttributes.ContentState
   var body: some View {
@@ -1024,22 +1048,24 @@ private struct V2Card: View {
     VStack(spacing: 0) {
       if both, let f = f, let p = p {
         if hot == "phone" {
-          PhoneLaneView(p: p, big: true, top: true)
+          PhoneLaneView(p: p, big: true, top: true, hot: true)
           Divider().overlay(Color.white.opacity(0.07))
-          FloorLaneView(s: f, big: false, top: false)
+          FloorLaneView(s: f, big: false, top: false, strip: true)
         } else if hot == "floor" {
-          FloorLaneView(s: f, big: true, top: true)
+          FloorLaneView(s: f, big: true, top: true, hot: true)
           Divider().overlay(Color.white.opacity(0.07))
-          PhoneLaneView(p: p, big: false, top: false)
+          PhoneLaneView(p: p, big: false, top: false, strip: true)
         } else {
           FloorLaneView(s: f, big: false, top: true)
           Divider().overlay(Color.white.opacity(0.07))
           PhoneLaneView(p: p, big: false, top: false)
         }
       } else if let p = p {
-        PhoneLaneView(p: p, big: true, top: true)
+        /* One lane alone has the whole card, but an offer alone still drew
+           the cord and the desks and Take it, about 170: over on its own. */
+        PhoneLaneView(p: p, big: true, top: true, hot: hot == "phone")
       } else if let f = f {
-        FloorLaneView(s: f, big: true, top: true)
+        FloorLaneView(s: f, big: true, top: true, hot: hot == "floor")
       } else {
         Text("Off the line").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(mist).padding(16)
       }
