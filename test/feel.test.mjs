@@ -950,3 +950,16 @@ test("the decisions of 18 September: the closing sheet and the floor's buttons",
   assert.ok(/\{st === "customer" && \(\n\s+<AssistBlock meId=\{meId\}/.test(core),
     "B4: FlyBy and T.O. only with a customer");
 });
+
+test("the tab slide ends on its own end, and each tab keeps its own scroll", () => {
+  /* Jorge, 18 September, five screenshots. The corner sat mid-slide, then
+     snapped: the slide's class came off on a timer at the wipe plus 60 ms,
+     before a phone that started late had finished. And the floor arrived
+     scrolled to where Home had been, blank for a beat and then coming down
+     from the top, because the two tabs share one scroll box. */
+  assert.ok(/tabTimer\.current = setTimeout\(\(\) => setTabSlide\(null\), MOTION\.wipe \+ 900\);/.test(core)
+    && /onAnimationEnd=\{onStageEnd\}/.test(core) && /\/\^arStageIn\/\.test\(String\(e\.animationName \|\| ""\)\)/.test(core),
+    "the class comes off when the stage's animation ends; the timer is a long backstop");
+  assert.ok(/const tabScroll = useRef\(\{ corner: 0, floor: 0 \}\);/.test(core) && /el\.scrollTop = tabScroll\.current\[tab\] \|\| 0;/.test(core),
+    "and the floor room puts each tab's scroll back before its first paint");
+});
