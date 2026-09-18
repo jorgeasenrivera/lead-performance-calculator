@@ -331,12 +331,24 @@ private struct PipDot: View {
   }
 }
 
-/* Where the light's dots rest: from the left edge as far as you. */
+/* Where the light's dots rest: from the left edge in to you.
+
+   The app's light is three dots that run in from the edge, a stop at every
+   person, as far as the head, and keep running. A Live Activity cannot run a
+   loop, so this is that light held still, and it used to be held still as an
+   even dotted line from the edge to you, which reads as a track, not a light.
+   Jorge, 18 September: the dots should funnel from the left to the icon. So
+   the same count of dots, spaced by an ease that closes up toward you, and
+   (in Track) growing and brightening as they arrive. */
 private func lightStops(width w: Double, mine: Int, stride: Double, step: Double) -> [Double] {
   let toYou: Double = w - Double(mine) * stride - 17.0
   let reach: Double = max(14.0, toYou) - 20.0
   guard reach > 6.0 else { return [] }
-  return Array(Swift.stride(from: 6.0, to: reach, by: step))
+  let n: Int = max(2, Int((reach - 6.0) / step))
+  return (0..<n).map { i in
+    let u: Double = Double(i) / Double(n - 1)
+    return 6.0 + (reach - 6.0) * (1.0 - pow(1.0 - u, 1.7))
+  }
 }
 
 /* The head of the line sits at the end of the rail, its edge two points short
@@ -784,9 +796,12 @@ private struct Track: View {
       let stops: [Double] = mine < 0 ? [] : lightStops(width: w, mine: mine, stride: stride, step: mini ? 9.0 : 11.0)
       ZStack(alignment: .leading) {
         HalfCapsule().fill(Color.white.opacity(up ? 0.1 : 0.07))
-        ForEach(stops, id: \.self) { x in
-          Circle().fill((up ? mint : sand).opacity(0.55))
-            .frame(width: dot, height: dot)
+        ForEach(Array(stops.enumerated()), id: \.offset) { (i, x) in
+          /* Faint and small at the edge, bright and full as it reaches you. */
+          let t: Double = stops.count > 1 ? Double(i) / Double(stops.count - 1) : 1.0
+          let d: CGFloat = dot * CGFloat(0.55 + 0.65 * t)
+          Circle().fill((up ? mint : sand).opacity(0.16 + 0.64 * t))
+            .frame(width: d, height: d)
             .position(x: x, y: mid)
         }
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
@@ -939,21 +954,25 @@ private struct PhoneLaneView: View {
   var strip: Bool = false
   var body: some View {
     let offer = p.state == "offer"
+    /* On the cord and hot (next on the line): the cord stays, small, and the
+       caption goes, the same trade the floor lane makes with its rail. On an
+       offer the desk row is the picture and the cord is not drawn. */
+    let cord: Bool = !strip && !offer && !((p.line ?? []).isEmpty) && (p.state == "cord" || p.state == "free")
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
           Text(phoneHeadline(p))
             .font(.system(size: big ? (offer ? 22 : 17) : 15, weight: .bold, design: .rounded))
             .foregroundStyle(offer ? led : .white).lineLimit(1).layoutPriority(2)
-          if !strip, let cap = phoneCaption(p) {
+          if !strip, !(hot && cord), let cap = phoneCaption(p) {
             Text(cap).font(.system(size: big ? 11.5 : 11, weight: .medium)).foregroundStyle(mist).lineLimit(1)
           }
         }
         Spacer(minLength: 6)
         PhoneClock(p: p, small: !big)
       }
-      if !strip, !hot, let line = p.line, !line.isEmpty, p.state == "cord" || p.state == "free" || p.state == "offer" {
-        Cord(line: line, lit: offer, mini: !big).padding(.leading, -14)
+      if cord, let line = p.line {
+        Cord(line: line, lit: false, mini: !big || hot).padding(.leading, -14)
       }
       if !strip, let desks = p.desks, !desks.isEmpty, p.state == "desk" || p.state == "offer" || p.state == "free" {
         DeskRow(desks: desks)
@@ -977,11 +996,15 @@ private struct FloorLaneView: View {
   var strip: Bool = false
   var body: some View {
     let ph = phaseOf(s)
+    /* The rail is the picture a hot floor lane keeps (Jorge, 18 September:
+       the light funnels in to you on You're up), and the caption is what it
+       gives up to fit: see V2Card for the arithmetic. */
+    let rail: Bool = !strip && showsRail(s, ph) && !((s.line ?? []).isEmpty)
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
           HeadlineText(s: s, ph: ph, size: big ? (ph == .up ? 22 : 17) : 15).layoutPriority(2)
-          if !strip, let cap = caption(s, ph) {
+          if !strip, !(hot && rail), let cap = caption(s, ph) {
             Text(cap)
               .font(.system(size: big ? 11.5 : 11, weight: ph == .customer || ph == .asking || ph == .confirm || ph == .desk ? .bold : .medium))
               .foregroundStyle(ph == .customer || ph == .asking || ph == .confirm ? fly : (ph == .desk ? red : mist))
@@ -993,7 +1016,7 @@ private struct FloorLaneView: View {
           Clock(from: from, label: label, tint: tint)
         }
       }
-      if !strip, !hot, showsRail(s, ph), let line = s.line, !line.isEmpty {
+      if rail, let line = s.line {
         Track(line: line, up: ph == .up, mini: !big).padding(.leading, -14)
       }
       if #available(iOS 17.0, *), big, ph != .gone {
@@ -1028,16 +1051,18 @@ private struct FloorLaneView: View {
    card with a hot lane, which is the card that matters most:
 
      the other lane is one line, its headline and its clock, about 35 pt;
-     the hot lane carries its words, its buttons and at most one flat row.
+     the hot lane carries its words, its buttons and one picture.
 
    The arithmetic, in points, from the fonts and the paddings here: padding
-   20, headline 27, caption 16, buttons 30, two gaps 12, is 105 before any
-   picture; a desk row and its gap are 21, so an offer comes to 126 and the
-   whole card to about 162 at the very worst, most of it under 150. A cord or
-   a rail is 26 to 42 and does not fit, so a hot lane does not draw one: the
-   headline is the message ("You're up", "Desk 1 is yours") and the desk row
-   shows which desk. Both lanes small, and one lane alone and quiet, are as
-   they were. */
+   20, headline 27, buttons 30, two gaps 12, is 89 before the picture and the
+   caption. An offer keeps its caption (16) and the desk row (15 and a gap):
+   126, and about 162 at the very worst with the strip. A floor lane that is
+   up keeps its rail (28 and a gap) and gives up its caption: 123, about 159
+   with the strip. Next on the phone line keeps a small cord (26 and a gap)
+   and gives up its caption: 121. Jorge, 18 September: the rail with its
+   light is the picture on You're up, so it stays and the caption goes; C54
+   had dropped the rail instead. Both lanes small, and one lane alone and
+   quiet, are as they were. */
 private struct V2Card: View {
   let s: QueueAttributes.ContentState
   var body: some View {
