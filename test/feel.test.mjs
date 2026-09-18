@@ -150,6 +150,17 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/\.ar-bar\{ position:fixed; z-index:105;/.test(core) && /\.ar-fly\{ position:fixed; z-index:106;/.test(core), "the bar and the mark stay above a room in mid-travel");
   assert.ok(!/box-shadow:0 0 44px 10px rgba\(0,0,0,\.6\)/.test(core),
     "and the arriving sheet casts no dark edge, because with one ground behind both rooms a shadow on it is a seam");
+  /* The same fault in a second place, and the one Jorge kept photographing. A
+     parked curtain sits one screen to the left of the room it belongs to, so
+     the only thing its 60px shadow can reach is that room's first 60px, which
+     during a drag is the join. Measured at a device ratio of three: a step of
+     8.5 out of 255 at the join, fading out 70px to its right. With the shadow
+     on the moving curtain only, the rooms add no vertical edge at all. */
+  assert.ok(/\.q-curtain\{position:fixed;inset:0;[^}]*\}/.test(core) &&
+    !/\.q-curtain\{[^}]*box-shadow/.test(core),
+    "a parked curtain casts nothing");
+  assert.ok(/\.q-curtain\.q-wipe\{box-shadow:0 0 60px rgba\(0,0,0,\.25\);\}/.test(core),
+    "and only a curtain actually crossing the screen has an edge to weigh");
   /* The ground behind the switch was one flat dark, then the arriving room's
      colour dropped in whole. Neither travelled. It is a backdrop now: the
      blobs that used to sit inside each room live behind both of them, each on
@@ -212,7 +223,7 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     /const dx = -Math\.round\(trav \* w \* BLOB_SPEED\[b\]\);/.test(core),
     "and the travel is squared, so it starts very quiet and arrives at the full effect rather than running at one rate throughout");
   assert.ok(/const dx = -Math\.round\(trav \* w \* BLOB_SPEED\[b\]\);/.test(core) &&
-    /-Math\.round\(trav \* w \* DOT_SPEED\[d\] \* s\)/.test(core),
+    /-Math\.round\(trav \* w \* DOT_SPEED\[d\] \* ds\)/.test(core),
     "every layer moves in whole pixels, because a fractional offset resamples a soft edge every frame and flickers");
   assert.ok(!/filter:\s*blur/.test(core.slice(core.indexOf("const BLOBS = ["), core.indexOf("const paintGround"))),
     "the haze is in the gradient's stops, not a filter blur that would run every frame of a drag");
@@ -236,7 +247,7 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
     "and the corner is green, with nothing left of the warm sand it was briefly");
   assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
     "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
-  assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
+  assert.ok(/transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\);/.test(core), "the room being left parallaxes a third of the way and dims");
   assert.ok(/transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\); will-change:transform; \}/.test(core), "the bar's pill lands with the room");
   assert.ok(/crossTimer\.current = setTimeout\(\(\) => setCross\(null\), MOTION\.wipe \+ 60\);/.test(core), "the classes are held until the whole gesture is over");
   /* This guard used to check only that no class was named arFadeIn or
@@ -246,10 +257,28 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
      photographed the two "isn't open yet" screens printed over one another. It
      checks the real thing now. */
   assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades");
-  assert.ok(/html:not\(\.sun\) \.ar-stack\.x > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{\n\s*background:var\(--ar-x-gnd, var\(--gnd-floor\)\);/.test(core),
-    "and while the rooms cross they are opaque, so two rooms are never readable through each other");
-  assert.ok(/stack\.style\.setProperty\("--ar-x-gnd", "var\(--gnd-" \+ \(f >= 0\.5 \? to : from\) \+ "\)"\)/.test(core),
-    "both sheets take the same ground while they cross, which is what keeps that from being a seam");
+  /* Making both sheets opaque was the first answer and it was too expensive:
+     a tap put a flat slab over the backdrop for 440 ms and then snapped to the
+     real thing, which is what Jorge photographed on 18 September. The one
+     leaving is cut instead, at the line the arriving one has reached, so
+     nothing is ever underneath anything and every sheet stays transparent. */
+  assert.ok(!/--ar-x-gnd/.test(core),
+    "no sheet goes opaque to cross any more, because a slab over the backdrop for the length of a tap is what the flashing between pages was");
+  assert.ok(/clip-path:inset\(0 74% 0 0\);/.test(core) && /clip-path:inset\(0 91\.16% 0 0\);/.test(core) &&
+    /clip-path:inset\(0 0 0 74%\);/.test(core) && /clip-path:inset\(0 0 0 91\.16%\);/.test(core),
+    "it is cut instead, on whichever side the room arrives from, so two rooms are still never readable through each other");
+  /* 100% - |D| to 100% - 0.34|D|, which is where the arriving sheet's near edge
+     falls in the leaving sheet's own box at each end of the run. It is only
+     exact because both animations carry the same duration and the same curve;
+     anything less exact would draw the seam the cut is here to avoid. */
+  {
+    const D = 26, out = (core.match(/@keyframes arPageOut\{[\s\S]*?\}\s*\}/) || [""])[0];
+    assert.ok(/var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\)/.test(core.split(".ar-room.ar-in > .q-page.sf{")[1].slice(0, 200)) &&
+      /var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\)/.test(core.split(".ar-room.ar-out > .q-page.sf{")[1].slice(0, 200)),
+      "the arriving and the leaving sheet run on one duration and one curve, which is what lets the cut land on the edge");
+    assert.ok(out.includes((100 - D) + "%") && out.includes((100 - 0.34 * D).toFixed(2) + "%"),
+      "and the cut starts and ends where that edge actually is");
+  }
   assert.ok(!/arDotsIn|arDotsOut|steps\(5,end\)|steps\(3,end\)|@property --ar-r/.test(core), "nothing in the switch is stepped");
   assert.ok(/const roomEl = dest\.closest\("\.q-page\.sf"\) \|\| dest\.closest\("\.ar-room"\);/.test(core), "the mark lands where the room comes to rest, not where it started");
   assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),

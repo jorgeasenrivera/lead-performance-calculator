@@ -7692,8 +7692,10 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const gndRef = useRef(null);
   const posRef = useRef(0);
   const animRef = useRef(0);
+  const dotRef = useRef(null);
   const dotsRef = useRef(null);
   const ctxRef = useRef(null);
+  const dCtxRef = useRef(null);
   /* The dot fields, furthest first. The furthest is the slowest thing on the
      screen, slower than any blob; the nearest sits in FRONT of the far blob, at
      0.24 against its 0.12. That interleaving is deliberate and is what a
@@ -7880,28 +7882,40 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     const w = window.innerWidth || 0;
     const h = window.innerHeight || 0;
     if (!w || !h) return;
-    /* One backing pixel to the CSS pixel, and this is the number the whole
-       rebuild turns on. Everything else was guesswork that measured flat: at
-       two, a room switch ran 377 ms against its 150 ms bar; at one it runs 104.
-       Not the fill area, which I clipped first and which changed nothing, and
-       not a forced layout: the cost is simply how many pixels the drawing has
-       to be rasterised into, four times as many at two as at one.
+    /* Two canvases at two resolutions, because the backdrop is two different
+       kinds of thing and they do not want the same treatment.
 
-       What it costs to look at is a pixel of extra softness on edges that are
-       already soft. The blobs are haze and cannot tell. The dots keep their
-       size, 2 CSS px of core inside 4.8 of falloff, and give up about a device
-       pixel of sharpness at that outer edge, which on a dot drawn at seven per
-       cent white is not something a screen shows. The colours, the geometry
-       and the speeds are the ones Jorge approved, unchanged.
+       The ground and the three lights are haze. They are drawn at one backing
+       pixel to the CSS pixel, and that number is what makes the rebuild fast:
+       at two, a room switch ran 377 ms against its 150 ms bar; at one it runs
+       104. Not the fill area, which I clipped first and which changed nothing,
+       and not a forced layout, which I took out and which changed nothing
+       either. The cost is simply how many pixels the drawing is rasterised
+       into, four times as many at two as at one.
 
-       And it is 1.3 MB of texture where the seven layers were 221.5. */
+       The dots are not haze. They are the one sharp thing out here, and I drew
+       them at one pixel too, and wrote in this file that the softness would
+       not show. It showed: Jorge photographed it on 18 September. They get
+       their own canvas at the screen's own resolution now.
+
+       That is a second texture, 11.9 MB at a device ratio of three, against
+       1.3 for the first. Thirteen megabytes of backdrop where seven layers
+       were 232.8 is still the whole point of the rebuild. */
+    let dpr = 1;
+    try { dpr = window.devicePixelRatio || 1; } catch (e) {}
     const s = 1;
     const bw = Math.round(w * s), bh = Math.round(h * s);
     let ctx = ctxRef.current;
     if (!ctx || ctx.canvas !== cv) { ctx = cv.getContext("2d"); ctxRef.current = ctx; }
     if (!ctx) return;
-    if (cv.width !== bw || cv.height !== bh) {
-      cv.width = bw; cv.height = bh;
+    if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+    const dv = dotRef.current;
+    const ds = Math.min(dpr, 3);
+    const dw = Math.round(w * ds), dh = Math.round(h * ds);
+    let dctx = dCtxRef.current;
+    if (dv && (!dctx || dctx.canvas !== dv)) { dctx = dv.getContext("2d"); dCtxRef.current = dctx; }
+    if (dv && dctx && (dv.width !== dw || dv.height !== dh)) {
+      dv.width = dw; dv.height = dh;
       dotsRef.current = null;
     }
     const last = seq.length - 1;
@@ -7909,13 +7923,6 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     const i = Math.max(0, Math.min(last - 1, Math.floor(at)));
     const from = seq[i], to = seq[Math.min(last, i + 1)];
     const f = last === 0 ? 0 : Math.min(1, Math.max(0, at - i));
-    /* Which ground the sheets paint while they cross, so both take the same one
-       and neither can be read through the other. After f, not before it: the
-       first version of this line read f above its own declaration, which is a
-       dead zone and took the whole screen out. The tests did not catch it
-       because they read the source rather than run it. */
-    const stack = cv.parentElement;
-    if (stack) stack.style.setProperty("--ar-x-gnd", "var(--gnd-" + (f >= 0.5 ? to : from) + ")");
     const A = GND[from] || GND.floor, B = GND[to] || A;
 
     ctx.setTransform(s, 0, 0, s, 0, 0);
@@ -7950,19 +7957,22 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       drawBlob(ctx, gA, gA.c || A[g.k], w, h, dx, 1);
       drawBlob(ctx, gB, gB.c || B[g.k], w, h, dx, k * k * (3 - 2 * k));
     }
-    /* The dots last, in device pixels rather than CSS ones, so a dot lands on
-       the grid the screen actually has. */
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (!dotsRef.current) dotsRef.current = buildDots(ctx, bw, bh, s);
+    /* The dots last, on their own canvas, in that canvas's device pixels, so a
+       dot lands on the grid the screen actually has rather than on a grid an
+       upscale then guesses at. */
+    if (!dv || !dctx) return;
+    dctx.setTransform(1, 0, 0, 1, 0, 0);
+    dctx.clearRect(0, 0, dw, dh);
+    if (!dotsRef.current) dotsRef.current = buildDots(dctx, dw, dh, ds);
     for (let d = 0; d < 3; d++) {
       const p = dotsRef.current[d];
       if (!p || !p.pat) continue;
-      const off = -Math.round(trav * w * DOT_SPEED[d] * s) % p.step;
-      ctx.save();
-      ctx.translate(off, 0);
-      ctx.fillStyle = p.pat;
-      ctx.fillRect(-off, 0, bw, bh);
-      ctx.restore();
+      const off = -Math.round(trav * w * DOT_SPEED[d] * ds) % p.step;
+      dctx.save();
+      dctx.translate(off, 0);
+      dctx.fillStyle = p.pat;
+      dctx.fillRect(-off, 0, dw, dh);
+      dctx.restore();
     }
   };
   /* The effects below run on a schedule of their own and must not close over a
@@ -8078,7 +8088,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")}
+      <div className={"ar-stack" + (cross ? (cross.dir < 0 ? " x x-l" : " x") : "") + (drag ? " ar-dragging" : "")}
         ref={stackRef}
         style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" }
           : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%" } : null}>
@@ -8087,6 +8097,10 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           is not a price a phone should pay for a background. It was seven
           elements and 221 MB of GPU texture; paintGround says what happened. */}
       <canvas className="ar-gnd" ref={gndRef} aria-hidden="true" />
+      {/* The dots are their own canvas because they are the only sharp thing
+          out here: the ground and the lights are haze and are drawn at one
+          backing pixel to the CSS pixel, and the dots at the screen's own. */}
+      <canvas className="ar-gnd ar-gnd-d" ref={dotRef} aria-hidden="true" />
       <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")
         + (drag ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
         hidden={room !== "line" && !(cross && cross.from === "line") && !(drag && drag.room === "line")}
@@ -14822,7 +14836,23 @@ input[type=number] { width:84px; }
 /* v4: curtain wipe + custom line icons */
 .q-stage{position:relative;z-index:1;width:100%;display:flex;justify-content:center;}
 .q-curtain{position:fixed;inset:0;z-index:60;background:linear-gradient(120deg,#3b72e0 0%,#5a97ff 55%,#6ea0ff 100%);
-  transform:translateX(-100%);pointer-events:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 60px rgba(0,0,0,.25);}
+  transform:translateX(-100%);pointer-events:none;display:flex;align-items:center;justify-content:center;}
+/* The shadow belongs to a curtain that is MOVING, and only to that one. Parked
+   it sits at translateX(-100%), one screen to the left, where the only thing a
+   60px shadow can reach is the first 60px of the room it is parked in front of.
+
+   That is the seam Jorge kept photographing, and it is a fault of mine from
+   #356 in a second place. I took the same shadow off the arriving sheet then,
+   for the same reason: one ground lies behind both rooms now, so a shadow on
+   anything above it is a line drawn on that ground on purpose. I missed this
+   one, and it only shows when a room is still opening, which is why it took a
+   photograph of two closed rooms to find it.
+
+   Measured on the built app at a device ratio of three: with the rooms hidden
+   the backdrop has no vertical edge above 2 out of 255 anywhere. With them
+   shown there was a step of 8.5 at the join, fading to nothing 70px to its
+   right, which is a 60px blur exactly. */
+.q-curtain.q-wipe{box-shadow:0 0 60px rgba(0,0,0,.25);}
 .q-curtain.q-wipe{animation:qcurtain var(--t-wipe) cubic-bezier(.76,0,.24,1) both;}
 @keyframes qcurtain{0%{transform:translateX(-100%);}46%{transform:translateX(0);}54%{transform:translateX(0);}100%{transform:translateX(101%);}}
 .q-curtain-mark{width:60px;height:60px;color:rgba(255,255,255,.92);opacity:0;}
@@ -15096,6 +15126,10 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    costs one texture and one that costs seven. */
 .ar-gnd{ position:fixed; inset:0; z-index:99; pointer-events:none;
   width:100%; height:100%; display:block; }
+/* The dots sit on the ground, in front of the lights, and the two canvases are
+   siblings at the same level so DOM order is what puts them in that order. */
+.ar-gnd-d{ z-index:99; }
+html.sun .ar-gnd-d{ display:none; }
 /* One field of dots, not two: inside the stack the corner stops drawing its
    own, because the canvas now carries three of them for all three rooms. The
    corner's coloured lights stay, because those are its atmosphere and they
@@ -15126,21 +15160,11 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    lights already, .mc-aurora, so it keeps everything it had. */
 html:not(.sun) .ar-stack .q-page.sf:not(.mc-light)::before{ display:none; }
 html:not(.sun) .ar-stack > .ar-room > .q-page.sf:not(.mc-light){ background:transparent; }
-/* Except while the rooms are crossing, and this is a fault of mine from #356.
-   A drag is safe transparent because the two sheets TILE: one ends exactly
-   where the other begins, so nothing is ever behind anything. The cross does
-   not tile, it OVERLAPS, and two transparent sheets on top of each other are
-   both readable at once. Jorge photographed it on 17 September: "The floor
-   isn't open yet" and "The line isn't open yet" printed through each other.
-   A committed swipe runs the cross too, so this is not only a button.
-
-   Both sheets take the ARRIVING room's ground for the length of it. The same
-   colour on both is what keeps it from being a seam, and opaque is what keeps
-   them from being read through. The backdrop is hidden for those few hundred
-   milliseconds, which is the trade: a tap is a push, and there is nothing to
-   see behind a push. */
-html:not(.sun) .ar-stack.x > .ar-room > .q-page.sf:not(.mc-light){
-  background:var(--ar-x-gnd, var(--gnd-floor)); }
+/* A cross used to be the exception, both sheets going opaque so neither could
+   be read through the other. It is not an exception any more: the one leaving
+   is cut to where the arriving one has not reached, so nothing overlaps and
+   every sheet stays transparent, at rest, mid drag and mid cross alike. The
+   cut is at .ar-room.ar-out below. */
 html.sun .ar-gnd{ display:none; }
 /* ---- the curve, and why this one ----
    A transition a thumb STARTED by dragging should carry on at the speed of
@@ -15174,14 +15198,45 @@ html.sun .ar-gnd{ display:none; }
      seam between the rooms. The sheen below still crosses the arriving sheet,
      because a light travelling over a room is not a line between two. */
   will-change:transform; }
+/* The one leaving is CUT to the part of the screen the arriving one has not
+   reached yet, rather than the two of them being made opaque.
+
+   #359 made both sheets paint a flat ground for the length of a cross, because
+   two transparent sheets that overlap are both readable at once and Jorge
+   photographed exactly that. It worked and it cost more than it was worth: a
+   tap put a flat dark slab over the backdrop for 440 ms and then snapped to
+   the real thing, which is the flashing between pages Jorge photographed on
+   18 September. Measured on the built app: rgb(6,9,15) held for four hundred
+   milliseconds, then rgb(25,104,126) in a single frame.
+
+   A cut solves what the slab solved and costs nothing. The arriving sheet
+   covers from its own left edge rightwards; the one leaving is clipped at
+   exactly that line, so no part of it is ever underneath, so there is nothing
+   to read through. Both sheets stay transparent and the ground behind them is
+   the backdrop, all the way through, the same as during a drag.
+
+   The line is exact rather than nearly. Both animations run the same duration
+   and the same curve, so at any moment q the arriving sheet's near edge is at
+   D(1-q) and the one leaving has moved -0.34Dq, which puts that edge at
+   D(1-0.66q) in the leaving sheet's own box. That is 100% - |D| at the start
+   and 100% - 0.34|D| at the end, on whichever side the room is arriving from,
+   and it is the same pair of numbers both ways round. Anything less exact
+   would draw the seam it is here to avoid. */
 .ar-room.ar-out > .q-page.sf{ z-index:100;
-  animation:arPageOut var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; will-change:transform, filter; }
+  animation:arPageOut var(--t-wipe) cubic-bezier(.35,.12,.2,1) both;
+  will-change:transform, filter, clip-path; }
+.ar-stack.x-l > .ar-room.ar-out > .q-page.sf{ animation-name:arPageOutL; }
 @keyframes arPageIn{
   from{ transform:translate3d(var(--ar-dx, 26%), 0, 0); }
   to{ transform:translate3d(0, 0, 0); } }
 @keyframes arPageOut{
-  from{ transform:translate3d(0, 0, 0); filter:brightness(1); }
-  to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7); } }
+  from{ transform:translate3d(0, 0, 0); filter:brightness(1); clip-path:inset(0 74% 0 0); }
+  to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7);
+      clip-path:inset(0 91.16% 0 0); } }
+@keyframes arPageOutL{
+  from{ transform:translate3d(0, 0, 0); filter:brightness(1); clip-path:inset(0 0 0 74%); }
+  to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7);
+      clip-path:inset(0 0 0 91.16%); } }
 /* The sheen the switch is named for: a soft band of the room's own light that
    crosses the arriving sheet once and is gone before it lands. */
 .ar-room.ar-in > .q-page.sf::after{ content:""; position:absolute; inset:0; z-index:3; pointer-events:none;
