@@ -7414,6 +7414,22 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     try { return localStorage.getItem(key) || null; } catch (e) { return null; }
   });
   const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
+  /* Home and Live Floor are two tabs of ONE sheet, so switching between them
+     changes what is inside the sheet and moves nothing: Jorge, 18 September,
+     the background is good but the front elements are just snapping. The rooms
+     travel because there are two of them to travel past each other. There are
+     not two here, and making two is C29, a bigger change than this.
+
+     What there is, is the sheet's contents, and those can travel. The arriving
+     content comes in from the side the bar moved, on the rooms' own clock and
+     curve, so the pair reads as part of the same row rather than as a screen
+     being rebuilt in place. The one being left does not slide out with it,
+     because there is only ever one of them: this is a step towards C29 and
+     honest about being one. */
+  const [tabSlide, setTabSlide] = useState(null);
+  const tabTimer = useRef(null);
+  const lastTab = useRef(tab);
+  useEffect(() => () => clearTimeout(tabTimer.current), []);
   const room = openRoom(config, store, want);
   useEffect(() => { setReportContext({ store, person: account || null, screen: room }); }, [store, account, room]);
   /* Remembered for the next cold start: index.html paints the curtain's green
@@ -7516,6 +7532,19 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     crossTimer.current = setTimeout(() => setCross(null), MOTION.wipe + 60);
   };
   useEffect(() => () => clearTimeout(crossTimer.current), []);
+  /* Only when the ROOM stayed put. Coming off the line to Home changes the tab
+     as well, and there the rooms are already travelling past each other; two
+     travels at once is worse than either. */
+  useEffect(() => {
+    if (lastTab.current === tab) return undefined;
+    const dir = tab === "floor" ? 1 : -1;
+    lastTab.current = tab;
+    if (cross) return undefined;
+    setTabSlide({ dir, n: Date.now() });
+    clearTimeout(tabTimer.current);
+    tabTimer.current = setTimeout(() => setTabSlide(null), MOTION.wipe + 60);
+    return undefined;
+  }, [tab, cross]);
   useLayoutEffect(() => {
     if (!cross || !cross.src) return;
     const a = cross.src;
@@ -8104,19 +8133,16 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? (cross.dx != null ? " x x-drag" : cross.dir < 0 ? " x x-l" : " x") : "")
-        + (drag ? " ar-dragging" : "")}
+      <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")
+        + (tabSlide ? (tabSlide.dir > 0 ? " t t-r" : " t t-l") : "")}
         ref={stackRef}
-        /* A finish that a thumb started begins where the thumb left off. The
-           two sheets tile all the way through it, so the arriving one starts a
-           screen to the side of the one being left and they travel the same
-           distance at the same rate. A tap has no such starting point and
-           keeps the push it always had. */
-        style={cross && cross.dx != null
-          ? { "--ar-out0": cross.dx + "px",
-              "--ar-in0": "calc(" + cross.dx + "px + " + (cross.dir > 0 ? 100 : -100) + "%)",
+        /* Every switch tiles, whether a thumb started it or a button did. A
+           swipe begins where the thumb left off; a tap begins at nothing, a
+           screen apart, which is the same geometry with the offset at zero. */
+        style={cross
+          ? { "--ar-out0": (cross.dx || 0) + "px",
+              "--ar-in0": "calc(" + (cross.dx || 0) + "px + " + (cross.dir > 0 ? 100 : -100) + "%)",
               "--ar-out1": (cross.dir > 0 ? -100 : 100) + "%" }
-          : cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" }
           : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%" } : null}>
       {/* Behind both rooms: one canvas, painted by hand rather than by React,
           because this moves on every frame of a drag and a re-render per frame
@@ -9821,9 +9847,15 @@ if (typeof document !== "undefined") applyTextSize(textSizeOf());
    the phone line. Per store because the same person works the phones at one
    rooftop and the floor at another. */
 const OPEN_TO = [["last", "LAST"], ["home", "HOME"], ["floor", "FLOOR"], ["line", "LINE"]];
+/* Home unless they have said otherwise, which is Jorge's call of 18 September.
+   It used to be Last, the memory of the room they were in when they closed the
+   app, and that is a reasonable default for a tool somebody lives inside all
+   day. It is the wrong one here: the corner is where the day is read, and
+   opening on the floor or the line is opening halfway through something. Last
+   is still there for anybody who wants it. */
 const openToOf = (store) => {
-  try { const v = localStorage.getItem(`lpcf:pref:open:${store}`); return OPEN_TO.some(([k]) => k === v) ? v : "last"; }
-  catch (e) { return "last"; }
+  try { const v = localStorage.getItem(`lpcf:pref:open:${store}`); return OPEN_TO.some(([k]) => k === v) ? v : "home"; }
+  catch (e) { return "home"; }
 };
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
@@ -15210,45 +15242,60 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
      seam between the rooms. It carried a sheen as well, and that is gone too:
      18 September, the backdrop shows the movement without it. */
   will-change:transform; }
-/* The one leaving is CUT to the part of the screen the arriving one has not
-   reached yet, rather than the two of them being made opaque.
+/* Nothing is opaque and nothing is cut, and both of those were answers to the
+   same question: two sheets that OVERLAP can be read through each other, and
+   Jorge photographed exactly that on 17 September.
 
-   #359 made both sheets paint a flat ground for the length of a cross, because
-   two transparent sheets that overlap are both readable at once and Jorge
-   photographed exactly that. It worked and it cost more than it was worth: a
-   tap put a flat dark slab over the backdrop for 440 ms and then snapped to
-   the real thing, which is the flashing between pages Jorge photographed on
-   18 September. Measured on the built app: rgb(6,9,15) held for four hundred
-   milliseconds, then rgb(25,104,126) in a single frame.
+   #359 answered it by painting a flat ground on both sheets for the length of
+   a cross. That worked and cost far more than it was worth: a tap put a slab
+   over the backdrop for 440 ms and then snapped to the real thing, measured as
+   rgb(6,9,15) held for four hundred milliseconds then rgb(25,104,126) in one
+   frame, which is the flashing between pages he photographed the next day.
 
-   A cut solves what the slab solved and costs nothing. The arriving sheet
-   covers from its own left edge rightwards; the one leaving is clipped at
-   exactly that line, so no part of it is ever underneath, so there is nothing
-   to read through. Both sheets stay transparent and the ground behind them is
-   the backdrop, all the way through, the same as during a drag.
+   The morning after that it was a CUT instead, the leaving sheet clipped at
+   the line the arriving one had reached. That was right as far as it went, and
+   it went as far as the overlap did.
 
-   The line is exact rather than nearly. Both animations run the same duration
-   and the same curve, so at any moment q the arriving sheet's near edge is at
-   D(1-q) and the one leaving has moved -0.34Dq, which puts that edge at
-   D(1-0.66q) in the leaving sheet's own box. That is 100% - |D| at the start
-   and 100% - 0.34|D| at the end, on whichever side the room is arriving from,
-   and it is the same pair of numbers both ways round. Anything less exact
-   would draw the seam it is here to avoid. */
+   The overlap is gone now, so both answers are. The sheets tile, one ending
+   exactly where the other begins, so no part of either is ever behind the
+   other and there is nothing to read through, nothing to hide and nothing to
+   clip. The question stopped being asked rather than being answered better. */
 .ar-room.ar-out > .q-page.sf{ z-index:100;
   animation:arPageOut var(--t-wipe) cubic-bezier(.35,.12,.2,1) both;
-  will-change:transform, filter, clip-path; }
-.ar-stack.x-l > .ar-room.ar-out > .q-page.sf{ animation-name:arPageOutL; }
+  will-change:transform, filter; }
 @keyframes arPageIn{
-  from{ transform:translate3d(var(--ar-dx, 26%), 0, 0); }
+  from{ transform:translate3d(var(--ar-in0, 100%), 0, 0); }
   to{ transform:translate3d(0, 0, 0); } }
 @keyframes arPageOut{
-  from{ transform:translate3d(0, 0, 0); filter:brightness(1); clip-path:inset(0 74% 0 0); }
-  to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7);
-      clip-path:inset(0 91.16% 0 0); } }
-@keyframes arPageOutL{
-  from{ transform:translate3d(0, 0, 0); filter:brightness(1); clip-path:inset(0 0 0 74%); }
-  to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7);
-      clip-path:inset(0 0 0 91.16%); } }
+  from{ transform:translate3d(var(--ar-out0, 0px), 0, 0); filter:brightness(1); }
+  to{ transform:translate3d(var(--ar-out1, -100%), 0, 0); filter:brightness(.7); } }
+/* Home and Live Floor share a sheet, so what travels between them is the
+   sheet's contents rather than the sheet. It comes in from the side the bar
+   moved, on the rooms' clock and curve, and the page is held still while it
+   does so a stage a screen wide cannot push the layout sideways. */
+.ar-stack.t > .ar-room > .q-page.sf{ overflow:hidden; }
+.ar-stack.t > .ar-room > .q-page.sf > .q-stage{
+  animation:arStageIn var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; will-change:transform; }
+.ar-stack.t-l > .ar-room > .q-page.sf > .q-stage{ animation-name:arStageInL; }
+@keyframes arStageIn{ from{ transform:translate3d(100%, 0, 0); } to{ transform:translate3d(0, 0, 0); } }
+@keyframes arStageInL{ from{ transform:translate3d(-100%, 0, 0); } to{ transform:translate3d(0, 0, 0); } }
+@media (prefers-reduced-motion: reduce){
+  .ar-stack.t > .ar-room > .q-page.sf > .q-stage{ animation:none; } }
+/* ---- one motion for a tap and for a swipe ----
+   A tap used to be a PUSH: the arriving sheet came in from 26 per cent and
+   covered the one being left, which had to be cut so it could not be read
+   through. Jorge, 18 September: pressing a button looks like the pages fold on
+   top of each other rather than the side to side of a thumb swipe. He is
+   right, and a push is exactly what folding looks like.
+
+   So there is one motion now and a swipe is the whole of it. The two sheets
+   tile: one ends where the other begins, they travel the same distance on the
+   same curve, and the only difference between a tap and a swipe is where they
+   start. A swipe starts wherever the thumb let go. A tap starts at nothing,
+   which is a screen apart.
+
+   Tiling needs no cut, because nothing is ever behind anything, so the two
+   sets of cut keyframes this replaces are gone rather than left unused. */
 /* ---- and the finish to a swipe, which is a different shape ----
    A tap is a push: the arriving sheet comes in over the one being left, which
    is why that one has to be cut. A SWIPE is not a push. The two sheets have
@@ -15266,14 +15313,6 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    Tiling needs no cut, because nothing is ever behind anything. The two travel
    the same distance on the same curve, so they stay exactly edge to edge from
    the moment of release to the end. */
-.ar-stack.x-drag > .ar-room.ar-in > .q-page.sf{ animation-name:arPageInD; }
-.ar-stack.x-drag > .ar-room.ar-out > .q-page.sf{ animation-name:arPageOutD; }
-@keyframes arPageInD{
-  from{ transform:translate3d(var(--ar-in0, 100%), 0, 0); }
-  to{ transform:translate3d(0, 0, 0); } }
-@keyframes arPageOutD{
-  from{ transform:translate3d(var(--ar-out0, 0px), 0, 0); filter:brightness(1); }
-  to{ transform:translate3d(var(--ar-out1, -100%), 0, 0); filter:brightness(.7); } }
 /* There was a sheen here, a band of white light that rode across the arriving
    sheet once on every switch. It is gone, and Jorge's reason for taking it out
    is the better argument: the backdrop now shows the movement. Three fields of
