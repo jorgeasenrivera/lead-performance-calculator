@@ -199,9 +199,26 @@ test("a new build is taken at the next open, not the one after", () => {
      called on finishes loading, so a build taken 266 ms into an open did not
      commit until 1301 ms and threw the whole boot away. Measured: 3.2 s
      against a normal 2.0 on every open that followed a deploy. */
-  assert.ok(/if \(reg && reg\.waiting\) \{ reg\.waiting\.postMessage\("SKIP_WAITING"\); return; \}/.test(main) &&
+  assert.ok(/if \(reg && reg\.waiting && !tried\) \{/.test(main) && /reg\.waiting\.postMessage\("SKIP_WAITING"\);\n\s*return;/.test(main) &&
     /navigator\.serviceWorker\.controller\) \{\n\s*asking = true;/.test(main),
     "a build waiting from last time is taken before a pixel is drawn, where the reload costs almost nothing");
+  /* Three things a force-close can leave behind that a clean run never shows,
+     after Jorge's 30-second open of 18 September. None of them reproduced
+     here; all three are bounded now regardless of which it was. */
+  assert.ok(/\}\)\.catch\(\(\) => \{ \/\* a browser without it[\s\S]{0,900}navigator\.serviceWorker\.addEventListener\("controllerchange"/.test(main) &&
+    !/reg\.update\(\)\.catch\(\(\) => \{\}\);\n\s*\/\*[^*]*\*\/\n\s*let had/.test(main),
+    "the takeover is listened for at the top, synchronously, because it can land 18 ms into a page and a listener attached after register() resolves is attached after it fired");
+  assert.ok(/sessionStorage\.getItem\("sage:swapped"\) === "1"/.test(main) && /sessionStorage\.setItem\("sage:swapped", "1"\)/.test(main),
+    "and it is taken once per open, so a takeover that stalls cannot become a reload loop");
+  assert.ok(/const t = setTimeout\(\(\) => resolve\(undefined\), 1500\);/.test(sw) && /const hit = await cached\("\/", \{ ignoreVary: true \}\);/.test(sw),
+    "the page never waits more than a moment and a half on the cache, because WebKit's can stall after a process kill and the open waits on it");
+  assert.ok(/const copy = res\.ok \? res\.clone\(\) : null;/.test(sw) && !/res\.clone\(\)\)\)/.test(sw),
+    "and a response fetched from the network is cloned before it is handed back, because a body can only be read once");
+  assert.ok(/const keep = new Set\(\[CACHE, \.\.\.names\.filter\(\(n\) => n !== CACHE\)\.slice\(-1\)\]\);/.test(sw),
+    "and the previous build's files stay, because a page served from them may still be fetching from them when this build takes over");
+  const vite = fs.readFileSync(new URL("../vite.config.js", import.meta.url), "utf8");
+  assert.ok(/const version = Date\.now\(\)\.toString\(36\) \+ "-" \+ crypto/.test(vite),
+    "which only works because the cache names sort by when they were built");
   assert.ok(/let drawn = false;/.test(main) && /setTimeout\(draw, 300\);/.test(main) && /\.catch\(draw\);/.test(main) &&
     /if \(!asking\) draw\(\);/.test(main),
     "and the app is drawn anyway if that is slow, throws, or the swap never happens");
