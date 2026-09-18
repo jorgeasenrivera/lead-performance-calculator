@@ -815,3 +815,30 @@ test("the round-up's chip stays inside its card when the row is full", () => {
   assert.ok(/\.ru2-stats \{ display:grid; grid-template-columns:repeat\(auto-fit, minmax\(108px, 1fr\)\);/.test(mgr),
     "the column floor is what makes this possible at all, and it is the thing to re-measure if it changes");
 });
+
+test("a read the timeout gave up on cannot leave a room on its curtain", () => {
+  /* Jorge, 18 September, with a screenshot: force close, reopen, and Home sat
+     on the Sage mark for eight minutes with "as of 8 min ago" in the corner.
+     The project logs for that window showed the phone reading the floor row
+     every five seconds and getting 200 every time.
+
+     The read wrote the row's stamp itself, so a read the timeout had given up
+     on wrote it when it finally finished. Every poll after that asked for the
+     stamp, got the same one, answered "same", and the room, which had never
+     received the row, held its curtain for as long as the app was open.
+     Reproduced on the mock with the floor's first reads queued behind a token
+     refresh and released in order: curtain still up at 45 s, twenty polls,
+     every one a 200. */
+  const fn = core.slice(core.indexOf("async function loadRowIfChanged("), core.indexOf("async function loadRowIfChanged(") + 2600);
+  const read = fn.indexOf("const read = async () =>"), used = fn.indexOf("if (r.timedOut)"), set = fn.indexOf("rowStamps.set(k,");
+  assert.ok(read > 0 && used > read && set > used,
+    "the stamp is written by the answer that is used, after the timeout has been checked, never inside the read");
+  assert.ok(/return \{ row: data \? data\.data : null, stamp: data \? \(data\.updated_at \|\| "none"\) : "missing" \};/.test(fn),
+    "so the read hands back the row and the stamp together and writes nothing shared");
+  assert.strictEqual((core.match(/if \(force === true \|\| !haveRow\.current\) rowStamps\.delete\(/g) || []).length, 2,
+    "and both rooms ask for the whole row while they have nothing on screen, whatever the stamp says");
+  assert.strictEqual((core.match(/haveRow\.current = row !== undefined;/g) || []).length, 2,
+    "which is read from the room's own row, not from the stamp");
+  assert.ok(/const staleMins = !net\.offline && netState\.okAt && Date\.now\(\) - netState\.okAt > 60000 \? minsOld\(netState\.okAt\) : 0;/.test(core),
+    "the corner pill reads the live stamp, because the snapshot in net is only retaken when the phone goes off or comes back");
+});

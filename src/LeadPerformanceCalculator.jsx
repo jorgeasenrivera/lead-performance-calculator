@@ -8113,7 +8113,11 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   }, [net.offline]);
   useEffect(() => { try { document.documentElement.classList.toggle("net-off", !!net.offline); } catch (e) {} return () => { try { document.documentElement.classList.remove("net-off"); } catch (e) {} }; }, [net.offline]);
   const minsOld = (t) => Math.max(1, Math.floor((Date.now() - t) / 60000));
-  const staleMins = !net.offline && net.okAt && Date.now() - net.okAt > 60000 ? minsOld(net.okAt) : 0;
+  /* netState, not net: the snapshot in net is only retaken when the phone
+     goes off or comes back, so its okAt was the moment of the last flip, and
+     a phone that had been fine for an hour wore "as of 59 min ago". The tick
+     above re-renders this every fifteen seconds, which is all it needs. */
+  const staleMins = !net.offline && netState.okAt && Date.now() - netState.okAt > 60000 ? minsOld(netState.okAt) : 0;
   const stale = staleMins > 0;
   useEffect(() => { try { document.documentElement.classList.toggle("net-stale", stale); } catch (e) {} return () => { try { document.documentElement.classList.remove("net-stale"); } catch (e) {} }; }, [stale]);
   void netTick;
@@ -8656,9 +8660,11 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   });
 
   const writes = useRef(0);
+  const haveRow = useRef(false);
+  haveRow.current = row !== undefined;
   const refetch = useCallback(async (force) => {
     if (writes.current > 0) return;            // a tap is still landing; its answer is the next read
-    if (force === true) rowStamps.delete(QUEUE_TABLE + "|" + queueRowId(store, date, variant.kind));
+    if (force === true || !haveRow.current) rowStamps.delete(QUEUE_TABLE + "|" + queueRowId(store, date, variant.kind));
     const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store, date, variant.kind));
     if (got === undefined || got === "same") return;
     setRow(got || null);
@@ -9250,16 +9256,24 @@ async function loadRowIfChanged(table, id, tag) {
     if (rowStamps.has(k) && rowStamps.get(k) === stamp) return "same";
     const { data, error } = await supabase.from(table).select("data,updated_at").eq("id", id).maybeSingle();
     if (error) throw error;
-    rowStamps.set(k, data ? (data.updated_at || "none") : "missing");
     if (data) cachePut("row:" + table + "|" + id, data.data);
-    return data ? data.data : null;
+    return { row: data ? data.data : null, stamp: data ? (data.updated_at || "none") : "missing" };
   };
   try {
     const r = await withTimeout(read());
     if (r.timedOut) throw new Error("timed out");
     if (r.error) throw r.error;
     netSet(false);
-    return r.value;
+    if (r.value === "same") return "same";
+    /* The stamp is written HERE, by the answer that is used, and not inside
+       the read. The read used to write it, and a read the timeout had given
+       up on kept running and wrote it when it finished. From then on every
+       poll asked for the stamp, got the same one, said "same", and the room
+       that had never received the row held its curtain for as long as the
+       app was open. Jorge sat on it for eight minutes on 18 September while
+       the logs showed a 200 every five seconds. */
+    rowStamps.set(k, r.value.stamp);
+    return r.value.row;
   } catch (e) {
     console.error("poll", table, id, e);
     /* The first read of the day failing used to leave the screen on its
@@ -10518,9 +10532,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
   const writes = useRef(0);
+  /* A room with nothing on screen asks for the whole row, whatever the stamp
+     says: a stamp with no row behind it is how a room sits on its curtain. */
+  const haveRow = useRef(false);
+  haveRow.current = row !== undefined;
   const refetch = useCallback(async (force) => {
     if (writes.current > 0) return;            // a tap is still landing; its answer is the next read
-    if (force === true) rowStamps.delete(FLOOR_TABLE + "|" + floorRowId(store, date));
+    if (force === true || !haveRow.current) rowStamps.delete(FLOOR_TABLE + "|" + floorRowId(store, date));
     const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, date));
     if (got === undefined || got === "same") return;
     setRow(got || null);
