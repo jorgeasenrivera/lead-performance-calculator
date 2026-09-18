@@ -18,5 +18,7 @@
         }
       ]
     }
-  ]
+  ],
+  "//": "ignoreCommand: a commit that touches only docs and markdown does not deploy. Every board claim and release commit deployed production on 18 September, and the Board's wall reloaded for each one. Exit 0 skips, as Vercel reads it.",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md'"
 }
