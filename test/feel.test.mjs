@@ -986,6 +986,11 @@ test("the Board's wall does not go white on a deploy", () => {
   assert.ok(/caches\.open\(CACHE\)\.then\(\(c\) => c\.match\(key, opts\)\)\.then\(\(hit\) => hit \|\| caches\.match\(key, opts\)\)/.test(sw),
     "the worker looks in this build's cache and then in any cache still kept, so a page on the previous build finds its own chunk");
   const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+  /* vercel.json is validated against a schema and a note under a "//" key
+     fails it: every deploy from #388 to the C29 claim errored on exactly that,
+     production stayed on the build before #388, and the fix #388 carried
+     never went out. The reason for the ignore lives in README instead. */
+  assert.ok(!Object.keys(vercel).some((k) => k.startsWith("/")), "vercel.json carries no comment keys, because Vercel refuses the file");
   assert.ok(/git diff --quiet HEAD\^ HEAD -- \. ':\(exclude\)docs' ':\(exclude\)\*\.md'/.test(vercel.ignoreCommand || ""),
     "and a commit that touches only docs and markdown does not deploy, so the wall does not reload for a board row");
   assert.ok(/const BoardHold = \(\) => <div style=\{\{ position: "fixed", inset: 0, background: "#0B1622" \}\}/.test(core)

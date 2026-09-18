@@ -235,6 +235,11 @@ that and a fortnight of one store showing another store's salespeople.
 ## 6. Deployment
 
 The site is on Vercel and deploys from `main`. `api/*.mjs` are its functions.
+A commit that touches only `docs/` and markdown does not deploy: `vercel.json`
+carries an `ignoreCommand` for it, because every board claim and release commit
+used to redeploy production and the Board's wall reloaded for each one. The
+reason lives here and not in `vercel.json`, which is checked against a schema
+and refuses a comment key.
 Supabase holds the data. The phone app is an Expo shell around the site, built by
 `.github/workflows/sage-app.yml` on demand, never on anybody's laptop.
 
