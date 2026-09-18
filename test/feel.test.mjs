@@ -148,135 +148,22 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
      the peek of letters near the edge Jorge saw on 18 September. */
   assert.ok(/if \(took\) go\(s0\.to, true, dx\);/.test(core) && /const go = \(t, bySwipe, dx\) => \{/.test(core),
     "the release hands on where the thumb actually left the sheets");
-  assert.ok(/cross\.dx != null \? " x x-drag"/.test(core) &&
-    /"--ar-in0": "calc\(" \+ cross\.dx \+ "px \+ " \+ \(cross\.dir > 0 \? 100 : -100\) \+ "%\)"/.test(core),
-    "and the arriving sheet starts a screen to the side of the one being left, which is where the drag had them");
-  assert.ok(/@keyframes arPageInD\{\n\s*from\{ transform:translate3d\(var\(--ar-in0, 100%\), 0, 0\); \}/.test(core) &&
-    /@keyframes arPageOutD\{\n\s*from\{ transform:translate3d\(var\(--ar-out0, 0px\), 0, 0\); filter:brightness\(1\); \}/.test(core),
-    "a swipe finishes by tiling, the way it ran under the thumb");
-  {
-    const d = (core.match(/@keyframes arPageOutD\{[\s\S]*?\}\s*\}/) || [""])[0];
-    assert.ok(!/clip-path/.test(d),
-      "and it needs no cut, because two sheets that tile are never one behind the other and nothing can peek between them");
-  }
-  assert.ok(!/groundOf|--ar-to-bg/.test(core), "and nothing is left handing a ground colour to a layer that no longer exists");
-  assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches; \} catch \(e\) \{\}\n    if \(reduce\) return;/.test(core), "less motion asks for the cut");
-  /* One gesture, one clock: the rooms, the mark and the bar's pill all run for
-     the wipe token on the same curve, and the classes are held until the last
-     of them is done. */
-  assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.35,\.12,\.2,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the page curve");
-  assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ z-index:102;\n\s*animation:arPageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core) && /\.ar-room\.ar-out > \.q-page\.sf\{ z-index:100;\n\s*animation:arPageOut var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core), "the room's own sheet is what travels, on one clock and one curve");
-  assert.ok(/\.ar-bar\{ position:fixed; z-index:105;/.test(core) && /\.ar-fly\{ position:fixed; z-index:106;/.test(core), "the bar and the mark stay above a room in mid-travel");
-  assert.ok(!/box-shadow:0 0 44px 10px rgba\(0,0,0,\.6\)/.test(core),
-    "and the arriving sheet casts no dark edge, because with one ground behind both rooms a shadow on it is a seam");
-  /* The same fault in a second place, and the one Jorge kept photographing. A
-     parked curtain sits one screen to the left of the room it belongs to, so
-     the only thing its 60px shadow can reach is that room's first 60px, which
-     during a drag is the join. Measured at a device ratio of three: a step of
-     8.5 out of 255 at the join, fading out 70px to its right. With the shadow
-     on the moving curtain only, the rooms add no vertical edge at all. */
-  assert.ok(/\.q-curtain\{position:fixed;inset:0;[^}]*\}/.test(core) &&
-    !/\.q-curtain\{[^}]*box-shadow/.test(core),
-    "a parked curtain casts nothing");
-  assert.ok(/\.q-curtain\.q-wipe\{box-shadow:0 0 60px rgba\(0,0,0,\.25\);\}/.test(core),
-    "and only a curtain actually crossing the screen has an edge to weigh");
-  /* The ground behind the switch was one flat dark, then the arriving room's
-     colour dropped in whole. Neither travelled. It is a backdrop now: the
-     blobs that used to sit inside each room live behind both of them, each on
-     its own layer so each can move at its own speed, and each carries its
-     colour from one room to the next rather than switching. Jorge's call of
-     17 September, option B. */
-  /* One canvas, not seven elements. Every element that moves on its own gets a
-     GPU texture of its own, at width x height x dpr squared x four bytes, and
-     seven of them at a device ratio of three came to 221 MB: over a WKWebView's
-     ceiling, which an app cannot raise. That was the lag, the dots arriving
-     late and the rooms loading in after the switch. Nothing a person sees
-     changed. */
-  assert.ok(/<canvas className="ar-gnd" ref=\{gndRef\} aria-hidden="true" \/>/.test(core),
-    "the backdrop is one canvas");
-  assert.ok(!/className="ar-blob"|className="ar-dots"|className="ar-gnd-base"/.test(core),
-    "and none of the seven layers it replaced is left, because seven textures is what cost the phone its frames");
-  assert.ok(/\.ar-gnd\{ position:fixed; inset:0; z-index:99; pointer-events:none;/.test(core),
-    "the backdrop sits under both rooms");
-  assert.ok(!/\.ar-gnd\{[^}]*will-change/.test(core),
-    "the canvas itself never moves, so it needs no will-change: its contents move inside it, which is the whole saving");
-  /* Measured rather than reasoned, and the guess was wrong twice before this
-     number: neither clipping the fills nor taking out a forced layout moved it.
-     What moves it is how many pixels the drawing is rasterised into. At two to
-     the CSS pixel a room switch ran 377 ms against a 150 ms bar; at one it runs
-     about 104, and the texture is 1.3 MB where the seven layers were 221.5. */
-  assert.ok(/    const s = 1;\n/.test(core) && /const bw = Math\.round\(w \* s\), bh = Math\.round\(h \* s\);/.test(core),
-    "and it is drawn one backing pixel to the CSS pixel, which is the whole difference between this being fast and being slower than what it replaced");
-  assert.ok(!/\.ar-stack\.x::before|animation:arGround/.test(core),
-    "and the flat ground that used to drop in whole is gone");
-  assert.ok(/\.ar-stack \.q-page\.sf:not\(\.mc-light\)::before\{ display:none; \}/.test(core),
-    "a room inside the stack no longer paints its own blobs");
-  assert.ok(/\.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
-    "and the light corner is left alone, because it keeps its own background and its own moving lights");
-  /* Sunlight was the one case in which the backdrop switched itself off, and
-     Sunlight is gone. There is no case now. */
-  assert.ok(!/\.ar-gnd\{ display:none; \}/.test(core),
-    "and nothing switches the backdrop off any more");
-  assert.ok(/const DOT_SPEED = \[0\.05, 0\.13, 0\.24\];/.test(core) && /\.ar-stack \.mc-aurora u\{ display:none; \}/.test(core),
-    "three dot fields at three speeds, out behind the rooms, rather than one inside the corner that cannot travel");
-  assert.ok(/\{ step: 22, r: 1\.0, edge: 2\.4, a: 0\.07 \}/.test(core) &&
-    /\{ step: 54, r: 1\.7, edge: 3\.6, a: 0\.10 \}/.test(core),
-    "tighter, smaller and fainter further back; looser, larger and a shade brighter nearer, each fainter than the single field it replaces");
-  assert.ok(/ctx\.createPattern\(c, "repeat"\)/.test(core) && !/width:280vw/.test(core),
-    "and a field is a repeating pattern now, so it wraps rather than needing 280vw of spare width to slide inside");
-  /* The first version of this guard asserted every dot was slower than every
-     blob, which is simply not true: the nearest dots run at 0.24 against the
-     far blob's 0.12. The interleaving is the point, so the guard now checks
-     what is actually meant. */
-  {
-    const dots = (core.match(/const DOT_SPEED = \[([^\]]+)\]/) || [])[1];
-    const blobs = (core.match(/const BLOB_SPEED = \[([^\]]+)\]/) || [])[1];
-    assert.ok(dots && blobs, "both sets of speeds are named in one place each");
-    const D = dots.split(",").map(Number), B = blobs.split(",").map(Number);
-    assert.ok(D.every((v, i) => i === 0 || v > D[i - 1]), "the dot fields run slowest first");
-    assert.ok(B.every((v, i) => i === 0 || v > B[i - 1]), "and so do the blobs");
-    assert.ok(D[0] < Math.min(...B), "the furthest dot field is the slowest thing on the screen");
-    assert.ok(Math.max(...B) < 1, "and nothing behind the rooms keeps up with a room, which travels at 1");
-  }
-  assert.ok(/const BLOB_SPEED = \[0\.12, 0\.30, 0\.55\];/.test(core) && /const BLOB_LEAD = \[0, 0\.16, 0\.32\];/.test(core),
-    "three blobs, three speeds, and three moments to turn colour: two layers read as a slide, three read as depth");
-  assert.ok(/const ramp = \(v, last\) => \(last <= 0 \? 0 : \(v \* v\) \/ last\);/.test(core) &&
-    /const dx = -Math\.round\(trav \* w \* BLOB_SPEED\[b\]\);/.test(core),
-    "and the travel is squared, so it starts very quiet and arrives at the full effect rather than running at one rate throughout");
-  assert.ok(/const dx = -Math\.round\(trav \* w \* BLOB_SPEED\[b\]\);/.test(core) &&
-    /-Math\.round\(trav \* w \* DOT_SPEED\[d\] \* ds\)/.test(core),
-    "every layer moves in whole pixels, because a fractional offset resamples a soft edge every frame and flickers");
-  assert.ok(!/filter:\s*blur/.test(core.slice(core.indexOf("const BLOBS = ["), core.indexOf("const paintGround"))),
-    "the haze is in the gradient's stops, not a filter blur that would run every frame of a drag");
-  assert.ok(/const x0 = Math\.max\(-rx, -cx\), x1 = Math\.min\(rx, w - cx\);/.test(core) &&
-    /ctx\.fillRect\(x0, y0, x1 - x0, y1 - y0\);/.test(core),
-    "and a light fills only where its box and the screen overlap, every one of them being wider and taller than the screen with most of it below the bottom");
-  /* The ground had no colour until the first animation frame, which is the
-     black Jorge saw between rooms. A layout effect runs before the browser
-     paints, so there is no such frame now. */
-  assert.ok(/useLayoutEffect\(\(\) => \{\n    if \(!tabs\.length\) return undefined;/.test(core) &&
-    /\}, \[tabKey, active, drag\]\);/.test(core),
-    "the backdrop is painted before the browser paints, and only when something it draws has changed, rather than on every render of the app");
-  assert.ok(/\.ar-stack > \.ar-room > \.q-page\.sf:not\(\.mc-light\)\{ background:transparent; \}/.test(core),
-    "and a room inside the stack carries no ground of its own, because two grounds meeting is exactly what a seam is");
-  assert.ok(/:root\{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; \}/.test(core), "the three grounds are named once, for the page behind the app");
-  /* Warm sand was tried on 17 September and dropped the same day: the corner's
-     own four lights are green and sit in front of this ground, so a warm one
-     behind them read as two ideas at once. */
-  assert.ok(/home:  \{ gnd: "#15211B", a1: "#6E9678", a2: "#A9C4AC", led: "#8FD8AF" \}/.test(core) &&
-    !/#8A7A4E|#C7B382/.test(core),
-    "and the corner is green, with nothing left of the warm sand it was briefly");
-  assert.ok(/html:has\(\.q-page\.sf\), body:has\(\.q-page\.sf\) \{\n\s*transition:background-color var\(--t-wipe\)/.test(core),
-    "and Home to Live Floor morphs too, which is two tabs of one room and never crossed at all");
-  assert.ok(/transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\);/.test(core), "the room being left parallaxes a third of the way and dims");
-  assert.ok(/transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\); will-change:transform; \}/.test(core), "the bar's pill lands with the room");
-  assert.ok(/crossTimer\.current = setTimeout\(\(\) => setCross\(null\), MOTION\.wipe \+ 60\);/.test(core), "the classes are held until the whole gesture is over");
-  /* This guard used to check only that no class was named arFadeIn or
-     arFadeOut, which is a proxy for the property rather than the property. It
-     passed all the way through #356 making both sheets transparent, and two
-     rooms then WERE readable through each other on every cross: Jorge
-     photographed the two "isn't open yet" screens printed over one another. It
-     checks the real thing now. */
+  /* One motion for a tap and for a swipe. A tap used to be a push, the arriving
+     sheet coming in over the one being left from 26 per cent, which is what
+     Jorge called folding on 18 September. The sheets tile now whoever started
+     it; the only difference is where they start, and a tap starts at nothing. */
+  assert.ok(/"--ar-out0": \(cross\.dx \|\| 0\) \+ "px"/.test(core) &&
+    /"--ar-in0": "calc\(" \+ \(cross\.dx \|\| 0\) \+ "px \+ " \+ \(cross\.dir > 0 \? 100 : -100\) \+ "%\)"/.test(core),
+    "the arriving sheet starts a screen to the side of the one being left, from wherever the thumb left them or from nothing");
+  assert.ok(/@keyframes arPageIn\{\n\s*from\{ transform:translate3d\(var\(--ar-in0, 100%\), 0, 0\); \}/.test(core) &&
+    /@keyframes arPageOut\{\n\s*from\{ transform:translate3d\(var\(--ar-out0, 0px\), 0, 0\); filter:brightness\(1\); \}/.test(core),
+    "and they travel the same distance on the same curve, so they stay edge to edge");
+  /* The push, its two sets of cut keyframes and the flat slab before them are
+     all gone rather than left unused: there is no overlap left for any of them
+     to answer. */
+  assert.ok(!/clip-path/.test(core) && !/arPageOutL|arPageInD|arPageOutD|x-drag/.test(core) && !/--ar-x-gnd/.test(core),
+    "nothing is cut, nothing goes opaque, and none of it is left lying about");
+  assert.ok(!/var\(--ar-dx, 26%\)/.test(core), "and 26 per cent, which was the push, is nowhere");
   assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades");
   /* And nothing crosses the rooms either. A band of white light used to ride
      the arriving sheet on every switch, which Jorge read as a screen wipe on
@@ -284,28 +171,17 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
      the rooms moved, and saying it twice made the weaker answer the loud one. */
   assert.ok(!/arSheen/.test(core) && !/\.ar-room\.ar-in > \.q-page\.sf::after/.test(core),
     "no light crosses the arriving room, because the ground behind it is what shows the movement");
-  /* Making both sheets opaque was the first answer and it was too expensive:
-     a tap put a flat slab over the backdrop for 440 ms and then snapped to the
-     real thing, which is what Jorge photographed on 18 September. The one
-     leaving is cut instead, at the line the arriving one has reached, so
-     nothing is ever underneath anything and every sheet stays transparent. */
-  assert.ok(!/--ar-x-gnd/.test(core),
-    "no sheet goes opaque to cross any more, because a slab over the backdrop for the length of a tap is what the flashing between pages was");
-  assert.ok(/clip-path:inset\(0 74% 0 0\);/.test(core) && /clip-path:inset\(0 91\.16% 0 0\);/.test(core) &&
-    /clip-path:inset\(0 0 0 74%\);/.test(core) && /clip-path:inset\(0 0 0 91\.16%\);/.test(core),
-    "it is cut instead, on whichever side the room arrives from, so two rooms are still never readable through each other");
-  /* 100% - |D| to 100% - 0.34|D|, which is where the arriving sheet's near edge
-     falls in the leaving sheet's own box at each end of the run. It is only
-     exact because both animations carry the same duration and the same curve;
-     anything less exact would draw the seam the cut is here to avoid. */
-  {
-    const D = 26, out = (core.match(/@keyframes arPageOut\{[\s\S]*?\}\s*\}/) || [""])[0];
-    assert.ok(/var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\)/.test(core.split(".ar-room.ar-in > .q-page.sf{")[1].slice(0, 200)) &&
-      /var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\)/.test(core.split(".ar-room.ar-out > .q-page.sf{")[1].slice(0, 200)),
-      "the arriving and the leaving sheet run on one duration and one curve, which is what lets the cut land on the edge");
-    assert.ok(out.includes((100 - D) + "%") && out.includes((100 - 0.34 * D).toFixed(2) + "%"),
-      "and the cut starts and ends where that edge actually is");
-  }
+  /* Two sheets that OVERLAP can be read through each other, which Jorge
+     photographed on 17 September. It was answered first by painting a flat
+     ground on both of them, which put a slab over the backdrop for 440 ms, and
+     then by cutting the one being left at the line the arriving one had
+     reached. The overlap itself is gone now, so both answers are: the sheets
+     tile and nothing is ever behind anything. */
+  assert.ok(!/--ar-x-gnd/.test(core) && !/clip-path/.test(core),
+    "no sheet goes opaque and none is cut, because neither is needed once nothing overlaps");
+  assert.ok(/var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\)/.test(core.split(".ar-room.ar-in > .q-page.sf{")[1].slice(0, 200)) &&
+    /var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\)/.test(core.split(".ar-room.ar-out > .q-page.sf{")[1].slice(0, 200)),
+    "the arriving and the leaving sheet run on one duration and one curve, which is what keeps them edge to edge");
   assert.ok(!/arDotsIn|arDotsOut|steps\(5,end\)|steps\(3,end\)|@property --ar-r/.test(core), "nothing in the switch is stepped");
   assert.ok(/const roomEl = dest\.closest\("\.q-page\.sf"\) \|\| dest\.closest\("\.ar-room"\);/.test(core), "the mark lands where the room comes to rest, not where it started");
   assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),
@@ -343,6 +219,43 @@ test("the other room is built once the first has settled, not on a guess at how 
     "the first room says when it is ready and the other is built a beat later");
   assert.ok(/const t = setTimeout\(\(\) => setWarm\(true\), 2500\);/.test(core),
     "and the flat timer stays as a backstop, for a room that never reports ready at all");
+});
+
+/* Home and Live Floor are two tabs of one sheet, so a switch between them used
+   to move nothing at all: measured, one sample, both sheets at 0 and no
+   animation. Jorge, 18 September: the background is good but the front
+   elements are just snapping. The sheet cannot travel because there is only
+   one; its contents can. */
+test("Home and Live Floor travel, even sharing a sheet", () => {
+  assert.ok(/@keyframes arStageIn\{ from\{ transform:translate3d\(100%, 0, 0\); \} to\{ transform:translate3d\(0, 0, 0\); \} \}/.test(core) &&
+    /@keyframes arStageInL\{ from\{ transform:translate3d\(-100%, 0, 0\); \} to\{ transform:translate3d\(0, 0, 0\); \} \}/.test(core),
+    "the arriving contents come in from the side the bar moved");
+  assert.ok(/\.ar-stack\.t > \.ar-room > \.q-page\.sf > \.q-stage\{\n\s*animation:arStageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core),
+    "on the rooms' own clock and curve, so the pair reads as one row rather than two ideas");
+  assert.ok(/\.ar-stack\.t > \.ar-room > \.q-page\.sf\{ overflow:hidden; \}/.test(core),
+    "and the page is held still while they do, so a stage a screen wide cannot push the layout sideways");
+  /* Coming off the line to Home changes the tab as well, and there the rooms
+     are already travelling past each other. Two travels at once is worse than
+     either. */
+  assert.ok(/if \(cross\) return undefined;\n\s*setTabSlide\(\{ dir, n: Date\.now\(\) \}\);/.test(core),
+    "it stands down when the rooms themselves are crossing");
+  assert.ok(/\(tabSlide \? \(tabSlide\.dir > 0 \? " t t-r" : " t t-l"\) : ""\)/.test(core),
+    "and the direction is the bar's direction");
+  /* Named tabSlide, not tabMove: Manager.jsx already has a tabMove() of its
+     own, and the scope guard caught the collision. Two things with one name in
+     one codebase is the shape that took the Line white in production. */
+  assert.ok(!/\[tabMove, setTabMove\]/.test(core), "and it does not borrow a name the manager's app already uses");
+});
+
+/* The corner is where the day is read, and the floor or the line is halfway
+   through something. Jorge, 18 September. Last is still there for anybody who
+   wants it, and anybody who has already chosen it keeps it. */
+test("the app opens at Home unless somebody has said otherwise", () => {
+  assert.ok(/return OPEN_TO\.some\(\(\[k\]\) => k === v\) \? v : "home";/.test(core) &&
+    /catch \(e\) \{ return "home"; \}/.test(core),
+    "Home is the default, both when nothing is stored and when the store cannot be read");
+  assert.ok(/const OPEN_TO = \[\["last", "LAST"\], \["home", "HOME"\], \["floor", "FLOOR"\], \["line", "LINE"\]\];/.test(core),
+    "and all four choices are still offered");
 });
 
 /* Sunlight was a second set of colours for the rooms, deep green with cream on
