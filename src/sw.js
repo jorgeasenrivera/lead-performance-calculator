@@ -62,7 +62,7 @@ self.addEventListener("fetch", (e) => {
   if (req.mode === "navigate") {
     e.respondWith((async () => {
       const c = await caches.open(CACHE);
-      const hit = await c.match("/");
+      const hit = await c.match("/", { ignoreVary: true });
       if (hit) return hit;
       try {
         const res = await fetch(req);
@@ -77,11 +77,29 @@ self.addEventListener("fetch", (e) => {
   }
 
   /* The app's files carry their content in their names, so a file on the
-     phone is never stale: cache first, and anything fetched is kept. */
+     phone is never stale: cache first, and anything fetched is kept.
+
+     ignoreVary, and this one was a silent disaster. The responses come back
+     with Vary: Origin, and the page's own module script is fetched with the
+     crossorigin attribute, so it carries an Origin header; the worker
+     precached the same file WITHOUT one. By the letter of Vary those are
+     different entries, so every asset lookup missed and fell through to the
+     network.
+
+     Which looked fine, every day, because the network had the file. It only
+     bites in the one moment that matters: straight after a deploy, when the
+     phone reopens on its cached page, asks for the build it has, and the
+     server no longer has it. Then the asset comes back as the fallback HTML,
+     the module refuses to run on the wrong MIME type, and the app is a white
+     screen with no JavaScript alive to let the new build in. Measured on the
+     built app: body empty, root empty, "Expected a JavaScript-or-Wasm module
+     script but the server responded with a MIME type of text/html".
+
+     It also means the offline promise above was never kept for assets. */
   if (url.pathname.startsWith("/assets/") || /\.(svg|png|ico|woff2?)$/.test(url.pathname)) {
     e.respondWith((async () => {
       const c = await caches.open(CACHE);
-      const hit = await c.match(req);
+      const hit = await c.match(req, { ignoreVary: true });
       if (hit) return hit;
       const res = await fetch(req);
       if (res.ok) c.put(req, res.clone());

@@ -292,6 +292,28 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
   assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\) && !\(drag && drag\.room === "line"\)\}/.test(core),
     "the room being left stays on screen for the whole gesture, and the one being dragged in is uncovered before the finger reaches it");
 });
+/* A deploy that reaches the phone a launch late is a deploy nobody can review,
+   and it cost a day: two changes were reported as not working when they were
+   live on the server and correct in the bundle. */
+test("a new build is taken at the next open, not the one after", () => {
+  const main = fs.readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
+  const sw = fs.readFileSync(new URL("../src/sw.js", import.meta.url), "utf8");
+  assert.ok(/let touched = false;/.test(main) && /\["pointerdown", "keydown", "wheel", "touchstart"\]/.test(main),
+    "the app knows whether anybody has touched it yet");
+  assert.ok(/if \(reg\.waiting\) \{ clearInterval\(look\); letIn\(\); \}/.test(main),
+    "and a build that is already waiting is LOOKED for rather than listened for, because it can arrive before register() even resolves");
+  assert.ok(/if \(touched\) return clearInterval\(look\);/.test(main),
+    "the looking stops the moment a thumb lands, so nothing ever changes under one");
+  assert.ok(/document\.addEventListener\("visibilitychange", \(\) => \{ if \(document\.hidden\) \{ letIn\(\); reg\.update\(\)/.test(main),
+    "and after that it waits for the background, which is the rule this always had");
+  /* ignoreVary is defensive rather than a fix for anything Jorge hit: the live
+     server sends no Vary on assets. vite preview does, and with it every asset
+     lookup missed, which made the app a white screen after a deploy locally.
+     Same behaviour in both places is worth a word. */
+  assert.ok((sw.match(/ignoreVary: true/g) || []).length === 2,
+    "and a cached file is found whatever the response varied on, so the phone behaves the same as the preview");
+});
+
 /* Sunlight was a second set of colours for the rooms, deep green with cream on
    it, behind a switch on the corner. Jorge had it removed on 18 September. The
    guard is inverted rather than deleted, because a feature that comes back by
