@@ -25,12 +25,17 @@ const CACHE = "sage-" + VERSION;
 self.addEventListener("install", (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
-    /* One at a time and each allowed to fail on its own: a phone that gets
-       most of a build over a thin connection keeps most of it, and the file
-       that did not arrive is fetched when it is first needed. */
-    for (const url of PRECACHE) {
+    /* All at once, and each allowed to fail on its own: a phone that gets most
+       of a build over a thin connection keeps most of it, and the file that did
+       not arrive is fetched when it is first needed.
+
+       One at a time was the first version. Installing is what the page waits
+       for before it can take a new build, and every open that follows a deploy
+       spends that wait booting the build it is about to throw away, so five
+       round trips where one will do is five round trips of waste. */
+    await Promise.all(PRECACHE.map(async (url) => {
       try { await c.add(new Request(url, { cache: "reload" })); } catch (err) { /* next open */ }
-    }
+    }));
   })());
 });
 

@@ -193,20 +193,26 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
 test("a new build is taken at the next open, not the one after", () => {
   const main = fs.readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
   const sw = fs.readFileSync(new URL("../src/sw.js", import.meta.url), "utf8");
-  assert.ok(/let touched = false;/.test(main) && /\["pointerdown", "keydown", "wheel", "touchstart"\]/.test(main),
-    "the app knows whether anybody has touched it yet");
-  assert.ok(/if \(reg\.waiting\) \{ clearInterval\(look\); letIn\(\); \}/.test(main),
-    "and a build that is already waiting is LOOKED for rather than listened for, because it can arrive before register() even resolves");
-  assert.ok(/if \(touched\) return clearInterval\(look\);/.test(main),
-    "the looking stops the moment a thumb lands, so nothing ever changes under one");
+  /* Adopting a build means reloading, because the running page IS the old
+     build. The only question is when that is paid, and mid-session is the one
+     answer that is expensive: location.reload() is held until the page it was
+     called on finishes loading, so a build taken 266 ms into an open did not
+     commit until 1301 ms and threw the whole boot away. Measured: 3.2 s
+     against a normal 2.0 on every open that followed a deploy. */
+  assert.ok(/if \(reg && reg\.waiting\) \{ reg\.waiting\.postMessage\("SKIP_WAITING"\); return; \}/.test(main) &&
+    /navigator\.serviceWorker\.controller\) \{\n\s*asking = true;/.test(main),
+    "a build waiting from last time is taken before a pixel is drawn, where the reload costs almost nothing");
+  assert.ok(/let drawn = false;/.test(main) && /setTimeout\(draw, 300\);/.test(main) && /\.catch\(draw\);/.test(main) &&
+    /if \(!asking\) draw\(\);/.test(main),
+    "and the app is drawn anyway if that is slow, throws, or the swap never happens");
+  assert.ok(!/setInterval\(/.test(main) && !/let touched = false;/.test(main),
+    "nothing watches for a build mid-session any more, because taking one there is what cost the open its second");
   assert.ok(/document\.addEventListener\("visibilitychange", \(\) => \{ if \(document\.hidden\) \{ letIn\(\); reg\.update\(\)/.test(main),
-    "and after that it waits for the background, which is the rule this always had");
-  /* ignoreVary is defensive rather than a fix for anything Jorge hit: the live
-     server sends no Vary on assets. vite preview does, and with it every asset
-     lookup missed, which made the app a white screen after a deploy locally.
-     Same behaviour in both places is worth a word. */
-  assert.ok((sw.match(/ignoreVary: true/g) || []).length === 2,
-    "and a cached file is found whatever the response varied on, so the phone behaves the same as the preview");
+    "the way out is still free, and still taken");
+  assert.ok(/await Promise\.all\(PRECACHE\.map\(async \(url\) => \{/.test(sw),
+    "and the new build's files are fetched at once rather than one at a time");
+  assert.ok(/if \(!reg\) return;/.test(main),
+    "a webview that resolves register() with nothing is left alone, which it was not, and it crashed the admin store in #367");
 });
 
 /* Building a room is what starts its fetch, so a room built too late is a room
