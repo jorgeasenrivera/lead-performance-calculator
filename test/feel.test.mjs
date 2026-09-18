@@ -883,3 +883,25 @@ test("the rail on Home runs in from off screen, and the month card keeps its dat
   assert.ok(!/GOAL \$\{goal\}/.test(core) && !/\.mc-tl \.mid\{/.test(core),
     "the goal caption and its colours are gone; the two dates stay");
 });
+
+test("the phone is asked for a fix once, by the shell, never by the WebView at the door", () => {
+  /* Jorge, 18 September: the app should ask for location at install and
+     never again when somebody joins the line. The page read the WebView's own
+     geolocation at the door, on the desk fence and on a FlyBy, and inside the
+     app each of those is the WebView's prompt on top of the one the app had
+     asked. One helper now, which asks the shell when the shell says it can. */
+  assert.strictEqual((core.match(/navigator\.geolocation\.getCurrentPosition\(/g) || []).length, 1,
+    "the browser's geolocation is read in one place, the fallback inside readFix");
+  assert.ok(/if \(w && w\.__lpcNative && w\.__lpcNative\.loc && w\.ReactNativeWebView\) \{/.test(core) && /nativePost\("loc", \{ id \}\);/.test(core),
+    "and inside a shell that says it answers, the page asks the shell, by id");
+  assert.ok(/const readPosition = \(\) => \(storeFence && canFix\(\) \? readFix\(\{ timeoutMs: 8000 \}\) : Promise\.resolve\(null\)\);/.test(core),
+    "the door reads through it");
+  assert.ok(/const read = \(\) => readFix\(\{ timeoutMs: 8000 \}\);/.test(core) && /readFix\(\{ timeoutMs: 6000 \}\)\.then\(\(r\) => \{/.test(core),
+    "so do the desk fence and the FlyBy");
+  const app = fs.readFileSync(new URL("../native/App.js", import.meta.url), "utf8");
+  assert.ok(/if \(msg\.type === "loc"\) \{/.test(app) && /Location\.getCurrentPositionAsync\(\{ accuracy: Location\.Accuracy\.High \}\)/.test(app),
+    "the shell answers");
+  assert.ok(/const fg = await Location\.requestForegroundPermissionsAsync\(\);\n\s+if \(fg\.granted\) await Location\.requestBackgroundPermissionsAsync\(\);\n\s+\} catch \(e\) \{ \/\* no permission is no fix/.test(app),
+    "and asks once, at first open, for always");
+  assert.ok(/useState\(\{ loc: true, platform: Platform\.OS/.test(app), "and says so in the handoff, so an older shell is read the old way");
+});

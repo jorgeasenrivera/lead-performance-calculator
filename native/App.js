@@ -178,7 +178,7 @@ function Shell() {
      afternoon of chasing a bug that was simply an old binary. The page stamps
      it in the corner beside its own version; a screenshot of any screen now
      answers the question. */
-  const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null, ptsToken: null, activityToken: null,
+  const [native, setNative] = useState({ loc: true, platform: Platform.OS, deviceId: null, pushToken: null, ptsToken: null, activityToken: null,
     build: Application.nativeBuildVersion || null });
   /* ---- the safe areas belong to the page ----
      The page runs under the clock and the home bar, the way it does in Safari
@@ -205,6 +205,22 @@ function Shell() {
       if (!dead) setNative((n) => ({ ...n, platform: Platform.OS, deviceId, pushToken }));
     })();
     return () => { dead = true; };
+  }, []);
+
+  /* ---- location, asked once ----
+     Asked here, at the first open, and for always: when-in-use first, then
+     the upgrade, which the phone shows once and remembers. It used to be asked
+     only when a lot fence was set, and on top of that the page asked the
+     WebView's own question at every join, which is the prompt Jorge kept
+     seeing (18 September). The page asks this shell for a fix now ("loc"
+     below), so inside the app the WebView never asks at all. */
+  useEffect(() => {
+    (async () => {
+      try {
+        const fg = await Location.requestForegroundPermissionsAsync();
+        if (fg.granted) await Location.requestBackgroundPermissionsAsync();
+      } catch (e) { /* no permission is no fix, and the page treats no fix as no answer */ }
+    })();
   }, []);
 
   /* ---- the prompt to come back ----
@@ -379,6 +395,25 @@ function Shell() {
     }
     /* Where the lot is, while they are on the floor; off when they are not. */
     if (msg.type === "fence") { watchLot(msg.payload || null); return; }
+    /* A fix for the page, from the app's own permission rather than the
+       WebView's. Answered with the request's id, so two asks cannot cross,
+       and with an error rather than silence when there is nothing to give. */
+    if (msg.type === "loc") {
+      const id = msg.payload && msg.payload.id != null ? String(msg.payload.id) : "";
+      (async () => {
+        let detail = { id, error: "no fix" };
+        try {
+          const perm = await Location.getForegroundPermissionsAsync();
+          if (!perm.granted) detail = { id, error: "denied" };
+          else {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+            if (pos && pos.coords) detail = { id, lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+          }
+        } catch (e) { detail = { id, error: "no fix" }; }
+        if (web.current) web.current.injectJavaScript(`(function(){ try { window.dispatchEvent(new CustomEvent("lpc:loc", { detail: ${JSON.stringify(detail)} })); } catch (e) {} })(); true;`);
+      })();
+      return;
+    }
     /* The page's haptic vocabulary, played as Apple's tuned types rather than
        a motor duration: a name comes with the pattern, and the name wins here.
        A bare pattern (an older page, or a tap) plays as before. */

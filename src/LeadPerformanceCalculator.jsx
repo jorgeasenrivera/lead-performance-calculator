@@ -6737,6 +6737,47 @@ function nativePost(type, payload) {
     }
   } catch (e) {}
 }
+/* One fix, from wherever the phone can give one.
+
+   Inside the app the shell answers, with the permission it asked for once at
+   first open, and the WebView's own question is never asked. It used to be:
+   the page read navigator.geolocation, and inside a WebView that is a prompt
+   at every join, on top of the one the app had already asked. Jorge, 18
+   September. A shell that says it answers (loc in the handoff) is asked; an
+   older shell, or a browser, is read the way it always was.
+
+   Null when nothing answers in time, so nobody is left staring at a spinner
+   on their way onto the floor. */
+const canFix = () => (typeof window !== "undefined" && !!(window.__lpcNative && window.__lpcNative.loc))
+  || (typeof navigator !== "undefined" && !!navigator.geolocation);
+let fixSeq = 0;
+function readFix({ timeoutMs = 8000 } = {}) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const w = typeof window !== "undefined" ? window : null;
+    if (w && w.__lpcNative && w.__lpcNative.loc && w.ReactNativeWebView) {
+      const id = String(++fixSeq);
+      const on = (e) => {
+        const d = e && e.detail;
+        if (!d || String(d.id) !== id) return;
+        w.removeEventListener("lpc:loc", on);
+        finish(d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng, accuracy: d.accuracy } : null);
+      };
+      w.addEventListener("lpc:loc", on);
+      nativePost("loc", { id });
+      setTimeout(() => { w.removeEventListener("lpc:loc", on); finish(null); }, timeoutMs + 1000);
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.geolocation) return finish(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => finish({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => finish(null),
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 });
+    /* A phone that never answers must not leave somebody staring at a spinner. */
+    setTimeout(() => finish(null), timeoutMs + 1000);
+  });
+}
 const postToNativeShell = (payload) => nativePost("queue", payload);
 function DmNumber({ value, up }) {
   const s = String(value);
@@ -7174,17 +7215,9 @@ function useSeatFence({ fence, active, onLeft }) {
   useEffect(() => {
     if (!active) { state.current = null; left.current = false; return undefined; }
     if (!fence || !Array.isArray(fence.ring) || fence.ring.length < 3) return undefined;
-    if (typeof navigator === "undefined" || !navigator.geolocation) return undefined;
+    if (!canFix()) return undefined;
     let dead = false;
-    const read = () => new Promise((resolve) => {
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; resolve(v); } };
-      navigator.geolocation.getCurrentPosition(
-        (pos) => finish({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-        () => finish(null),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
-      setTimeout(() => finish(null), 9000);
-    });
+    const read = () => readFix({ timeoutMs: 8000 });
     const check = async () => {
       if (dead || document.hidden || left.current) return;
       const reading = await read();
@@ -9517,11 +9550,12 @@ function AssistBlock({ meId, meName, fence, plan, row, commit }) {
     setOpen(kind); setWhere(null); setNote("");
     try {
       const bld = fence && fence.building && Array.isArray(fence.building.ring) ? { ring: fence.building.ring } : null;
-      if (!bld || !navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition((pos) => {
-        const v = readingVerdict({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }, bld);
+      if (!bld || !canFix()) return;
+      readFix({ timeoutMs: 6000 }).then((r) => {
+        if (!r) return;
+        const v = readingVerdict(r, bld);
         if (v === "out") setWhere((w) => (w == null ? "lot" : w));
-      }, () => {}, { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 });
+      });
     } catch (e) { /* no fix is not a reason to block the ask */ }
   };
 
@@ -10870,18 +10904,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [doorNote, setDoorNote] = useState(null);
   const storeFence = ((cfg && cfg.stores) || []).find((x) => x.id === store)?.fence || null;
 
-  const readPosition = () => new Promise((resolve) => {
-    if (!navigator.geolocation || !storeFence) return resolve(null);
-    let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
-    navigator.geolocation.getCurrentPosition(
-      (pos) => finish({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      () => finish(null),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
-    /* A phone that never answers must not leave somebody staring at a spinner
-       when they are trying to get onto the floor. */
-    setTimeout(() => finish(null), 9000);
-  });
+  const readPosition = () => (storeFence && canFix() ? readFix({ timeoutMs: 8000 }) : Promise.resolve(null));
 
   async function joinAs(person) {
     setBusy(true);
