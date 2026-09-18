@@ -70,7 +70,15 @@ import qrcodeGen from "qrcode-generator";
    the first time a manager's page is drawn. A salesperson's phone never
    fetches them. Each is a lazy component; the root's wrap() holds the
    Suspense that shows the curtain for the moment the file takes to arrive. */
-const managerChunk = () => import("./Manager.jsx");
+/* A resolve clears BoardBoundary's reload guard: the flag only needs to outlive
+   the one reload it is meant to stop from looping, and a chunk that actually
+   arrived means that reload, if there was one, worked. Without this the guard
+   set on a kiosk tab's first deploy would silently sit there and block every
+   later deploy's self-heal for as long as that tab stays open. */
+const managerChunk = () => import("./Manager.jsx").then((m) => {
+  try { sessionStorage.removeItem("lpcf:board-reloaded"); } catch (e) {}
+  return m;
+});
 const lazyManager = (name) => React.lazy(() => managerChunk().then((m) => ({ default: m[name] })));
 const AccessPanel = lazyManager("AccessPanel");
 const ActivityStandardsEditor = lazyManager("ActivityStandardsEditor");
@@ -3964,7 +3972,10 @@ function QueueBoard({ storeId, kind }) {
 /* Nobody is standing in front of a TV to click "try again", so a chunk that 404s
    because a deploy retired it has to heal itself. One reload picks up whatever
    build is live now; the sessionStorage flag stops a second reload from looping
-   if the error is not a stale chunk. */
+   if the error is not a stale chunk. managerChunk() clears the flag once a chunk
+   actually loads, so the guard covers one reload rather than the tab's whole
+   life: without that, a kiosk that heals from one deploy would never heal from
+   the next. */
 class BoardBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
