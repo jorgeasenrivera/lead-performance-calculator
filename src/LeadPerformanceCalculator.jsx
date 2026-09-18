@@ -10023,7 +10023,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       )}
       <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
       <div className="mc-head">
-        <button type="button" className="mc-calw" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
+        <button type="button" className="mc-calw mc-card" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
           <div className="mc-calhead"><PixIcon glyph="calendar" size={14} /><span>{MC_MONTHS[mo - 1]}</span></div>
           <div className="mc-cal">
             {cal.map((c, i) => c === null
@@ -15917,7 +15917,17 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-cal s.today{ outline:1.5px solid rgba(242,246,242,.85); outline-offset:1.5px; }
 .mc-cal s.off{ background:rgba(232,238,242,.05); }
 .mc-cal s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.3); }
-.mc-calw{ border:0; background:none; padding:0; text-align:left; cursor:pointer; flex:0 0 auto; }
+/* The month is on a card like everything else on the corner. It used to sit
+   bare on the ground, which was fine when the ground was flat and is not now:
+   a grid of small dots read against the backdrop's three fields of them, and
+   Jorge's words on 18 September are that the dots in the background interfere.
+   A card is the surface the rest of the corner already uses, so this is the
+   corner's own answer rather than a new one invented for the problem.
+
+   It carries .mc-card rather than copying it, which is what gives it the light
+   corner's version too. Everything below is only what a button needs resetting
+   for; the look comes from the card. */
+.mc-calw{ text-align:left; cursor:pointer; flex:0 0 auto; }
 .mc-side{ min-width:0; }
 .mc-pacew{ position:relative; flex:1; display:flex; }
 .mc-pace .tr{ position:relative; }
