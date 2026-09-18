@@ -64,18 +64,29 @@ struct PixGlyph: View {
   let name: String
   var size: CGFloat = 14
   var color: Color = .white
+  @Environment(\.displayScale) private var displayScale
   var body: some View {
     let rows = PIX[name] ?? PIX["arrow"]!
-    /* 7 by 7 now, the app's grid; dots 0.48 of a cell, as the site draws them */
+    /* 7 by 7, the app's grid, with the dots touching as the site draws them
+       (its radius is 0.48 of a cell).
+
+       Snapped to the screen's pixels. A cell used to be size / 7 in points,
+       which at 12 points on a 3x screen is 5.14 pixels with a 4.9 pixel dot,
+       so some dots rasterised at 5 pixels and some at 4: Jorge, 18 September,
+       certain dots bigger than others. Now a cell is a whole number of
+       pixels, every dot is that whole number, and the grid sits centred in
+       the frame it was given, a fraction of a point smaller than asked rather
+       than a fraction uneven. */
     let n = rows.count
-    let dot = size / Double(n) * 0.96
-    let gap = (size - dot * Double(n)) / Double(n - 1)
-    VStack(spacing: gap) {
+    let scale: Double = displayScale > 0 ? Double(displayScale) : 3.0
+    let cellPx: Double = max(2.0, floor(Double(size) * scale / Double(n)))
+    let cell: CGFloat = CGFloat(cellPx / scale)
+    VStack(spacing: 0) {
       ForEach(0..<n, id: \.self) { r in
-        HStack(spacing: gap) {
+        HStack(spacing: 0) {
           ForEach(0..<n, id: \.self) { c in
             Circle().fill(rows[r][rows[r].index(rows[r].startIndex, offsetBy: c)] == "1" ? color : Color.clear)
-              .frame(width: dot, height: dot)
+              .frame(width: cell, height: cell)
           }
         }
       }
