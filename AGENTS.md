@@ -71,7 +71,9 @@ npm run feel    # the phone's bars, in a real browser (README says how)
 
 The feel harness needs the mock and a preview server up. `npm test` and
 `npm run build` are not optional, ever. `npm run feel` is required for anything
-that touches a salesperson screen, the rooms, or motion.
+that touches a salesperson screen, the rooms, or motion. In CI it runs twice,
+in Chromium and in WebKit (`FEEL_BROWSER=webkit`), because WebKit is what the
+app's WebView is and Chromium at phone width is not the phone.
 
 Both run again in CI on every push and every pull request. Do not merge red. If
 a check fails for a reason you believe is not yours, say so in the pull request
@@ -87,6 +89,29 @@ If your work would change what a screen looks like, stop and produce the
 proposal first. Copy changes, layout, colour, motion, a new control, a removed
 control: all of it. Refactors that leave the pixels identical do not need it, and
 you should say plainly in the pull request that the pixels are identical.
+
+**Two surfaces have a state sheet, and the sheet wins.** `docs/sheets/` holds
+one for the Live Activity card and one for the rooms' transitions: every state,
+what it carries, what it costs, what moves and what holds. A change to either
+surface is checked against its sheet, not against the last screenshot, and the
+sheet is updated in the same pull request. Jorge decides the sheet; a fix that
+needs the sheet to change is a proposal first.
+
+**A visual change on the phone is not merged until it has been on a phone.**
+Web and native both. The pull request goes up, the preview or the TestFlight
+build lands, Jorge has five minutes with it, and then it merges. Merge first
+and screenshot after is what produced nine builds and three rounds of the same
+card on 18 September. Nothing here is urgent enough to skip the five minutes;
+a room that is down is fixed on `main` directly and is the one exception.
+
+## 5a. Findings from the phone are batched
+
+Jorge's screenshots from the lot come in through the day. They are collected
+on the board as one row, fixed in one pass, built once, and tried once, on a
+phone, before the pass merges. Not one pull request per screenshot: each of
+those disturbs its neighbour, and each build lags the fix, so the next
+screenshot is often of a build that predates the last fix and reads as churn.
+The exception is the same as above: a room that is down.
 
 ## 6. House rules for anything a person reads
 

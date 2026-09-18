@@ -137,6 +137,13 @@ npm run feel
 the processor four times over, which is roughly a three year old phone on a hot
 afternoon. `FEEL_DEBUG=1` narrates.
 
+`FEEL_BROWSER=webkit` runs it in Playwright's WebKit instead of Chromium. WebKit
+is what the app's WebView is, and Chromium at phone width is not the phone:
+the glitches that reach Jorge from the lot are the kind only WebKit shows. CI
+runs both; the WebKit run reports without blocking until it has been green on
+three merges, then it blocks like the other. This session's container has no
+WebKit, so here it is the Chromium run and CI is the WebKit one.
+
 Two things the harness has taught, both the hard way, both now written into it:
 
 - **Scope every room selector.** Both rooms stay mounted and the hidden one comes

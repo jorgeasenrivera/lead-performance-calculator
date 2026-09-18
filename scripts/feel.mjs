@@ -131,6 +131,11 @@ async function launch() {
     if (at) { const entry = fs.existsSync(path.join(at, "index.mjs")) ? path.join(at, "index.mjs") : at; pw = await import(pathToFileURL(entry).href); }
     else pw = await import("playwright");
   } catch (e) { console.error("feel: playwright is not installed. npm i -D playwright && npx playwright install chromium, or set FEEL_PLAYWRIGHT to its package directory"); process.exit(2); }
+  /* WebKit when asked (FEEL_BROWSER=webkit), because WebKit is what the app's
+     WebView is and Chromium at phone width is not the phone: the 18 September
+     glitches that reached Jorge were the kind only a phone shows. CI runs both.
+     WebKit has no executable fallback; Playwright's own is the only one. */
+  if (String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit") return pw.webkit.launch();
   const tries = [process.env.FEEL_CHROME, undefined];
   try { const root = process.env.PLAYWRIGHT_BROWSERS_PATH; if (root) for (const d of fs.readdirSync(root)) if (/^chromium-\d+$/.test(d)) tries.push(path.join(root, d, "chrome-linux", "chrome")); } catch (e) {}
   let last = null;
@@ -166,7 +171,7 @@ async function run(b) {
   const rows = [];
   const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " ms  bar " + r.bar : ""}`;
   const row = (name, value, bar, ok = value <= bar) => { const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
-  console.log(`feel · ${LAG} ms on every data request · ${URL_APP}`);
+  console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
   const signIn = async () => {
     await p.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app").catch(() => {});
