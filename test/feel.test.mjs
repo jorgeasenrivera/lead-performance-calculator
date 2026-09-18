@@ -870,3 +870,16 @@ test("the corner's closing sheet prints points, not the stored fraction", () => 
   assert.ok(/\.mc-rail\{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:#0E1812;/.test(core),
     "and the rail on Home sits on a solid dark ground, so the light's dots are not the backdrop's dots");
 });
+
+test("the rail on Home runs in from off screen, and the month card keeps its dates only", () => {
+  /* Jorge, 18 September, with screenshots: the rail's left end sat on the
+     screen's edge, so the light's dots started at the edge rather than
+     arriving from beyond it; and the line under the chart said in words what
+     the pace line, the goal ring and the pace pill already draw. */
+  assert.ok(/\.mc-railw\{ position:relative; display:block; width:auto; margin:-2px 30px 0 -46px;/.test(core),
+    "the rail starts 28px past the page's edge, so the dots are off screen when they start");
+  assert.ok(/overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;/.test(core),
+    "and the page clips it there rather than growing a sideways scroll, which overflow-y:auto alone would have given it");
+  assert.ok(!/GOAL \$\{goal\}/.test(core) && !/\.mc-tl \.mid\{/.test(core),
+    "the goal caption and its colours are gone; the two dates stay");
+});

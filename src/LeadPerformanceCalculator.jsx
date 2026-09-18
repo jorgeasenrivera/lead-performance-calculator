@@ -10232,7 +10232,9 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               </svg>
               <div className="mc-tl" ref={tlRef}>
                 <span>{MC_MONTHS[mo - 1]} 1</span>
-                <span className="mid">{goal != null ? `GOAL ${goal}${toGo > 0 ? ` · ${toGo} TO GO` : " · MADE"}${paceWord ? ` · ${paceWord}` : ""}` : pace != null ? `PACE ${pace}` : ""}</span>
+                {/* The middle used to say "GOAL 40 · 20 TO GO · 4 BEHIND". The
+                    pace line, the goal ring and the pace pill draw all three,
+                    and Jorge had the words taken out on 18 September. */}
                 <span>{MC_MONTHS[mo - 1]} {daysInMonth}</span>
               </div>
             </div>
@@ -15598,7 +15600,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
   font-family:var(--sffont); color:var(--sfink); letter-spacing:-.005em; padding:0;
   background:radial-gradient(1000px 680px at 15% -10%, rgba(11,197,197,.05), transparent 60%), #06090F;
   position:fixed; inset:0; width:100%; height:var(--dvh); min-height:var(--dvh); border-radius:0; z-index:100;
-  overflow-y:auto; overscroll-behavior:contain;
+  overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;
   scrollbar-width:none; -ms-overflow-style:none;
 }
 .q-page.sf::-webkit-scrollbar{ width:0; height:0; }
@@ -16397,7 +16399,10 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-chip2{ display:inline-flex; align-items:center; gap:6px; align-self:flex-start; padding:5px 9px; border-radius:9px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); font-family:var(--sfmono); font-size:10.5px; font-weight:700; letter-spacing:.12em; color:rgba(232,238,242,.75); }
 .mc-chip2 .pix{ color:#E4C98D; }
 /* the rail */
-.mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -18px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
+/* The rail starts past the screen's left edge, not on it, so the light's dots
+   arrive from beyond the screen the way the floor's track has them: Jorge, 18
+   September. The page clips it at the edge (overflow-x on .q-page.sf). */
+.mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -46px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
 /* A dark, solid ground under the rail. It was a seven per cent white over the
    dotted backdrop, and the light's dots running in from the edge read as part
    of the ground's own field: Jorge, 18 September. Opaque, so nothing shows
@@ -16485,9 +16490,6 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
   font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); white-space:nowrap; }
 .mc-tl > span{ white-space:nowrap; }
 .mc-tl[data-tl-wrap] > span{ white-space:normal; overflow-wrap:anywhere; }
-.mc-tl .mid{ color:#E4C98D; }
-.mc-behind .mc-tl .mid{ color:#F08A80; }
-.mc-ahead .mc-tl .mid{ color:#8FD8AF; }
 .mc-hero .mc-legend{ margin-top:20px; }
 .mc-legend s.pc{ background:transparent; border-top:1.5px dashed rgba(255,255,255,.6); height:0; border-radius:0; vertical-align:2px; }
 .mc-tx .bar i{ transform-origin:left; animation:mcGrow 1.1s cubic-bezier(.2,.8,.3,1) both .3s; }
