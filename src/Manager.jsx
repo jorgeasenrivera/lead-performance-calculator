@@ -31,7 +31,7 @@ import { stationPlanOf, claimStation, releaseStation, coverLineOf,
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
-import { roomListOf, openRoom, roomsOf } from "../api/_rooms.mjs";
+import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT } from "../api/_rooms.mjs";
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
@@ -8299,6 +8299,14 @@ function PhoneRoomCard({ config, storeId, onChange }) {
   const setRoom = (k, on) => save((s) => { s.rooms = { ...roomsOf(config, storeId), [k]: on }; },
     { action: on ? "Turned a room on for the floor" : "Turned a room off for the floor",
       detail: `${store.name}: ${k === "line" ? "Phone Line" : "Live Floor"}` });
+  /* When a room opens on its own, a time per weekday; blank is the desk
+     opening it, as it always did. Jorge, 18 September: the floors open at
+     different times on different days, so it is a schedule, not one time. */
+  const hours = hoursOf(config, storeId);
+  const setHour = (k, d, v) => save((s) => {
+    const cur = hoursOf(config, storeId);
+    s.hours = { ...cur, [k]: { ...cur[k], [d]: v || null } };
+  }, { action: "Set when a room opens", detail: `${store.name}: ${k === "line" ? "Phone Line" : "Live Floor"}, ${DAY_SHORT[d]} ${v || "by the desk"}` });
   /* What "covered" means here (five-second pass, item 4). The day's line on
      the desk paints an hour green at this many desks; a BDC that runs three
      of six is covered, a room that needs five is not. */
@@ -8349,6 +8357,20 @@ function PhoneRoomCard({ config, storeId, onChange }) {
             and offers a way out, but it is worth knowing that is what it does.
           </p>
         )}
+        {["floor", "line"].filter((k) => rooms[k]).map((k) => (
+          <div key={"hours-" + k} className="prc-hours">
+            <div className="prc-cap">{k === "line" ? "Phone Line" : "Live Floor"} opens on its own at</div>
+            <div className="prc-hours-row">
+              {DAY_KEYS.map((d) => (
+                <label key={d}>
+                  <span>{DAY_SHORT[d]}</span>
+                  <input type="time" value={hours[k][d] || ""} onChange={(e) => setHour(k, d, e.target.value)} />
+                </label>
+              ))}
+            </div>
+            <p className="hint">Blank means the desk opens it, as before. Store time.</p>
+          </div>
+        ))}
       </div>
 
       <div className="prc-cap prc-cap2">A covered hour</div>
@@ -25876,6 +25898,11 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
 .prc-toggle input{ margin-top:2px; }
 .prc-tt b{ display:block; font-family:var(--mffont); font-size:14px; font-weight:600; color:var(--mfink); }
 .prc-tt em{ display:block; font-style:normal; font-size:12px; line-height:1.45; color:var(--mfink2); margin-top:2px; }
+.prc-hours{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+.prc-hours-row{ display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:6px; }
+.prc-hours-row label{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+.prc-hours-row span{ font-family:var(--mfmono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--mfink2); }
+.prc-hours-row input{ font:inherit; font-size:12px; min-width:0; width:100%; padding:5px 4px; border:1px solid var(--mfline); border-radius:8px; background:#fff; color:var(--mfink); }
 .prc-warn{ margin:2px 0 0; font-size:12px; line-height:1.5; color:#8A5300;
   background:color-mix(in srgb,#C77800 9%, #fff); border-radius:11px; padding:9px 12px; }
 .prc-modes{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 4px; }

@@ -24,6 +24,7 @@ import {
 import {
   storeKey, actKey, floorStatsKey, boardKey, reportFileKey, restoreKey,
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
+  CONFIG_KEY, TEST_ID, shortLabel,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { stampHours } from "../api/_hours.mjs";
@@ -34,7 +35,7 @@ import { stationPlanOf, claimStation, releaseStation,
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
-import { roomListOf, openRoom, roomsOf } from "../api/_rooms.mjs";
+import { roomListOf, openRoom, roomsOf, openAtFor, localClock, openedBy, clockLabel } from "../api/_rooms.mjs";
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -124,7 +125,6 @@ const WrongReportStop = lazyManager("WrongReportStop");
 
 
 
-const CONFIG_KEY = "lpc:config:v2";
 /* ---- what the sign-up screen may know before anybody is signed in ----
    The config row is readable only with a session, so a person creating an
    account used to be shown the three example stores the app ships with, not
@@ -6484,7 +6484,6 @@ const checklistKey = (store, date, id) => `lpcq:list:${store}:${date}:${id}`;
    is left out of every count the floor is judged on. It is deliberately visible in
    the manager list rather than hidden: an invisible fake person in a live queue is
    how somebody ends up wondering why the numbers do not add up. */
-const TEST_ID = "__lpc_test__";
 
 const isTestId = (id) => id === TEST_ID;
 
@@ -6549,10 +6548,6 @@ const FLOOR_VARIANT = {
   empty: "Nobody's on the floor yet. Post the code, or add someone below.",
 };
 
-const shortLabel = (name) => {
-  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
-  return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || "");
-};
 const qNormName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const qFirstToken = (s) => qNormName(s).split(" ")[0] || "";
 
@@ -8716,6 +8711,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const mutateRow = useCallback((fn) => mutateQueueRow(store, date, fn, variant.kind), [store, date, variant.kind]);
   const commit = useCommit(setRow, mutateRow, refetch, writes);
   const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), refetch);
+  const opensAt = useScheduledOpen({ cfg, store, room: variant.kind === "line" ? "line" : "online", row, refetch });
   /* Looked at: every five seconds, or thirty with the socket open. Not looked
      at (the other room is up): thirty, and a fresh read the moment it is. */
   useEffect(() => { refetch(); const t = setInterval(refetch, live || !active ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live, active]);
@@ -8971,7 +8967,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="sf-live mcf sf-off mcf-home">
         <div className="mcf-top">
-          <div className="mcf-cap">{open ? (onCount ? `${onCount} ON THE LINE` : "NOBODY ON YET") : "LINE NOT OPEN"}</div>
+          <div className="mcf-cap">{open ? (onCount ? `${onCount} ON THE LINE` : "NOBODY ON YET") : (opensAt ? `OPENS AT ${clockLabel(opensAt)}` : "LINE NOT OPEN")}</div>
           {roomOn ? <SfDeskRow seats={seats} meId={meId} /> : open ? <McTrack line={line} meId={null} roster={(row && row.roster) || []} /> : null}
           <div className="mcf-title">{open ? (who ? `Morning, ${who}` : "Morning") : "The line isn't open yet"}</div>
           <div className="mcf-sub">{open
@@ -9265,6 +9261,31 @@ const stnFirst = (nm) => String(nm || "").split(" ")[0];
 
 const FLOOR_TABLE = "floor_public";
 const floorRowId = (store, date) => `${store}:${date}`;
+/* A room that opens itself. With a time set for today on the store (the
+   manager's rooms setup), a room whose day has no row yet asks the server to
+   make one once the store's clock has reached the time, and reads again. Not
+   before, and not at all when no time is set: then the desk opens it, as it
+   always has. Every half minute while it waits, so a phone opened at 8:58
+   sees the floor open at 9:00 without being touched. */
+function useScheduledOpen({ cfg, store, room, row, refetch }) {
+  const at = cfg ? openAtFor(cfg, store, room, today()) : null;
+  const waiting = row === null && !!at;
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, [waiting]);
+  useEffect(() => {
+    if (!waiting || !openedBy(at, localClock(new Date(), STORE_TZ).hm)) return undefined;
+    let dead = false;
+    apiCall("/api/open-room", { method: "POST", body: { store, room } })
+      .then((r) => { if (!dead && r && r.open) refetch(true); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [waiting, at, tick]); // eslint-disable-line
+  return at;
+}
 
 
 
@@ -10600,6 +10621,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const mutateRow = useCallback((fn) => mutateFloorRow(store, date, fn), [store, date]);
   const commit = useCommit(setRow, mutateRow, refetch, writes);
   const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), refetch);
+  const opensAt = useScheduledOpen({ cfg, store, room: "floor", row, refetch });
   /* Looked at: every five seconds, or thirty with the socket open. Not looked
      at (the other room is up): thirty, and a fresh read the moment it is. */
   useEffect(() => { refetch(); const t = setInterval(refetch, live || !active ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live, active]);
@@ -11251,12 +11273,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     content = (
       <div className="sf-live mcf sf-off mcf-home">
         <div className="mcf-top">
-          <div className="mcf-cap">{open ? (onCount ? `${onCount} ON THE FLOOR` : "NOBODY ON YET") : "FLOOR NOT OPEN"}</div>
+          <div className="mcf-cap">{open ? (onCount ? `${onCount} ON THE FLOOR` : "NOBODY ON YET") : (opensAt ? `OPENS AT ${clockLabel(opensAt)}` : "FLOOR NOT OPEN")}</div>
           {open && <McTrack line={line} meId={null} roster={(row && row.roster) || []} />}
           <div className="mcf-title">{open ? (who ? `Morning, ${who}` : "Morning") : "The floor isn't open yet"}</div>
           <div className="mcf-sub">{open
             ? (onCount ? "Get on and take your place in the line." : "You would be first.")
-            : "The desk opens Live Floor to start the day. Your corner is ready meanwhile."}</div>
+            : (opensAt ? `Live Floor opens on its own at ${clockLabel(opensAt)}. Your corner is ready meanwhile.`
+              : "The desk opens Live Floor to start the day. Your corner is ready meanwhile.")}</div>
           {doorNote && !doorNote.allow && (
             <div className="sf-door sf-door-no">
               <b>Not on the lot yet</b>
