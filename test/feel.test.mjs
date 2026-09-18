@@ -905,3 +905,28 @@ test("the phone is asked for a fix once, by the shell, never by the WebView at t
     "and asks once, at first open, for always");
   assert.ok(/useState\(\{ loc: true, platform: Platform\.OS/.test(app), "and says so in the handoff, so an older shell is read the old way");
 });
+
+test("a room opens itself at the store's time, and says the time while it waits", () => {
+  /* Jorge, 18 September: the line should open at a set time, on a schedule,
+     rather than a manager opening it, because the floors open at different
+     times on different days. The day's row is what "open" means; the phone
+     asks the server to make it once the store's clock reaches the time. */
+  assert.ok(/function useScheduledOpen\(\{ cfg, store, room, row, refetch \}\) \{/.test(core),
+    "one hook, shared by the two rooms");
+  assert.ok(/apiCall\("\/api\/open-room", \{ method: "POST", body: \{ store, room \} \}\)/.test(core)
+    && /if \(!waiting \|\| !openedBy\(at, localClock\(new Date\(\), STORE_TZ\)\.hm\)\) return undefined;/.test(core),
+    "which asks only while the day has no row and only once the store's clock has reached the time");
+  assert.ok(/useScheduledOpen\(\{ cfg, store, room: "floor", row, refetch \}\)/.test(core)
+    && /useScheduledOpen\(\{ cfg, store, room: variant\.kind === "line" \? "line" : "online", row, refetch \}\)/.test(core),
+    "both rooms use it");
+  assert.ok(/\(opensAt \? `OPENS AT \$\{clockLabel\(opensAt\)\}` : "FLOOR NOT OPEN"\)/.test(core)
+    && /\(opensAt \? `OPENS AT \$\{clockLabel\(opensAt\)\}` : "LINE NOT OPEN"\)/.test(core),
+    "and both say the time while they wait, or the old words when the desk opens it");
+  assert.ok(/<input type="time" value=\{hours\[k\]\[d\] \|\| ""\} onChange=\{\(e\) => setHour\(k, d, e\.target\.value\)\} \/>/.test(mgr),
+    "the wall sets a time per weekday, blank for the desk");
+  const api = fs.readFileSync(new URL("../api/open-room.mjs", import.meta.url), "utf8");
+  assert.ok(/if \(!openedBy\(at, clock\.hm\)\) return res\.status\(200\)\.json\(\{ open: false, at, now: clock\.hm \}\);/.test(api)
+    && /if \(had\) return res\.status\(200\)\.json\(\{ open: true, at, made: false \}\);/.test(api)
+    && /String\(error\.code\) !== "23505"/.test(api),
+    "the server makes nothing before the time, and never a second row");
+});

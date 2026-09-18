@@ -124,3 +124,14 @@ export function slimTo(fields, dayRows) {
   return out;
 }
 export const slimFloorStats = (dayRows) => slimTo(FLOOR_STAT_FIELDS, dayRows);
+
+/* Three names the phone, the wall and the server all use, kept in one place
+   so the guard that watches for the same name defined twice stays quiet for
+   the right reason: the setup document's key, the test person the wall
+   publishes on every day row, and the short form of a name on a pip. */
+export const CONFIG_KEY = "lpc:config:v2";
+export const TEST_ID = "__lpc_test__";
+export const shortLabel = (name) => {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || "");
+};
