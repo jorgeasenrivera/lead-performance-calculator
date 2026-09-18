@@ -963,3 +963,17 @@ test("the tab slide ends on its own end, and each tab keeps its own scroll", () 
   assert.ok(/const tabScroll = useRef\(\{ corner: 0, floor: 0 \}\);/.test(core) && /el\.scrollTop = tabScroll\.current\[tab\] \|\| 0;/.test(core),
     "and the floor room puts each tab's scroll back before its first paint");
 });
+
+test("the first batch under the sheets: D4, R2, and a press WebKit can run", () => {
+  /* Jorge's decisions of 18 September on the two state sheets. */
+  const swift = fs.readFileSync(new URL("../native/targets/queue/QueueActivity.swift", import.meta.url), "utf8");
+  assert.ok(/let cord: Bool = !strip && !offer && !\(\(p\.line \?\? \[\]\)\.isEmpty\) && p\.state == "cord"/.test(swift),
+    "D4: a desk free draws the desk row only; the cord is drawn on the cord state alone");
+  assert.ok(/scrolls\.current\[room === "line" \? "line" : "floor"\] = el \? el\.scrollTop : 0;/.test(core) && !/= window\.scrollY;/.test(core)
+    && /if \(el\) el\.scrollTop = scrolls\.current\[room === "line" \? "line" : "floor"\] \|\| 0;/.test(core),
+    "R2: each room's scroll is read from its own page and put back when the room is shown");
+  assert.strictEqual((feel.match(/newCDPSession/g) || []).length, 1,
+    "the harness reaches Chromium's debugging channel only for the optional CPU throttle, never for the press");
+  assert.ok(/new PointerEvent\(type, \{ bubbles: true, cancelable: true, composed: true, pointerType: "touch"/.test(feel),
+    "the press is a pointer event with a finger's type, which both browsers run");
+});

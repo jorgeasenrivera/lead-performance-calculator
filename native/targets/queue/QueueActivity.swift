@@ -968,7 +968,10 @@ private struct PhoneLaneView: View {
     /* On the cord and hot (next on the line): the cord stays, small, and the
        caption goes, the same trade the floor lane makes with its rail. On an
        offer the desk row is the picture and the cord is not drawn. */
-    let cord: Bool = !strip && !offer && !((p.line ?? []).isEmpty) && (p.state == "cord" || p.state == "free")
+    /* D4, decided 18 September: a desk free draws the desk row only. The
+       state used to satisfy the cord's rule and the desk row's at once and
+       drew both, the double C24 found and shrank rather than removed. */
+    let cord: Bool = !strip && !offer && !((p.line ?? []).isEmpty) && p.state == "cord"
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {

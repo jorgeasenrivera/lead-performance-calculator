@@ -7645,15 +7645,24 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     anim.onfinish = done; anim.oncancel = done;
     flight.current = anim;
   }, [cross && cross.n]);   // eslint-disable-line
+  /* Each room's page is its own scroll box (position fixed, overflow auto),
+     so this used to read window.scrollY, which is always zero, and a room
+     hidden with the hidden attribute loses its scroll besides. R2, decided 18
+     September: the room's own page is read before the cross and put back
+     the moment the room is shown again, before its first paint. */
+  const roomPage = (r) => { try { return document.querySelector(`.ar-room[data-room="${r === "line" ? "line" : "floor"}"] .q-page.sf`); } catch (e) { return null; } };
   const pick = (r, toTab, dx) => {
     if (r !== room) {
-      try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
-      const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
-      requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
+      try { const el = roomPage(room); scrolls.current[room === "line" ? "line" : "floor"] = el ? el.scrollTop : 0; } catch (e) {}
       crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor", dx);
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
+  useLayoutEffect(() => {
+    if (!room) return;
+    const el = roomPage(room);
+    if (el) el.scrollTop = scrolls.current[room === "line" ? "line" : "floor"] || 0;
+  }, [room]);
   useLiveStanding({ config, store, date, account, room });
 
   /* Both switched off. A real state — somebody has done it deliberately — and
