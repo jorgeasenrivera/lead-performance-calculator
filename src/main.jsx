@@ -50,6 +50,9 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
     window.addEventListener(ev, () => { touched = true; }, { once: true, passive: true, capture: true });
   }
   navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((reg) => {
+    /* Some webviews resolve register() with no registration at all. Nothing
+       below has anything to watch, then. */
+    if (!reg) return;
     const letIn = () => { if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING"); };
     /* ASK, rather than wait to be told, and this is the other half of the bug.
        The browser begins its update check inside register(), and on a phone
