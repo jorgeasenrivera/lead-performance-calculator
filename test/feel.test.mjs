@@ -257,6 +257,12 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
      photographed the two "isn't open yet" screens printed over one another. It
      checks the real thing now. */
   assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades");
+  /* And nothing crosses the rooms either. A band of white light used to ride
+     the arriving sheet on every switch, which Jorge read as a screen wipe on
+     18 September: the backdrop's three dot fields and three lights already say
+     the rooms moved, and saying it twice made the weaker answer the loud one. */
+  assert.ok(!/arSheen/.test(core) && !/\.ar-room\.ar-in > \.q-page\.sf::after/.test(core),
+    "no light crosses the arriving room, because the ground behind it is what shows the movement");
   /* Making both sheets opaque was the first answer and it was too expensive:
      a tap put a flat slab over the backdrop for 440 ms and then snapped to the
      real thing, which is what Jorge photographed on 18 September. The one
