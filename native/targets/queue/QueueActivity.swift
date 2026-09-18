@@ -41,6 +41,10 @@ private let blue1 = Color(red: 0x55 / 255, green: 0x66 / 255, blue: 0xF0 / 255)
 private let blue2 = Color(red: 0x37 / 255, green: 0xB6 / 255, blue: 0xF0 / 255)
 
 // MARK: - PixIcon: the site's 7x7 glyphs, as dots
+/* Nothing on the activity glows. The lit handset carried a shadow, the big
+   glyphs never did, your pip glowed and the cord's pips carried one too, and
+   on the island it read as some icons glowing and some not: Jorge, 18
+   September. The colour and the size say lit; the shadows are gone. */
 
 private let PIX: [String: [String]] = [
   "check": ["0000000", "0000001", "0000011", "1000110", "1101100", "0111000", "0010000"],
@@ -314,8 +318,6 @@ private struct PipDot: View {
 
   var body: some View {
     let dim: Double = (pip.s == "w" || pip.me) ? 1.0 : 0.45
-    let glow: Color = pip.me ? lit.opacity(0.9) : Color.clear
-    let glowRadius: CGFloat = pip.me ? 6 : 0
     let inkColor: Color = pip.me ? inkDeep : Color.white
     ZStack {
       Circle().fill(fill)
@@ -326,7 +328,6 @@ private struct PipDot: View {
     }
     .frame(width: size, height: size)
     .opacity(dim)
-    .shadow(color: glow, radius: glowRadius)
   }
 }
 
@@ -867,12 +868,10 @@ private struct Cord: View {
               .foregroundStyle(you ? .white : Color(red: 0x1F/255, green: 0x2A/255, blue: 0x22/255))
           }
           .frame(width: size, height: size)
-          .shadow(color: you ? blue1.opacity(0.6) : sand.opacity(0.35), radius: you ? 7 : 5)
           .position(at)
         }
         /* the handset, at the end of the cord */
         PixGlyph(name: "phone", size: mini ? 20 : 28, color: lit ? led : Color(red: 157/255, green: 195/255, blue: 1).opacity(0.28))
-          .shadow(color: lit ? led.opacity(0.8) : .clear, radius: lit ? 8 : 0)
           .position(x: geo.size.width - (mini ? 10 : 14), y: geo.size.height / 2)
       }
     }
