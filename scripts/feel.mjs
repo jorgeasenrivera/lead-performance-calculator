@@ -184,8 +184,12 @@ async function run(b) {
   console.log(`  first sign-in of the day to the floor  ${first} ms  (the jump; by design)`);
   await p.waitForTimeout(1500); await p.evaluate(() => document.querySelector(".mc-flash-b")?.click()); await p.waitForTimeout(600);
 
-  /* tabs: the other room is already mounted */
-  let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Home to Floor tab", ms(t), BAR.tab);
+  /* tabs: the other room is already mounted. Home and the floor are two panes
+     of one page since C29, both built, so the tap is measured to the floor's
+     pane taking the frame rather than to its content appearing, which is
+     already there. */
+  const paneOn = (which) => p.waitForFunction((w) => !!document.querySelector(`.ar-room[data-room="floor"] .sf-pane-${w}.on`), which, { timeout: 30000 });
+  let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); row("Home to Floor tab", ms(t), BAR.tab);
   await roomSettled(p);
   await p.waitForTimeout(800);
   const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
@@ -193,6 +197,32 @@ async function run(b) {
   await p.waitForTimeout(700);
   t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
   await p.waitForTimeout(700);
+
+  /* the swipe: the pane is where the thumb is, within a frame. Touch events
+     built by hand rather than Playwright's touchscreen, which can only tap:
+     the gesture reads e.touches and e.changedTouches and nothing else, so a
+     plain Event carrying those two is a touch to it, in WebKit as well as in
+     Chromium, which do not agree on the Touch constructor. A thumb from the
+     floor toward Home, 120px, held for longer than a flick so the distance
+     is what decides, which at 28 per cent of 390 commits it. */
+  const touch = (type, x, y) => p.evaluate(([type, x, y]) => {
+    const el = document.elementFromPoint(x, y) || document.body;
+    const ev = new Event(type, { bubbles: true, cancelable: true });
+    const tp = { clientX: x, clientY: y, identifier: 1, target: el };
+    Object.defineProperty(ev, "touches", { value: type === "touchend" ? [] : [tp] });
+    Object.defineProperty(ev, "changedTouches", { value: [tp] });
+    el.dispatchEvent(ev);
+  }, [type, x, y]);
+  await touch("touchstart", 120, 420); await touch("touchmove", 140, 420); await touch("touchmove", 240, 420);
+  const under = await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const home = document.querySelector('.ar-room[data-room="floor"] .sf-pane-home');
+    const m = new DOMMatrixReadOnly(getComputedStyle(home).transform);
+    r({ x: m.m41, w: window.innerWidth });
+  }))));
+  row("swipe: Home under the thumb, px off", Math.round(Math.abs(under.x - (120 - under.w)) * 10) / 10, 1);
+  await p.waitForTimeout(400); await touch("touchend", 240, 420);
+  await paneOn("home"); await p.waitForTimeout(800);
+  await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(800);
   t = Date.now(); await p.locator('.ar-tab[aria-label*="Phone"]').click(); await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); row("Floor to Phone tab", ms(t), BAR.tab);
   await p.waitForTimeout(600);
   t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);

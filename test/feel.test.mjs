@@ -76,7 +76,7 @@ test("every control gives under the finger, and the tick is at touch-down", () =
 });
 
 test("the bar at the foot rises once the first room is there, and the boot is under the curtain", () => {
-  assert.ok(/className=\{"ar-bar" \+ \(ready \? " up" : ""\)\}/.test(core), "the bar waits for ready");
+  assert.ok(/className=\{"ar-bar" \+ \(ready \? " up" : ""\) \+ \(drag \? " ar-thumb" : ""\)\}/.test(core), "the bar waits for ready");
   assert.equal(core.split("onReady={onReady}").length - 1, 2, "both rooms report when their curtain lets go");
   assert.ok(/\.ar-bar\.up\{ transform:translateX\(-50%\); \}/.test(core) && /\.ar-bar\{[^}]*transition:transform var\(--t-settle\) var\(--spring\)/.test(core), "it rises on the settle token");
   assert.ok(/bootHeld \|\| \(phoneBoot && bootRooms\) \? <LoadingScreen \/>/.test(core), "a phone that lives in the rooms boots under the curtain");
@@ -244,34 +244,69 @@ test("the other room is built once the first has settled, not on a guess at how 
     "and the flat timer stays as a backstop, for a room that never reports ready at all");
 });
 
-/* Home and Live Floor are two tabs of one sheet, so a switch between them used
-   to move nothing at all: measured, one sample, both sheets at 0 and no
-   animation. Jorge, 18 September: the background is good but the front
-   elements are just snapping. The sheet cannot travel because there is only
-   one; its contents can. */
-test("Home and Live Floor travel, even sharing a sheet", () => {
-  assert.ok(/@keyframes arStageIn\{ from\{ transform:translate3d\(100%, 0, 0\); \} to\{ transform:translate3d\(0, 0, 0\); \} \}/.test(core) &&
-    /@keyframes arStageInL\{ from\{ transform:translate3d\(-100%, 0, 0\); \} to\{ transform:translate3d\(0, 0, 0\); \} \}/.test(core),
-    "the arriving contents come in from the side the bar moved");
-  assert.ok(/\.ar-stack\.t > \.ar-room > \.q-page\.sf > \.q-stage\{\n\s*animation:arStageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core),
-    "on the rooms' own clock and curve, so the pair reads as one row rather than two ideas");
-  assert.ok(/\.ar-stack\.t > \.ar-room > \.q-page\.sf\{ overflow:hidden; \}/.test(core),
-    "and the page is held still while they do, so a stage a screen wide cannot push the layout sideways");
-  /* Coming off the line to Home changes the tab as well, and there the rooms
-     are already travelling past each other. Two travels at once is worse than
-     either. */
-  assert.ok(/const chooseTab = \(next\) => \{\n\s*if \(next !== tab && room !== "line"\) \{/.test(core) &&
-    /onTab=\{chooseTab\} slid=\{!!tabSlide\}/.test(core),
-    "it stands down when the rooms themselves are crossing, and it is decided in the handler rather than an effect, because the corner is built in the render between");
-  /* The cards' own entrance fading in on top of the slide was two motions at
-     once: measured, the page 90 per cent off screen with its cards at half
-     opacity, and the cards still settling 500 ms after the page had stopped. */
-  assert.ok(/const \[arrived\] = useState\(!!still\);/.test(core) &&
-    /\(arrived \? " mc-still" : ""\)/.test(core) &&
+/* Home and Live Floor were two tabs of one sheet, so a swipe between them
+   moved nothing until the finger lifted and then the stage slid on the clock.
+   Jorge, 17 September: all three should be swipes. C29, decided 18 September:
+   the floor page lays the corner and the floor side by side as two panes and
+   the pane is what travels, under the thumb and then on the rooms' clock. */
+test("C29: Home and Live Floor are two panes, and the pane follows the thumb", () => {
+  /* S1, two panes on one track inside the floor page. Each is a screen wide
+     at a slot along the page, moved by its slot and by the thumb. */
+  assert.ok(/\.sf-pane\{ position:absolute; inset:0; overflow:hidden;\n\s*transform:translate3d\(calc\(var\(--sf-at, 0\) \* 100% \+ var\(--sf-drag, 0px\)\), 0, 0\);\n\s*transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\);/.test(core),
+    "a pane sits at its slot plus the thumb, and travels on the rooms' clock and curve");
+  assert.ok(/\.ar-stack\.ar-tabbing \.sf-pane\{ transition:none; \}/.test(core),
+    "and nothing eases while a finger is down, or the pane lags the thumb");
+  assert.ok(/style=\{\{ "--sf-at": 0 - at \}\} inert=\{at === 0 \? undefined : ""\}/.test(core) &&
+    /style=\{\{ "--sf-at": 1 - at \}\} inert=\{at === 1 \? undefined : ""\}/.test(core),
+    "Home is the left pane and the floor the right, and the one out of the frame is inert");
+  assert.ok(/<div className="sf-scroll"><div className="q-stage">\{corner\}<\/div><\/div>/.test(core) &&
+    /\.sf-pane > \.sf-scroll\{ height:100%; overflow-y:auto; overflow-x:hidden;/.test(core) &&
+    /\.q-page\.sf\.sf-panes\{ overflow:hidden; \}/.test(core),
+    "each pane is its own scroll box and the page no longer scrolls, so each keeps its own place without being told");
+  assert.ok(!/const tabScroll = useRef/.test(core) && !/arStageIn/.test(core) && !/tabSlide/.test(core),
+    "the per-tab scroll memory and the stage slide it replaced are gone with the shape that needed them");
+  /* The rooms' gesture drives it. A drag between two tabs of the floor is a
+     tab drag: the distance goes on a variable of its own, so a room drag
+     (which moves the whole floor page) does not move the panes as well. */
+  assert.ok(/setDrag\(\{ dx, to: s0\.to, room: roomOfTab\(s0\.to\), tab: !s0\.slide \}\);/.test(core) &&
+    /: drag && drag\.tab \? \{ "--sf-drag": drag\.dx \+ "px" \}/.test(core) &&
+    /\(drag \? \(drag\.tab \? " ar-tabbing" : " ar-dragging"\) : ""\)/.test(core),
+    "a tab drag is told apart from a room drag, and moves the panes and not the rooms");
+  assert.ok(/\(drag && !drag\.tab \? \(drag\.room === "line" \? " ar-nxt" : " ar-cur"\) : ""\)/.test(core) &&
+    /\(drag && !drag\.tab \? \(drag\.room === "floor" \? " ar-nxt" : " ar-cur"\) : ""\)/.test(core),
+    "and the rooms themselves are tiled only on a room drag");
+  /* S2: the corner is built once, and its cards slide in only when it is
+     born in the frame. Born out of sight, the travel is its arrival. */
+  assert.ok((core.match(/<MyCorner still=\{tab !== "corner"\}/g) || []).length === 2 &&
+    /const \[arrived\] = useState\(!!still\);/.test(core) &&
     /\.mc\.mc-still > \*:not\(\.mc-aurora\):not\(\.mc-me\)\{ animation:none; \}/.test(core),
-    "and a corner that arrived on the slide keeps its cards still, reading how it arrived once at birth so nothing restarts when the slide's class goes");
-  assert.ok(/\(tabSlide \? \(tabSlide\.dir > 0 \? " t t-r" : " t t-l"\) : ""\)/.test(core),
-    "and the direction is the bar's direction");
+    "the corner reads at birth whether it was born in the frame, and only then do its cards land on their own");
+  assert.ok(/\.ar-stack:not\(\.ar-tabbing\) \.sf-pane:not\(\.on\) \*\{ animation-play-state:paused; \}/.test(core),
+    "the pane out of sight holds its lights still, except while a thumb is pulling it in");
+  /* S3: the pill follows the thumb, a slot per screen, and settles with the sheet. */
+  assert.ok(/translateX\(\$\{\(tabs\.indexOf\(active\) \+ \(drag && drag\.dx \? Math\.max\(-1, Math\.min\(1, -drag\.dx \/ \(window\.innerWidth \|\| 1\)\)\) : 0\)\) \* 100\}%\)/.test(core) &&
+    /\.ar-bar\.ar-thumb \.ar-ind\{ transition:none; \}/.test(core),
+    "the pill is where the thumb is while a finger is down, and eases only once it lifts");
+  /* S4: you're up snaps the view to the floor and holds it there; before
+     sign-in there is one pane and nothing to pull. The floor page says which. */
+  assert.ok(/const holdWhy = up \? "up" : corner \? null : "one";/.test(core) &&
+    /useEffect\(\(\) => \{ if \(up && tab === "corner"\) setTab\("floor"\); \}, \[up, tab\]\);/.test(core) &&
+    /if \(!s0\.slide && holdRef\.current\) \{ g\.current = null; return; \}/.test(core) &&
+    /if \(next === "corner" && holdRef\.current === "up"\) return;/.test(core),
+    "the takeover pulls the view to the floor and refuses Home from the swipe and the bar until it is taken");
+  /* The reserve for the bar moves from the page to the pane's scroller, and
+     the floor's stage gives it up as before, keyed on the pane rather than the
+     page so the height does not change at the moment a switch commits. */
+  assert.ok(/\.lpc:has\(> \.ar-bar\) \.sf-pane > \.sf-scroll\{ padding-bottom:72px; \}/.test(core) &&
+    /\.lpc:has\(> \.ar-bar\) \.sf-pane\.mc-floor \.q-stage,\n\.lpc:has\(> \.ar-bar\) \.sf-pane\.mc-floor \.sf-live,/.test(core),
+    "the bar's reserve is under the pane's content, and the floor's stage is one height whichever pane is in the frame");
+  /* The harness measures it: the pane's offset against the thumb's, within a frame. */
+  assert.ok(/row\("swipe: Home under the thumb, px off", Math\.round\(Math\.abs\(under\.x - \(120 - under\.w\)\) \* 10\) \/ 10, 1\);/.test(feel) &&
+    /await touch\("touchstart", 120, 420\); await touch\("touchmove", 140, 420\); await touch\("touchmove", 240, 420\);/.test(feel),
+    "the feel harness pulls Home in by 120px and reads where the pane is, a pixel or better");
+  /* R2's scroll memory reads the pane in the frame, since the page no longer scrolls. */
+  assert.ok(/if \(r !== "line"\) return document\.querySelector\('\.ar-room\[data-room="floor"\] \.sf-pane\.on > \.sf-scroll'\);/.test(core),
+    "the floor's remembered scroll is the pane that is showing");
   /* Named tabSlide, not tabMove: Manager.jsx already has a tabMove() of its
      own, and the scope guard caught the collision. Two things with one name in
      one codebase is the shape that took the Line white in production. */
@@ -786,10 +821,10 @@ test("the swipe follows the thumb, and gives way to the three things that outran
   assert.ok(/if \(Math\.abs\(dx\) < Math\.abs\(dy\) \* RATIO\) \{ g\.current = null; return; \}/.test(core), "a vertical intent wins, because the page scrolls");
   assert.ok(/\.ar-stack\{ touch-action:pan-y; \}/.test(core), "and the browser is told the across is ours and the down is its own");
 
-  /* It follows the thumb only where there are two sheets. Home and Live Floor
-     are two tabs of ONE .q-page, so there is nothing behind the first to pull. */
-  assert.ok(/s0\.slide = roomOfTab\(to\) !== roomOfTab\(active\);/.test(core), "whether there is a second sheet to drag is decided when the gesture starts");
-  assert.ok(/if \(!s0\.slide\) return;/.test(core), "and two tabs of one sheet commit on release instead of dragging");
+  /* Whether the neighbour is another room or the other pane of the floor is
+     decided when the gesture starts; both follow the thumb since C29. */
+  assert.ok(/s0\.slide = roomOfTab\(to\) !== roomOfTab\(active\);/.test(core), "whether the drag tiles two rooms or two panes is decided when the gesture starts");
+  assert.ok(!/if \(!s0\.slide\) return;/.test(core), "and neither pair commits on release without having followed the thumb");
   assert.ok(/\.ar-stack\.ar-dragging > \.ar-room\.ar-cur > \.q-page\.sf\{ z-index:102;\n\s*transform:translate3d\(var\(--ar-drag, 0px\), 0, 0\); \}/.test(core),
     "the sheet being left moves with the finger");
   assert.ok(/\.ar-stack\.ar-dragging > \.ar-room > \.q-page\.sf\{ animation:none !important; transition:none;/.test(core),
@@ -849,10 +884,11 @@ test("the you're up takeover is the whole screen on every tab", () => {
      on Home it filled. The floor tab's stage gives up 72px to the bar and the
      takeover is sized to the stage. Measured at 393x852 before: 0 to 780 on
      Live Floor, 0 to 852 on Home, the title 36px higher on the floor. */
-  assert.ok(/\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.mc-floor \.sf-live:has\(> \.sf-uptake\),\n\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-line \.q-stage:has\(\.sf-uptake\),\n\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-line \.sf-live:has\(> \.sf-uptake\)\{ min-height:var\(--dvh\); \}/.test(core),
+  assert.ok(/\.lpc:has\(> \.ar-bar\) \.sf-pane\.mc-floor \.sf-live:has\(> \.sf-uptake\),\n\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-line \.q-stage:has\(\.sf-uptake\),\n\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-line \.sf-live:has\(> \.sf-uptake\)\{ min-height:var\(--dvh\); \}/.test(core),
     "with the takeover up, the floor's and the line's stage take the full height again");
-  assert.ok(/\.lpc:has\(> \.ar-bar\) \.q-page\.sf:has\(\.sf-uptake\)\{ padding-bottom:0; \}/.test(core),
-    "and the page's own reserve goes, so there is no band to scroll to under it");
+  assert.ok(/\.lpc:has\(> \.ar-bar\) \.q-page\.sf:has\(\.sf-uptake\)\{ padding-bottom:0; \}/.test(core) &&
+    /\.lpc:has\(> \.ar-bar\) \.sf-pane > \.sf-scroll:has\(\.sf-uptake\)\{ padding-bottom:0; \}/.test(core),
+    "and the page's own reserve goes, and the pane's, so there is no band to scroll to under it");
   assert.ok(/\.sf-uptake\{ position:absolute; inset:0;/.test(core),
     "the takeover stays absolute in its stage rather than fixed, because the rooms are transformed while they travel and a fixed box would jump between the stage and the screen mid-slide");
 });
@@ -951,18 +987,10 @@ test("the decisions of 18 September: the closing sheet and the floor's buttons",
     "B4: FlyBy and T.O. only with a customer");
 });
 
-test("the tab slide ends on its own end, and each tab keeps its own scroll", () => {
-  /* Jorge, 18 September, five screenshots. The corner sat mid-slide, then
-     snapped: the slide's class came off on a timer at the wipe plus 60 ms,
-     before a phone that started late had finished. And the floor arrived
-     scrolled to where Home had been, blank for a beat and then coming down
-     from the top, because the two tabs share one scroll box. */
-  assert.ok(/tabTimer\.current = setTimeout\(\(\) => setTabSlide\(null\), MOTION\.wipe \+ 900\);/.test(core)
-    && /onAnimationEnd=\{onStageEnd\}/.test(core) && /\/\^arStageIn\/\.test\(String\(e\.animationName \|\| ""\)\)/.test(core),
-    "the class comes off when the stage's animation ends; the timer is a long backstop");
-  assert.ok(/const tabScroll = useRef\(\{ corner: 0, floor: 0 \}\);/.test(core) && /el\.scrollTop = tabScroll\.current\[tab\] \|\| 0;/.test(core),
-    "and the floor room puts each tab's scroll back before its first paint");
-});
+/* #385 gave the tab slide an end of its own and each tab a scroll memory,
+   from Jorge's five screenshots of 18 September. C29 took both away with the
+   shape that needed them: there is no slide, the pane travels, and each pane
+   is its own scroll box. The guard for that is with the C29 test above. */
 
 test("the first batch under the sheets: D4, R2, and a press WebKit can run", () => {
   /* Jorge's decisions of 18 September on the two state sheets. */

@@ -7472,21 +7472,16 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     try { return localStorage.getItem(key) || null; } catch (e) { return null; }
   });
   const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
-  /* Home and Live Floor are two tabs of ONE sheet, so switching between them
-     changes what is inside the sheet and moves nothing: Jorge, 18 September,
-     the background is good but the front elements are just snapping. The rooms
-     travel because there are two of them to travel past each other. There are
-     not two here, and making two is C29, a bigger change than this.
-
-     What there is, is the sheet's contents, and those can travel. The arriving
-     content comes in from the side the bar moved, on the rooms' own clock and
-     curve, so the pair reads as part of the same row rather than as a screen
-     being rebuilt in place. The one being left does not slide out with it,
-     because there is only ever one of them: this is a step towards C29 and
-     honest about being one. */
-  const [tabSlide, setTabSlide] = useState(null);
-  const tabTimer = useRef(null);
-  useEffect(() => () => clearTimeout(tabTimer.current), []);
+  /* Home and Live Floor are two panes of the floor page since C29, side by
+     side, and the pane is what travels: under the thumb while a finger is
+     down, and on the rooms' clock from wherever the thumb left it. The floor
+     page says when that pair cannot travel: "one" while there is no corner
+     yet (before sign-in there is one pane and nothing to pull), "up" while
+     the takeover is on (Jorge's decision of 18 September, S4: the view snaps
+     to the floor and stays until it is taken). A ref, because the gesture
+     reads it mid-move and must not wait for a render. */
+  const holdRef = useRef(null);
+  const onHold = useCallback((h) => { holdRef.current = h; }, []);
   const room = openRoom(config, store, want);
   useEffect(() => { setReportContext({ store, person: account || null, screen: room }); }, [store, account, room]);
   /* Remembered for the next cold start: index.html paints the curtain's green
@@ -7589,34 +7584,12 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     crossTimer.current = setTimeout(() => setCross(null), MOTION.wipe + 60);
   };
   useEffect(() => () => clearTimeout(crossTimer.current), []);
-  /* Decided in the same handler as the tab, not in an effect after it, and
-     the difference is the render in between. The corner is built fresh on
-     every switch, and it needs to know AS IT IS BUILT whether it is arriving
-     on a slide, because that decides whether its own cards animate. An effect
-     runs after that render has already committed, one too late.
-
-     Only when the ROOM stayed put. Coming off the line to Home changes the tab
-     as well, and there the rooms are already travelling past each other; two
-     travels at once is worse than either. */
+  /* Home is refused while the takeover holds the floor, from the bar as well
+     as from a swipe: the floor page would snap straight back, and a pill
+     that goes and returns is worse than one that does not go. */
   const chooseTab = (next) => {
-    if (next !== tab && room !== "line") {
-      setTabSlide({ dir: next === "floor" ? 1 : -1, n: Date.now() });
-      clearTimeout(tabTimer.current);
-      /* A backstop only. The slide's class used to come off on this timer at
-         the wipe plus 60 ms, and a phone that started the animation late (the
-         corner is a heavy first frame) was still mid-slide when it did: the
-         stage sat offset, then snapped into place. Jorge, 18 September, with
-         the screenshot. The class comes off when the animation says it has
-         ended (onAnimationEnd on the stack, below); the timer is for a phone
-         that never starts it, reduced motion for one. */
-      tabTimer.current = setTimeout(() => setTabSlide(null), MOTION.wipe + 900);
-    }
+    if (next === "corner" && holdRef.current === "up") return;
     setTab(next);
-  };
-  const onStageEnd = (e) => {
-    if (!tabSlide || !e || !/^arStageIn/.test(String(e.animationName || ""))) return;
-    clearTimeout(tabTimer.current);
-    setTabSlide(null);
   };
   useLayoutEffect(() => {
     if (!cross || !cross.src) return;
@@ -7656,7 +7629,14 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      hidden with the hidden attribute loses its scroll besides. R2, decided 18
      September: the room's own page is read before the cross and put back
      the moment the room is shown again, before its first paint. */
-  const roomPage = (r) => { try { return document.querySelector(`.ar-room[data-room="${r === "line" ? "line" : "floor"}"] .q-page.sf`); } catch (e) { return null; } };
+  const roomPage = (r) => {
+    try {
+      /* The floor's scroll box is the pane that is showing, not the page,
+         since the page holds two panes side by side (C29). */
+      if (r !== "line") return document.querySelector('.ar-room[data-room="floor"] .sf-pane.on > .sf-scroll');
+      return document.querySelector('.ar-room[data-room="line"] .q-page.sf');
+    } catch (e) { return null; }
+  };
   const pick = (r, toTab, dx) => {
     if (r !== room) {
       try { const el = roomPage(room); scrolls.current[room === "line" ? "line" : "floor"] = el ? el.scrollTop : 0; } catch (e) {}
@@ -7720,13 +7700,12 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      A drag across the screen moves through the same bar at the foot, and the
      screen follows the thumb rather than waiting for it to let go.
 
-     It follows the thumb only where there is something to follow. The floor and
-     the line are two sheets, so one can be pulled off the other. Home and Live
-     Floor are two TABS OF ONE SHEET, the same `.q-page` with different classes
-     and different content, so there is no second sheet behind the first and
-     nothing to drag: that pair commits when the finger lifts. Making it uniform
-     means rendering the corner and the floor as two sheets, which is a bigger
-     change than this one and is worth doing on its own.
+     Every pair follows it. The floor and the line are two sheets, so one is
+     pulled off the other. Home and Live Floor are two panes of the floor
+     page (C29), so the page is told how far the thumb has gone and slides
+     its panes by that much; the same number the rooms read, on a variable of
+     its own so a room drag does not move the panes as well. The one pair that
+     cannot be pulled is Home while the floor page is holding it, see onHold.
 
      Three things the gesture has to give way to, in this order:
        the left edge, which iOS owns for going back;
@@ -7782,9 +7761,9 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       const to = neighbour(dx);
       if (!to) { g.current = null; return; }
       s0.live = true; s0.to = to; s0.slide = roomOfTab(to) !== roomOfTab(active);
+      if (!s0.slide && holdRef.current) { g.current = null; return; }   // one pane, or the takeover: nothing to pull
     }
-    if (!s0.slide) return;            // two tabs of one sheet: nothing behind to pull
-    setDrag({ dx, to: s0.to, room: roomOfTab(s0.to) });
+    setDrag({ dx, to: s0.to, room: roomOfTab(s0.to), tab: !s0.slide });
   };
   /* A cancel is not a release. The browser takes the pointer away when it
      decides the page is scrolling, and treating that as "the finger lifted
@@ -7808,14 +7787,9 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      index plus how far the thumb has gone. On a tap it travels there over the
      wipe.
 
-     Worth being straight about a limit this inherits. The swipe only follows
-     the thumb between the floor and the line, because Home and Live Floor are
-     two tabs of ONE sheet and there is no second sheet to pull; that pair
-     commits on lift. So on the common store, which is floor only, the backdrop
-     travels on the clock rather than under the thumb. Making that pair follow
-     the thumb means rendering the corner and the floor as two sheets, which
-     the gesture's own comment above already calls a bigger change worth doing
-     on its own. */
+     Every pair follows the thumb since C29, Home and Live Floor included,
+     so on the common store, which is floor only, the backdrop travels under
+     the thumb rather than on the clock. */
   const gndRef = useRef(null);
   const posRef = useRef(0);
   const animRef = useRef(0);
@@ -8219,8 +8193,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className={"ar-stack" + (cross ? " x" : "") + (drag ? " ar-dragging" : "")
-        + (tabSlide ? (tabSlide.dir > 0 ? " t t-r" : " t t-l") : "")} onAnimationEnd={onStageEnd}
+      <div className={"ar-stack" + (cross ? " x" : "") + (drag ? (drag.tab ? " ar-tabbing" : " ar-dragging") : "")}
         ref={stackRef}
         /* Every switch tiles, whether a thumb started it or a button did. A
            swipe begins where the thumb left off; a tap begins at nothing, a
@@ -8229,6 +8202,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           ? { "--ar-out0": (cross.dx || 0) + "px",
               "--ar-in0": "calc(" + (cross.dx || 0) + "px + " + (cross.dir > 0 ? 100 : -100) + "%)",
               "--ar-out1": (cross.dir > 0 ? -100 : 100) + "%" }
+          : drag && drag.tab ? { "--sf-drag": drag.dx + "px" }
           : drag ? { "--ar-drag": drag.dx + "px", "--ar-nxt": (drag.dx < 0 ? 100 : -100) + "%" } : null}>
       {/* Behind both rooms: one canvas, painted by hand rather than by React,
           because this moves on every frame of a drag and a re-render per frame
@@ -8240,7 +8214,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           backing pixel to the CSS pixel, and the dots at the screen's own. */}
       <canvas className="ar-gnd ar-gnd-d" ref={dotRef} aria-hidden="true" />
       <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")
-        + (drag ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
+        + (drag && !drag.tab ? (drag.room === "line" ? " ar-nxt" : " ar-cur") : "")} data-room="line"
         hidden={room !== "line" && !(cross && cross.from === "line") && !(drag && drag.room === "line")}
         inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
@@ -8248,17 +8222,19 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
             variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
       <div className={"ar-room" + (cross && cross.to === "floor" ? " ar-in" : cross && cross.from === "floor" ? " ar-out" : "")
-        + (drag ? (drag.room === "floor" ? " ar-nxt" : " ar-cur") : "")} data-room="floor"
+        + (drag && !drag.tab ? (drag.room === "floor" ? " ar-nxt" : " ar-cur") : "")} data-room="floor"
         hidden={room === "line" && !(cross && cross.from === "floor") && !(drag && drag.room === "floor")}
         inert={room === "line" ? "" : undefined}>
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
-            account={account} onSignOut={onSignOut} tab={tab} onTab={chooseTab} slid={!!tabSlide} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={chooseTab} onHold={onHold} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
       </div>
       {tabs.length > 1 && (
-        <div className={"ar-bar" + (ready ? " up" : "")} role="tablist" aria-label="Where to go">
-          <span className="ar-ind" style={{ transform: `translateX(${tabs.indexOf(active) * 100}%)`,
+        <div className={"ar-bar" + (ready ? " up" : "") + (drag ? " ar-thumb" : "")} role="tablist" aria-label="Where to go">
+          {/* The pill follows the thumb too, a slot per screen, and settles
+              where the sheet settles. Jorge's decision of 18 September, S3. */}
+          <span className="ar-ind" style={{ transform: `translateX(${(tabs.indexOf(active) + (drag && drag.dx ? Math.max(-1, Math.min(1, -drag.dx / (window.innerWidth || 1))) : 0)) * 100}%)`,
             width: `calc((100% - 8px) / ${tabs.length})` }} />
           {tabs.map((t) => (
             <button key={t} type="button" role="tab" aria-selected={active === t} aria-label={LABEL[t]}
@@ -9891,12 +9867,12 @@ const mcClock = (iso) => {
 /* The spine on the right edge: the three standards averaged into one fill,
    notched at each third, with the head carrying the temperature so a manager
    across the room reads the day from the color alone. */
-function McSpine({ rows }) {
+function McSpine({ rows, land = false }) {
   const fr = rows.map((r) => r.need > 0 ? Math.min(1, (r.got || 0) / r.need) : ((r.got || 0) > 0 ? 1 : 0));
   const pct = fr.length ? Math.round((fr.reduce((a2, b2) => a2 + b2, 0) / fr.length) * 100) : 0;
   const temp = pct >= 100 ? "made" : pct < 34 ? "cold" : "warm";
   return (
-    <div className={"mc-spine " + temp} aria-label={pct + " percent of the day"}>
+    <div className={"mc-spine " + temp + (land ? " mc-land" : "")} aria-label={pct + " percent of the day"}>
       <span className="rt">{temp === "made" ? "DAY MADE" : pct + "%"}</span>
       <span className="sp">
         <u style={{ bottom: "33%" }} /><u style={{ bottom: "66%" }} />
@@ -9983,7 +9959,7 @@ const openToOf = (store) => {
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
-                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false }) {
+                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false, host = null }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   /* Whether this corner arrived on a slide, read ONCE, at birth. The slide's
      class on the stack lasts 440 ms; the cards' own entrance runs 900 with its
@@ -10222,6 +10198,12 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   };
   const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0), ...closing.map((c) => stdOf(c.k).green));
 
+  const fixedBits = (
+    <>
+      <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
+      <McSpine rows={rows} land={!arrived} />
+    </>
+  );
   return (
     <div className={"mc" + (offDim ? " mc-off" : "") + (arrived ? " mc-still" : "")}>
       {offToday && offState !== "in" && (
@@ -10238,7 +10220,16 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           {offState === "no1" && !activityNow && <div className="mc-offb"><button type="button" className="yes" onClick={() => onOffAnswer(true)}>I&rsquo;m in after all</button></div>}
         </div>
       )}
-      <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
+      {/* The lights and the spine are fixed to the screen, and a fixed thing
+          inside a box the compositor is moving is laid against the screen
+          mid-travel and corrected after: on the phone, the rail ran to the
+          bottom edge while the corner slid in, then snapped back (Jorge's
+          recording of 18 September, frames 2.10 to 2.17). So when the corner
+          lives in a pane (C29) both are drawn into the pane itself, beside
+          the scroller rather than inside it, as absolute boxes: they still
+          hold still while the corner scrolls, and they travel with the pane
+          because they are part of it. */}
+      {host ? createPortal(fixedBits, host) : fixedBits}
       <div className="mc-head">
         <button type="button" className="mc-calw mc-card" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
           <div className="mc-calhead"><PixIcon glyph="calendar" size={14} /><span>{MC_MONTHS[mo - 1]}</span></div>
@@ -10303,7 +10294,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           padding, the spine from the screen. Same parent, same axis, one line
           down the right side. */}
       {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You and help">{initialsOf(meFull || meLabel || "")}</button>}
-      <McSpine rows={rows} />
 
       <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
         {paceState && <i className="mc-glow" aria-hidden="true" />}
@@ -10559,7 +10549,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    to type; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
 function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null, active = true,
-  tab: tabFrom = null, onTab = null, slid = false, onReady = null }) {
+  tab: tabFrom = null, onTab = null, onHold = null, onReady = null }) {
   const [row, setRow] = useState(undefined);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one
@@ -11287,20 +11277,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
      which is the thing the person is actually here to find out. */
   const pageRef = useRef(null);
   useKeyboardInset(pageRef);
-  /* The page is the scroll box and both tabs share it, so the floor used to
-     arrive scrolled to wherever Home had been left: a blank screen for a
-     beat, then the floor coming down from the top as the browser clamped
-     it. Jorge, 18 September, with the screenshot. Each tab keeps its own
-     place now, put back before the first paint of the tab. */
-  const tabScroll = useRef({ corner: 0, floor: 0 });
-  useLayoutEffect(() => {
-    const el = pageRef.current;
-    if (!el) return undefined;
-    el.scrollTop = tabScroll.current[tab] || 0;
-    const on = () => { tabScroll.current[tab] = el.scrollTop; };
-    el.addEventListener("scroll", on, { passive: true });
-    return () => el.removeEventListener("scroll", on);
-  }, [tab]);
+  /* The corner's lights and spine are drawn into the Home pane, see MyCorner.
+     A state rather than a ref, because the corner has to render again once
+     the pane exists to draw into it; declared up here because the corner is
+     built below, before the panes are. */
+  const [homeHost, setHomeHost] = useState(null);
 
   const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
   const queueSpine = (
@@ -11308,7 +11289,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       cap={line.length ? `${line.length} ${variant.count}` : "nobody yet"} />
   );
 
+  /* Two panes since C29: the corner in one, the floor in the other, both
+     built whenever the person is signed in. Before that there is one pane,
+     the way in, and nothing to swipe to. */
   let content;
+  let corner = null;
+  let up = false;
 
   if (eff === "loading") {
     content = (
@@ -11384,17 +11370,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         </div>
       </div>
     );
-    if (tab === "corner") {
-      content = (
-        <MyCorner still={slid} store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
-          mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
-          goals={boardExtra.goals} off={boardExtra.off} days={days}
-          offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
-          onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
-          line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")}
-          upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
-      );
-    }
+    corner = (
+      <MyCorner still={tab !== "corner"} host={homeHost} store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
+        mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
+        goals={boardExtra.goals} off={boardExtra.off} days={days}
+        offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
+        onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
+        line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")}
+        upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
+    );
   } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
@@ -11500,17 +11484,20 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         {doorAside && <p className="sf-door-aside">{doorAside}</p>}
       </div>
     );
-    if (tab === "corner" && !(isNext && !tookIt)) {
-      content = (
-        <MyCorner still={slid} store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
-          mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
-          goals={boardExtra.goals} off={boardExtra.off} days={days}
-          offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
-          onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
-          line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")}
-          upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
-      );
-    }
+    /* The corner is born still when it is born out of sight: the travel
+       that brings it on screen is its arrival, and its cards do not slide
+       in on top of that. Jorge's decision of 18 September, S2. Born in
+       sight, at sign-in or at open, they arrive as they always have. */
+    up = isNext && !tookIt;
+    corner = (
+      <MyCorner still={tab !== "corner"} host={homeHost} store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
+        mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
+        goals={boardExtra.goals} off={boardExtra.off} days={days}
+        offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
+        onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
+        line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")}
+        upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
+    );
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
       <SfPickList variant={variant} spine={queueSpine} typed={typed}
@@ -11536,9 +11523,26 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     );
   }
 
+  /* You're up: the view goes to the floor on the wipe and is held there
+     until it is taken, so the one thing that must never be missed is in
+     front of them whichever pane they were reading. S4, 18 September. The
+     rooms are told what holds and why, so the swipe and the bar refuse it. */
+  const holdWhy = up ? "up" : corner ? null : "one";
+  useEffect(() => { if (onHold) onHold(holdWhy); }, [onHold, holdWhy]);
+  useEffect(() => { if (up && tab === "corner") setTab("floor"); }, [up, tab]);   // eslint-disable-line
+  const at = corner && tab === "corner" ? 0 : 1;   // which pane is in the frame
   return (
-    <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (inShell && tab === "corner" && lightMode ? " mc-light" : "")} ref={pageRef}>
-      <div className="q-stage" key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
+    <div className={"q-page f-page sf sf-floor sf-panes" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "")} ref={pageRef}>
+      {corner && (
+        <div className={"sf-pane sf-pane-home" + (at === 0 ? " on" : "") + (inShell && lightMode ? " mc-light" : "")}
+          style={{ "--sf-at": 0 - at }} inert={at === 0 ? undefined : ""} ref={setHomeHost}>
+          <div className="sf-scroll"><div className="q-stage">{corner}</div></div>
+        </div>
+      )}
+      <div className={"sf-pane sf-pane-floor" + (at === 1 ? " on" : "") + (inShell ? " mc-floor" : "")}
+        style={{ "--sf-at": 1 - at }} inert={at === 1 ? undefined : ""}>
+        <div className="sf-scroll"><div className="q-stage" key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div></div>
+      </div>
       {inShell && !onTab && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
         const upRoot = !!me && me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
@@ -15301,6 +15305,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
      same curve as the rooms. It used to glide on a number of its own with a
      big overshoot, and arrived after the room it was pointing at. */
   transition:transform var(--t-wipe) cubic-bezier(.35,.12,.2,1); will-change:transform; }
+.ar-bar.ar-thumb .ar-ind{ transition:none; }   /* under a thumb it is where the thumb is, not on its way there */
 .ar-tab{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:72px; height:50px;
   border:0; background:none; cursor:pointer; color:rgba(255,255,255,.42);
   transition:color .2s; }
@@ -15459,18 +15464,42 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 @keyframes arPageOut{
   from{ transform:translate3d(var(--ar-out0, 0px), 0, 0); filter:brightness(1); }
   to{ transform:translate3d(var(--ar-out1, -100%), 0, 0); filter:brightness(.7); } }
-/* Home and Live Floor share a sheet, so what travels between them is the
-   sheet's contents rather than the sheet. It comes in from the side the bar
-   moved, on the rooms' clock and curve, and the page is held still while it
-   does so a stage a screen wide cannot push the layout sideways. */
-.ar-stack.t > .ar-room > .q-page.sf{ overflow:hidden; }
-.ar-stack.t > .ar-room > .q-page.sf > .q-stage{
-  animation:arStageIn var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; will-change:transform; }
-.ar-stack.t-l > .ar-room > .q-page.sf > .q-stage{ animation-name:arStageInL; }
-@keyframes arStageIn{ from{ transform:translate3d(100%, 0, 0); } to{ transform:translate3d(0, 0, 0); } }
-@keyframes arStageInL{ from{ transform:translate3d(-100%, 0, 0); } to{ transform:translate3d(0, 0, 0); } }
-@media (prefers-reduced-motion: reduce){
-  .ar-stack.t > .ar-room > .q-page.sf > .q-stage{ animation:none; } }
+/* ---- Home and Live Floor: two panes of one page ----
+   The floor page keeps its data and lays the corner and the floor side by
+   side, each a pane a screen wide, each its own scroll box. The pane is what
+   travels: under the thumb while a finger is down, by the distance the rooms'
+   gesture puts on --sf-drag, and on the rooms' own clock and curve from
+   wherever the thumb left it once it lifts. A tap is the same travel from
+   rest. C29, Jorge's decisions of 18 September.
+
+   The pane carries the transform, not its scroller, and that is deliberate:
+   a fixed thing inside a transformed box is fixed to the box, so the
+   corner's rail and lights ride with the pane instead of scrolling away with
+   its content, which is what they would do if the scroller were the thing
+   that moved. */
+.q-page.sf.sf-panes{ overflow:hidden; }
+.sf-pane{ position:absolute; inset:0; overflow:hidden;
+  transform:translate3d(calc(var(--sf-at, 0) * 100% + var(--sf-drag, 0px)), 0, 0);
+  transition:transform var(--t-wipe) cubic-bezier(.35,.12,.2,1); will-change:transform; }
+.ar-stack.ar-tabbing .sf-pane{ transition:none; }
+.sf-pane > .sf-scroll{ height:100%; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;
+  scrollbar-width:none; -ms-overflow-style:none; }
+.sf-pane > .sf-scroll::-webkit-scrollbar{ width:0; height:0; }
+/* The pane out of sight holds still: its lights do not cost a frame while
+   nobody can see them. Not while a thumb is pulling it in. */
+.ar-stack:not(.ar-tabbing) .sf-pane:not(.on) *{ animation-play-state:paused; }
+/* The corner's lights and spine, drawn into the pane: absolute to it rather
+   than fixed to the screen, so the box the compositor moves is the one they
+   are laid out against. The spine lands with the cards when the corner is
+   born in the frame, and only then (S2). */
+.sf-pane > .mc-aurora, .sf-pane > .mc-spine{ position:absolute; }
+.sf-pane > .mc-spine.mc-land{ animation:mcSlide .62s cubic-bezier(.16,1,.3,1) both; }
+@media (prefers-reduced-motion: reduce){ .sf-pane > .mc-spine.mc-land{ animation:none; } }
+/* Outside the rooms the floor pane paints its own ground; inside them both
+   panes are clear, so the backdrop shows through, as the page already is. */
+.sf-pane.mc-floor{ background:radial-gradient(closest-side at 50% 116%, rgba(127,169,138,.42), rgba(127,169,138,.1) 55%, transparent 76%), #070A08; }
+.ar-stack .sf-pane:not(.mc-light){ background:transparent; }
+@media (prefers-reduced-motion: reduce){ .sf-pane{ transition:none; } }
 /* ---- one motion for a tap and for a swipe ----
    A tap used to be a PUSH: the arriving sheet came in from 26 per cent and
    covered the one being left, which had to be cut so it could not be read
@@ -15525,14 +15554,15 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    Only when the bar is drawn: a store with one room carries no gap for a
    control it does not have. */
 .lpc:has(> .ar-bar) .q-page{ padding-bottom:72px; }
+.lpc:has(> .ar-bar) .sf-pane > .sf-scroll{ padding-bottom:72px; }   /* the floor's panes scroll, not its page */
 /* Live Floor, and only Live Floor, by Jorge's decision on 16 September: it is
    not meant to be a page you scroll. The reserve above is added under a page
    that already holds two boxes claiming the whole screen, so every room came
    out one screen tall plus an empty band exactly the height of the reserve,
    and scrolled by it. Here the reserve comes out of the height instead. The
    other rooms keep the band, which is what was asked for. */
-.lpc:has(> .ar-bar) .q-page.sf.mc-floor .q-stage,
-.lpc:has(> .ar-bar) .q-page.sf.mc-floor .sf-live,
+.lpc:has(> .ar-bar) .sf-pane.mc-floor .q-stage,
+.lpc:has(> .ar-bar) .sf-pane.mc-floor .sf-live,
 /* And the line takes the same reserve, which is what puts the two rooms' words
    at the same height. The floor had it and the line did not, so the line's
    column ran 72px taller, and with the words centred in it they sat 36px
@@ -15557,8 +15587,9 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    Floor, 0 to 852 on Home. Under the takeover there is nothing to scroll to,
    so the page's own reserve goes with it. */
 .lpc:has(> .ar-bar) .q-page.sf:has(.sf-uptake){ padding-bottom:0; }
-.lpc:has(> .ar-bar) .q-page.sf.mc-floor .q-stage:has(.sf-uptake),
-.lpc:has(> .ar-bar) .q-page.sf.mc-floor .sf-live:has(> .sf-uptake),
+.lpc:has(> .ar-bar) .sf-pane > .sf-scroll:has(.sf-uptake){ padding-bottom:0; }
+.lpc:has(> .ar-bar) .sf-pane.mc-floor .q-stage:has(.sf-uptake),
+.lpc:has(> .ar-bar) .sf-pane.mc-floor .sf-live:has(> .sf-uptake),
 .lpc:has(> .ar-bar) .q-page.sf.sf-line .q-stage:has(.sf-uptake),
 .lpc:has(> .ar-bar) .q-page.sf.sf-line .sf-live:has(> .sf-uptake){ min-height:var(--dvh); }
 .lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
@@ -15760,7 +15791,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    is exactly what the task list did, by 10px. Scoped to this subtree so nothing
    in the manager app moves. */
 .q-page.sf, .q-page.sf *, .q-page.sf *::before, .q-page.sf *::after{ box-sizing:border-box; }
-.q-page.sf::before{
+.q-page.sf::before, .sf-pane.mc-light::before{
   content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
   background:
     radial-gradient(96% 52% at 18% 100%, color-mix(in srgb, var(--a1) 88%, transparent), transparent 70%),
@@ -15769,7 +15800,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 }
 /* Safari 15 and older have no color-mix. A flat wash beats no ground at all. */
 @supports not (background: color-mix(in srgb, red 10%, transparent)){
-  .q-page.sf::before{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
+  .q-page.sf::before, .sf-pane.mc-light::before{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
 }
 .sf .q-stage{ align-items:stretch; min-height:var(--dvh); }
 /* the frame: body left, spine right */
@@ -16508,12 +16539,14 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; }
 .mc > *:nth-child(9),.mc > *:nth-child(10){ animation-delay:.28s; }
 @keyframes mcSlide{ from{ opacity:0; transform:translateX(22px); } to{ opacity:1; transform:none; } }
-/* Not when the corner arrived on the stage's slide. Then the slide IS its
+/* Not when the corner was born out of sight. Then the pane's travel IS its
    landing, on the rooms' own clock and curve, and the cards fading and easing
    in on top of it were two things at once: measured, the page 90 per cent off
    screen with its cards at half opacity, then the cards still settling 500 ms
    after the page had stopped. Jorge, 18 September: the elements flash, and the
-   landing has less inertia than the other pages. One motion, the rooms'. */
+   landing has less inertia than the other pages. One motion, the rooms'. Since
+   C29 the corner is built once and travels every time, so the cards land on
+   their own only when it is born in the frame: at open, or at sign-in. */
 .mc.mc-still > *:not(.mc-aurora):not(.mc-me){ animation:none; }
 @media (prefers-reduced-motion: reduce){
   .mc > *:not(.mc-aurora):not(.mc-me){ animation:none; } }
@@ -16682,7 +16715,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    The site's own ground rather than a map: soft sage and sand on paper. The
    hero takes the site's hero gradient, Today stays sand paper, Points goes ink
    so its chips still read, the board goes sage on white. */
-.q-page.sf.mc-shell.mc-light{ background:#F1EEE4; --sfink:#1F2A22; --sfink2:#4A5A4E; --sfink3:#7E8A80; --sfcard:#FFFDF8; --sfstroke:rgba(31,42,34,.1); color:#1F2A22; }
+.q-page.sf.mc-shell.mc-light, .q-page.sf.mc-shell > .sf-pane.mc-light{ background:#F1EEE4; --sfink:#1F2A22; --sfink2:#4A5A4E; --sfink3:#7E8A80; --sfcard:#FFFDF8; --sfstroke:rgba(31,42,34,.1); color:#1F2A22; }
 .mc-light .mc-aurora i{ opacity:.45; }
 .mc-light .mc-aurora i:nth-child(1){ background:radial-gradient(closest-side,#A9C4AC,transparent 70%); }
 .mc-light .mc-aurora i:nth-child(2){ background:radial-gradient(closest-side,#CFDCCF,transparent 70%); }
