@@ -1,0 +1,62 @@
+# The deploy watch.
+#
+# Vercel reports every deployment to GitHub as a deployment status, and this
+# runs on each one. A failure opens an issue, or adds to the open one, and
+# says so on the pull request if the branch has one; a success closes the
+# issue. No token, no connector, no schedule: it fires when Vercel speaks.
+#
+# The reason this exists: on 18 September 2026 every deployment for ninety
+# minutes, production and preview, failed on one bad key in vercel.json.
+# Production sat on a build from before the fix it was carrying, and nothing
+# said so until somebody looked. docs/routines.md has the long version.
+name: deploy watch
+
+on:
+  deployment_status:
+
+jobs:
+  watch:
+    if: contains(fromJSON('["failure", "error", "success"]'), github.event.deployment_status.state)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const ds = context.payload.deployment_status;
+            const dep = context.payload.deployment;
+            const state = ds.state;
+            const ref = String(dep.ref || "").replace(/^refs\/heads\//, "");
+            const env = dep.environment || "";
+            const sha = String(dep.sha || "").slice(0, 7);
+            const link = ds.log_url || ds.target_url || dep.url || "";
+            const title = `Deploy failed on ${ref}`;
+            const mark = "<!-- sage-deploy-watch -->";
+            const { data: open } = await github.rest.issues.listForRepo({ owner, repo, state: "open", labels: "deploy", per_page: 50 });
+            const mine = open.find((i) => i.title === title);
+            if (state === "success") {
+              if (mine) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: mine.number, body: `${mark}\nDeployed again: ${env} at ${sha} is up.${link ? ` ${link}` : ""}` });
+                await github.rest.issues.update({ owner, repo, issue_number: mine.number, state: "closed" });
+              }
+              return;
+            }
+            const line = `${env} at ${sha} on ${ref}: ${state}.${ds.description ? ` ${ds.description}` : ""}${link ? ` ${link}` : ""}`;
+            let number;
+            if (mine) {
+              number = mine.number;
+              await github.rest.issues.createComment({ owner, repo, issue_number: number, body: `${mark}\n${line}` });
+            } else {
+              try { await github.rest.issues.createLabel({ owner, repo, name: "deploy", color: "B60205", description: "a deployment Vercel reported as failed" }); } catch (e) { /* it exists */ }
+              const body = `${mark}\nVercel reported a failed deployment.\n\n${line}\n\nWhat to look at first: the deployment's page on Vercel says why in one line (a vercel.json the schema refuses, a build error naming a file, a function too large). Production keeps serving the last deployment that was READY until a good one lands. This issue closes itself when a deployment on the branch succeeds.\n\n---\n_Opened by the deploy watch, .github/workflows/deploy-watch.yml_`;
+              const { data: issue } = await github.rest.issues.create({ owner, repo, title, body, labels: ["deploy"] });
+              number = issue.number;
+            }
+            /* And on the pull request, if the branch has one open. */
+            const { data: prs } = await github.rest.pulls.list({ owner, repo, state: "open", head: `${owner}:${ref}`, per_page: 5 });
+            for (const pr of prs) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body: `${mark}\n**The preview did not deploy.** ${line} Tracked in #${number}.` });
+            }
