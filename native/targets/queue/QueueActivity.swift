@@ -1136,7 +1136,7 @@ struct SageQueueBundle: WidgetBundle {
 // MARK: - the card, rendered to PNG on a pull request
 /* C70. The card took nine builds on 18 September because nothing but a phone
    could draw it. .github/workflows/activity-render.yml compiles this file
-   with -D RENDER, together with native/render/activity-main.swift (outside
+   with -D RENDER, together with native/render/main.swift (outside
    this folder, because everything in it is compiled into the widget and a
    file of top-level code would not build there), into a command-line
    binary for the iOS simulator and runs it there; it writes one PNG per

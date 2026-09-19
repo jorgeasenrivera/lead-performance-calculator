@@ -1,6 +1,8 @@
 /* The entry of the render binary, and nothing else: see the RENDER block at
    the foot of ../targets/queue/QueueActivity.swift. Compiled only by the
-   workflow, and kept outside targets/ so the widget build never sees it. */
+   workflow, and kept outside targets/ so the widget build never sees it.
+   Named main.swift because Swift allows top-level code in no other file: the
+   first run said so, three times. */
 import Foundation
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
