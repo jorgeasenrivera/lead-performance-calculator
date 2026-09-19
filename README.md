@@ -96,6 +96,7 @@ npm test        # every test under test/, Node's own runner, no network, under a
 npm run build   # a build that fails is as broken as a test that fails
 npm run check   # both of the above
 npm run feel    # the phone, measured in a real browser
+npm run shots   # the phone, pictured: every screen at three text sizes, into shots/
 ```
 
 ### `npm test`
@@ -110,6 +111,21 @@ fault each one holds the line on. Two are worth knowing about up front:
   the shape of the recent cut list work. It is the fastest way to catch a change
   that quietly undoes a decision.
 - `test/no-duplicates.test.mjs` is structural, and `test/README.md` explains it.
+
+### `npm run shots`
+
+The phone, pictured rather than measured. `scripts/shots.mjs` signs in on the
+mock, walks Home, Home's foot, the frame halfway through a swipe to the floor,
+Live Floor and Phone Line at Normal, Large and Largest, and the You're up
+takeover, and writes each as a PNG under `shots/`. On every pull request the
+checks workflow runs it in WebKit and links the pictures from the pull request,
+so the phone view of a change is there before the phone is picked up.
+`FEEL_BROWSER=webkit` runs it in WebKit locally; `SHOTS_SIZES=1` is Normal only.
+
+The sign-in, the floor's shape, a phone-sized browser and a thumb live in
+`scripts/probe-kit.mjs`, so the next probe anybody writes starts from them
+rather than from a scratchpad. The feel harness keeps its own copy of the floor
+prep on purpose: it is the measured thing and its guards pin its text.
 
 ### `npm run feel`
 
