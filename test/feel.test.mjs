@@ -998,3 +998,24 @@ test("the Board's wall does not go white on a deploy", () => {
     && /<React\.Suspense fallback=\{<BoardHold \/>\}><BoardScreen/.test(core),
     "and while the board is not there the wall holds its own ground rather than white");
 });
+
+test("the Live Activity is drawn on a pull request, behind a label, and never in the app", () => {
+  /* C70. Nine builds of one card on 18 September, because nothing but a phone
+     could draw it. The render entry lives in the widget's own file, behind a
+     flag the widget's build never sets. */
+  const swift = fs.readFileSync(new URL("../native/targets/queue/QueueActivity.swift", import.meta.url), "utf8");
+  const entry = fs.readFileSync(new URL("../native/render/main.swift", import.meta.url), "utf8");
+  const wf = fs.readFileSync(new URL("../.github/workflows/activity-render.yml", import.meta.url), "utf8");
+  assert.ok(/#if !RENDER\n@main\n#endif\nstruct SageQueueBundle: WidgetBundle/.test(swift), "the widget's entry steps aside only when rendering");
+  assert.ok(/#if RENDER\nimport UIKit\n\n@MainActor\nfunc renderActivityStates\(to dir: String\) throws -> \[\(String, CGSize\)\]/.test(swift), "and the render entry is behind the same flag");
+  assert.strictEqual((swift.match(/#if RENDER/g) || []).length, 1, "one render block");
+  for (const name of ["floor-waiting", "floor-up", "floor-customer", "floor-asking", "floor-lunch", "phone-cord", "phone-next", "phone-offer", "phone-desk", "phone-free", "both-quiet", "both-floor-up", "both-phone-offer", "both-customer-cord"])
+    assert.ok(swift.includes(`("${name}",`), `the sheet's state ${name} is drawn`);
+  assert.ok(/h > 160 \? "  OVER the 160 pt budget"/.test(entry), "each card's height is read against the lock screen's budget");
+  assert.ok(/contains\(github\.event\.pull_request\.labels\.\*\.name, 'render activity'\)/.test(wf) && /runs-on: macos-15/.test(wf)
+    && /swiftc -D RENDER -sdk "\$SDK" -target arm64-apple-ios17\.0-simulator/.test(wf) && /xcrun simctl spawn/.test(wf) && /<!-- sage-activity-render -->/.test(wf),
+    "a Mac runner compiles it for the simulator, draws it there, and tells the pull request; only when labelled");
+  /* The other copies of QueueAttributes must not grow a RENDER block by
+     mistake: the render compiles the widget's copy alone. */
+  assert.ok(!/RENDER/.test(fs.readFileSync(new URL("../native/targets/queue/QueueAttributes.swift", import.meta.url), "utf8")), "the attributes file carries no render code");
+});
