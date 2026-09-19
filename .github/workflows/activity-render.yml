@@ -55,7 +55,7 @@ jobs:
           SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
           swiftc -D RENDER -sdk "$SDK" -target arm64-apple-ios17.0-simulator \
             -o render-activity \
-            QueueAttributes.swift QueueActivity.swift QueueIntents.swift ../../render/activity-main.swift 2>&1 | tee swiftc.log
+            QueueAttributes.swift QueueActivity.swift QueueIntents.swift ../../render/main.swift 2>&1 | tee swiftc.log
           test -x render-activity
 
       - name: Draw every state

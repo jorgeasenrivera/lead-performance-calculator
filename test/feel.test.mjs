@@ -1004,7 +1004,7 @@ test("the Live Activity is drawn on a pull request, behind a label, and never in
      could draw it. The render entry lives in the widget's own file, behind a
      flag the widget's build never sets. */
   const swift = fs.readFileSync(new URL("../native/targets/queue/QueueActivity.swift", import.meta.url), "utf8");
-  const entry = fs.readFileSync(new URL("../native/render/activity-main.swift", import.meta.url), "utf8");
+  const entry = fs.readFileSync(new URL("../native/render/main.swift", import.meta.url), "utf8");
   const wf = fs.readFileSync(new URL("../.github/workflows/activity-render.yml", import.meta.url), "utf8");
   assert.ok(/#if !RENDER\n@main\n#endif\nstruct SageQueueBundle: WidgetBundle/.test(swift), "the widget's entry steps aside only when rendering");
   assert.ok(/#if RENDER\nimport UIKit\n\n@MainActor\nfunc renderActivityStates\(to dir: String\) throws -> \[\(String, CGSize\)\]/.test(swift), "and the render entry is behind the same flag");
