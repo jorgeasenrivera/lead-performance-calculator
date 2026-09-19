@@ -8055,8 +8055,18 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       const lead = BLOB_LEAD[b];
       const k = Math.min(1, Math.max(0, (f - lead) / (1 - lead)));
       const gA = g[from] || g, gB = g[to] || g;
-      drawBlob(ctx, gA, gA.c || A[g.k], w, h, dx, 1);
-      drawBlob(ctx, gB, gB.c || B[g.k], w, h, dx, k * k * (3 - 2 * k));
+      /* The leaving light goes as the arriving one comes, so the ground at
+         the last frame of a travel is the ground of the room arrived at.
+         It used to stay at full under the arriving one: two lights stacked
+         just before the end, one at the end, which was the step Jorge saw
+         on 18 September, "a colour for a moment, then it switches", and
+         which his recording of 19 September showed to the frame: the blend
+         climbing for 300 ms, holding, then dropping in one frame. Square
+         roots rather than a straight crossfade, so the two together never
+         thin the light by more than about a tenth halfway across. */
+      const kk = k * k * (3 - 2 * k);
+      drawBlob(ctx, gA, gA.c || A[g.k], w, h, dx, Math.sqrt(1 - kk));
+      drawBlob(ctx, gB, gB.c || B[g.k], w, h, dx, Math.sqrt(kk));
     }
     /* The dots last, on their own canvas, in that canvas's device pixels, so a
        dot lands on the grid the screen actually has rather than on a grid an
