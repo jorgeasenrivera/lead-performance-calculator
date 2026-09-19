@@ -1026,3 +1026,15 @@ test("the Board's wall does not go white on a deploy", () => {
     && /<React\.Suspense fallback=\{<BoardHold \/>\}><BoardScreen/.test(core),
     "and while the board is not there the wall holds its own ground rather than white");
 });
+
+test("the ground arrives at the room's own ground, with no step at the end of a travel", () => {
+  /* Jorge, 18 September: the background is a colour for a moment, then it
+     switches. His recording of 19 September, read to the frame: the blend
+     climbs for 300 ms, holds, drops in one frame. The leaving light stayed at
+     full under the arriving one; it goes as the other comes now. */
+  assert.ok(/const kk = k \* k \* \(3 - 2 \* k\);\n\s*drawBlob\(ctx, gA, gA\.c \|\| A\[g\.k\], w, h, dx, Math\.sqrt\(1 - kk\)\);\n\s*drawBlob\(ctx, gB, gB\.c \|\| B\[g\.k\], w, h, dx, Math\.sqrt\(kk\)\);/.test(core),
+    "the leaving light fades out as the arriving one fades in, on the same curve, in square roots so the pair never thins");
+  assert.ok(!/drawBlob\(ctx, gA, gA\.c \|\| A\[g\.k\], w, h, dx, 1\);/.test(core), "and the leaving light is no longer held at full");
+  assert.ok(/groundStep: 24,/.test(feel) && /row\("ground: biggest change between two frames of the blend", stepMax, BAR\.groundStep\);/.test(feel),
+    "the feel harness reads the ground on every frame of a tap and holds the biggest change between two frames to a blend's size");
+});

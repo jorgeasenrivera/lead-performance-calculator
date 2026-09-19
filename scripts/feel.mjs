@@ -65,6 +65,7 @@ const BAR = {
   chip: 100,         // a FlyBy sent is a chip at once
   returnSignIn: 900 + 3 * LAG, // signing in again the same day lands the short way: a few round trips, no jump
   press: 120,        // a control has given under the finger by then
+  groundStep: 24,    // the ground blends a few points a frame and never steps
 };
 
 /* ---- the mock, started here if nobody has ---- */
@@ -222,7 +223,22 @@ async function run(b) {
   row("swipe: Home under the thumb, px off", Math.round(Math.abs(under.x - (120 - under.w)) * 10) / 10, 1);
   await p.waitForTimeout(400); await touch("touchend", 240, 420);
   await paneOn("home"); await p.waitForTimeout(800);
-  await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(800);
+  /* the ground through a tap: no step. The canvas behind the rooms is read at
+     one point on every frame for 700 ms after the tap, and the biggest change
+     between two frames after the first 80 ms is the row. A blend moves a few
+     points a frame; the step Jorge recorded on 19 September was 30 in one. */
+  await p.evaluate(() => { window.__gnd = []; const c = document.querySelector(".ar-gnd"); const g = c.getContext("2d"); const t0 = performance.now();
+    const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2]]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+  await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(900);
+  const gnd = await p.evaluate(() => window.__gnd || []);
+  /* Per frame-time, not per sample: a loaded runner drops frames, and two
+     samples 150 ms apart then span a fifth of the blend, which read as a
+     step on WebKit's first run of this row (46 against 24, on a runner that
+     had every tap three times over). A real step is a big change in one
+     frame however long the frame took. */
+  let stepMax = 0;
+  for (let i = 1; i < gnd.length; i++) { if (gnd[i][0] < 80) continue; const d = Math.abs(gnd[i][1] - gnd[i - 1][1]) + Math.abs(gnd[i][2] - gnd[i - 1][2]) + Math.abs(gnd[i][3] - gnd[i - 1][3]); const frames = Math.max(1, (gnd[i][0] - gnd[i - 1][0]) / 16.7); const r = Math.round(d / frames); if (r > stepMax) stepMax = r; }
+  row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
   t = Date.now(); await p.locator('.ar-tab[aria-label*="Phone"]').click(); await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); row("Floor to Phone tab", ms(t), BAR.tab);
   await p.waitForTimeout(600);
   t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
