@@ -66,6 +66,8 @@ const BAR = {
   returnSignIn: 900 + 3 * LAG, // signing in again the same day lands the short way: a few round trips, no jump
   press: 120,        // a control has given under the finger by then
   groundStep: 24,    // the ground blends a few points a frame and never steps
+  follow: 2,         // the page moves what the thumb moves, frame for frame
+  dropped: 1,        // and no frame is dropped while it does
 };
 
 /* ---- the mock, started here if nobody has ---- */
@@ -170,7 +172,10 @@ async function run(b) {
     window.__vib = []; navigator.vibrate = (v) => { window.__vib.push(v); return true; };
   }, [STORE]);
   const rows = [];
-  const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " ms  bar " + r.bar : ""}`;
+  /* Most rows are a time. The swipe's are pixels and a count of frames, the
+     ground's a colour step, and a unit that lies is worse than none. */
+  const unit = (name) => /px off/.test(name) ? "px" : /frames dropped|change between/.test(name) ? "  " : "ms";
+  const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}`;
   const row = (name, value, bar, ok = value <= bar) => { const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
   console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
@@ -199,30 +204,53 @@ async function run(b) {
   t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
   await p.waitForTimeout(700);
 
-  /* the swipe: the pane is where the thumb is, within a frame. Touch events
-     built by hand rather than Playwright's touchscreen, which can only tap:
-     the gesture reads e.touches and e.changedTouches and nothing else, so a
-     plain Event carrying those two is a touch to it, in WebKit as well as in
-     Chromium, which do not agree on the Touch constructor. A thumb from the
-     floor toward Home, 120px, held for longer than a flick so the distance
-     is what decides, which at 28 per cent of 390 commits it. */
-  const touch = (type, x, y) => p.evaluate(([type, x, y]) => {
-    const el = document.elementFromPoint(x, y) || document.body;
-    const ev = new Event(type, { bubbles: true, cancelable: true });
-    const tp = { clientX: x, clientY: y, identifier: 1, target: el };
-    Object.defineProperty(ev, "touches", { value: type === "touchend" ? [] : [tp] });
-    Object.defineProperty(ev, "changedTouches", { value: [tp] });
-    el.dispatchEvent(ev);
-  }, [type, x, y]);
-  await touch("touchstart", 120, 420); await touch("touchmove", 140, 420); await touch("touchmove", 240, 420);
-  const under = await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => {
-    const home = document.querySelector('.ar-room[data-room="floor"] .sf-pane-home');
-    const m = new DOMMatrixReadOnly(getComputedStyle(home).transform);
-    r({ x: m.m41, w: window.innerWidth });
-  }))));
-  row("swipe: Home under the thumb, px off", Math.round(Math.abs(under.x - (120 - under.w)) * 10) / 10, 1);
-  await p.waitForTimeout(400); await touch("touchend", 240, 420);
-  await paneOn("home"); await p.waitForTimeout(800);
+  /* the swipe: the page under the thumb, and no frame dropped. Home and Live
+     Floor are two pages of the floor page's own scroller (C74), so the thumb
+     has to be a real one: Chromium's input pipeline through the debugging
+     channel, which makes the browser scroll as a phone would. WebKit has no
+     such channel, so there the row is not run and says so. A thumb from Home
+     toward the floor, 260 px in steps of 10, a frame or so apart; on every
+     frame the thumb's travel and the page's are read together. Native
+     scrolling eats the first few pixels (the slop, 15 in Chromium) and then
+     follows one to one, so once the page is moving the gap between thumb and
+     page should be the slop and nothing else. The gap is read on the last
+     frame before each step of the thumb, because the step itself reaches the
+     browser a frame after this script wrote it down, and reading mid-step
+     charged that lag to the page: a first draft of this row said 10 for a
+     scroller that was following exactly. The row is the spread of that gap. */
+  let cdp = null;
+  try { cdp = await ctx.newCDPSession(p); } catch (e) { cdp = null; }
+  if (cdp) {
+    await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(900);
+    const tp = (x) => ({ x, y: 420, radiusX: 4, radiusY: 4, force: 1, id: 1 });
+    await p.evaluate(() => { window.__sw = { frames: [], track: [] }; const el = document.querySelector('.ar-room[data-room="floor"] .q-page.sf'); let last = 0;
+      const tick = (t) => { if (last) window.__sw.frames.push(t - last); last = t; window.__sw.track.push([window.__thumb || 0, el.scrollLeft]); if (window.__swipeOn !== false) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [tp(300)] });
+    for (let k = 1; k <= 26; k++) {
+      const x = 300 - k * 10;
+      await p.evaluate(([x]) => { window.__thumb = 300 - x; }, [x]);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [tp(x)] });
+      await p.evaluate(() => new Promise((r) => requestAnimationFrame(r)));
+    }
+    await p.waitForTimeout(120);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await p.waitForTimeout(600);
+    const sw = await p.evaluate(() => { window.__swipeOn = false; return window.__sw; });
+    const gaps = [];
+    let first = -1, lastMove = -1;
+    for (let i = 1; i < sw.track.length; i++) { const [t0, s0] = sw.track[i - 1], [t1, s1] = sw.track[i]; if (first < 0 && s0 > 0) first = i - 1; if (t1 !== t0) { lastMove = i; if (first >= 0) gaps.push(t0 - s0); } }
+    const follow = gaps.length ? Math.max(...gaps) - Math.min(...gaps) : 999;
+    row("swipe: the page under the thumb, px off between frames", Math.round(follow), BAR.follow);
+    /* Where it ended: 260 less the slop is past the middle of 393, so the
+       snap lands on the floor. Any other answer is the scroller not
+       following. The frames counted are the ones while the thumb moved: the
+       snap after it is the browser's own animation and is not this row. */
+    row("swipe: frames dropped while the thumb moved", sw.frames.slice(first < 0 ? 0 : first, lastMove < 0 ? undefined : lastMove).filter((g) => g > 25).length, BAR.dropped);
+    await paneOn("floor"); await p.waitForTimeout(800);
+    await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
+  } else {
+    console.log("  --   swipe: not run in WebKit (no input channel to move a real thumb)");
+  }
   /* the ground through a tap: no step. The canvas behind the rooms is read at
      one point on every frame for 700 ms after the tap, and the biggest change
      between two frames after the first 80 ms is the row. A blend moves a few
