@@ -262,8 +262,8 @@ test("C29 and C74: Home and Live Floor are two pages of the floor page's own scr
      786 it should have been, the Home pane at -196. */
   assert.ok(/\.q-page\.sf\.sf-panes\{ display:flex; justify-content:flex-start; align-items:stretch; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory;\n\s*overscroll-behavior-x:none; touch-action:pan-x pan-y;/.test(core),
     "the page scrolls sideways and snaps a page at a time, with no rubber band at the ends so a swipe off the floor reaches the rooms' gesture");
-  assert.ok(/\.sf-pane\{ position:relative; flex:0 0 100%; width:100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always; \}/.test(core),
-    "each pane is a page of it");
+  assert.ok(/\.sf-pane\{ position:relative; flex:0 0 100%; width:100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always;\n(?:\s*\/\*[^]*?\*\/\n)?\s*will-change:transform; \}/.test(core),
+    "each pane is a page of it, and its own layer, so the phone keeps the one off to the side painted (C75)");
   assert.ok(/\.q-page\.sf\.sf-panes\.sf-ramp\{ scroll-snap-type:none; \}/.test(core) && /\.q-page\.sf\.sf-panes\.sf-held\{ overflow-x:hidden; \}/.test(core),
     "the snap is off while a tap's travel runs, and the scroller is locked while You're up holds the floor");
   assert.ok(!/--sf-drag/.test(core) && !/ar-tabbing/.test(core) && !/--sf-at/.test(core) && !/tab: !s0\.slide/.test(core),

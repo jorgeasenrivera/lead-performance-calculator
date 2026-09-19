@@ -15590,7 +15590,14 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .q-page.sf.sf-panes.sf-ramp{ scroll-snap-type:none; }
 .q-page.sf.sf-panes.sf-held{ overflow-x:hidden; }
 .lpc:has(> .ar-bar) .q-page.sf.sf-panes{ padding-bottom:0; }   /* the reserve is on each pane's scroller instead */
-.sf-pane{ position:relative; flex:0 0 100%; width:100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always; }
+.sf-pane{ position:relative; flex:0 0 100%; width:100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always;
+  /* Each pane is its own layer, so the phone keeps it painted while it is a
+     screen off to the side. Without this WebKit painted the Home pane only as
+     the scroller brought it in, region by region, and its lit pieces (the
+     LED digits, the calendar's dots, the glyphs) landed two to four frames
+     after the cards (Jorge's recording, 19 September, three taps of Home
+     from the floor). A layer async scrolling can reveal keeps its backing. */
+  will-change:transform; }
 /* Each pane's scroll box bleeds a pixel past its pane on both sides, so two
    panes overlap by two pixels rather than meeting at a fraction: the hairline
    the recording showed at the seam (A2). */
