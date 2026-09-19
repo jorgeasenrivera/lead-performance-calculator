@@ -998,3 +998,23 @@ test("the Board's wall does not go white on a deploy", () => {
     && /<React\.Suspense fallback=\{<BoardHold \/>\}><BoardScreen/.test(core),
     "and while the board is not there the wall holds its own ground rather than white");
 });
+
+test("the phone is pictured on every pull request, from the probe kit", () => {
+  /* Jorge, 19 September: make the recommendations so they assist future
+     builds. Every phone check on 18 September was a scratchpad probe thrown
+     away six times; this is the one that stays. */
+  const kit = fs.readFileSync(new URL("../scripts/probe-kit.mjs", import.meta.url), "utf8");
+  const shots = fs.readFileSync(new URL("../scripts/shots.mjs", import.meta.url), "utf8");
+  const ci = fs.readFileSync(new URL("../.github/workflows/checks.yml", import.meta.url), "utf8");
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  for (const name of ["ensureMock", "prepFloor", "setMine", "setUp", "launch", "phone", "signIn", "touch", "swipe", "settled"])
+    assert.ok(new RegExp(`export (async function|const) ${name}\\b`).test(kit), `the kit exports ${name}`);
+  assert.ok(/open = "home"/.test(kit), "a probe's phone opens at Home, the way a salesperson's does, unless told otherwise");
+  assert.ok(pkg.scripts.shots === "node scripts/shots.mjs", "npm run shots");
+  assert.ok(/from "\.\/probe-kit\.mjs"/.test(shots), "and the shots are written from the kit");
+  for (const tag of ["-home", "-home-foot", "-home-to-floor-mid", "-floor", "-line"]) assert.ok(shots.includes("`${tag}" + tag + "`"), `a picture of ${tag}`);
+  assert.ok(/"normal-up"/.test(shots), "and one of You're up");
+  assert.ok(/\n  shots:\n    if: github\.event_name == 'pull_request'/.test(ci) && /FEEL_BROWSER=webkit FEEL_URL=http:\/\/127\.0\.0\.1:5178\/ npm run shots/.test(ci)
+    && /name: phone-shots/.test(ci) && /<!-- sage-shots -->/.test(ci),
+    "on a pull request the checks workflow pictures the phone in WebKit, keeps the pictures, and links them from the pull request");
+});
