@@ -11,8 +11,8 @@
     "backgroundColor": "#15211B",
     "splash": {
       "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#15211B"
+      "resizeMode": "cover",
+      "backgroundColor": "#55795F"
     },
     "ios": {
       "bundleIdentifier": "com.sageonline",

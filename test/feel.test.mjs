@@ -249,67 +249,52 @@ test("the other room is built once the first has settled, not on a guess at how 
    Jorge, 17 September: all three should be swipes. C29, decided 18 September:
    the floor page lays the corner and the floor side by side as two panes and
    the pane is what travels, under the thumb and then on the rooms' clock. */
-test("C29: Home and Live Floor are two panes, and the pane follows the thumb", () => {
-  /* S1, two panes on one track inside the floor page. Each is a screen wide
-     at a slot along the page, moved by its slot and by the thumb. */
-  assert.ok(/\.sf-pane\{ position:absolute; inset:0; overflow:hidden;\n\s*transform:translate3d\(calc\(var\(--sf-at, 0\) \* 100% \+ var\(--sf-drag, 0px\)\), 0, 0\);\n\s*transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\);/.test(core),
-    "a pane sits at its slot plus the thumb, and travels on the rooms' clock and curve");
-  assert.ok(/\.ar-stack\.ar-tabbing \.sf-pane\{ transition:none; \}/.test(core),
-    "and nothing eases while a finger is down, or the pane lags the thumb");
-  assert.ok(/style=\{\{ "--sf-at": 0 - at \}\} inert=\{at === 0 \? undefined : ""\}/.test(core) &&
-    /style=\{\{ "--sf-at": 1 - at \}\} inert=\{at === 1 \? undefined : ""\}/.test(core),
-    "Home is the left pane and the floor the right, and the one out of the frame is inert");
-  assert.ok(/<div className="sf-scroll"><div className="q-stage">\{corner\}<\/div><\/div>/.test(core) &&
-    /\.sf-pane > \.sf-scroll\{ height:100%; overflow-y:auto; overflow-x:hidden;/.test(core) &&
-    /\.q-page\.sf\.sf-panes\{ overflow:hidden; \}/.test(core),
-    "each pane is its own scroll box and the page no longer scrolls, so each keeps its own place without being told");
-  assert.ok(!/const tabScroll = useRef/.test(core) && !/arStageIn/.test(core) && !/tabSlide/.test(core),
-    "the per-tab scroll memory and the stage slide it replaced are gone with the shape that needed them");
-  /* The rooms' gesture drives it. A drag between two tabs of the floor is a
-     tab drag: the distance goes on a variable of its own, so a room drag
-     (which moves the whole floor page) does not move the panes as well. */
-  assert.ok(/setDrag\(\{ dx, to: s0\.to, room: roomOfTab\(s0\.to\), tab: !s0\.slide \}\);/.test(core) &&
-    /: drag && drag\.tab \? \{ "--sf-drag": drag\.dx \+ "px" \}/.test(core) &&
-    /\(drag \? \(drag\.tab \? " ar-tabbing" : " ar-dragging"\) : ""\)/.test(core),
-    "a tab drag is told apart from a room drag, and moves the panes and not the rooms");
-  assert.ok(/\(drag && !drag\.tab \? \(drag\.room === "line" \? " ar-nxt" : " ar-cur"\) : ""\)/.test(core) &&
-    /\(drag && !drag\.tab \? \(drag\.room === "floor" \? " ar-nxt" : " ar-cur"\) : ""\)/.test(core),
-    "and the rooms themselves are tiled only on a room drag");
-  /* S2: the corner is built once, and its cards slide in only when it is
-     born in the frame. Born out of sight, the travel is its arrival. */
-  assert.ok((core.match(/<MyCorner still=\{tab !== "corner"\}/g) || []).length === 2 &&
-    /const \[arrived\] = useState\(!!still\);/.test(core) &&
-    /\.mc\.mc-still > \*:not\(\.mc-aurora\):not\(\.mc-me\)\{ animation:none; \}/.test(core),
-    "the corner reads at birth whether it was born in the frame, and only then do its cards land on their own");
-  assert.ok(/\.ar-stack:not\(\.ar-tabbing\) \.sf-pane:not\(\.on\) \*\{ animation-play-state:paused; \}/.test(core),
-    "the pane out of sight holds its lights still, except while a thumb is pulling it in");
-  /* S3: the pill follows the thumb, a slot per screen, and settles with the sheet. */
-  assert.ok(/translateX\(\$\{\(tabs\.indexOf\(active\) \+ \(drag && drag\.dx \? Math\.max\(-1, Math\.min\(1, -drag\.dx \/ \(window\.innerWidth \|\| 1\)\)\) : 0\)\) \* 100\}%\)/.test(core) &&
-    /\.ar-bar\.ar-thumb \.ar-ind\{ transition:none; \}/.test(core),
-    "the pill is where the thumb is while a finger is down, and eases only once it lifts");
-  /* S4: you're up snaps the view to the floor and holds it there; before
-     sign-in there is one pane and nothing to pull. The floor page says which. */
-  assert.ok(/const holdWhy = up \? "up" : corner \? null : "one";/.test(core) &&
-    /useEffect\(\(\) => \{ if \(up && tab === "corner"\) setTab\("floor"\); \}, \[up, tab\]\);/.test(core) &&
-    /if \(!s0\.slide && holdRef\.current\) \{ g\.current = null; return; \}/.test(core) &&
-    /if \(next === "corner" && holdRef\.current === "up"\) return;/.test(core),
-    "the takeover pulls the view to the floor and refuses Home from the swipe and the bar until it is taken");
-  /* The reserve for the bar moves from the page to the pane's scroller, and
-     the floor's stage gives it up as before, keyed on the pane rather than the
-     page so the height does not change at the moment a switch commits. */
-  assert.ok(/\.lpc:has\(> \.ar-bar\) \.sf-pane > \.sf-scroll\{ padding-bottom:72px; \}/.test(core) &&
-    /\.lpc:has\(> \.ar-bar\) \.sf-pane\.mc-floor \.q-stage,\n\.lpc:has\(> \.ar-bar\) \.sf-pane\.mc-floor \.sf-live,/.test(core),
-    "the bar's reserve is under the pane's content, and the floor's stage is one height whichever pane is in the frame");
-  /* The harness measures it: the pane's offset against the thumb's, within a frame. */
-  assert.ok(/row\("swipe: Home under the thumb, px off", Math\.round\(Math\.abs\(under\.x - \(120 - under\.w\)\) \* 10\) \/ 10, 1\);/.test(feel) &&
-    /await touch\("touchstart", 120, 420\); await touch\("touchmove", 140, 420\); await touch\("touchmove", 240, 420\);/.test(feel),
-    "the feel harness pulls Home in by 120px and reads where the pane is, a pixel or better");
-  /* R2's scroll memory reads the pane in the frame, since the page no longer scrolls. */
+test("C29 and C74: Home and Live Floor are two pages of the floor page's own scroller", () => {
+  /* C29 (18 September) gave the pair two panes moved by the rooms' gesture.
+     C74 (19 September) handed the travel to the phone's own scroller, after
+     a recording showed one frame in eight dropped with the script moving
+     them. The shape now: the page is a horizontal scroller that snaps a page
+     at a time; the panes are its two pages; nothing of ours is in the loop. */
+  /* justify-content:flex-start, said out loud: the page's flex row centred its
+     items by inheritance, and two panes centred in one width overflow both
+     ways, so the scroller could reach only half of the second and the snap
+     fell back to the first. Measured before the fix: scrollWidth 591 of a
+     786 it should have been, the Home pane at -196. */
+  assert.ok(/\.q-page\.sf\.sf-panes\{ display:flex; justify-content:flex-start; align-items:stretch; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory;\n\s*overscroll-behavior-x:none; touch-action:pan-x pan-y;/.test(core),
+    "the page scrolls sideways and snaps a page at a time, with no rubber band at the ends so a swipe off the floor reaches the rooms' gesture");
+  assert.ok(/\.sf-pane\{ position:relative; flex:0 0 100%; width:100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always; \}/.test(core),
+    "each pane is a page of it");
+  assert.ok(/\.q-page\.sf\.sf-panes\.sf-ramp\{ scroll-snap-type:none; \}/.test(core) && /\.q-page\.sf\.sf-panes\.sf-held\{ overflow-x:hidden; \}/.test(core),
+    "the snap is off while a tap's travel runs, and the scroller is locked while You're up holds the floor");
+  assert.ok(!/--sf-drag/.test(core) && !/ar-tabbing/.test(core) && !/--sf-at/.test(core) && !/tab: !s0\.slide/.test(core),
+    "the gesture's pane drag, its variable and its class are gone");
+  assert.ok(/if \(!s0\.slide\) \{ g\.current = null; return; \}/.test(core), "and the gesture stands aside for the pair the scroller owns");
+  assert.ok(/if \(n\.classList && n\.classList\.contains\("sf-panes"\)\) continue;/.test(core), "the sideways-scroller rule knows the page is ours");
+  /* Two directions of truth, kept in step: the scroller settling on a page
+     sets the tab; the tab set from outside takes the scroller there on the
+     rooms' clock. Every scroll event reports where the page is. */
+  assert.ok(/const next = idx === 0 \? "corner" : "floor";\n\s*if \(next !== tabRef\.current\) setTab\(next\);/.test(core), "a settled page becomes the tab");
+  assert.ok(/const k = Math\.min\(1, \(now - t0\) \/ MOTION\.wipe\);\n\s*const e = 1 - Math\.pow\(1 - k, 3\);\n\s*el\.scrollLeft = from \+ \(want - from\) \* e;/.test(core), "a tab set from outside travels the scroller on the rooms' clock and curve");
+  assert.ok(/if \(onSlide\) onSlide\(Math\.max\(0, Math\.min\(1, el\.scrollLeft \/ w\)\)\);/.test(core), "and every scroll event says where the page is");
+  /* The ground and the pill follow the report straight to the screen, not
+     through a render, and the ground's own ramp stands aside for the pair. */
+  assert.ok(/if \(frac == null\) \{ if \(ind\) ind\.style\.transition = ""; return; \}\n\s*slideRef\.current = frac;/.test(core) && /paintRef\.current\(posRef\.current\);\n\s*if \(ind\) \{ ind\.style\.transition = "none"; ind\.style\.transform/.test(core),
+    "the ground is painted and the pill moved from the scroller's report, without a render, and the pill has no easing while the panes move");
+  assert.ok(/if \(onSlide\) onSlide\(null\);\n\s*const next = idx === 0/.test(core), "and gets it back when the scroller settles, for the next tap of a tab");
+  assert.ok(/if \(roomOfTab\(was\) === "floor" && roomOfTab\(active\) === "floor" && slideRef\.current != null\) return undefined;/.test(core),
+    "the ground's tap ramp stands aside between Home and Live Floor, where the scroller drives");
+  /* S2, S4 as before; A2 and A3 from the third recording. */
+  assert.ok((core.match(/<MyCorner still=\{tab !== "corner"\} host=\{homeHost\}/g) || []).length === 2 && /const \[arrived\] = useState\(!!still\);/.test(core),
+    "the corner reads at birth whether it was born in the frame");
+  assert.ok(/const holdWhy = up \? "up" : corner \? null : "one";/.test(core) && /\+ \(up \? " sf-held" : ""\)/.test(core) && /if \(next === "corner" && holdRef\.current === "up"\) return;/.test(core),
+    "You're up locks the scroller and refuses Home from the bar until it is taken");
+  assert.ok(/\.sf-pane > \.sf-scroll\{[^}]*margin:0 -1px; width:calc\(100% \+ 2px\);/.test(core), "A2: each pane's scroll box bleeds a pixel past its pane, so two panes overlap rather than meet at a fraction");
+  assert.ok(/\.sf-pane > \.mc-aurora\{ -webkit-mask-image:linear-gradient\(90deg, transparent, #000 48px, #000 calc\(100% - 48px\), transparent\);/.test(core),
+    "A3: the corner's lights fade out over the last 48 points at each side of the pane");
+  assert.ok(/\.lpc:has\(> \.ar-bar\) \.q-page\.sf\.sf-panes\{ padding-bottom:0; \}/.test(core) && /\.lpc:has\(> \.ar-bar\) \.sf-pane > \.sf-scroll\{ padding-bottom:72px; \}/.test(core),
+    "the bar's reserve is on each pane's scroller, not on the page that now scrolls sideways");
   assert.ok(/if \(r !== "line"\) return document\.querySelector\('\.ar-room\[data-room="floor"\] \.sf-pane\.on > \.sf-scroll'\);/.test(core),
     "the floor's remembered scroll is the pane that is showing");
-  /* Named tabSlide, not tabMove: Manager.jsx already has a tabMove() of its
-     own, and the scope guard caught the collision. Two things with one name in
-     one codebase is the shape that took the Line white in production. */
   assert.ok(!/\[tabMove, setTabMove\]/.test(core), "and it does not borrow a name the manager's app already uses");
 });
 
@@ -1000,7 +985,9 @@ test("the first batch under the sheets: D4, R2, and a press WebKit can run", () 
   assert.ok(/scrolls\.current\[room === "line" \? "line" : "floor"\] = el \? el\.scrollTop : 0;/.test(core) && !/= window\.scrollY;/.test(core)
     && /if \(el\) el\.scrollTop = scrolls\.current\[room === "line" \? "line" : "floor"\] \|\| 0;/.test(core),
     "R2: each room's scroll is read from its own page and put back when the room is shown");
-  assert.strictEqual((feel.match(/newCDPSession/g) || []).length, 1,
+  /* Two uses of the debugging channel, both optional: the CPU throttle, and
+     the real thumb the C74 swipe rows need. The press uses neither. */
+  assert.strictEqual((feel.match(/newCDPSession/g) || []).length, 2,
     "the harness reaches Chromium's debugging channel only for the optional CPU throttle, never for the press");
   assert.ok(/new PointerEvent\(type, \{ bubbles: true, cancelable: true, composed: true, pointerType: "touch"/.test(feel),
     "the press is a pointer event with a finger's type, which both browsers run");
