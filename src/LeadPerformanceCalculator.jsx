@@ -9867,12 +9867,12 @@ const mcClock = (iso) => {
 /* The spine on the right edge: the three standards averaged into one fill,
    notched at each third, with the head carrying the temperature so a manager
    across the room reads the day from the color alone. */
-function McSpine({ rows }) {
+function McSpine({ rows, land = false }) {
   const fr = rows.map((r) => r.need > 0 ? Math.min(1, (r.got || 0) / r.need) : ((r.got || 0) > 0 ? 1 : 0));
   const pct = fr.length ? Math.round((fr.reduce((a2, b2) => a2 + b2, 0) / fr.length) * 100) : 0;
   const temp = pct >= 100 ? "made" : pct < 34 ? "cold" : "warm";
   return (
-    <div className={"mc-spine " + temp} aria-label={pct + " percent of the day"}>
+    <div className={"mc-spine " + temp + (land ? " mc-land" : "")} aria-label={pct + " percent of the day"}>
       <span className="rt">{temp === "made" ? "DAY MADE" : pct + "%"}</span>
       <span className="sp">
         <u style={{ bottom: "33%" }} /><u style={{ bottom: "66%" }} />
@@ -9959,7 +9959,7 @@ const openToOf = (store) => {
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
-                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false }) {
+                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false, host = null }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   /* Whether this corner arrived on a slide, read ONCE, at birth. The slide's
      class on the stack lasts 440 ms; the cards' own entrance runs 900 with its
@@ -10198,6 +10198,12 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   };
   const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0), ...closing.map((c) => stdOf(c.k).green));
 
+  const fixedBits = (
+    <>
+      <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
+      <McSpine rows={rows} land={!arrived} />
+    </>
+  );
   return (
     <div className={"mc" + (offDim ? " mc-off" : "") + (arrived ? " mc-still" : "")}>
       {offToday && offState !== "in" && (
@@ -10214,7 +10220,16 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           {offState === "no1" && !activityNow && <div className="mc-offb"><button type="button" className="yes" onClick={() => onOffAnswer(true)}>I&rsquo;m in after all</button></div>}
         </div>
       )}
-      <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
+      {/* The lights and the spine are fixed to the screen, and a fixed thing
+          inside a box the compositor is moving is laid against the screen
+          mid-travel and corrected after: on the phone, the rail ran to the
+          bottom edge while the corner slid in, then snapped back (Jorge's
+          recording of 18 September, frames 2.10 to 2.17). So when the corner
+          lives in a pane (C29) both are drawn into the pane itself, beside
+          the scroller rather than inside it, as absolute boxes: they still
+          hold still while the corner scrolls, and they travel with the pane
+          because they are part of it. */}
+      {host ? createPortal(fixedBits, host) : fixedBits}
       <div className="mc-head">
         <button type="button" className="mc-calw mc-card" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
           <div className="mc-calhead"><PixIcon glyph="calendar" size={14} /><span>{MC_MONTHS[mo - 1]}</span></div>
@@ -10279,7 +10294,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           padding, the spine from the screen. Same parent, same axis, one line
           down the right side. */}
       {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You and help">{initialsOf(meFull || meLabel || "")}</button>}
-      <McSpine rows={rows} />
 
       <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
         {paceState && <i className="mc-glow" aria-hidden="true" />}
@@ -11263,6 +11277,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
      which is the thing the person is actually here to find out. */
   const pageRef = useRef(null);
   useKeyboardInset(pageRef);
+  /* The corner's lights and spine are drawn into the Home pane, see MyCorner.
+     A state rather than a ref, because the corner has to render again once
+     the pane exists to draw into it; declared up here because the corner is
+     built below, before the panes are. */
+  const [homeHost, setHomeHost] = useState(null);
 
   const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
   const queueSpine = (
@@ -11352,7 +11371,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       </div>
     );
     corner = (
-      <MyCorner still={tab !== "corner"} store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
+      <MyCorner still={tab !== "corner"} host={homeHost} store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
         mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
         goals={boardExtra.goals} off={boardExtra.off} days={days}
         offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
@@ -11471,7 +11490,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
        sight, at sign-in or at open, they arrive as they always have. */
     up = isNext && !tookIt;
     corner = (
-      <MyCorner still={tab !== "corner"} store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
+      <MyCorner still={tab !== "corner"} host={homeHost} store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
         mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
         goals={boardExtra.goals} off={boardExtra.off} days={days}
         offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
@@ -11516,7 +11535,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     <div className={"q-page f-page sf sf-floor sf-panes" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "")} ref={pageRef}>
       {corner && (
         <div className={"sf-pane sf-pane-home" + (at === 0 ? " on" : "") + (inShell && lightMode ? " mc-light" : "")}
-          style={{ "--sf-at": 0 - at }} inert={at === 0 ? undefined : ""}>
+          style={{ "--sf-at": 0 - at }} inert={at === 0 ? undefined : ""} ref={setHomeHost}>
           <div className="sf-scroll"><div className="q-stage">{corner}</div></div>
         </div>
       )}
@@ -15469,6 +15488,13 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 /* The pane out of sight holds still: its lights do not cost a frame while
    nobody can see them. Not while a thumb is pulling it in. */
 .ar-stack:not(.ar-tabbing) .sf-pane:not(.on) *{ animation-play-state:paused; }
+/* The corner's lights and spine, drawn into the pane: absolute to it rather
+   than fixed to the screen, so the box the compositor moves is the one they
+   are laid out against. The spine lands with the cards when the corner is
+   born in the frame, and only then (S2). */
+.sf-pane > .mc-aurora, .sf-pane > .mc-spine{ position:absolute; }
+.sf-pane > .mc-spine.mc-land{ animation:mcSlide .62s cubic-bezier(.16,1,.3,1) both; }
+@media (prefers-reduced-motion: reduce){ .sf-pane > .mc-spine.mc-land{ animation:none; } }
 /* Outside the rooms the floor pane paints its own ground; inside them both
    panes are clear, so the backdrop shows through, as the page already is. */
 .sf-pane.mc-floor{ background:radial-gradient(closest-side at 50% 116%, rgba(127,169,138,.42), rgba(127,169,138,.1) 55%, transparent 76%), #070A08; }
