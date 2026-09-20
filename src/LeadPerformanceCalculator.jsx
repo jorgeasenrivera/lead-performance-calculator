@@ -11646,14 +11646,20 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     if (!el) return undefined;
     const r = rail.current;
     const on = () => {
-      const w = el.clientWidth || 1;
-      if (onSlide && !r.driving) onSlide(Math.max(0, Math.min(1, el.scrollLeft / w)));
+      /* Nothing is read from layout here while the thumb or the ramp drives:
+         the pill's style was just written, and a read of the page's width
+         behind that write is a forced layout of the whole floor page in the
+         middle of the frame. That was the frame the CI runner dropped on
+         every fourth step of the thumb (the probe without the thumb's
+         report dropped none, the one without the pill's move dropped four). */
+      if (onSlide && !r.driving) onSlide(Math.max(0, Math.min(1, el.scrollLeft / (el.clientWidth || 1))));
       clearTimeout(r.settle);
       /* Settled: on a page, and no scroll event for a beat. The phone has no
          scrollend worth relying on across the versions on the lot. The
          settled page is reported as the truth first, in case the thumb's
          own reckoning below guessed the other page. */
       r.settle = setTimeout(() => {
+        const w = el.clientWidth || 1;
         const idx = Math.round(el.scrollLeft / w);
         if (Math.abs(el.scrollLeft - idx * w) > 2) return;
         cancelAnimationFrame(r.finish); r.driving = false;
@@ -11681,7 +11687,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const down = (e) => {
       const t = e.touches && e.touches[0]; if (!t) return;
       cancelAnimationFrame(r.finish);
-      r.f = { x0: t.clientX, y0: t.clientY, s0: el.scrollLeft / (el.clientWidth || 1), on: !el.classList.contains("sf-held") && !sideways(e.target), moved: false, last: 0, vx: 0, tx: performance.now() };
+      const w = el.clientWidth || 1;   // read once, at the touch, and never again under it
+      r.f = { x0: t.clientX, y0: t.clientY, w, s0: el.scrollLeft / w, on: !el.classList.contains("sf-held") && !sideways(e.target), moved: false, last: 0, vx: 0, tx: performance.now() };
     };
     const move = (e) => {
       const f = r.f, t = e.touches && e.touches[0]; if (!f || !f.on || !t) return;
@@ -11691,7 +11698,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         if (Math.abs(dx) < Math.abs(dy) * RATIO) { f.on = false; return; }
         f.moved = true; r.driving = true; f.lastX = t.clientX;
       }
-      const w = el.clientWidth || 1, now = performance.now();
+      const w = f.w, now = performance.now();
       const frac = Math.max(0, Math.min(1, f.s0 - dx / w));
       if (now > f.tx) f.vx = (t.clientX - f.lastX) / (now - f.tx);
       f.lastX = t.clientX; f.tx = now; f.last = frac;
@@ -11700,7 +11707,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const lift = () => {
       const f = r.f; r.f = null;
       if (!f || !f.moved) return;
-      const to = Math.max(0, Math.min(1, Math.round(f.last - f.vx * COAST / (el.clientWidth || 1))));
+      const to = Math.max(0, Math.min(1, Math.round(f.last - f.vx * COAST / f.w)));
       const from = f.last, t0 = performance.now();
       const step = (now) => {
         const k = Math.min(1, (now - t0) / MOTION.wipe);
