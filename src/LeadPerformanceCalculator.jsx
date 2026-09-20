@@ -7506,7 +7506,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
        ProMotion phone), and a paint per report is what a loaded runner
        dropped frames on. The pill is one transform and is moved at once. */
     if (!paintRaf.current) paintRaf.current = requestAnimationFrame(() => { paintRaf.current = 0; paintRef.current(posRef.current); });
-    if (ind) { ind.style.transition = "none"; ind.style.transform = `translateX(${(i + frac) * 100}%)`; }
+    if (ind && window.__PROBE_NOPILL === false) { ind.style.transition = "none"; ind.style.transform = `translateX(${(i + frac) * 100}%)`; }   // probe: the pill is not moved
   }, []);
   const room = openRoom(config, store, want);
   useEffect(() => { setReportContext({ store, person: account || null, screen: room }); }, [store, account, room]);
