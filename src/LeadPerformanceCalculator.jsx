@@ -8222,6 +8222,12 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   useEffect(() => { try { document.documentElement.classList.toggle("net-stale", stale); } catch (e) {} return () => { try { document.documentElement.classList.remove("net-stale"); } catch (e) {} }; }, [stale]);
   void netTick;
 
+  const pillX = `translateX(${(drag && drag.dx
+    ? tabs.indexOf(active) + Math.max(-1, Math.min(1, -drag.dx / (window.innerWidth || 1)))
+    : room !== "line" && slideRef.current != null && tabs.indexOf("home") >= 0 ? tabs.indexOf("home") + slideRef.current
+    : tabs.indexOf(active)) * 100}%)`;
+  useLayoutEffect(() => { const ind = indRef.current; if (ind && ind.style.transform !== pillX) ind.style.transform = pillX; }, [pillX, room]);
+
   return (
     <>
       {(net.offline || back) && (
@@ -8278,14 +8284,16 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       </div>
       {tabs.length > 1 && (
         <div className={"ar-bar" + (ready ? " up" : "") + (drag ? " ar-thumb" : "")} role="tablist" aria-label="Where to go">
+          {/* The pill's place: a live drag toward the line first, then the
+              scroller's last report, then the tab. Written by React below and
+              again by the effect after it, because the thumb and the ramp
+              write the same style straight to the element and React only
+              rewrites a value that changed in its own eyes. */}
           {/* The pill follows the thumb too, a slot per screen, and settles
               where the sheet settles. Jorge's decision of 18 September, S3.
               Between Home and Live Floor it follows the scroller (onSlide);
               between the floor and the line, the drag. */}
-          <span className="ar-ind" ref={indRef} style={{ transform: `translateX(${(drag && drag.dx
-              ? tabs.indexOf(active) + Math.max(-1, Math.min(1, -drag.dx / (window.innerWidth || 1)))
-              : room !== "line" && slideRef.current != null && tabs.indexOf("home") >= 0 ? tabs.indexOf("home") + slideRef.current
-              : tabs.indexOf(active)) * 100}%)`,
+          <span className="ar-ind" ref={indRef} style={{ transform: pillX,
             width: `calc((100% - 8px) / ${tabs.length})` }} />
           {tabs.map((t) => (
             <button key={t} type="button" role="tab" aria-selected={active === t} aria-label={LABEL[t]}
@@ -11600,6 +11608,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
      or from the ramp, reports where the page is so the ground and the pill
      can follow. */
   const tabRef = useRef(tab); tabRef.current = tab;
+  const activeRef = useRef(active); activeRef.current = active;
   const rail = useRef({ ramp: 0, finish: 0, settle: 0, shown: false, driving: false, f: null });
   useLayoutEffect(() => {
     const el = pageRef.current;
@@ -11646,6 +11655,14 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     if (!el) return undefined;
     const r = rail.current;
     const on = () => {
+      /* Not the room: a page on its way out under the rooms' cross still
+         scrolls (its width and offset change as it is hidden), and a report
+         from it wrote the pill's transform behind React's back after the
+         line had already been drawn as the room. Jorge's seventh recording,
+         20 September: every travel right, then the pill parked between Home
+         and Live Floor with Phone Line lit. Nothing from here counts unless
+         this page is the room, and a settle on a hidden page is no settle. */
+      if (!activeRef.current) return;
       /* Nothing is read from layout here while the thumb or the ramp drives:
          the pill's style was just written, and a read of the page's width
          behind that write is a forced layout of the whole floor page in the
@@ -11653,16 +11670,19 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
          every fourth step of the thumb (the probe without the thumb's
          report dropped none, the one without the pill's move dropped four). */
       if (onSlide && !r.driving) onSlide(Math.max(0, Math.min(1, el.scrollLeft / (el.clientWidth || 1))));
+      mark("s", [Math.round(el.scrollLeft), r.driving ? 1 : 0]);
       clearTimeout(r.settle);
       /* Settled: on a page, and no scroll event for a beat. The phone has no
          scrollend worth relying on across the versions on the lot. The
          settled page is reported as the truth first, in case the thumb's
          own reckoning below guessed the other page. */
       r.settle = setTimeout(() => {
+        if (!activeRef.current || !el.clientWidth) return;
         const w = el.clientWidth || 1;
         const idx = Math.round(el.scrollLeft / w);
         if (Math.abs(el.scrollLeft - idx * w) > 2) return;
         cancelAnimationFrame(r.finish); r.driving = false;
+        if (T.some((x) => x[0] === "m")) { mark("z", [idx]); try { report("trace", "swipe to " + idx, { t: T.slice(0, 80) }); } catch (e2) {} T.length = 0; }
         if (onSlide) { onSlide(idx); onSlide(null); }
         const next = idx === 0 ? "corner" : "floor";
         if (next !== tabRef.current) setTab(next);
@@ -11684,18 +11704,36 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const START = 10, RATIO = 1.2;   // the rooms' gesture's own thresholds, so both read a thumb the same way
     const COAST = 0.998 / (1 - 0.998);   // points a flick coasts per point-per-millisecond of speed
     const sideways = (t) => { for (let n = t; n && n !== el; n = n.parentElement) { try { const cs = getComputedStyle(n); if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true; } catch (e) { return false; } } return false; };
+    /* A trace of one gesture, posted when the page settles: every touch
+       and scroll event the phone gave the page, with its time, the finger,
+       the scroller and the report made. Jorge's sixth recording (19
+       September, on build ec7fde1) still shows the pill running ahead of the
+       panes on a swipe, and only the phone can say which events it sends
+       during a native scroll and when. One build's worth of rows in
+       app_errors under kind "trace"; it comes out with the answer (C77). */
+    const T = [];
+    const mark = (k, a) => { if (T.length < 80) T.push([k, Math.round(performance.now() - (r.t0 || 0))].concat(a)); };
     const down = (e) => {
-      const t = e.touches && e.touches[0]; if (!t) return;
+      const t = e.touches && e.touches[0]; if (!t || !activeRef.current) return;
       cancelAnimationFrame(r.finish);
       const w = el.clientWidth || 1;   // read once, at the touch, and never again under it
       r.f = { x0: t.clientX, y0: t.clientY, w, s0: el.scrollLeft / w, on: !el.classList.contains("sf-held") && !sideways(e.target), moved: false, last: 0, vx: 0, tx: performance.now() };
+      r.t0 = performance.now(); T.length = 0; mark("d", [Math.round(t.clientX), Math.round(el.scrollLeft), r.f.on ? 1 : 0]);
     };
     const move = (e) => {
-      const f = r.f, t = e.touches && e.touches[0]; if (!f || !f.on || !t) return;
+      const f = r.f, t = e.touches && e.touches[0]; if (!f || !t) return;
+      mark("m", [Math.round(t.clientX), Math.round(el.scrollLeft), f.on ? 1 : 0]);
+      if (!f.on) return;
       const dx = t.clientX - f.x0, dy = t.clientY - f.y0;
       if (!f.moved) {
         if (Math.abs(dx) < START) return;
         if (Math.abs(dx) < Math.abs(dy) * RATIO) { f.on = false; return; }
+        /* Off the end of the page is not this scroller's: from the floor
+           toward Phone Line it is the rooms' own drag, and the pill follows
+           that. Reporting the clamped edge here sat on top of that drag on
+           every move (Jorge's sixth recording: the pill stood on Live Floor
+           through the drag and jumped at the end). */
+        if (f.s0 - dx / f.w < 0 || f.s0 - dx / f.w > 1) { f.on = false; return; }
         f.moved = true; r.driving = true; f.lastX = t.clientX;
       }
       const w = f.w, now = performance.now();
@@ -11704,10 +11742,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       f.lastX = t.clientX; f.tx = now; f.last = frac;
       if (onSlide) onSlide(frac);
     };
-    const lift = () => {
+    const lift = (e) => {
       const f = r.f; r.f = null;
+      mark(e && e.type === "touchcancel" ? "c" : "u", [f ? Math.round(f.last * 100) : -1, f ? Math.round(f.vx * 100) : 0, Math.round(el.scrollLeft)]);
       if (!f || !f.moved) return;
       const to = Math.max(0, Math.min(1, Math.round(f.last - f.vx * COAST / f.w)));
+      mark("t", [to]);
       const from = f.last, t0 = performance.now();
       const step = (now) => {
         const k = Math.min(1, (now - t0) / MOTION.wipe);
