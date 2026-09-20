@@ -287,8 +287,8 @@ test("C29 and C74: Home and Live Floor are two pages of the floor page's own scr
     "and the thumb is read the way the scroller reads it: not while You're up holds the floor, not on something that scrolls sideways itself, not on a mostly vertical drag");
   /* The ground and the pill follow the report straight to the screen, not
      through a render, and the ground's own ramp stands aside for the pair. */
-  assert.ok(/if \(frac == null\) \{ if \(ind\) ind\.style\.transition = ""; return; \}\n\s*slideRef\.current = frac;/.test(core) && /paintRef\.current\(posRef\.current\);\n\s*if \(ind\) \{ ind\.style\.transition = "none"; ind\.style\.transform/.test(core),
-    "the ground is painted and the pill moved from the scroller's report, without a render, and the pill has no easing while the panes move");
+  assert.ok(/if \(frac == null\) \{ if \(ind\) ind\.style\.transition = ""; return; \}\n\s*slideRef\.current = frac;/.test(core) && /if \(!paintRaf\.current\) paintRaf\.current = requestAnimationFrame\(\(\) => \{ paintRaf\.current = 0; paintRef\.current\(posRef\.current\); \}\);\n\s*if \(ind\) \{ ind\.style\.transition = "none"; ind\.style\.transform/.test(core),
+    "the ground is painted once a frame and the pill moved at once from the report, without a render, and the pill has no easing while the panes move");
   assert.ok(/if \(onSlide\) \{ onSlide\(idx\); onSlide\(null\); \}\n\s*const next = idx === 0/.test(core), "and gets it back when the scroller settles, on the settled page, for the next tap of a tab");
   assert.ok(/drag && drag\.dx\n\s*\? tabs\.indexOf\(active\) \+ Math\.max\(-1, Math\.min\(1, -drag\.dx/.test(core), "the pill follows a live drag toward the line before the scroller's report (C76: it stood still on that drag since C74)");
   assert.ok(/\.sf-pane > \.mc-aurora, \.sf-pane > \.mc-spine, \.sf-pane > \.mc-me\{ position:absolute; \}/.test(core) && /<McSpine rows=\{rows\} land=\{!arrived\} \/>[^]*?className="mc-me"[^]*?<\/>\n\s*\);/.test(core),

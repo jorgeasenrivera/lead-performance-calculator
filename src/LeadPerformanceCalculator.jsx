@@ -7490,6 +7490,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
      mid-slide does not put the pill back. */
   const slideRef = useRef(null);
   const indRef = useRef(null);
+  const paintRaf = useRef(0);
   const onSlide = useCallback((frac) => {
     const ind = indRef.current;
     /* Null is the scroller settling on a page: the pill gets its easing back
@@ -7500,7 +7501,11 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     const i = tabsRef.current.indexOf("home");
     if (i < 0) return;
     posRef.current = i + frac;
-    paintRef.current(posRef.current);
+    /* The ground is painted once a frame, whatever the thumb's own rate: a
+       touch can report more than once between two frames (twice on a
+       ProMotion phone), and a paint per report is what a loaded runner
+       dropped frames on. The pill is one transform and is moved at once. */
+    if (!paintRaf.current) paintRaf.current = requestAnimationFrame(() => { paintRaf.current = 0; paintRef.current(posRef.current); });
     if (ind) { ind.style.transition = "none"; ind.style.transform = `translateX(${(i + frac) * 100}%)`; }
   }, []);
   const room = openRoom(config, store, want);
