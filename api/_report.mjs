@@ -19,7 +19,7 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, serviceKey } from "./_env.mjs";
 
 export const SOURCES = ["web", "shell", "server"];
-export const KINDS = ["error", "rejection", "render", "write", "api", "handler"];
+export const KINDS = ["error", "rejection", "render", "write", "api", "handler", "trace"];   // trace: one gesture's events, from the phone, for C77
 export const RATE = { windowMinutes: 10, perDevice: 20 };
 const LIMIT = { message: 500, stack: 4000, url: 300, build: 40, store: 60, person_id: 40, device_id: 120, ua: 300, screen: 60, extra: 2000 };
 
