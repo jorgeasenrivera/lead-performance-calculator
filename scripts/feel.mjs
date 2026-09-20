@@ -245,7 +245,11 @@ async function run(b) {
        snap lands on the floor. Any other answer is the scroller not
        following. The frames counted are the ones while the thumb moved: the
        snap after it is the browser's own animation and is not this row. */
-    row("swipe: frames dropped while the thumb moved", sw.frames.slice(first < 0 ? 0 : first, lastMove < 0 ? undefined : lastMove).filter((g) => g > 25).length, BAR.dropped);
+    const moved = sw.frames.slice(first < 0 ? 0 : first, lastMove < 0 ? undefined : lastMove);
+    row("swipe: frames dropped while the thumb moved", moved.filter((g) => g > 25).length, BAR.dropped);
+    /* Which frames, and how long: a runner that drops the same three every
+       run is saying where the cost is, and the number alone cannot. */
+    if (moved.some((g) => g > 25)) console.log("       dropped: " + moved.map((g, i) => [g, i]).filter(([g]) => g > 25).map(([g, i]) => { const t = sw.track[(first < 0 ? 0 : first) + i + 1] || []; return `frame ${i} (${Math.round(g)} ms, thumb ${t[0]}, page ${Math.round(t[1] || 0)})`; }).join(", "));
     await paneOn("floor"); await p.waitForTimeout(800);
     await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   } else {
