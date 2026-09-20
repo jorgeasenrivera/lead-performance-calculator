@@ -10220,6 +10220,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       k, units: (s2.internetUnits || 0) + (s2.phoneUnits || 0) + (s2.showroomUnits || 0) + (s2.campaignUnits || 0),
     })).filter((r) => r.units > 0 || r.k === norm(meFull) || r.k === norm(meLabel));
     all.sort((x2, y2) => y2.units - x2.units || x2.k.localeCompare(y2.k));
+    /* Ties share a place: two on 8 are both third and the next is fifth, the
+       way a board on a wall reads. The alphabet only orders the rows (B4). */
+    let last = null, rk = 0;
+    all.forEach((r, i) => { if (r.units !== last) { rk = i + 1; last = r.units; } r.rank = rk; });
     const meIdx = all.findIndex((r) => r.k === norm(meFull) || r.k === norm(meLabel));
     return { all, meIdx };
   })();
@@ -10467,7 +10471,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             <div className="mc-pod">
               {board.all.slice(0, 3).concat(board.meIdx > 2 ? [board.all[board.meIdx]] : []).map((r2) => {
                 const meRow = r2.k === norm(meFull) || r2.k === norm(meLabel);
-                const rank = board.all.indexOf(r2) + 1;
+                const rank = r2.rank;
                 const nm2 = title(r2.k);
                 return (
                   <div className={"mc-pd" + (meRow ? " me" : "")} key={r2.k}>
@@ -10479,7 +10483,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                 );
               })}
             </div>
-            <span className="mc-boardsub">{board.meIdx >= 0 ? `you are ${board.meIdx + 1}${["st", "nd", "rd"][board.meIdx] || "th"} of ${board.all.length}` : `${board.all.length} on the board`}</span>
+            <span className="mc-boardsub">{board.meIdx >= 0 ? `you are ${board.all[board.meIdx].rank}${["st", "nd", "rd"][board.all[board.meIdx].rank - 1] || "th"} of ${board.all.length}` : `${board.all.length} on the board`}</span>
           </button>
         </>
       )}
@@ -10582,21 +10586,53 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                 </div>
               </>
             )}
-            {sheet === "board" && board && (
-              <div className="mc-hb mc-hb-full">
-                {board.all.map((r2, i) => {
-                  const meRow = r2.k === norm(meFull) || r2.k === norm(meLabel);
-                  return (
-                    <div className={"r" + (meRow ? " me" : "")} key={r2.k}>
-                      <span className="rk">{i + 1}</span>
-                      <span className="nm2">{meRow ? "You" : title(r2.k)}</span>
-                      <span className="tk"><i style={{ width: Math.round((r2.units / Math.max(1, board.all[0].units)) * 100) + "%" }} /></span>
-                      <span className="un">{r2.units}</span>
+            {sheet === "board" && board && (() => {
+              /* Jorge's decisions of 20 September (C78): the top three as the
+                 corner's own podium tiles, the leader a step taller, then rows
+                 that read as people: initials in their colour, the full name,
+                 the units as the big number, and the comparison a thin line
+                 under the name rather than a pill in the middle. Ties share a
+                 place, so a tie at third puts four on the podium, and four
+                 fit. Your own row stays in view (sticky) while the list is
+                 above it. */
+              const isMe = (r2) => r2.k === norm(meFull) || r2.k === norm(meLabel);
+              const top = board.all.filter((r2) => r2.rank <= 3), rest = board.all.filter((r2) => r2.rank > 3);
+              const lead = Math.max(1, board.all[0].units);
+              const ord = (n) => n + (["ST", "ND", "RD"][n - 1] || "TH");
+              const av = (meRow, nm2) => ({ background: meRow ? "#E4C98D" : `hsl(${hueFromName(nm2)} 62% 46%)`, color: meRow ? "#15211B" : "#fff" });
+              return (
+                <div className="mc-lb">
+                  <div className="mc-pod mc-lb-pod">
+                    {top.map((r2) => {
+                      const meRow = isMe(r2), nm2 = title(r2.k);
+                      return (
+                        <div className={"mc-pd" + (meRow ? " me" : "") + (r2.rank === 1 ? " first" : "")} key={r2.k}>
+                          <span className="av" style={av(meRow, nm2)}>{initialsOf(nm2)}</span>
+                          <b>{meRow ? "You" : nm2.split(" ")[0]}</b>
+                          <span className="un">{r2.units}</span>
+                          <span className="rk">{ord(r2.rank)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {rest.length > 0 && (
+                    <div className="mc-lb-rows">
+                      {rest.map((r2) => {
+                        const meRow = isMe(r2), nm2 = title(r2.k);
+                        return (
+                          <div className={"mc-lbr" + (meRow ? " me" : "")} key={r2.k}>
+                            <span className="rk">{r2.rank}</span>
+                            <span className="av" style={av(meRow, nm2)}>{initialsOf(nm2)}</span>
+                            <span className="nm"><b>{meRow ? "You" : nm2}</b><s><i style={{ width: Math.round((r2.units / lead) * 100) + "%" }} /></s></span>
+                            <span className="un">{r2.units}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div></Overlay>
       )}
@@ -11609,7 +11645,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
      can follow. */
   const tabRef = useRef(tab); tabRef.current = tab;
   const activeRef = useRef(active); activeRef.current = active;
-  const rail = useRef({ ramp: 0, finish: 0, settle: 0, shown: false, driving: false, f: null });
+  const rail = useRef({ ramp: 0, settle: 0, shown: false, driving: false, f: null });
   useLayoutEffect(() => {
     const el = pageRef.current;
     const r = rail.current;
@@ -11623,7 +11659,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     /* Straight there, no travel: the first frame, a room just shown again
        (hidden loses its scroll), or reduced motion. */
     if (!r.shown || !active || reduce) { el.scrollLeft = want; r.shown = true; return undefined; }
-    cancelAnimationFrame(r.ramp); cancelAnimationFrame(r.finish);
+    cancelAnimationFrame(r.ramp);
     el.classList.add("sf-ramp");
     const from = el.scrollLeft, t0 = performance.now();
     /* The ramp reports where it is putting the page, itself, on every step.
@@ -11670,7 +11706,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
          every fourth step of the thumb (the probe without the thumb's
          report dropped none, the one without the pill's move dropped four). */
       if (onSlide && !r.driving) onSlide(Math.max(0, Math.min(1, el.scrollLeft / (el.clientWidth || 1))));
-      mark("s", [Math.round(el.scrollLeft), r.driving ? 1 : 0]);
       clearTimeout(r.settle);
       /* Settled: on a page, and no scroll event for a beat. The phone has no
          scrollend worth relying on across the versions on the lot. The
@@ -11681,8 +11716,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         const w = el.clientWidth || 1;
         const idx = Math.round(el.scrollLeft / w);
         if (Math.abs(el.scrollLeft - idx * w) > 2) return;
-        cancelAnimationFrame(r.finish); r.driving = false;
-        if (T.some((x) => x[0] === "m")) { mark("z", [idx]); try { report("trace", "swipe to " + idx, { t: T.slice(0, 80) }); } catch (e2) {} T.length = 0; }
+        r.driving = false;
         if (onSlide) { onSlide(idx); onSlide(null); }
         const next = idx === 0 ? "corner" : "floor";
         if (next !== tabRef.current) setTab(next);
@@ -11694,35 +11728,24 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
        The finger is read the way the scroller reads it: nothing until it has
        moved ten points, sideways more than up, and not while You're up holds
        the floor or the finger is on something that scrolls sideways itself.
-       When it lifts, the pill and the ground finish to the page the phone
-       will snap to, on the rooms' own clock and curve, and the settled
-       report above corrects the guess if the phone chose the other page.
-       The guess is the phone's own rule: the scroller lets the momentum run
-       out (a normal deceleration of 0.998 a millisecond, so a flick travels
-       about five hundred times its speed in points) and snaps to the page
-       nearest where that would have ended. */
+       When it lifts, the thumb hands back to the phone's own reports, and
+       the pill and the ground follow the snap a few frames behind the panes.
+       They used to finish on the rooms' clock toward a guessed page, and the
+       trace from Jorge's phone (20 September) showed why that was wrong
+       twice over: the phone's snap takes 600 to 700 ms, not 380, so the pill
+       finished first and sat waiting; and on some swipes the phone cancels
+       the touch after eight points and sends only its reports from then on,
+       so the thumb never had the gesture at all. The reports lag the panes
+       by two or three frames, and that is the whole of the cost now (F1). */
     const START = 10, RATIO = 1.2;   // the rooms' gesture's own thresholds, so both read a thumb the same way
-    const COAST = 0.998 / (1 - 0.998);   // points a flick coasts per point-per-millisecond of speed
     const sideways = (t) => { for (let n = t; n && n !== el; n = n.parentElement) { try { const cs = getComputedStyle(n); if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true; } catch (e) { return false; } } return false; };
-    /* A trace of one gesture, posted when the page settles: every touch
-       and scroll event the phone gave the page, with its time, the finger,
-       the scroller and the report made. Jorge's sixth recording (19
-       September, on build ec7fde1) still shows the pill running ahead of the
-       panes on a swipe, and only the phone can say which events it sends
-       during a native scroll and when. One build's worth of rows in
-       app_errors under kind "trace"; it comes out with the answer (C77). */
-    const T = [];
-    const mark = (k, a) => { if (T.length < 80) T.push([k, Math.round(performance.now() - (r.t0 || 0))].concat(a)); };
     const down = (e) => {
       const t = e.touches && e.touches[0]; if (!t || !activeRef.current) return;
-      cancelAnimationFrame(r.finish);
       const w = el.clientWidth || 1;   // read once, at the touch, and never again under it
-      r.f = { x0: t.clientX, y0: t.clientY, w, s0: el.scrollLeft / w, on: !el.classList.contains("sf-held") && !sideways(e.target), moved: false, last: 0, vx: 0, tx: performance.now() };
-      r.t0 = performance.now(); T.length = 0; mark("d", [Math.round(t.clientX), Math.round(el.scrollLeft), r.f.on ? 1 : 0]);
+      r.f = { x0: t.clientX, y0: t.clientY, w, s0: el.scrollLeft / w, on: !el.classList.contains("sf-held") && !sideways(e.target), moved: false, last: 0 };
     };
     const move = (e) => {
       const f = r.f, t = e.touches && e.touches[0]; if (!f || !t) return;
-      mark("m", [Math.round(t.clientX), Math.round(el.scrollLeft), f.on ? 1 : 0]);
       if (!f.on) return;
       const dx = t.clientX - f.x0, dy = t.clientY - f.y0;
       if (!f.moved) {
@@ -11734,35 +11757,24 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
            every move (Jorge's sixth recording: the pill stood on Live Floor
            through the drag and jumped at the end). */
         if (f.s0 - dx / f.w < 0 || f.s0 - dx / f.w > 1) { f.on = false; return; }
-        f.moved = true; r.driving = true; f.lastX = t.clientX;
+        f.moved = true; r.driving = true;
       }
-      const w = f.w, now = performance.now();
+      const w = f.w;
       const frac = Math.max(0, Math.min(1, f.s0 - dx / w));
-      if (now > f.tx) f.vx = (t.clientX - f.lastX) / (now - f.tx);
-      f.lastX = t.clientX; f.tx = now; f.last = frac;
+      f.last = frac;
       if (onSlide) onSlide(frac);
     };
-    const lift = (e) => {
+    const lift = () => {
       const f = r.f; r.f = null;
-      mark(e && e.type === "touchcancel" ? "c" : "u", [f ? Math.round(f.last * 100) : -1, f ? Math.round(f.vx * 100) : 0, Math.round(el.scrollLeft)]);
       if (!f || !f.moved) return;
-      const to = Math.max(0, Math.min(1, Math.round(f.last - f.vx * COAST / f.w)));
-      mark("t", [to]);
-      const from = f.last, t0 = performance.now();
-      const step = (now) => {
-        const k = Math.min(1, (now - t0) / MOTION.wipe);
-        const e = 1 - Math.pow(1 - k, 3);
-        if (onSlide) onSlide(from + (to - from) * e);
-        if (k < 1) r.finish = requestAnimationFrame(step); else r.driving = false;
-      };
-      r.finish = requestAnimationFrame(step);
+      r.driving = false;   // the phone's reports drive from here to the settle
     };
     el.addEventListener("scroll", on, { passive: true });
     el.addEventListener("touchstart", down, { passive: true });
     el.addEventListener("touchmove", move, { passive: true });
     el.addEventListener("touchend", lift, { passive: true });
     el.addEventListener("touchcancel", lift, { passive: true });
-    return () => { el.removeEventListener("scroll", on); el.removeEventListener("touchstart", down); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", lift); el.removeEventListener("touchcancel", lift); clearTimeout(r.settle); cancelAnimationFrame(r.finish); };
+    return () => { el.removeEventListener("scroll", on); el.removeEventListener("touchstart", down); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", lift); el.removeEventListener("touchcancel", lift); clearTimeout(r.settle); };
   }, [onSlide]);   // eslint-disable-line
   return (
     <div className={"q-page f-page sf sf-floor sf-panes" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (up ? " sf-held" : "")} ref={pageRef}>
@@ -16733,6 +16745,31 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-cline-note{ margin-top:7px; font-size:12px; line-height:1.45; color:rgba(237,242,234,.42); }
 .mc-cline-none{ font-size:11.5px; line-height:1.5; color:rgba(237,242,234,.5); padding:10px 0 2px; }
 .mc-hb-full .r{ padding:3px 0; }
+/* The board sheet since C78: the corner's podium tiles, the leader a step
+   taller, then rows that read as people. Your row is sticky to the sheet's
+   foot while the list is above it, and takes its place once the list reaches
+   it, so where you are is one glance without a scroll (B1 to B4). */
+.mc-lb{ display:flex; flex-direction:column; gap:10px; }
+.mc-lb-pod{ align-items:end; }
+.mc-lb .mc-pd.first{ padding-top:14px; }
+.mc-lb .mc-pd.first .av{ width:36px; height:36px; font-size:13px; }
+.mc-lb .mc-pd.first .un{ font-size:17px; }
+.mc-lb-rows{ display:flex; flex-direction:column; gap:2px; border-top:1px solid rgba(255,255,255,.08); padding-top:8px; }
+.mc-lbr{ display:grid; grid-template-columns:22px 26px minmax(0,1fr) auto; align-items:center; column-gap:10px; padding:7px 8px; border-radius:12px; }
+.mc-lbr .rk{ font-family:var(--sfmono); font-size:11px; font-weight:700; color:rgba(232,238,242,.45); text-align:right; }
+.mc-lbr .av{ width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:10px; font-weight:700; }
+.mc-lbr .nm{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+.mc-lbr .nm b{ font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mc-lbr .nm s{ display:block; text-decoration:none; height:3px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; }
+.mc-lbr .nm s i{ display:block; height:100%; border-radius:2px; background:rgba(169,196,172,.55); }
+.mc-lbr .un{ font-family:var(--sfmono); font-size:13px; font-weight:700; text-align:right; min-width:34px; }
+.mc-lbr.me{ position:sticky; bottom:6px; z-index:2; background:linear-gradient(rgba(228,201,141,.14), rgba(228,201,141,.14)), #1a2820;
+  box-shadow:inset 0 0 0 1px rgba(228,201,141,.45), 0 -10px 20px -10px rgba(0,0,0,.7); }
+.mc-lbr.me .nm s i{ background:#E4C98D; }
+.mc-light .mc-lbr .rk{ color:rgba(31,42,34,.5); }
+.mc-light .mc-lbr .nm s{ background:rgba(31,42,34,.1); }
+.mc-light .mc-lb-rows{ border-top-color:rgba(31,42,34,.1); }
+.mc-light .mc-lbr.me{ background:#F6E3C3; box-shadow:inset 0 0 0 1px #D0821E, 0 -10px 20px -10px rgba(0,0,0,.25); }
 .mc-pill{ position:fixed; left:50%; transform:translateX(-50%); bottom:14px; z-index:50;
   display:flex; background:rgba(6,10,8,.85); border:1px solid rgba(255,255,255,.13);
   border-radius:999px; padding:4px; backdrop-filter:blur(6px);
