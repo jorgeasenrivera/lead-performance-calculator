@@ -275,12 +275,24 @@ test("C29 and C74: Home and Live Floor are two pages of the floor page's own scr
      rooms' clock. Every scroll event reports where the page is. */
   assert.ok(/const next = idx === 0 \? "corner" : "floor";\n\s*if \(next !== tabRef\.current\) setTab\(next\);/.test(core), "a settled page becomes the tab");
   assert.ok(/const k = Math\.min\(1, \(now - t0\) \/ MOTION\.wipe\);\n\s*const e = 1 - Math\.pow\(1 - k, 3\);\n\s*el\.scrollLeft = from \+ \(want - from\) \* e;/.test(core), "a tab set from outside travels the scroller on the rooms' clock and curve");
-  assert.ok(/if \(onSlide\) onSlide\(Math\.max\(0, Math\.min\(1, el\.scrollLeft \/ w\)\)\);/.test(core), "and every scroll event says where the page is");
+  assert.ok(/if \(onSlide && !r\.driving\) onSlide\(Math\.max\(0, Math\.min\(1, el\.scrollLeft \/ w\)\)\);/.test(core), "and a scroll event says where the page is, unless the ramp or the thumb already has");
+  /* C76: the phone's scroll reports arrive about a tenth of a second after
+     the panes have moved, so the ramp and the thumb report the position
+     themselves and the late reports are ignored while they drive. */
+  assert.ok(/r\.driving = true;\n\s*if \(onSlide\) onSlide\(from \/ w\);/.test(core) && /if \(onSlide\) onSlide\(Math\.max\(0, Math\.min\(1, \(from \+ \(want - from\) \* e\) \/ w\)\)\);/.test(core),
+    "the ramp reports where it is putting the page, before the first frame and on every step");
+  assert.ok(/el\.addEventListener\("touchmove", move, \{ passive: true \}\);/.test(core) && /const frac = Math\.max\(0, Math\.min\(1, f\.s0 - dx \/ w\)\);/.test(core) && /const to = Math\.max\(0, Math\.min\(1, Math\.round\(f\.last - f\.vx \* COAST \/ \(el\.clientWidth \|\| 1\)\)\)\);/.test(core) && /const COAST = 0\.998 \/ \(1 - 0\.998\);/.test(core),
+    "under a thumb the report is the thumb's, and when it lifts the pill and ground finish to the page the phone will snap to");
+  assert.ok(/on: !el\.classList\.contains\("sf-held"\) && !sideways\(e\.target\)/.test(core) && /if \(Math\.abs\(dx\) < Math\.abs\(dy\) \* RATIO\) \{ f\.on = false; return; \}/.test(core),
+    "and the thumb is read the way the scroller reads it: not while You're up holds the floor, not on something that scrolls sideways itself, not on a mostly vertical drag");
   /* The ground and the pill follow the report straight to the screen, not
      through a render, and the ground's own ramp stands aside for the pair. */
   assert.ok(/if \(frac == null\) \{ if \(ind\) ind\.style\.transition = ""; return; \}\n\s*slideRef\.current = frac;/.test(core) && /paintRef\.current\(posRef\.current\);\n\s*if \(ind\) \{ ind\.style\.transition = "none"; ind\.style\.transform/.test(core),
     "the ground is painted and the pill moved from the scroller's report, without a render, and the pill has no easing while the panes move");
-  assert.ok(/if \(onSlide\) onSlide\(null\);\n\s*const next = idx === 0/.test(core), "and gets it back when the scroller settles, for the next tap of a tab");
+  assert.ok(/if \(onSlide\) \{ onSlide\(idx\); onSlide\(null\); \}\n\s*const next = idx === 0/.test(core), "and gets it back when the scroller settles, on the settled page, for the next tap of a tab");
+  assert.ok(/drag && drag\.dx\n\s*\? tabs\.indexOf\(active\) \+ Math\.max\(-1, Math\.min\(1, -drag\.dx/.test(core), "the pill follows a live drag toward the line before the scroller's report (C76: it stood still on that drag since C74)");
+  assert.ok(/\.sf-pane > \.mc-aurora, \.sf-pane > \.mc-spine, \.sf-pane > \.mc-me\{ position:absolute; \}/.test(core) && /<McSpine rows=\{rows\} land=\{!arrived\} \/>[^]*?className="mc-me"[^]*?<\/>\n\s*\);/.test(core),
+    "the profile mark rides in the pane with the spine and the lights (C76: fixed to the screen, the pane left it behind)");
   assert.ok(/if \(roomOfTab\(was\) === "floor" && roomOfTab\(active\) === "floor" && slideRef\.current != null\) return undefined;/.test(core),
     "the ground's tap ramp stands aside between Home and Live Floor, where the scroller drives");
   /* S2, S4 as before; A2 and A3 from the third recording. */

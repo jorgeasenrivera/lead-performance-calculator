@@ -8277,9 +8277,10 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
               where the sheet settles. Jorge's decision of 18 September, S3.
               Between Home and Live Floor it follows the scroller (onSlide);
               between the floor and the line, the drag. */}
-          <span className="ar-ind" ref={indRef} style={{ transform: `translateX(${(room !== "line" && slideRef.current != null && tabs.indexOf("home") >= 0
-              ? tabs.indexOf("home") + slideRef.current
-              : tabs.indexOf(active) + (drag && drag.dx ? Math.max(-1, Math.min(1, -drag.dx / (window.innerWidth || 1))) : 0)) * 100}%)`,
+          <span className="ar-ind" ref={indRef} style={{ transform: `translateX(${(drag && drag.dx
+              ? tabs.indexOf(active) + Math.max(-1, Math.min(1, -drag.dx / (window.innerWidth || 1)))
+              : room !== "line" && slideRef.current != null && tabs.indexOf("home") >= 0 ? tabs.indexOf("home") + slideRef.current
+              : tabs.indexOf(active)) * 100}%)`,
             width: `calc((100% - 8px) / ${tabs.length})` }} />
           {tabs.map((t) => (
             <button key={t} type="button" role="tab" aria-selected={active === t} aria-label={LABEL[t]}
@@ -10247,6 +10248,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     <>
       <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
       <McSpine rows={rows} land={!arrived} />
+      {/* The initials sit beside the spine, on the same axis; they were fixed
+          to the screen and the pane left them behind on every travel
+          (Jorge, 19 September). In the pane they ride with it. */}
+      {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You and help">{initialsOf(meFull || meLabel || "")}</button>}
     </>
   );
   return (
@@ -10338,8 +10343,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           against different boxes: the card's corner is measured from the card's
           padding, the spine from the screen. Same parent, same axis, one line
           down the right side. */}
-      {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You and help">{initialsOf(meFull || meLabel || "")}</button>}
-
       <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
         {paceState && <i className="mc-glow" aria-hidden="true" />}
         <span className="mc-statecol">
@@ -11592,7 +11595,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
      or from the ramp, reports where the page is so the ground and the pill
      can follow. */
   const tabRef = useRef(tab); tabRef.current = tab;
-  const rail = useRef({ ramp: 0, settle: 0, shown: false });
+  const rail = useRef({ ramp: 0, finish: 0, settle: 0, shown: false, driving: false, f: null });
   useLayoutEffect(() => {
     const el = pageRef.current;
     const r = rail.current;
@@ -11606,18 +11609,32 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     /* Straight there, no travel: the first frame, a room just shown again
        (hidden loses its scroll), or reduced motion. */
     if (!r.shown || !active || reduce) { el.scrollLeft = want; r.shown = true; return undefined; }
-    cancelAnimationFrame(r.ramp);
+    cancelAnimationFrame(r.ramp); cancelAnimationFrame(r.finish);
     el.classList.add("sf-ramp");
     const from = el.scrollLeft, t0 = performance.now();
+    /* The ramp reports where it is putting the page, itself, on every step.
+       On the phone the scroller lives in another process and the scroll
+       event with the new position comes back about a tenth of a second
+       after the panes have moved (Jorge's recording, 19 September: the pill
+       and the ground a hundred milliseconds behind the panes on every
+       travel, and on a tap the pill first gliding on its own easing to the
+       tab and then snapping back to the late report). The ramp knows the
+       position before the phone does, so it says so, and the late reports
+       are ignored while it drives. The first report is made here, before
+       the frame is painted, so the pill is never drawn at the tab it is
+       going to. */
+    r.driving = true;
+    if (onSlide) onSlide(from / w);
     const step = (now) => {
       const k = Math.min(1, (now - t0) / MOTION.wipe);
       const e = 1 - Math.pow(1 - k, 3);
       el.scrollLeft = from + (want - from) * e;
+      if (onSlide) onSlide(Math.max(0, Math.min(1, (from + (want - from) * e) / w)));
       if (k < 1) r.ramp = requestAnimationFrame(step);
-      else { el.scrollLeft = want; el.classList.remove("sf-ramp"); }
+      else { el.scrollLeft = want; el.classList.remove("sf-ramp"); r.driving = false; }
     };
     r.ramp = requestAnimationFrame(step);
-    return () => { cancelAnimationFrame(r.ramp); el.classList.remove("sf-ramp"); };
+    return () => { cancelAnimationFrame(r.ramp); el.classList.remove("sf-ramp"); r.driving = false; };
   }, [at, !!corner, active]);   // eslint-disable-line
   useEffect(() => {
     const el = pageRef.current;
@@ -11625,20 +11642,75 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const r = rail.current;
     const on = () => {
       const w = el.clientWidth || 1;
-      if (onSlide) onSlide(Math.max(0, Math.min(1, el.scrollLeft / w)));
+      if (onSlide && !r.driving) onSlide(Math.max(0, Math.min(1, el.scrollLeft / w)));
       clearTimeout(r.settle);
       /* Settled: on a page, and no scroll event for a beat. The phone has no
-         scrollend worth relying on across the versions on the lot. */
+         scrollend worth relying on across the versions on the lot. The
+         settled page is reported as the truth first, in case the thumb's
+         own reckoning below guessed the other page. */
       r.settle = setTimeout(() => {
         const idx = Math.round(el.scrollLeft / w);
         if (Math.abs(el.scrollLeft - idx * w) > 2) return;
-        if (onSlide) onSlide(null);
+        cancelAnimationFrame(r.finish); r.driving = false;
+        if (onSlide) { onSlide(idx); onSlide(null); }
         const next = idx === 0 ? "corner" : "floor";
         if (next !== tabRef.current) setTab(next);
       }, 80);
     };
+    /* Under a thumb the report comes from the thumb, not the scroll event,
+       for the same reason as the ramp above: the phone moves the panes one
+       to one with the finger and tells the page a tenth of a second later.
+       The finger is read the way the scroller reads it: nothing until it has
+       moved ten points, sideways more than up, and not while You're up holds
+       the floor or the finger is on something that scrolls sideways itself.
+       When it lifts, the pill and the ground finish to the page the phone
+       will snap to, on the rooms' own clock and curve, and the settled
+       report above corrects the guess if the phone chose the other page.
+       The guess is the phone's own rule: the scroller lets the momentum run
+       out (a normal deceleration of 0.998 a millisecond, so a flick travels
+       about five hundred times its speed in points) and snaps to the page
+       nearest where that would have ended. */
+    const START = 10, RATIO = 1.2;   // the rooms' gesture's own thresholds, so both read a thumb the same way
+    const COAST = 0.998 / (1 - 0.998);   // points a flick coasts per point-per-millisecond of speed
+    const sideways = (t) => { for (let n = t; n && n !== el; n = n.parentElement) { try { const cs = getComputedStyle(n); if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true; } catch (e) { return false; } } return false; };
+    const down = (e) => {
+      const t = e.touches && e.touches[0]; if (!t) return;
+      cancelAnimationFrame(r.finish);
+      r.f = { x0: t.clientX, y0: t.clientY, s0: el.scrollLeft / (el.clientWidth || 1), on: !el.classList.contains("sf-held") && !sideways(e.target), moved: false, last: 0, vx: 0, tx: performance.now() };
+    };
+    const move = (e) => {
+      const f = r.f, t = e.touches && e.touches[0]; if (!f || !f.on || !t) return;
+      const dx = t.clientX - f.x0, dy = t.clientY - f.y0;
+      if (!f.moved) {
+        if (Math.abs(dx) < START) return;
+        if (Math.abs(dx) < Math.abs(dy) * RATIO) { f.on = false; return; }
+        f.moved = true; r.driving = true; f.lastX = t.clientX;
+      }
+      const w = el.clientWidth || 1, now = performance.now();
+      const frac = Math.max(0, Math.min(1, f.s0 - dx / w));
+      if (now > f.tx) f.vx = (t.clientX - f.lastX) / (now - f.tx);
+      f.lastX = t.clientX; f.tx = now; f.last = frac;
+      if (onSlide) onSlide(frac);
+    };
+    const lift = () => {
+      const f = r.f; r.f = null;
+      if (!f || !f.moved) return;
+      const to = Math.max(0, Math.min(1, Math.round(f.last - f.vx * COAST / (el.clientWidth || 1))));
+      const from = f.last, t0 = performance.now();
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / MOTION.wipe);
+        const e = 1 - Math.pow(1 - k, 3);
+        if (onSlide) onSlide(from + (to - from) * e);
+        if (k < 1) r.finish = requestAnimationFrame(step); else r.driving = false;
+      };
+      r.finish = requestAnimationFrame(step);
+    };
     el.addEventListener("scroll", on, { passive: true });
-    return () => { el.removeEventListener("scroll", on); clearTimeout(r.settle); };
+    el.addEventListener("touchstart", down, { passive: true });
+    el.addEventListener("touchmove", move, { passive: true });
+    el.addEventListener("touchend", lift, { passive: true });
+    el.addEventListener("touchcancel", lift, { passive: true });
+    return () => { el.removeEventListener("scroll", on); el.removeEventListener("touchstart", down); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", lift); el.removeEventListener("touchcancel", lift); clearTimeout(r.settle); cancelAnimationFrame(r.finish); };
   }, [onSlide]);   // eslint-disable-line
   return (
     <div className={"q-page f-page sf sf-floor sf-panes" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (up ? " sf-held" : "")} ref={pageRef}>
@@ -15618,7 +15690,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    the frame, and only then (S2). The lights fade out over the last 48 points
    at each side of the pane, so while it travels the glow softens to nothing
    before the seam instead of ending in a hard edge there (A3). */
-.sf-pane > .mc-aurora, .sf-pane > .mc-spine{ position:absolute; }
+.sf-pane > .mc-aurora, .sf-pane > .mc-spine, .sf-pane > .mc-me{ position:absolute; }
 .sf-pane > .mc-aurora{ -webkit-mask-image:linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent);
   mask-image:linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
 .sf-pane > .mc-spine.mc-land{ animation:mcSlide .62s cubic-bezier(.16,1,.3,1) both; }
