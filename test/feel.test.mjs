@@ -279,15 +279,16 @@ test("C29 and C74: Home and Live Floor are two pages of the floor page's own scr
   /* Under the thumb nothing reads layout: the page's width is read once at
      the touch. A read behind the pill's write forced a layout of the whole
      floor page mid-frame, which is what the CI runner dropped frames on. */
-  assert.ok(/const w = f\.w, now = performance\.now\(\);/.test(core) && /Math\.round\(f\.last - f\.vx \* COAST \/ f\.w\)/.test(core) && /r\.f = \{ x0: t\.clientX, y0: t\.clientY, w, s0: el\.scrollLeft \/ w,/.test(core),
+  assert.ok(/const w = f\.w;\n\s*const frac = /.test(core) && /r\.f = \{ x0: t\.clientX, y0: t\.clientY, w, s0: el\.scrollLeft \/ w,/.test(core),
     "the thumb reads the page's width once, at the touch, never behind a write");
   /* C76: the phone's scroll reports arrive about a tenth of a second after
      the panes have moved, so the ramp and the thumb report the position
      themselves and the late reports are ignored while they drive. */
   assert.ok(/r\.driving = true;\n\s*if \(onSlide\) onSlide\(from \/ w\);/.test(core) && /if \(onSlide\) onSlide\(Math\.max\(0, Math\.min\(1, \(from \+ \(want - from\) \* e\) \/ w\)\)\);/.test(core),
     "the ramp reports where it is putting the page, before the first frame and on every step");
-  assert.ok(/el\.addEventListener\("touchmove", move, \{ passive: true \}\);/.test(core) && /const frac = Math\.max\(0, Math\.min\(1, f\.s0 - dx \/ w\)\);/.test(core) && /const to = Math\.max\(0, Math\.min\(1, Math\.round\(f\.last - f\.vx \* COAST \/ f\.w\)\)\);/.test(core) && /const COAST = 0\.998 \/ \(1 - 0\.998\);/.test(core),
-    "under a thumb the report is the thumb's, and when it lifts the pill and ground finish to the page the phone will snap to");
+  assert.ok(/el\.addEventListener\("touchmove", move, \{ passive: true \}\);/.test(core) && /const frac = Math\.max\(0, Math\.min\(1, f\.s0 - dx \/ w\)\);/.test(core)
+    && /const lift = \(\) => \{\n\s*const f = r\.f; r\.f = null;\n\s*if \(!f \|\| !f\.moved\) return;\n\s*r\.driving = false;/.test(core) && !/COAST/.test(core),
+    "under a thumb the report is the thumb's, and when it lifts the phone's own reports drive the pill and the ground to the settle (F1: no finish on a clock of their own, no guessed page)");
   assert.ok(/on: !el\.classList\.contains\("sf-held"\) && !sideways\(e\.target\)/.test(core) && /if \(Math\.abs\(dx\) < Math\.abs\(dy\) \* RATIO\) \{ f\.on = false; return; \}/.test(core),
     "and the thumb is read the way the scroller reads it: not while You're up holds the floor, not on something that scrolls sideways itself, not on a mostly vertical drag");
   /* The ground and the pill follow the report straight to the screen, not
