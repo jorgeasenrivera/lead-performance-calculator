@@ -11647,7 +11647,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const r = rail.current;
     const on = () => {
       const w = el.clientWidth || 1;
-      if (onSlide && !r.driving) onSlide(Math.max(0, Math.min(1, el.scrollLeft / w)));
+      if (onSlide && (!r.driving || window.__PROBE_NOFINGER !== false)) onSlide(Math.max(0, Math.min(1, el.scrollLeft / w)));
       clearTimeout(r.settle);
       /* Settled: on a page, and no scroll event for a beat. The phone has no
          scrollend worth relying on across the versions on the lot. The
@@ -11685,6 +11685,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     };
     const move = (e) => {
       const f = r.f, t = e.touches && e.touches[0]; if (!f || !f.on || !t) return;
+      if (window.__PROBE_NOFINGER !== false) return;   // probe: the thumb does not report, the scroll event does
       const dx = t.clientX - f.x0, dy = t.clientY - f.y0;
       if (!f.moved) {
         if (Math.abs(dx) < START) return;
