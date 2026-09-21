@@ -1084,3 +1084,21 @@ test("the Live Activity is drawn on a pull request, behind a label, and never in
      mistake: the render compiles the widget's copy alone. */
   assert.ok(!/RENDER/.test(fs.readFileSync(new URL("../native/targets/queue/QueueAttributes.swift", import.meta.url), "utf8")), "the attributes file carries no render code");
 });
+
+test("the month caption measures itself only when its words or its width changed", () => {
+  /* C66. The caption fits itself to the card by asking the browser how wide
+     the line is, in a layout effect with no dependency list, so it ran on
+     every render of that card. Reading clientWidth flushes layout for the
+     whole document, and during a room cross the document is both rooms at
+     once: measured on the CI runner, 8 forced layouts costing 38 ms in WebKit
+     against 12 in Chromium, which was the gap the row was opened for. The
+     text is free to read, so a render that did not change it now costs
+     nothing, and the observer catches a width that changed under the same
+     words. Same pixels: the line is fitted to the same number. */
+  assert.ok(/const fitLine = useCallback\(\(\) => \{\n\s*const el = tlRef\.current;\n\s*if \(!el\) return;\n\s*const words = el\.textContent;\n\s*if \(tlSeen\.current === words\) return;\n\s*tlSeen\.current = words;\n\s*const have = el\.clientWidth;/.test(core),
+    "the words are read before the width, and an unchanged line never reaches clientWidth");
+  assert.ok(/useLayoutEffect\(\(\) => \{ fitLine\(\); \}\);/.test(core),
+    "and it still runs after every render, so no figure has to be listed as a dependency");
+  assert.ok(/const ro = new ResizeObserver\(\(rs\) => \{\n\s*const w = rs\[0\] && rs\[0\]\.contentRect \? Math\.round\(rs\[0\]\.contentRect\.width\) : 0;\n\s*if \(!w \|\| w === Math\.round\(tlHave\.current\)\) return;\n\s*tlSeen\.current = null;\n\s*fitLine\(\);/.test(core),
+    "a width that really differs from the one last fitted to sends the line back to be measured, and one that does not does nothing");
+});

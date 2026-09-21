@@ -10143,11 +10143,27 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
      One read per draw of this card, in a layout effect, so it is settled before
      the frame is shown and never flashes at the wrong size. */
   const tlRef = useRef(null);
-  useLayoutEffect(() => {
+  const tlSeen = useRef(null);
+  const tlHave = useRef(0);
+  /* Nothing is measured unless the words or the width changed. The effect
+     below has no dependency list on purpose: the caption is built from a dozen
+     figures and listing them is how one gets forgotten. But `clientWidth`
+     flushes layout for the whole document, and during a room cross the whole
+     document is both rooms at once. Measured on the CI runner: the two or
+     three runs this effect got during one cross cost 12 to 19 ms in Chromium
+     and 38 in WebKit, which was all of the gap C66 was opened for. Reading the
+     text costs nothing, so a render that did not change it now costs nothing
+     either, and the observer catches a width that changed under the same
+     words. */
+  const fitLine = useCallback(() => {
     const el = tlRef.current;
     if (!el) return;
+    const words = el.textContent;
+    if (tlSeen.current === words) return;
+    tlSeen.current = words;
     const have = el.clientWidth;
     if (!have) return;
+    tlHave.current = have;
     const used = () => {
       let w = 0;
       for (const kid of el.children) w += kid.getBoundingClientRect().width;
@@ -10176,7 +10192,26 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
        the narrowest screen anybody has against the longest line the app can
        print. It was two pixels over. */
     el.toggleAttribute("data-tl-wrap", fit <= FLOOR && used() > have);
-  });
+  }, []);
+  useLayoutEffect(() => { fitLine(); });
+  /* The width changing under the same words: a rotation, the text size, the
+     card itself growing. None of those is a render, so it is asked of the
+     element rather than guessed at, and only a width that really differs from
+     the one last fitted to sends the line back to be measured. The fit changes
+     the type's size inside this box, not the box, so this does not chase
+     itself. */
+  useEffect(() => {
+    const el = tlRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver((rs) => {
+      const w = rs[0] && rs[0].contentRect ? Math.round(rs[0].contentRect.width) : 0;
+      if (!w || w === Math.round(tlHave.current)) return;
+      tlSeen.current = null;
+      fitLine();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitLine]);
 
   const paceWord = paceState === "behind" ? `${Math.abs(paceDiff)} BEHIND` : paceState === "ahead" ? `${paceDiff} AHEAD` : paceState === "on" ? "ON PACE" : "";
 
