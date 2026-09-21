@@ -190,7 +190,7 @@ test/                            the checks, and test/README.md on why each exis
 supabase/migrations/             the schema, baseline plus migrations
 workers/lpc-mail.js              the Cloudflare email worker that catches the store's reports
 native/                          the Expo shell around the site, and its own README
-docs/routines.md                 the three scheduled jobs that look after Sage unattended
+docs/routines.md                 the four scheduled jobs that look after Sage unattended, and the deploy watch
 docs/in-flight.md                the board: who is working on what
 docs/handoff.md                  messages between the two agents
 NOTES.md                         asked for, not built yet, and the decisions behind it
@@ -243,10 +243,12 @@ and refuses a comment key.
 Supabase holds the data. The phone app is an Expo shell around the site, built by
 `.github/workflows/sage-app.yml` on demand, never on anybody's laptop.
 
-Three scheduled jobs look after Sage unattended, documented word for word in
+Four scheduled jobs look after Sage unattended, documented word for word in
 `docs/routines.md`: an hourly error watch that reads `app_errors` and can open
-(and in narrow, stated conditions merge) a fix; a morning brief; and a nightly
-demo store reset. If you change `src/report.js`, `api/_report.mjs` or the error
+(and in narrow, stated conditions merge) a fix; a morning brief; a nightly
+demo store reset; and a morning collector that puts TestFlight feedback on
+the board as one row. A fifth thing on that page is not a routine: the deploy
+watch, a workflow that opens an issue when Vercel reports a failed deployment. If you change `src/report.js`, `api/_report.mjs` or the error
 schema, read that file, because a routine depends on it.
 
 ---
