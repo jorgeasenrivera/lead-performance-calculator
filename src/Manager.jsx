@@ -19197,11 +19197,6 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const C = 2 * Math.PI * R;
   const dash = (pct / 100) * C;
 
-  // numbers roll up rather than just appearing
-  const nPct = useCountUp(pct, 1100, 300);
-  const nRoster = useCountUp(boardRoster.length, 800, 460);
-  const nOpps = useCountUp(oppsUsed, 900, 530);
-
   // Store closing rate per channel. Units are stored per person, but lead counts
   // only for internet, so phone and showroom leads are recovered from a person's
   // own units divided by their own rate. Anyone without a rate on file simply
