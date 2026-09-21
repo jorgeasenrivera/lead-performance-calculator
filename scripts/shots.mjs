@@ -20,13 +20,14 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ensureMock, prepFloor, setUp, launch, phone, signIn, swipe, settled, lostBrowserWatch } from "./probe-kit.mjs";
+import { ensureMock, prepFloor, setUp, launch, phone, signIn, swipe, settled, lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
 
 const OUT = process.env.SHOTS_DIR || "shots";
 const SIZES = { "1": "normal", "1.15": "large", "1.3": "largest" };
 const want = (process.env.SHOTS_SIZES || "1,1.15,1.3").split(",").map((s) => s.trim()).filter((s) => SIZES[s]);
 const browserName = String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium";
 let taken = 0;
+let machine = null;
 
 const floorTab = (p) => p.locator('.ar-tab[aria-label="Live Floor"]');
 /* The floor's pane in the frame (C29), or, on a build before the panes, the
@@ -42,6 +43,7 @@ async function main() {
   const floor = await prepFloor();
   const b = await launch();
   const lost = lostBrowserWatch(b);
+  machine = watchMachine();
   const files = [];
   const shot = async (page, name) => { const f = path.join(OUT, name + ".png"); await page.screenshot({ path: f }); files.push(f); taken = files.length; };
   try {
@@ -89,6 +91,10 @@ async function main() {
   }
   console.log(`shots · ${browserName} · ${files.length} pictures in ${OUT}/`);
   for (const f of files) console.log("  " + f);
+  /* The same footer the feel harness prints, and for the same reason: a
+     crash only reads against what a run normally costs. C83. */
+  const m = machine && machine.line();
+  if (m) console.log("shots: the machine: " + m);
 }
 
 main().catch((e) => {
@@ -97,6 +103,8 @@ main().catch((e) => {
   /* The same exit 3 the feel harness uses, and the same reason: nothing about
      the app was learned here, so do not let the log read as though it were. */
   console.error(`shots: the browser was lost, ${why}. ${taken} picture(s) were taken before it went, and nothing here is a verdict on the app.`);
+  const m = machine && machine.line();
+  if (m) console.error("shots: the machine when it went: " + m);
   console.error("shots: that is C83. Run it again rather than reading this as a change.");
   process.exit(3);
 });
