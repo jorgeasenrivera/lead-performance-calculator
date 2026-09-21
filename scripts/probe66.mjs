@@ -70,13 +70,21 @@ async function main() {
     say("tap Lunch", lunch); say("tap Here", here); say("Floor to Phone", toPhone); say("Phone to Floor", toFloor);
   };
 
-  await round("lights on");
-  /* Detach the rail's dots. The rAF loop goes on writing to them, but a node
-     outside the document dirties nothing. */
+  await round("as is");
+
+  /* The room bar's backdrop blur. It is fixed above the rooms, so everything
+     that moves under it is re-sampled through it; the corner's pill had its
+     blur taken out for exactly this reason (the note at .mc-pill). */
+  await page.addStyleTag({ content: ".ar-bar{ backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }" });
+  await page.waitForTimeout(1000);
+  await round("no blur");
+
+  /* The rail's travelling dots. The rAF loop goes on writing to them, but a
+     node outside the document dirties nothing. */
   const gone = await page.evaluate(() => { const d = [...document.querySelectorAll("s.lt")]; d.forEach((x) => x.remove()); return d.length; });
   console.log(`  detached ${gone} travelling dots`);
   await page.waitForTimeout(1200);
-  await round("lights off");
+  await round("neither");
 
   await ctx.close(); await b.close();
   if (mock) mock.kill();
