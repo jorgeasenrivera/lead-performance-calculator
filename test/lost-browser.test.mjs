@@ -69,3 +69,55 @@ test("the pull request comment tells a lost browser from a missed bar", () => {
     && /The phone feels worse: a bar was missed\./.test(flow),
     "two different headings, because one comment that says both is the thing C83 was filed about");
 });
+
+/* ---- C83's second half: the next crash has to carry evidence ---- */
+import { machineNow, machineLine, watchMachine } from "../scripts/probe-kit.mjs";
+const kit = fs.readFileSync(new URL("../scripts/probe-kit.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+test("the machine reading never throws, whatever the runner's cgroup looks like", () => {
+  /* The two layouts are the reason this exists: a harness that died reading
+     /sys would be a worse bug than the one it is here to diagnose. */
+  const m = machineNow();
+  assert.equal(typeof m, "object");
+  for (const k of ["used", "limit", "oomKill", "failcnt", "free"]) {
+    assert.ok(m[k] === null || typeof m[k] === "number", `${k} is a number or null, never a guess`);
+  }
+});
+
+test("an OOM kill during the run is stated as one, and its absence just as plainly", () => {
+  const before = { used: 1e9, limit: 2e9, oomKill: 0, failcnt: 0, free: 5e8 };
+  const after = { used: 19e8, limit: 2e9, oomKill: 1, failcnt: 0, free: 1e8 };
+  assert.match(machineLine(after, 19e8, before), /killed 1 process\(es\) for memory/);
+  /* And the case that matters just as much: memory was fine, so whoever
+     reads this stops suspecting it and looks somewhere else. */
+  assert.match(machineLine({ ...after, oomKill: 0 }, 19e8, before), /no process was killed for memory/);
+});
+
+test("a fact the kernel will not give is left out rather than guessed", () => {
+  const line = machineLine({ used: null, limit: null, oomKill: null, failcnt: null, free: null });
+  assert.equal(line, null, "nothing readable prints nothing at all");
+  assert.doesNotMatch(machineLine({ used: 1e9, limit: null, oomKill: null, failcnt: null, free: null }) || "", /allowed|free on the box|oom/,
+    "and a partial reading prints only the part it has");
+});
+
+test("a cgroup with no limit set is read as no limit, not as eight exabytes", () => {
+  /* Both layouts write a sentinel there. Printing it would have said the
+     container was allowed 8589934592 GB, which is the kind of number that
+     teaches a reader to skip the line. */
+  assert.ok(/const CG_NOLIMIT = 9223372036854771712;/.test(kit));
+  assert.ok(/limit === CG_NOLIMIT \|\| limit === Infinity \? null : limit/.test(kit));
+});
+
+test("the peak is sampled while the run is alive, not read after the browser has gone", () => {
+  const w = watchMachine(5);
+  assert.equal(typeof w.peak(), "number");
+  assert.ok(typeof w.line === "function" && typeof w.stop === "function");
+  w.stop();
+  assert.ok(/dead browser has already given its memory back/.test(kit),
+    "the why is written down, on one line, because a guard that spans a wrap breaks the next time the comment is reflowed");
+});
+
+test("both harnesses print the machine on a good run too, which is what a crash reads against", () => {
+  assert.ok(/feel: the machine: /.test(feel) && /feel: the machine when it went: /.test(feel));
+  assert.ok(/shots: the machine: /.test(shots) && /shots: the machine when it went: /.test(shots));
+});

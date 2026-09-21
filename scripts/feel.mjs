@@ -30,7 +30,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { lostBrowserWatch } from "./probe-kit.mjs";
+import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -175,12 +175,17 @@ let floor = null;
    halfway can say so instead of leaving the reader to count the table. */
 let measured = 0;
 let lost = null;
+let machine = null;
 const say = (m) => { if (process.env.FEEL_DEBUG) process.stderr.write("feel: " + m + "\n"); };
 async function main() {
   await ensureMock(); say("mock up");
   floor = await prepFloor(); say("floor prepared for " + floor.id);
   const b = await launch(); say("browser up");
   lost = lostBrowserWatch(b);
+  /* Sampled from here, because the reading that matters is the one just
+     before the browser goes, and a dead browser has already given its
+     memory back by the time anybody asks. */
+  machine = watchMachine();
   try { await run(b); }
   /* Asked here, not in the handler below: the close in the finally fires the
      same disconnect, so a watch read after it calls every failure a lost
@@ -566,6 +571,11 @@ async function run(b) {
   if (errs.length) console.log("  page errors: " + errs.join(" | "));
   if (bad.length || errs.length) { console.log(`feel: ${bad.length} over the bar${errs.length ? ", and page errors" : ""}`); process.exitCode = 1; }
   else console.log("feel: all under the bar");
+  /* Printed on every run, not only a bad one. A crash is only readable
+     against what a run normally costs, and the only place that number can
+     come from is the runs that did not crash. C83. */
+  const m = machine && machine.line();
+  if (m) console.log("feel: the machine: " + m);
 }
 main().catch((e) => {
   const why = e && e.lostBrowser;
@@ -575,6 +585,10 @@ main().catch((e) => {
      the sentences are for whoever opens the log at seven in the morning. */
   console.log(`  --   ${measured} row(s) measured before the browser went; the rest never ran`);
   console.log(`feel: the browser was lost, ${why}. Nothing here says the phone got worse, because nothing here measured it.`);
+  /* After the sentence, not before it: what happened first, then what the
+     machine looked like when it did. */
+  const m = machine && machine.line();
+  if (m) console.log("feel: the machine when it went: " + m);
   console.log("feel: that is C83. Run it again, and if it keeps happening say so with the evidence rather than loosening the check.");
   process.exitCode = 3;
 }).finally(() => { if (mockProc) mockProc.kill(); });

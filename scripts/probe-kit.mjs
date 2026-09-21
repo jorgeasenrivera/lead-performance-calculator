@@ -194,3 +194,77 @@ export function lostBrowserWatch(browser) {
     },
   };
 }
+
+/* ---- what the machine looked like ----
+   C83's second half. Knowing the browser was lost is not knowing why, and the
+   standing suspicion is that the container runs out of memory under a screen
+   carrying two canvases, a lot of gradients and a backdrop filter. That is a
+   guess until something measures it, so this reads the few facts the kernel
+   will hand over and the harnesses print them.
+
+   The one that settles it is the OOM counter. If the container killed the
+   browser, that number goes up, and no amount of reading a Playwright stack
+   would ever have said so. Everything else is context for it: how close the
+   run got to the limit, and how much the box had left.
+
+   Both cgroup layouts, because the runner image decides which one and neither
+   is worth a failed harness: every read is best effort and a fact we cannot
+   have comes back null rather than throwing. A number that might be wrong is
+   worse than no number, so an unreadable one is simply not printed. */
+const readNum = (f) => { try { const n = Number(String(fs.readFileSync(f, "utf8")).trim()); return Number.isFinite(n) ? n : null; } catch (e) { return null; } };
+const readKey = (f, key) => {
+  try {
+    for (const line of String(fs.readFileSync(f, "utf8")).split("\n")) {
+      const [k, v] = line.trim().split(/\s+/);
+      /* /proc/meminfo writes "MemAvailable:" and the cgroup files write a bare
+         key, so the colon comes off before the compare. */
+      if (k && k.replace(/:$/, "") === key) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+    }
+  } catch (e) {}
+  return null;
+};
+/* A cgroup with no limit set reports a sentinel rather than a number, and the
+   two layouts spell it differently. Either way it means "the box is the
+   limit", which is what the free figure is for. */
+const CG_NOLIMIT = 9223372036854771712;
+export function machineNow() {
+  const v2 = readNum("/sys/fs/cgroup/memory.current") != null;
+  const limit = v2 ? readNum("/sys/fs/cgroup/memory.max") : readNum("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+  return {
+    used: v2 ? readNum("/sys/fs/cgroup/memory.current") : readNum("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+    limit: limit === CG_NOLIMIT || limit === Infinity ? null : limit,
+    /* v2 counts them in memory.events, v1 in oom_control. oom_kill is the
+       processes the kernel actually killed; v1's failcnt is only allocations
+       that had to wait, so it is kept apart and named apart. */
+    oomKill: v2 ? readKey("/sys/fs/cgroup/memory.events", "oom_kill") : readKey("/sys/fs/cgroup/memory/memory.oom_control", "oom_kill"),
+    failcnt: v2 ? null : readNum("/sys/fs/cgroup/memory/memory.failcnt"),
+    free: (readKey("/proc/meminfo", "MemAvailable") || 0) * 1024 || null,
+  };
+}
+const gb = (n) => (n == null ? null : (n / 1073741824).toFixed(2));
+/* One line, and only the parts that were readable. `peak` is the highest
+   reading a run took while it ran, which is the number a green run exists to
+   give us: without it there is nothing to compare a crash against. */
+export function machineLine(now, peak = null, before = null) {
+  const bits = [];
+  if (now.used != null) bits.push(`${gb(peak != null && peak > now.used ? peak : now.used)} GB used at its highest` + (now.limit ? ` of ${gb(now.limit)} allowed` : ""));
+  if (now.free != null) bits.push(`${gb(now.free)} GB free on the box`);
+  if (now.oomKill != null) {
+    const was = before && before.oomKill != null ? before.oomKill : null;
+    bits.push(was != null && now.oomKill > was
+      ? `the kernel killed ${now.oomKill - was} process(es) for memory during this run`
+      : `no process was killed for memory (oom_kill ${now.oomKill})`);
+  }
+  if (now.failcnt != null && before && before.failcnt != null && now.failcnt > before.failcnt) bits.push(`${now.failcnt - before.failcnt} allocation(s) hit the limit and had to wait`);
+  return bits.length ? bits.join(", ") : null;
+}
+/* Sampled rather than read once at the end, because the reading that matters
+   is the one just before the browser went, and by the time anybody asks, the
+   dead browser has already given its memory back. */
+export function watchMachine(everyMs = 1000) {
+  const before = machineNow();
+  let peak = before.used || 0;
+  const t = setInterval(() => { const m = machineNow(); if (m.used != null && m.used > peak) peak = m.used; }, everyMs);
+  if (t.unref) t.unref();
+  return { before, peak: () => peak, stop: () => clearInterval(t), line: () => machineLine(machineNow(), peak, before) };
+}
