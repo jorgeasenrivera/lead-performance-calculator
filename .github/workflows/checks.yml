@@ -92,14 +92,24 @@ jobs:
   # The same run in WebKit, which is what the app's WebView is. Chromium at
   # phone width is not the phone: the 18 September glitches that reached Jorge
   # (dots rounding on a 3x screen, a slide cut short on a slow first frame, the
-  # viewport a WebView reports) are the kind only WebKit shows. It reports and
-  # does not yet block: the bars were set against Chromium, and a bar WebKit
-  # misses from day one would stop every merge for a number nobody has looked
-  # at. Once it has run green on three merges, drop continue-on-error and it
-  # blocks like the other.
+  # viewport a WebView reports) are the kind only WebKit shows.
+  #
+  # It blocks now, 21 September, and it took C66 to earn that. It could not
+  # block before because its tap row was measuring the harness: the rows were
+  # timed with a stopwatch outside the browser, and Playwright's click waits
+  # for the element to be stable across consecutive frames first, which on
+  # WebKit's long frames bought two of them. The same tap read 116 to 196 ms
+  # through the driver and 15 to 38 dispatched in the page. #401 moved the
+  # clock inside the page and set the bars from what both engines actually do,
+  # and #400 took a forced layout out of every room cross. Since then WebKit
+  # has been green on every run, including the last two on main.
+  #
+  # Worth knowing before the next flake: the swipe rows, which are the ones
+  # that read the runner rather than the app, do not run here at all. WebKit
+  # has no input channel to move a real thumb, so it says so and skips them.
+  # This job blocking therefore adds no new flake surface.
   feel-webkit:
     runs-on: ubuntu-latest
-    continue-on-error: true
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     permissions:
