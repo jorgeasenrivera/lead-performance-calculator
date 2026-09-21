@@ -194,14 +194,65 @@ async function run(b) {
      of one page since C29, both built, so the tap is measured to the floor's
      pane taking the frame rather than to its content appearing, which is
      already there. */
+
+  /* ---- timed on the page's own clock ----------------------------------------
+     A tap used to be timed with a stopwatch out here: start, ask Playwright to
+     click, wait for the screen to change, stop. Two of those steps are the
+     driver's, not the phone's. Playwright's click first waits for the element
+     to be STABLE, meaning unmoved across consecutive animation frames, and on
+     a screen whose frames run long that check costs two frames before the
+     click is even sent. Measured in WebKit on the CI runner, 19 September:
+     the same tap read 116 to 196 ms through the driver and 15 to 38 ms
+     dispatched in the page, on the same build, because WebKit was taking 80
+     to 110 ms a frame and the stability check was paying for two of them.
+     That is what made the WebKit job unable to block: its tap row was
+     measuring the harness.
+     So the clock starts inside the page, on the click event, and stops on the
+     first frame at which the screen has changed. That is the thing a person
+     actually feels, and it is the same measurement in both engines.
+     `force` skips the actionability checks; the click itself is still a real
+     one, sent through the browser. */
+  let t;                              // the stopwatch the rows below still use
+  const clickFelt = async (sel, ready) => {
+    await p.evaluate(([s, r]) => {
+      const el = r.idx == null ? document.querySelector(s) : document.querySelectorAll(s)[r.idx];
+      window.__felt = { t0: null, done: null };
+      const seen = () => {
+        if (r.kind === "classOn") { const b = document.querySelectorAll(r.sel)[r.idx]; return !!b && /(^| )on( |$)/.test(b.className); }
+        const q = document.querySelector(r.sel);
+        if (!q) return false;
+        if (r.kind === "exists") return true;
+        const box = q.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && q.closest("[hidden]") == null;
+      };
+      el.addEventListener("click", () => {
+        window.__felt.t0 = performance.now();
+        const tick = () => { if (seen()) { window.__felt.done = performance.now(); return; } requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      }, { once: true, capture: true });
+    }, [sel, ready]);
+    if (ready.idx == null) await p.locator(sel).click({ force: true });
+    else await p.locator(sel).nth(ready.idx).click({ force: true });
+    await p.waitForFunction(() => window.__felt && window.__felt.done != null, null, { timeout: 30000 });
+    return p.evaluate(() => Math.round(window.__felt.done - window.__felt.t0));
+  };
+  /* Which of the segment's buttons carries a word, so the click and the
+     waiting both name the same one. */
+  const segIdx = (label) => p.evaluate(([s, l]) => [...document.querySelectorAll(s)].findIndex((x) => x.textContent.includes(l)), [ROOM + " .sf-seg-btn", label]);
+
   const paneOn = (which) => p.waitForFunction((w) => !!document.querySelector(`.ar-room[data-room="floor"] .sf-pane-${w}.on`), which, { timeout: 30000 });
-  let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); row("Home to Floor tab", ms(t), BAR.tab);
+  row("Home to Floor tab", await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "exists", sel: '.ar-room[data-room="floor"] .sf-pane-floor.on' }), BAR.tab);
+  await paneOn("floor");
   await roomSettled(p);
   await p.waitForTimeout(800);
   const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
-  t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Lunch")').click(); await segOn("Lunch"); row("tap Lunch to shown", ms(t), BAR.tap);
+  let lunchI = await segIdx("Lunch");
+  row("tap Lunch to shown", await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: lunchI }), BAR.tap);
+  await segOn("Lunch");
   await p.waitForTimeout(700);
-  t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
+  const hereI = await segIdx("Here");
+  row("tap Here to shown", await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }), BAR.tap);
+  await segOn("Here");
   await p.waitForTimeout(700);
 
   /* the swipe: the page under the thumb, and no frame dropped. Home and Live
@@ -271,9 +322,11 @@ async function run(b) {
   let stepMax = 0;
   for (let i = 1; i < gnd.length; i++) { if (gnd[i][0] < 80) continue; const d = Math.abs(gnd[i][1] - gnd[i - 1][1]) + Math.abs(gnd[i][2] - gnd[i - 1][2]) + Math.abs(gnd[i][3] - gnd[i - 1][3]); const frames = Math.max(1, (gnd[i][0] - gnd[i - 1][0]) / 16.7); const r = Math.round(d / frames); if (r > stepMax) stepMax = r; }
   row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
-  t = Date.now(); await p.locator('.ar-tab[aria-label*="Phone"]').click(); await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); row("Floor to Phone tab", ms(t), BAR.tab);
+  row("Floor to Phone tab", await clickFelt('.ar-tab[aria-label*="Phone"]', { kind: "visible", sel: ".sfl-title" }), BAR.tab);
+  await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 });
   await p.waitForTimeout(600);
-  t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
+  row("Phone to Floor tab", await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "visible", sel: ROOM + " .sf-seg-btn" }), BAR.tab);
+  await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 });
   await roomSettled(p);
   await p.waitForTimeout(800);
 
