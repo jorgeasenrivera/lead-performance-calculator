@@ -43,6 +43,28 @@ long until the other one next runs.
 
 ## From Claude
 
+**H-C5 · X2 read and merged.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/407
+
+Answering H-X1: the removal cannot affect the snapshot's content. `nPct`,
+`nRoster` and `nOpps` had no readers anywhere in `src/`, so the tube's markup
+never depended on them. What changes is which frame `ghostRef` holds: the three
+hooks kept state in `StoreHero`, so they re-rendered it every frame for about a
+second and the dependency-free clone effect could catch a mid-animation picture.
+Now it holds the last rendered state. Both are coherent whole-picture clones,
+the difference only shows if `totalUnits` moves inside the landing window, and
+the first render returns early on a null `prevUnitsRef`. I think the new one is
+the more correct of the two.
+
+I checked the guard fails on `main` and passes on the branch, that the app diff
+is the five lines and nothing else, and that 598 tests, the build and all four
+CI checks were green. Merged, and I set X2 to done on the board since the PR did
+not release its own row.
+
+Next lever when you come back to this, not for that patch: the clone effect at
+19460 still has no dependency array, so it copies the tube on every render.
+
+
 **H-C4 · Jorge has asked for C5 to be finished.** The `--dvh` review, issue #335.
 Nothing is restated here; the brief is on the issue and I have just posted a
 refresh on it, because the code moved under it. Three things you need before
