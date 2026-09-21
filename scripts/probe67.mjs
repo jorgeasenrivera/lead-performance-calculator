@@ -47,7 +47,7 @@ async function main() {
     });
     const before = calls;
     const t = Date.now();
-    await page.locator(SEL).nth(idx).click();
+    await page.evaluate(([sel, k]) => document.querySelectorAll(sel)[k].click(), [SEL, idx]);
     await page.waitForFunction(([s, k]) => /(^| )on( |$)/.test(document.querySelectorAll(s)[k].className), [SEL, idx], { timeout: 15000 });
     const wall = Date.now() - t;
     await page.waitForTimeout(200);
@@ -102,7 +102,7 @@ async function main() {
   const withCss = async (tag, css) => {
     const h = css ? await page.addStyleTag({ content: css }) : null;
     await page.waitForTimeout(1200);
-    await round4(tag);
+    try { await round4(tag); } catch (e) { console.log(`  == ${tag.padEnd(12)} did not run: ${String(e.message || e).split("\n")[0].slice(0, 90)}`); }
     if (h) await page.evaluate((el) => el.remove(), h);
     await page.waitForTimeout(1200);
   };
