@@ -3718,8 +3718,8 @@ async function openLeaderboard(config, storeId) {
     html = await renderLeaderboard(payload, PIX);
   } catch (e) {
     console.error("[Sage board] Template download failed; opening the retrying TV page", e);
-    // Reuse the TV route's loading and retry states, not an empty popup. A full
-    // navigation also gets the current entry file if this tab predates a deploy.
+    // Reuse the TV route's loading, retry and build-watchdog states. Its entry
+    // may still come from the service worker, so navigation is not a fresh-build guarantee.
     if (!w.closed) w.location.replace(window.location.pathname + "?board=" + encodeURIComponent(storeId));
     return true;
   }
