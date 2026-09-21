@@ -1189,10 +1189,33 @@ func renderActivityStates(to dir: String) throws -> [(String, CGSize)] {
     ("both-phone-offer", card(floorWaiting, phoneOffer, hot: "phone")),
     ("both-customer-cord", card(floorCustomer, phoneCord, hot: nil)),
   ]
+  /* C71 probe, render only, deleted when the row is decided. both-floor-up
+     draws at 164 pt against the lock screen's 160, and the only thing on it
+     that is not words, buttons or a clock is the rail. These are the two ways
+     of paying for it, drawn rather than reasoned about. */
+  let floorUpNoRail = QueueAttributes.FloorLane(position: 1, ahead: 0, status: "up", line: [], since: now)
+  let variants: [(String, AnyView)] = [
+    ("x-up-without-the-rail", AnyView(V2Card(s: card(floorUpNoRail, phoneCord, hot: "floor")))),
+    ("x-up-lane-drawn-small", AnyView(VStack(spacing: 0) {
+      FloorLaneView(s: floorState(floorUp, from: card(floorUp, phoneCord, hot: "floor")), big: false, top: true, hot: true)
+      Divider().overlay(Color.white.opacity(0.07))
+      PhoneLaneView(p: phoneCord, big: false, top: false, strip: true)
+    }.background(ground))),
+  ]
+
   var sizes: [(String, CGSize)] = []
   for (name, s) in states {
     let view = V2Card(s: s).frame(width: 361).fixedSize(horizontal: false, vertical: true).background(ground)
     let r = ImageRenderer(content: view)
+    r.scale = 3
+    r.proposedSize = ProposedViewSize(width: 361, height: nil)
+    guard let img = r.uiImage, let data = img.pngData() else { throw NSError(domain: "render", code: 1, userInfo: [NSLocalizedDescriptionKey: "no image for \(name)"]) }
+    try data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+    sizes.append((name, img.size))
+  }
+  for (name, view) in variants {
+    let wrapped = view.frame(width: 361).fixedSize(horizontal: false, vertical: true)
+    let r = ImageRenderer(content: wrapped)
     r.scale = 3
     r.proposedSize = ProposedViewSize(width: 361, height: nil)
     guard let img = r.uiImage, let data = img.pngData() else { throw NSError(domain: "render", code: 1, userInfo: [NSLocalizedDescriptionKey: "no image for \(name)"]) }
