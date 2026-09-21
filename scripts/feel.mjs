@@ -238,22 +238,36 @@ async function run(b) {
   };
   /* Which of the segment's buttons carries a word, so the click and the
      waiting both name the same one. */
+  /* Three of each, and the middle one is the row. A row that waits for a
+     paint is quantised to the length of a frame, and WebKit's frames after a
+     tap run 50 to 140 ms on a shared runner, so one sample is a coin toss: the
+     cross back to the floor read 210 ms on its first run here and 61 to 68 on
+     the same build an hour earlier. The median of three costs four seconds and
+     makes the bar mean something. */
+  const mid = (xs) => xs.slice().sort((a, c) => a - c)[1];
   const segIdx = (label) => p.evaluate(([s, l]) => [...document.querySelectorAll(s)].findIndex((x) => x.textContent.includes(l)), [ROOM + " .sf-seg-btn", label]);
 
   const paneOn = (which) => p.waitForFunction((w) => !!document.querySelector(`.ar-room[data-room="floor"] .sf-pane-${w}.on`), which, { timeout: 30000 });
-  row("Home to Floor tab", await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "exists", sel: '.ar-room[data-room="floor"] .sf-pane-floor.on' }), BAR.tab);
-  await paneOn("floor");
+  const homeToFloor = [];
+  for (let k = 0; k < 3; k++) {
+    homeToFloor.push(await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "exists", sel: '.ar-room[data-room="floor"] .sf-pane-floor.on' }));
+    await paneOn("floor"); await p.waitForTimeout(700);
+    if (k < 2) { await p.locator('.ar-tab[aria-label*="Home"]').click({ force: true }); await p.waitForFunction(() => !!document.querySelector(".sf-pane-home.on"), null, { timeout: 15000 }); await p.waitForTimeout(700); }
+  }
+  row("Home to Floor tab", mid(homeToFloor), BAR.tab);
   await roomSettled(p);
   await p.waitForTimeout(800);
   const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
-  let lunchI = await segIdx("Lunch");
-  row("tap Lunch to shown", await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: lunchI }), BAR.tap);
-  await segOn("Lunch");
-  await p.waitForTimeout(700);
-  const hereI = await segIdx("Here");
-  row("tap Here to shown", await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }), BAR.tap);
-  await segOn("Here");
-  await p.waitForTimeout(700);
+  const lunchI = await segIdx("Lunch"), hereI = await segIdx("Here");
+  const lunch = [], here = [];
+  for (let k = 0; k < 3; k++) {
+    lunch.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: lunchI }));
+    await segOn("Lunch"); await p.waitForTimeout(700);
+    here.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }));
+    await segOn("Here"); await p.waitForTimeout(700);
+  }
+  row("tap Lunch to shown", mid(lunch), BAR.tap);
+  row("tap Here to shown", mid(here), BAR.tap);
 
   /* the swipe: the page under the thumb, and no frame dropped. Home and Live
      Floor are two pages of the floor page's own scroller (C74), so the thumb
@@ -322,11 +336,15 @@ async function run(b) {
   let stepMax = 0;
   for (let i = 1; i < gnd.length; i++) { if (gnd[i][0] < 80) continue; const d = Math.abs(gnd[i][1] - gnd[i - 1][1]) + Math.abs(gnd[i][2] - gnd[i - 1][2]) + Math.abs(gnd[i][3] - gnd[i - 1][3]); const frames = Math.max(1, (gnd[i][0] - gnd[i - 1][0]) / 16.7); const r = Math.round(d / frames); if (r > stepMax) stepMax = r; }
   row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
-  row("Floor to Phone tab", await clickFelt('.ar-tab[aria-label*="Phone"]', { kind: "visible", sel: ".sfl-title" }), BAR.tab);
-  await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 });
-  await p.waitForTimeout(600);
-  row("Phone to Floor tab", await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "visible", sel: ROOM + " .sf-seg-btn" }), BAR.tab);
-  await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 });
+  const toPhone = [], toFloor = [];
+  for (let k = 0; k < 3; k++) {
+    toPhone.push(await clickFelt('.ar-tab[aria-label*="Phone"]', { kind: "visible", sel: ".sfl-title" }));
+    await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); await p.waitForTimeout(900);
+    toFloor.push(await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "visible", sel: ROOM + " .sf-seg-btn" }));
+    await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); await p.waitForTimeout(900);
+  }
+  row("Floor to Phone tab", mid(toPhone), BAR.tab);
+  row("Phone to Floor tab", mid(toFloor), BAR.tab);
   await roomSettled(p);
   await p.waitForTimeout(800);
 
