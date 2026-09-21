@@ -41,10 +41,36 @@ function ignorable(message) {
   return m === "Script error." || /ResizeObserver loop/.test(m) || m === "";
 }
 
+/* A dynamic import failing to fetch its module is always a stale hashed chunk
+   a deploy has already retired, never a bug worth showing anybody: React's
+   own lazy() caches the rejection, so a "Try again" only throws the same
+   error again, and only a reload actually picks up the build that is live
+   now. BoardBoundary and RoomBoundary already catch this when it surfaces
+   inside a render; this catches what they cannot, the same failure escaping
+   as a bare window error or an unhandled rejection with no boundary above it
+   (app_errors row a125a843d54a9ae2, kind "error", url "/", no board param,
+   so nothing in the render tree ever got a chance to catch it). One reload,
+   guarded by its own cooldown flag so a genuine repeat does not loop the
+   page: see BoardBoundary's comment on why a flag alone is not enough. */
+const STALE_CHUNK_RE = /dynamically imported module|importing a module script failed/i;
+const STALE_CHUNK_KEY = "lpcf:chunk-reloaded";
+const STALE_CHUNK_COOLDOWN_MS = 60000;
+function healStaleChunk(kind, message) {
+  if (kind !== "error" && kind !== "rejection") return;   // "render" is the boundaries' own catch
+  if (!STALE_CHUNK_RE.test(message)) return;
+  try {
+    const since = Date.now() - Number(sessionStorage.getItem(STALE_CHUNK_KEY) || 0);
+    if (since < STALE_CHUNK_COOLDOWN_MS) return;
+    sessionStorage.setItem(STALE_CHUNK_KEY, String(Date.now()));
+    window.location.reload();
+  } catch (e) {}
+}
+
 export function report(kind, err, extra) {
   try {
     const message = err && err.message ? String(err.message) : String(err == null ? "unknown" : err);
     if (ignorable(message)) return;
+    healStaleChunk(kind, message);
     const key = kind + "|" + message.slice(0, 120);
     const now = Date.now();
     if (lastAt.has(key) && now - lastAt.get(key) < REPEAT_MS) return;
