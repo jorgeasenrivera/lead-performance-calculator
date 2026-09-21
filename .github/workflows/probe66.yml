@@ -29,4 +29,4 @@ jobs:
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
-          FEEL_BROWSER=${{ matrix.browser }} FEEL_URL=http://127.0.0.1:5178/ node scripts/probe66.mjs
+          FEEL_BROWSER=${{ matrix.browser }} FEEL_URL=http://127.0.0.1:5178/ node scripts/probe67.mjs
