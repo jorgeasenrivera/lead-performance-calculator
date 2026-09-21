@@ -83,13 +83,21 @@ async function main() {
      cold path from a floor that had not finished arriving */
   await page.waitForTimeout(6000); await tap("Lunch", 5, 6000);
 
-  /* and with the two layout-animated properties on the pips taken out: the
-     rail's people grow and shrink through width and height on a re-order, and
-     both lay the rail out again on every frame of half a second. */
-  await page.addStyleTag({ content: ".mcf-pip{ transition:transform .65s cubic-bezier(.3,1.3,.4,1) !important; }" });
-  await page.waitForTimeout(1200);
-  await tap("Here", 6, 1200);
-  await page.waitForTimeout(700); await tap("Lunch", 7, 700);
+  /* Four things taken away one at a time, to see which owns the long frames.
+     The pips' width and height were the guess and they were not it. */
+  const off = async (tag, css) => {
+    const h = await page.addStyleTag({ content: css });
+    await page.waitForTimeout(1200);
+    await tap("Here", tag, 1200);
+    await page.waitForTimeout(700);
+    await tap("Lunch", tag, 700);
+    await page.evaluate((el) => el.remove(), h);
+    await page.waitForTimeout(1200);
+  };
+  await off("no pips  ", ".mcf-pip, .mcf-you, .mc-pip{ transition:none !important; }");
+  await off("no segpill", ".sf-seg-pill{ transition:none !important; }");
+  await off("no ambient", ".lpc *, .lpc{ animation:none !important; }");
+  await off("none of it", ".mcf-pip, .mcf-you, .mc-pip, .sf-seg-pill{ transition:none !important; } .lpc *, .lpc{ animation:none !important; }");
 
   await ctx.close(); await b.close();
   if (mock) mock.kill();
