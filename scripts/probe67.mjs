@@ -72,6 +72,7 @@ async function main() {
     }
     const worst = Math.max(...f.frames.slice(1, 12));
     console.log(`  ${(n + " " + label).padEnd(10)} after ${String(gap).padStart(4)} ms of quiet   wall ${String(wall).padStart(4)} ms   worst frame ${String(worst).padStart(3)} ms   ${String(calls - before)} requests   ${f.muts} DOM writes   frames ${f.frames.slice(0, 10).join(" ")}`);
+    return { wall, worst };
   };
 
   window_list = true;
@@ -83,21 +84,32 @@ async function main() {
      cold path from a floor that had not finished arriving */
   await page.waitForTimeout(6000); await tap("Lunch", 5, 6000);
 
-  /* Four things taken away one at a time, to see which owns the long frames.
-     The pips' width and height were the guess and they were not it. */
-  const off = async (tag, css) => {
-    const h = await page.addStyleTag({ content: css });
+  /* Narrowed, and repeated, because one tap on a shared runner says very
+     little. Four taps per condition, and the middle of the four worst frames
+     is what is compared. mcGrow is a one-shot with fill:both, so it shows in
+     getAnimations() long after it has finished: what removing it can still
+     cost is the layer WebKit keeps for an element that carries an animation. */
+  const median = (xs) => xs.slice().sort((x, y) => x - y)[Math.floor(xs.length / 2)];
+  const round4 = async (tag) => {
+    const worst = [], walls = [];
+    for (let k = 0; k < 4; k++) {
+      const r = await tap(k % 2 ? "Here" : "Lunch", tag, 700);
+      worst.push(r.worst); walls.push(r.wall);
+      await page.waitForTimeout(600);
+    }
+    console.log(`  == ${tag.padEnd(12)} worst frames ${worst.map((x) => String(x).padStart(3)).join(" ")}  median ${median(worst)} ms   walls ${walls.join(" ")}`);
+  };
+  const withCss = async (tag, css) => {
+    const h = css ? await page.addStyleTag({ content: css }) : null;
     await page.waitForTimeout(1200);
-    await tap("Here", tag, 1200);
-    await page.waitForTimeout(700);
-    await tap("Lunch", tag, 700);
-    await page.evaluate((el) => el.remove(), h);
+    await round4(tag);
+    if (h) await page.evaluate((el) => el.remove(), h);
     await page.waitForTimeout(1200);
   };
-  await off("no pips  ", ".mcf-pip, .mcf-you, .mc-pip{ transition:none !important; }");
-  await off("no segpill", ".sf-seg-pill{ transition:none !important; }");
-  await off("no ambient", ".lpc *, .lpc{ animation:none !important; }");
-  await off("none of it", ".mcf-pip, .mcf-you, .mc-pip, .sf-seg-pill{ transition:none !important; } .lpc *, .lpc{ animation:none !important; }");
+  window_list = false;
+  await withCss("as is", "");
+  await withCss("no mcGrow", ".mc-trail .area, .mc-tx .bar i{ animation:none !important; }");
+  await withCss("no anim", ".lpc *, .lpc{ animation:none !important; }");
 
   await ctx.close(); await b.close();
   if (mock) mock.kill();
