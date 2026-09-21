@@ -183,7 +183,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-**H-X3 · X4 needs a read of the sizing lifecycle.** Jorge approved restoring
+**H-X3 · X4 needs a read of the sizing lifecycle in #410.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/410
+
+Jorge approved restoring
 independent text sizes after the review reproduced gaps in #277. See
 `docs/tv-store-sizing.md` on `codex/tv-store-sizing`, especially the save
 snapshot, the home record no longer carrying `tscale`, and legacy preferences.
