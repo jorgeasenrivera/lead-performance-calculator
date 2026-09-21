@@ -133,6 +133,35 @@ async function main() {
   };
   for (let k = 0; k < 3; k++) { await split("Phone"); await split("Live Floor"); }
 
+  /* The page's own clock against the harness's. The feel harness times a
+     cross with waitForSelector, which waits for the element to be VISIBLE and
+     polls from outside the page; .sfl-title is in the DOM the whole time, on
+     a room that is hidden. So this reads the same moment from inside: the
+     frame at which the arriving room's own words have a box. */
+  const seen = async (to) => {
+    const target = to === "Phone" ? ".sfl-title" : '.ar-room[data-room="floor"] .sf-seg-btn';
+    await page.evaluate((sel) => {
+      window.__v = { t0: performance.now(), vis: null, frames: 0 };
+      const tick = () => {
+        window.__v.frames++;
+        const el = document.querySelector(sel);
+        const r = el && el.getBoundingClientRect();
+        const up = r && r.width > 0 && r.height > 0 && el.closest("[hidden]") == null;
+        if (up && window.__v.vis == null) { window.__v.vis = performance.now(); return; }
+        if (performance.now() - window.__v.t0 < 3000) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, target);
+    const t = Date.now();
+    await page.locator(`.ar-tab[aria-label*="${to}"]`).click();
+    await page.waitForSelector(target, { timeout: 20000 });
+    const wall = Date.now() - t;
+    const v = await page.evaluate(() => window.__v);
+    console.log(`  ${("to " + to).padEnd(16)} the page says ${v.vis == null ? "  ?" : String(Math.round(v.vis - v.t0)).padStart(3)} ms, the harness says ${String(wall).padStart(4)} ms`);
+    await page.waitForTimeout(1500);
+  };
+  for (let k = 0; k < 3; k++) { await seen("Phone"); await seen("Live Floor"); }
+
   /* and once more, with every layout read counted */
   await meter();
   await page.waitForTimeout(1200);
