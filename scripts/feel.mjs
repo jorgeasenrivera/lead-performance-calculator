@@ -59,9 +59,28 @@ const STORE_TZ = "America/New_York";                 // the app's dealership day
 const day = () => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(new Date());
 
 /* ---- the bar ---- */
+/* The two bars below were set against numbers that were mostly the driver's:
+   the rows used to be timed with a stopwatch outside the browser, and
+   Playwright's click waits for the element to be stable across consecutive
+   frames before it sends anything. Timed on the page's own clock, as the
+   median of three, on the same CI runner and image, 21 September:
+
+                      Chromium        WebKit
+     tap Lunch        9 to 12 ms      11 ms
+     tap Here         9 to 12 ms      12 ms
+     Floor to Phone   17 to 21 ms     30 ms
+     Phone to Floor   18 to 19 ms     24 ms
+
+   So the bars are set at roughly four times the slower engine's median: tight
+   enough that a real regression cannot hide behind them, loose enough that a
+   loaded shared runner adding a long frame to one of the three samples does
+   not turn the check red for nothing. They are deliberately not set at twice:
+   a bar that flakes teaches everybody to re-run it, which is how a check stops
+   being believed. Tighten them once there are a few dozen runs of history to
+   set them from. */
 const BAR = {
-  tab: 150,          // a tab is the screen the phone already had
-  tap: 100,          // a tap is drawn in the frame it lands in
+  tab: 110,          // a tab is the screen the phone already had
+  tap: 50,           // a tap is drawn in the frame it lands in
   chip: 100,         // a FlyBy sent is a chip at once
   returnSignIn: 900 + 3 * LAG, // signing in again the same day lands the short way: a few round trips, no jump
   press: 120,        // a control has given under the finger by then
@@ -176,7 +195,8 @@ async function run(b) {
      ground's a colour step, and a unit that lies is worse than none. */
   const unit = (name) => /px off/.test(name) ? "px" : /frames dropped|change between/.test(name) ? "  " : "ms";
   const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}`;
-  const row = (name, value, bar, ok = value <= bar) => { const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
+  const row = (name, value, bar, ok = value <= bar) => {
+    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
   console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
   const signIn = async () => {
@@ -194,15 +214,91 @@ async function run(b) {
      of one page since C29, both built, so the tap is measured to the floor's
      pane taking the frame rather than to its content appearing, which is
      already there. */
+
+  /* ---- timed on the page's own clock ----------------------------------------
+     A tap used to be timed with a stopwatch out here: start, ask Playwright to
+     click, wait for the screen to change, stop. Two of those steps are the
+     driver's, not the phone's. Playwright's click first waits for the element
+     to be STABLE, meaning unmoved across consecutive animation frames, and on
+     a screen whose frames run long that check costs two frames before the
+     click is even sent. Measured in WebKit on the CI runner, 19 September:
+     the same tap read 116 to 196 ms through the driver and 15 to 38 ms
+     dispatched in the page, on the same build, because WebKit was taking 80
+     to 110 ms a frame and the stability check was paying for two of them.
+     That is what made the WebKit job unable to block: its tap row was
+     measuring the harness.
+     So the clock starts inside the page, on the click event, and stops on the
+     first frame at which the screen has changed. That is the thing a person
+     actually feels, and it is the same measurement in both engines.
+     `force` skips the actionability checks; the click itself is still a real
+     one, sent through the browser. */
+  let t;                              // the stopwatch the rows below still use
+  const clickFelt = async (sel, ready) => {
+    await p.evaluate(([s, r]) => {
+      const el = r.idx == null ? document.querySelector(s) : document.querySelectorAll(s)[r.idx];
+      window.__felt = { t0: null, done: null };
+      const seen = () => {
+        if (r.kind === "classOn") { const b = document.querySelectorAll(r.sel)[r.idx]; return !!b && /(^| )on( |$)/.test(b.className); }
+        const q = document.querySelector(r.sel);
+        if (!q) return false;
+        if (r.kind === "exists") return true;
+        const box = q.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && q.closest("[hidden]") == null;
+      };
+      /* If the screen already looks the way the row is waiting for, the row
+         is measuring nothing and a small number would be a lie. Say so
+         instead. */
+      window.__felt.pre = seen();
+      el.addEventListener("click", () => {
+        window.__felt.t0 = performance.now();
+        const tick = () => { if (seen()) { window.__felt.done = performance.now(); return; } requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      }, { once: true, capture: true });
+    }, [sel, ready]);
+    if (ready.idx == null) await p.locator(sel).click({ force: true });
+    else await p.locator(sel).nth(ready.idx).click({ force: true });
+    await p.waitForFunction(() => window.__felt && window.__felt.done != null, null, { timeout: 30000 });
+    return p.evaluate(() => (window.__felt.pre ? -1 : Math.round(window.__felt.done - window.__felt.t0)));
+  };
+  /* Which of the segment's buttons carries a word, so the click and the
+     waiting both name the same one. */
+  /* Three of each, and the middle one is the row. A row that waits for a
+     paint is quantised to the length of a frame, and WebKit's frames after a
+     tap run 50 to 140 ms on a shared runner, so one sample is a coin toss: the
+     cross back to the floor read 210 ms on its first run here and 61 to 68 on
+     the same build an hour earlier. The median of three costs four seconds and
+     makes the bar mean something. */
+  const mid = (xs) => xs.slice().sort((a, c) => a - c)[1];
+  const segIdx = (label) => p.evaluate(([s, l]) => [...document.querySelectorAll(s)].findIndex((x) => x.textContent.includes(l)), [ROOM + " .sf-seg-btn", label]);
+
   const paneOn = (which) => p.waitForFunction((w) => !!document.querySelector(`.ar-room[data-room="floor"] .sf-pane-${w}.on`), which, { timeout: 30000 });
-  let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); row("Home to Floor tab", ms(t), BAR.tab);
+  /* The Home to Floor row is gone, and it is worth saying why rather than
+     quietly dropping it. Since C29 those two are panes of ONE page on one
+     scroller, and the harness opens the app already on the floor's pane, so
+     the floor pane was on before the tap: the row's own wait was satisfied
+     the moment it started. On the page's clock it reads nothing at all, which
+     means its old 31 to 51 ms was the driver's click machinery from end to
+     end. Measuring it honestly means driving the panes' scroller from out
+     here, and that hung WebKit for a full 30 second timeout on the first
+     attempt, because a smooth scroll started by a synthetic tap does not
+     settle there. The pair already has a row that measures it properly: the
+     swipe, thumb on the glass, which is skipped in WebKit for want of an
+     input channel and says so. */
+  await p.locator('.ar-tab[aria-label="Live Floor"]').click({ force: true });
+  await paneOn("floor");
   await roomSettled(p);
   await p.waitForTimeout(800);
   const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
-  t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Lunch")').click(); await segOn("Lunch"); row("tap Lunch to shown", ms(t), BAR.tap);
-  await p.waitForTimeout(700);
-  t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
-  await p.waitForTimeout(700);
+  const lunchI = await segIdx("Lunch"), hereI = await segIdx("Here");
+  const lunch = [], here = [];
+  for (let k = 0; k < 3; k++) {
+    lunch.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: lunchI }));
+    await segOn("Lunch"); await p.waitForTimeout(700);
+    here.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }));
+    await segOn("Here"); await p.waitForTimeout(700);
+  }
+  row("tap Lunch to shown", mid(lunch), BAR.tap);
+  row("tap Here to shown", mid(here), BAR.tap);
 
   /* the swipe: the page under the thumb, and no frame dropped. Home and Live
      Floor are two pages of the floor page's own scroller (C74), so the thumb
@@ -271,9 +367,15 @@ async function run(b) {
   let stepMax = 0;
   for (let i = 1; i < gnd.length; i++) { if (gnd[i][0] < 80) continue; const d = Math.abs(gnd[i][1] - gnd[i - 1][1]) + Math.abs(gnd[i][2] - gnd[i - 1][2]) + Math.abs(gnd[i][3] - gnd[i - 1][3]); const frames = Math.max(1, (gnd[i][0] - gnd[i - 1][0]) / 16.7); const r = Math.round(d / frames); if (r > stepMax) stepMax = r; }
   row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
-  t = Date.now(); await p.locator('.ar-tab[aria-label*="Phone"]').click(); await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); row("Floor to Phone tab", ms(t), BAR.tab);
-  await p.waitForTimeout(600);
-  t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
+  const toPhone = [], toFloor = [];
+  for (let k = 0; k < 3; k++) {
+    toPhone.push(await clickFelt('.ar-tab[aria-label*="Phone"]', { kind: "visible", sel: ".sfl-title" }));
+    await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); await p.waitForTimeout(900);
+    toFloor.push(await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "visible", sel: ROOM + " .sf-seg-btn" }));
+    await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); await p.waitForTimeout(900);
+  }
+  row("Floor to Phone tab", mid(toPhone), BAR.tab);
+  row("Phone to Floor tab", mid(toFloor), BAR.tab);
   await roomSettled(p);
   await p.waitForTimeout(800);
 
