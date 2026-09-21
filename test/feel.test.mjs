@@ -1024,8 +1024,19 @@ test("the Board's wall does not go white on a deploy", () => {
      production stayed on the build before #388, and the fix #388 carried
      never went out. The reason for the ignore lives in README instead. */
   assert.ok(!Object.keys(vercel).some((k) => k.startsWith("/")), "vercel.json carries no comment keys, because Vercel refuses the file");
-  assert.ok(/git diff --quiet HEAD\^ HEAD -- \. ':\(exclude\)docs' ':\(exclude\)\*\.md'/.test(vercel.ignoreCommand || ""),
-    "and a commit that touches only docs and markdown does not deploy, so the wall does not reload for a board row");
+  /* A deployment that cannot change the site still costs: every preview keeps
+     its own copy of the functions, and on 21 September the project was at
+     27.74 GB against 10 included, most of it previews of commits that never
+     touched the site. So the ignore list is every folder the site is not
+     built from. */
+  for (const dir of ["docs", "*.md", "scripts", "test", ".github", "native", "supabase"])
+    assert.ok((vercel.ignoreCommand || "").includes(`':(exclude)${dir}'`), `a commit that touches only ${dir} does not deploy`);
+  assert.ok(/^git diff --quiet HEAD\^ HEAD -- \./.test(vercel.ignoreCommand || ""),
+    "and everything else does");
+  /* The ingest function carried all seven of pdfjs's built files, 5.7 MB, to
+     use two of them. */
+  assert.strictEqual(vercel.functions["api/ingest.mjs"].includeFiles, "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js",
+    "the ingest function carries the two pdfjs files it imports and no others");
   assert.ok(/const BoardHold = \(\) => <div style=\{\{ position: "fixed", inset: 0, background: "#0B1622" \}\}/.test(core)
     && /render\(\) \{ return this\.state\.err \? <BoardHold \/> : this\.props\.children; \}/.test(core)
     && /<React\.Suspense fallback=\{<BoardHold \/>\}><BoardScreen/.test(core),

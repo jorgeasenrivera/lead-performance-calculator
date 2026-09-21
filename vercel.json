@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/ingest.mjs": {
-      "includeFiles": "node_modules/pdfjs-dist/legacy/build/*.js"
+      "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js"
     }
   },
   "headers": [
@@ -19,5 +19,5 @@
       ]
     }
   ],
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md'"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md' ':(exclude)scripts' ':(exclude)test' ':(exclude).github' ':(exclude)native' ':(exclude)supabase'"
 }
