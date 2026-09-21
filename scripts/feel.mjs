@@ -59,9 +59,28 @@ const STORE_TZ = "America/New_York";                 // the app's dealership day
 const day = () => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(new Date());
 
 /* ---- the bar ---- */
+/* The two bars below were set against numbers that were mostly the driver's:
+   the rows used to be timed with a stopwatch outside the browser, and
+   Playwright's click waits for the element to be stable across consecutive
+   frames before it sends anything. Timed on the page's own clock, as the
+   median of three, on the same CI runner and image, 21 September:
+
+                      Chromium        WebKit
+     tap Lunch        9 to 12 ms      11 ms
+     tap Here         9 to 12 ms      12 ms
+     Floor to Phone   17 to 21 ms     30 ms
+     Phone to Floor   18 to 19 ms     24 ms
+
+   So the bars are set at roughly four times the slower engine's median: tight
+   enough that a real regression cannot hide behind them, loose enough that a
+   loaded shared runner adding a long frame to one of the three samples does
+   not turn the check red for nothing. They are deliberately not set at twice:
+   a bar that flakes teaches everybody to re-run it, which is how a check stops
+   being believed. Tighten them once there are a few dozen runs of history to
+   set them from. */
 const BAR = {
-  tab: 150,          // a tab is the screen the phone already had
-  tap: 100,          // a tap is drawn in the frame it lands in
+  tab: 110,          // a tab is the screen the phone already had
+  tap: 50,           // a tap is drawn in the frame it lands in
   chip: 100,         // a FlyBy sent is a chip at once
   returnSignIn: 900 + 3 * LAG, // signing in again the same day lands the short way: a few round trips, no jump
   press: 120,        // a control has given under the finger by then
