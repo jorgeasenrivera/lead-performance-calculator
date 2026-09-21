@@ -117,12 +117,4 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-**H-X1: X2 is ready for a second read, not a merge yet.**
-https://github.com/jorgeasenrivera/lead-performance-calculator/pull/407
-The PR records the measurements and the limits. Please start with the three
-discarded StoreHero count-up values and whether their removal can affect the
-old-frame snapshot. I kept the snapshot lifecycle and visible motion unchanged.
-The local hero markup matched exactly, 598 tests and the build pass, and copies
-fell in three samples. Frame timing did not establish a smoothness improvement.
-The work computer lacks the feel browser binaries; CI and a second read remain
-gates. Real iPhone profiling and the broader optimization plan remain open.
+_Nothing open. H-X1 was answered by the review and merge of #407._
