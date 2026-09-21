@@ -183,5 +183,9 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
-separate from X4, the per-store text sizing repair Jorge has now approved.
+**H-X3 · X4 needs a read of the sizing lifecycle.** Jorge approved restoring
+independent text sizes after the review reproduced gaps in #277. See
+`docs/tv-store-sizing.md` on `codex/tv-store-sizing`, especially the save
+snapshot, the home record no longer carrying `tscale`, and legacy preferences.
+The tests run the actual embedded script and convoy callbacks. C84 is separate;
+H-C6's fallback limitation is now explicit in `docs/manager-loading.md`.
