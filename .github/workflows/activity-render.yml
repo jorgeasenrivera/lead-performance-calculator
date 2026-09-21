@@ -1,0 +1,107 @@
+# The Live Activity, drawn on a pull request.
+#
+# The card took nine builds on 18 September because nothing but a phone
+# could draw it. This compiles the widget's Swift with -D RENDER into a
+# command-line binary for the iOS simulator, runs it there, and keeps one
+# PNG per state with each card's height against the lock screen's 160 point
+# budget. No Expo build, no signing, no upload: a Mac runner and the SDK.
+#
+# Behind a label, "render activity", because a Mac runner costs ten times a
+# Linux one and the Swift changes a few times a month. Add the label when the
+# card changed; the pictures land on the pull request in a few minutes.
+name: activity render
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'native/targets/queue/**'
+      - 'native/render/**'
+      - '.github/workflows/activity-render.yml'
+
+concurrency:
+  group: activity-render-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    if: contains(github.event.pull_request.labels.*.name, 'render activity')
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: A simulator to draw in
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          want=[dev for rt,devs in d.items() if "iOS" in rt for dev in devs if dev["name"].startswith("iPhone 1")]
+          want.sort(key=lambda x: x["name"])
+          print(want[-1]["udid"] if want else "")')
+          if [ -z "$udid" ]; then echo "::error::no iPhone simulator on this runner"; xcrun simctl list devices available; exit 1; fi
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep "$udid"
+
+      - name: Compile the card for the simulator
+        working-directory: native/targets/queue
+        run: |
+          SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          swiftc -D RENDER -sdk "$SDK" -target arm64-apple-ios17.0-simulator \
+            -o render-activity \
+            QueueAttributes.swift QueueActivity.swift QueueIntents.swift ../../render/main.swift 2>&1 | tee swiftc.log
+          test -x render-activity
+
+      - name: Draw every state
+        id: draw
+        working-directory: native/targets/queue
+        run: |
+          mkdir -p activity-shots
+          xcrun simctl spawn "${{ steps.sim.outputs.udid }}" "$PWD/render-activity" "$PWD/activity-shots" 2>&1 | tee render.txt
+          ls -la activity-shots
+          {
+            echo 'table<<REND_END'
+            cat render.txt
+            echo 'REND_END'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        id: keep
+        if: always()
+        with:
+          name: activity-shots
+          path: |
+            native/targets/queue/activity-shots/*.png
+            native/targets/queue/swiftc.log
+            native/targets/queue/render.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Tell the pull request
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          ARTIFACT_URL: ${{ steps.keep.outputs.artifact-url }}
+          TABLE: ${{ steps.draw.outputs.table }}
+          OUTCOME: ${{ steps.draw.outcome }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const mark = "<!-- sage-activity-render -->";
+            const ok = process.env.OUTCOME === "success";
+            const url = process.env.ARTIFACT_URL;
+            const table = (process.env.TABLE || "").trim();
+            const body = ok
+              ? `${mark}\n**The Live Activity, drawn** for ${context.sha.slice(0, 7)}: [activity-shots.zip](${url}). One PNG per state on the sheet, at 3x.\n\n\`\`\`\n${table || "(no table)"}\n\`\`\``
+              : `${mark}\n**The Live Activity could not be drawn** for ${context.sha.slice(0, 7)}. The compile or the draw failed; the job's log says where${url ? `, and [the log files are kept](${url})` : ""}.`;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const mine = comments.find((c) => c.body && c.body.startsWith(mark));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });

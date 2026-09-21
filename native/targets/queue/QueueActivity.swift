@@ -1121,9 +1121,84 @@ private struct V2Card: View {
   }
 }
 
+/* Not the entry point when this file is compiled for rendering (below): a
+   command-line binary has its own top-level code, and two entries is a
+   compile error. */
+#if !RENDER
 @main
+#endif
 struct SageQueueBundle: WidgetBundle {
   var body: some Widget {
     QueueLiveActivity()
   }
 }
+
+// MARK: - the card, rendered to PNG on a pull request
+/* C70. The card took nine builds on 18 September because nothing but a phone
+   could draw it. .github/workflows/activity-render.yml compiles this file
+   with -D RENDER, together with native/render/main.swift (outside
+   this folder, because everything in it is compiled into the widget and a
+   file of top-level code would not build there), into a command-line
+   binary for the iOS simulator and runs it there; it writes one PNG per
+   state below and says each card's height against the 160 point budget
+   the lock screen allows. None of this is in the app: RENDER is never
+   defined in the widget's own build. The states are the sheet's,
+   docs/sheets/live-activity.html, and a state added to the card is added
+   here in the same pull request, which is rule 5's sheet rule. It lives in
+   this file because the views are private to it. */
+#if RENDER
+import UIKit
+
+@MainActor
+func renderActivityStates(to dir: String) throws -> [(String, CGSize)] {
+  typealias S = QueueAttributes.ContentState
+  typealias Pip = QueueAttributes.Pip
+  typealias Desk = QueueAttributes.Desk
+  let now = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-14 * 60))
+  let soon = ISO8601DateFormatter().string(from: Date().addingTimeInterval(4 * 60))
+  let rail: [Pip] = [Pip(i: "MV", h: 280, s: "waiting", me: false), Pip(i: "PR", h: 200, s: "waiting", me: false), Pip(i: "DO", h: 40, s: "waiting", me: true), Pip(i: "AL", h: 120, s: "waiting", me: false)]
+  let railUp: [Pip] = [Pip(i: "DO", h: 40, s: "waiting", me: true), Pip(i: "PR", h: 200, s: "waiting", me: false), Pip(i: "MV", h: 280, s: "waiting", me: false)]
+  let cord: [Pip] = [Pip(i: "PR", h: 200, s: "waiting", me: false), Pip(i: "DO", h: 40, s: "waiting", me: true), Pip(i: "MV", h: 280, s: "waiting", me: false)]
+  let desks: [Desk] = [Desk(n: "1", who: "MV", mine: false, open: false), Desk(n: "2", who: "", mine: false, open: true), Desk(n: "3", who: "PR", mine: false, open: false)]
+  let floorWaiting = QueueAttributes.FloorLane(position: 3, ahead: 2, status: "waiting", line: rail, since: now)
+  let floorUp = QueueAttributes.FloorLane(position: 1, ahead: 0, status: "up", line: railUp, since: now)
+  let floorCustomer = QueueAttributes.FloorLane(position: 3, ahead: 2, status: "customer", line: rail, table: "4", since: now)
+  let floorAsking = QueueAttributes.FloorLane(position: 3, ahead: 2, status: "customer", line: rail, table: "4", since: now, ask: "fly", askAt: now)
+  let floorLunch = QueueAttributes.FloorLane(position: 3, ahead: 2, status: "lunch", line: rail, since: now)
+  let phoneCord = QueueAttributes.PhoneLane(state: "cord", status: "waiting", position: 2, ahead: 1, line: cord, since: now, desks: desks)
+  let phoneNext = QueueAttributes.PhoneLane(state: "cord", status: "waiting", position: 1, ahead: 0, line: cord, since: now, desks: desks)
+  let phoneOffer = QueueAttributes.PhoneLane(state: "offer", status: "waiting", position: 1, ahead: 0, line: cord, desk: "2", until: soon, since: now, desks: desks)
+  let phoneDesk = QueueAttributes.PhoneLane(state: "desk", status: "waiting", desk: "2", since: now, desks: desks)
+  let phoneFree = QueueAttributes.PhoneLane(state: "free", status: "waiting", position: 2, ahead: 1, line: cord, since: now, free: ["2"], desks: desks)
+  func card(_ floor: QueueAttributes.FloorLane?, _ phone: QueueAttributes.PhoneLane?, hot: String?) -> S {
+    S(ahead: floor?.ahead ?? phone?.ahead ?? 0, up: floor?.status == "up", status: floor?.status ?? phone?.status ?? "waiting", label: "Dom", line: floor?.line ?? phone?.line, v: 2, hot: hot, floor: floor, phone: phone)
+  }
+  let states: [(String, S)] = [
+    ("floor-waiting", card(floorWaiting, nil, hot: nil)),
+    ("floor-up", card(floorUp, nil, hot: "floor")),
+    ("floor-customer", card(floorCustomer, nil, hot: nil)),
+    ("floor-asking", card(floorAsking, nil, hot: "floor")),
+    ("floor-lunch", card(floorLunch, nil, hot: nil)),
+    ("phone-cord", card(nil, phoneCord, hot: nil)),
+    ("phone-next", card(nil, phoneNext, hot: "phone")),
+    ("phone-offer", card(nil, phoneOffer, hot: "phone")),
+    ("phone-desk", card(nil, phoneDesk, hot: nil)),
+    ("phone-free", card(nil, phoneFree, hot: "phone")),
+    ("both-quiet", card(floorWaiting, phoneCord, hot: nil)),
+    ("both-floor-up", card(floorUp, phoneCord, hot: "floor")),
+    ("both-phone-offer", card(floorWaiting, phoneOffer, hot: "phone")),
+    ("both-customer-cord", card(floorCustomer, phoneCord, hot: nil)),
+  ]
+  var sizes: [(String, CGSize)] = []
+  for (name, s) in states {
+    let view = V2Card(s: s).frame(width: 361).fixedSize(horizontal: false, vertical: true).background(ground)
+    let r = ImageRenderer(content: view)
+    r.scale = 3
+    r.proposedSize = ProposedViewSize(width: 361, height: nil)
+    guard let img = r.uiImage, let data = img.pngData() else { throw NSError(domain: "render", code: 1, userInfo: [NSLocalizedDescriptionKey: "no image for \(name)"]) }
+    try data.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+    sizes.append((name, img.size))
+  }
+  return sizes
+}
+#endif
