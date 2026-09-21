@@ -176,7 +176,8 @@ async function run(b) {
      ground's a colour step, and a unit that lies is worse than none. */
   const unit = (name) => /px off/.test(name) ? "px" : /frames dropped|change between/.test(name) ? "  " : "ms";
   const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}`;
-  const row = (name, value, bar, ok = value <= bar) => { const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
+  const row = (name, value, bar, ok = value <= bar) => {
+    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
   console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
   const signIn = async () => {
@@ -225,6 +226,10 @@ async function run(b) {
         const box = q.getBoundingClientRect();
         return box.width > 0 && box.height > 0 && q.closest("[hidden]") == null;
       };
+      /* If the screen already looks the way the row is waiting for, the row
+         is measuring nothing and a small number would be a lie. Say so
+         instead. */
+      window.__felt.pre = seen();
       el.addEventListener("click", () => {
         window.__felt.t0 = performance.now();
         const tick = () => { if (seen()) { window.__felt.done = performance.now(); return; } requestAnimationFrame(tick); };
@@ -234,7 +239,7 @@ async function run(b) {
     if (ready.idx == null) await p.locator(sel).click({ force: true });
     else await p.locator(sel).nth(ready.idx).click({ force: true });
     await p.waitForFunction(() => window.__felt && window.__felt.done != null, null, { timeout: 30000 });
-    return p.evaluate(() => Math.round(window.__felt.done - window.__felt.t0));
+    return p.evaluate(() => (window.__felt.pre ? -1 : Math.round(window.__felt.done - window.__felt.t0)));
   };
   /* Which of the segment's buttons carries a word, so the click and the
      waiting both name the same one. */
@@ -248,13 +253,20 @@ async function run(b) {
   const segIdx = (label) => p.evaluate(([s, l]) => [...document.querySelectorAll(s)].findIndex((x) => x.textContent.includes(l)), [ROOM + " .sf-seg-btn", label]);
 
   const paneOn = (which) => p.waitForFunction((w) => !!document.querySelector(`.ar-room[data-room="floor"] .sf-pane-${w}.on`), which, { timeout: 30000 });
-  const homeToFloor = [];
-  for (let k = 0; k < 3; k++) {
-    homeToFloor.push(await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "exists", sel: '.ar-room[data-room="floor"] .sf-pane-floor.on' }));
-    await paneOn("floor"); await p.waitForTimeout(700);
-    if (k < 2) { await p.locator('.ar-tab[aria-label*="Home"]').click({ force: true }); await p.waitForFunction(() => !!document.querySelector(".sf-pane-home.on"), null, { timeout: 15000 }); await p.waitForTimeout(700); }
-  }
-  row("Home to Floor tab", mid(homeToFloor), BAR.tab);
+  /* The Home to Floor row is gone, and it is worth saying why rather than
+     quietly dropping it. Since C29 those two are panes of ONE page on one
+     scroller, and the harness opens the app already on the floor's pane, so
+     the floor pane was on before the tap: the row's own wait was satisfied
+     the moment it started. On the page's clock it reads nothing at all, which
+     means its old 31 to 51 ms was the driver's click machinery from end to
+     end. Measuring it honestly means driving the panes' scroller from out
+     here, and that hung WebKit for a full 30 second timeout on the first
+     attempt, because a smooth scroll started by a synthetic tap does not
+     settle there. The pair already has a row that measures it properly: the
+     swipe, thumb on the glass, which is skipped in WebKit for want of an
+     input channel and says so. */
+  await p.locator('.ar-tab[aria-label="Live Floor"]').click({ force: true });
+  await paneOn("floor");
   await roomSettled(p);
   await p.waitForTimeout(800);
   const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
