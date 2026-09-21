@@ -106,10 +106,17 @@ async function main() {
     if (h) await page.evaluate((el) => el.remove(), h);
     await page.waitForTimeout(1200);
   };
+  /* The property guesses are exhausted: the pips, the segment pill, mcGrow
+     and every animation under .lpc all come out inside the noise. So bisect
+     the screen instead. Each round hides one part and taps four times: if a
+     long frame is that part being drawn, taking it away shortens it. */
   window_list = false;
   await withCss("as is", "");
-  await withCss("no mcGrow", ".mc-trail .area, .mc-tx .bar i{ animation:none !important; }");
-  await withCss("no anim", ".lpc *, .lpc{ animation:none !important; }");
+  await withCss("no ground", ".ar-gnd{ display:none !important; }");
+  await withCss("no corner", ".sf-pane-home{ display:none !important; }");
+  await withCss("no spine", ".mc-spine{ display:none !important; }");
+  await withCss("no bar", ".ar-bar{ display:none !important; }");
+  await withCss("no rail", ".mcf-track{ display:none !important; }");
 
   await ctx.close(); await b.close();
   if (mock) mock.kill();
