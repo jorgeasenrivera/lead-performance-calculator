@@ -20,12 +20,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ensureMock, prepFloor, setUp, launch, phone, signIn, swipe, settled } from "./probe-kit.mjs";
+import { ensureMock, prepFloor, setUp, launch, phone, signIn, swipe, settled, lostBrowserWatch } from "./probe-kit.mjs";
 
 const OUT = process.env.SHOTS_DIR || "shots";
 const SIZES = { "1": "normal", "1.15": "large", "1.3": "largest" };
 const want = (process.env.SHOTS_SIZES || "1,1.15,1.3").split(",").map((s) => s.trim()).filter((s) => SIZES[s]);
 const browserName = String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium";
+let taken = 0;
 
 const floorTab = (p) => p.locator('.ar-tab[aria-label="Live Floor"]');
 /* The floor's pane in the frame (C29), or, on a build before the panes, the
@@ -40,12 +41,14 @@ async function main() {
   const mock = await ensureMock();
   const floor = await prepFloor();
   const b = await launch();
-  const taken = [];
-  const shot = async (page, name) => { const f = path.join(OUT, name + ".png"); await page.screenshot({ path: f }); taken.push(f); };
+  const lost = lostBrowserWatch(b);
+  const files = [];
+  const shot = async (page, name) => { const f = path.join(OUT, name + ".png"); await page.screenshot({ path: f }); files.push(f); taken = files.length; };
   try {
     for (const size of want) {
       const tag = SIZES[size];
       const { ctx, page, errors } = await phone(b, { prefs: { "lpcf:pref:text": size } });
+      lost.watchPage(page);
       await signIn(page);
       await shot(page, `${tag}-home`);
       /* Home, scrolled to the foot: the corner is the one screen that scrolls,
@@ -71,16 +74,29 @@ async function main() {
     /* You're up, at Normal: the one takeover, and the floor snapped to. */
     await setUp(floor);
     const { ctx, page } = await phone(b);
+    lost.watchPage(page);
     await signIn(page);
     await page.waitForTimeout(1500);
     await shot(page, "normal-up");
     await ctx.close();
-  } finally {
+  }
+  /* Asked before the close, which fires the same disconnect: see the watch's
+     comment in probe-kit. */
+  catch (e) { if (e && typeof e === "object") e.lostBrowser = lost.why(e); throw e; }
+  finally {
     await b.close().catch(() => {});
     if (mock) mock.kill();
   }
-  console.log(`shots · ${browserName} · ${taken.length} pictures in ${OUT}/`);
-  for (const f of taken) console.log("  " + f);
+  console.log(`shots · ${browserName} · ${files.length} pictures in ${OUT}/`);
+  for (const f of files) console.log("  " + f);
 }
 
-main().catch((e) => { console.error("shots:", e && e.message ? e.message : e); process.exit(1); });
+main().catch((e) => {
+  const why = e && e.lostBrowser;
+  if (!why) { console.error("shots:", e && e.message ? e.message : e); process.exit(1); }
+  /* The same exit 3 the feel harness uses, and the same reason: nothing about
+     the app was learned here, so do not let the log read as though it were. */
+  console.error(`shots: the browser was lost, ${why}. ${taken} picture(s) were taken before it went, and nothing here is a verdict on the app.`);
+  console.error("shots: that is C83. Run it again rather than reading this as a change.");
+  process.exit(3);
+});

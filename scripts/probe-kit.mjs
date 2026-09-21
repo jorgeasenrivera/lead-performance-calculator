@@ -163,3 +163,34 @@ export async function swipe(page, { x0, x1, y = 420, hold = 400, lift = true }) 
 
 /* The next two frames, so a style the app just set has been painted. */
 export const settled = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+/* ---- a lost browser is not a missed bar ----
+   Twice on 21 September, inside twenty minutes, a run died with "Target page,
+   context or browser has been closed" during sign-in, before a single row was
+   measured: the shots job on #406 and feel-webkit on #408. Both went red
+   exactly the way a missed bar goes red, exit 1 with a Playwright stack and no
+   number in it, which told nobody whether the phone had got worse. It had not
+   been measured at all.
+
+   So the two are told apart here. The browser's own events are the evidence,
+   because the fact belongs to the browser and the message belongs to
+   Playwright; the message is only the fallback, for a throw that beats its
+   event. Ask `why` BEFORE closing the browser: closing it fires the same
+   disconnect, and a watch read afterwards calls every failure a lost browser.
+
+   This does not make anything advisory. A run that could not measure still
+   fails, and it now says which of the two it was. */
+const LOST = /Target (?:page, context or browser has been closed|closed|crashed)|[Bb]rowser has been closed|Browser closed|Target crashed/;
+export function lostBrowserWatch(browser) {
+  let why = null;
+  const note = (w) => { if (!why) why = w; };
+  browser.on("disconnected", () => note("it went away mid-run"));
+  return {
+    watchPage(page) { page.on("crash", () => note("the page crashed under it, which on a container is usually memory")); },
+    why(err) {
+      if (why) return why;
+      if (browser.isConnected && !browser.isConnected()) return "it went away mid-run";
+      return LOST.test(String((err && err.message) || err || "")) ? "it was closed under the run" : null;
+    },
+  };
+}
