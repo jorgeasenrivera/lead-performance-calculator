@@ -3710,6 +3710,10 @@ async function openLeaderboard(config, storeId) {
     siblings: (config?.stores || [])
       .filter((x) => x.id !== storeId)
       .map((x) => ({ id: x.id, name: x.name })),
+    /* A wall has no config, so it reads the same list for itself out of the
+       one public row. The key rides along rather than being written into the
+       template, so there is one spelling of it. C84. */
+    storesKey: PUBLIC_STORES_KEY,
     db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
     tokens: null,
   };

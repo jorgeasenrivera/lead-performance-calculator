@@ -1465,6 +1465,11 @@ function BoardScreen({ storeId }) {
           storeKey: boardKey(storeId),
           db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
           tokens: null,
+          /* No siblings here on purpose: the published row does not carry the
+             group's store list and should not, so the board reads it for
+             itself when somebody opens the gear. That is also what makes a
+             failed read retryable, by closing the gear and opening it. C84. */
+          storesKey: PUBLIC_STORES_KEY,
         }, PIX);
         // The store or route may have changed while the template downloaded.
         if (dead) return;
