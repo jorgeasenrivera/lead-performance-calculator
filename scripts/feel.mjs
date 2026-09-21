@@ -30,6 +30,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { lostBrowserWatch } from "./probe-kit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -170,12 +171,22 @@ async function launch() {
 
 const ms = (t0) => Date.now() - t0;
 let floor = null;
+/* How many rows got measured before anything went wrong, so a run that died
+   halfway can say so instead of leaving the reader to count the table. */
+let measured = 0;
+let lost = null;
 const say = (m) => { if (process.env.FEEL_DEBUG) process.stderr.write("feel: " + m + "\n"); };
 async function main() {
   await ensureMock(); say("mock up");
   floor = await prepFloor(); say("floor prepared for " + floor.id);
   const b = await launch(); say("browser up");
-  try { await run(b); } finally { await b.close().catch(() => {}); }
+  lost = lostBrowserWatch(b);
+  try { await run(b); }
+  /* Asked here, not in the handler below: the close in the finally fires the
+     same disconnect, so a watch read after it calls every failure a lost
+     browser. */
+  catch (e) { if (e && typeof e === "object") e.lostBrowser = lost.why(e); throw e; }
+  finally { await b.close().catch(() => {}); }
 }
 async function run(b) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -186,6 +197,7 @@ async function run(b) {
      runner. The bars are meant to hold there too. */
   const cpu = Number(process.env.FEEL_CPU || 1);
   if (cpu > 1) { try { const c = await ctx.newCDPSession(p); await c.send("Emulation.setCPUThrottlingRate", { rate: cpu }); } catch (e) { say("no CPU throttle: " + e.message); } }
+  if (lost) lost.watchPage(p);
   const errs = []; p.on("pageerror", (e) => errs.push(String(e).slice(0, 160)));
   await p.addInitScript(([s]) => {
     try { localStorage.setItem(`lpcf:room:${s}`, "floor"); localStorage.setItem(`lpcf:pref:open:${s}`, "floor"); } catch (e) {}
@@ -197,7 +209,7 @@ async function run(b) {
   const unit = (name) => /px off/.test(name) ? "px" : /frames dropped|change between/.test(name) ? "  " : "ms";
   const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}`;
   const row = (name, value, bar, ok = value <= bar) => {
-    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok }; rows.push(r); console.log(line(r)); };
+    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok }; rows.push(r); measured++; console.log(line(r)); };
   console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
   const signIn = async () => {
@@ -555,4 +567,14 @@ async function run(b) {
   if (bad.length || errs.length) { console.log(`feel: ${bad.length} over the bar${errs.length ? ", and page errors" : ""}`); process.exitCode = 1; }
   else console.log("feel: all under the bar");
 }
-main().catch((e) => { console.error("feel:", e && e.message ? e.message : e); process.exitCode = 1; }).finally(() => { if (mockProc) mockProc.kill(); });
+main().catch((e) => {
+  const why = e && e.lostBrowser;
+  if (!why) { console.error("feel:", e && e.message ? e.message : e); process.exitCode = 1; return; }
+  /* Exit 3 rather than 1, and the job stays red either way. The number is for
+     the workflow, which says which of the two happened on the pull request;
+     the sentences are for whoever opens the log at seven in the morning. */
+  console.log(`  --   ${measured} row(s) measured before the browser went; the rest never ran`);
+  console.log(`feel: the browser was lost, ${why}. Nothing here says the phone got worse, because nothing here measured it.`);
+  console.log("feel: that is C83. Run it again, and if it keeps happening say so with the evidence rather than loosening the check.");
+  process.exitCode = 3;
+}).finally(() => { if (mockProc) mockProc.kill(); });

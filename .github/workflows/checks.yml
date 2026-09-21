@@ -68,6 +68,7 @@ jobs:
             echo 'table<<FEEL_END'
             grep -vE '^(> |$)' feel.txt
             echo 'FEEL_END'
+            echo "code=$code"
           } >> "$GITHUB_OUTPUT"
           exit $code
       - name: Tell the pull request
@@ -76,13 +77,21 @@ jobs:
         env:
           TABLE: ${{ steps.feel.outputs.table }}
           OUTCOME: ${{ steps.feel.outcome }}
+          CODE: ${{ steps.feel.outputs.code }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
             const mark = "<!-- sage-feel -->";
             const ok = process.env.OUTCOME === "success";
-            const head = ok ? "The phone feels the same or better: every bar met." : "The phone feels worse: a bar was missed.";
+            /* Exit 3 is the harness saying it lost the browser before it could
+               measure. Still a red check, because a check that did not run is
+               not a check that passed, but it is not a missed bar and the
+               comment must not say it is: that is what C83 was about. */
+            const lost = String(process.env.CODE || "") === "3";
+            const head = ok ? "The phone feels the same or better: every bar met."
+              : lost ? "The browser was lost before the phone was measured. Nothing here is a missed bar, and nothing here says the app got worse. Run it again."
+              : "The phone feels worse: a bar was missed.";
             const body = `${mark}\n**${head}**\n\n\`\`\`\n${(process.env.TABLE || "(no table)").trim()}\n\`\`\``;
             const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
             const mine = comments.find((c) => c.body && c.body.startsWith(mark));
