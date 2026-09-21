@@ -86,7 +86,8 @@ const BAR = {
   press: 120,        // a control has given under the finger by then
   groundStep: 24,    // the ground blends a few points a frame and never steps
   follow: 2,         // the page moves what the thumb moves, frame for frame
-  dropped: 1,        // and no frame is dropped while it does
+  dropped: 1,        // and no frame is dropped while it does: one the person
+                     // would feel, meaning long AND the page lost ground (C82)
 };
 
 /* ---- the mock, started here if nobody has ---- */
@@ -340,12 +341,47 @@ async function run(b) {
     /* Where it ended: 260 less the slop is past the middle of 393, so the
        snap lands on the floor. Any other answer is the scroller not
        following. The frames counted are the ones while the thumb moved: the
-       snap after it is the browser's own animation and is not this row. */
-    const moved = sw.frames.slice(first < 0 ? 0 : first, lastMove < 0 ? undefined : lastMove);
-    row("swipe: frames dropped while the thumb moved", moved.filter((g) => g > 25).length, BAR.dropped);
+       snap after it is the browser's own animation and is not this row.
+
+       A dropped frame is one the PERSON would feel, which is not the same as
+       a long one. This row used to count every frame over 25 ms, and on a
+       shared CI runner that is the runner: it failed on main again and again,
+       on commits that changed no JavaScript at all, and every time the frames
+       it named were exactly 33 ms, one skipped vsync, with the page exactly
+       the slop behind the thumb. The page had not lost an inch. The scroller
+       is driven by the compositor, so a long frame on the main thread still
+       arrives with the page where the thumb is, and nothing was felt.
+       So a frame counts only when it is long AND the page fell behind while
+       it lasted: the gap to the thumb opened more than a pixel beyond the
+       slop. That is C82, 21 September, and it is the same measurement the
+       follow row makes, applied per frame rather than over the whole swipe. */
+    const from = first < 0 ? 0 : first;
+    const moved = sw.frames.slice(from, lastMove < 0 ? undefined : lastMove);
+    /* The gap for each of those frames, read the way the follow row reads it:
+       on the settled frame BEFORE the thumb steps. Reading it at the end of
+       the frame instead charges the harness's own lag to the page, which is
+       the fault the comment above this block already records, and which this
+       row walked straight back into on its first draft: it counted two frames
+       on a scroller whose follow spread was 0. */
+    const gapAt = moved.map((g, i) => { const t = sw.track[from + i] || []; return (t[0] || 0) - (t[1] || 0); });
+    /* And only the frames the thumb moved through, which is the same subset
+       the follow row uses. A frame where the thumb held still is the page
+       catching up, its gap is smaller, and letting it set the floor makes
+       every other frame look behind: that is the second way this row found to
+       count a scroller that was following exactly. */
+    const stepped = moved.map((g, i) => { const a = sw.track[from + i] || [], b = sw.track[from + i + 1] || []; return b[0] !== a[0]; });
+    const walk = gapAt.filter((g, i) => stepped[i]);
+    const slop = walk.length ? Math.min(...walk) : 0;
+    const felt = moved.map((g, i) => [g, i]).filter(([g, i]) => g > 25 && stepped[i] && gapAt[i] - slop > 1);
+    row("swipe: frames dropped while the thumb moved", felt.length, BAR.dropped);
     /* Which frames, and how long: a runner that drops the same three every
-       run is saying where the cost is, and the number alone cannot. */
-    if (moved.some((g) => g > 25)) console.log("       dropped: " + moved.map((g, i) => [g, i]).filter(([g]) => g > 25).map(([g, i]) => { const t = sw.track[(first < 0 ? 0 : first) + i + 1] || []; return `frame ${i} (${Math.round(g)} ms, thumb ${t[0]}, page ${Math.round(t[1] || 0)})`; }).join(", "));
+       run is saying where the cost is, and the number alone cannot. And the
+       long frames that cost the page nothing are worth a line too, because
+       "none of them lost ground" is the sentence that stops somebody
+       re-running a green check looking for a fault. */
+    if (felt.length) console.log("       dropped: " + felt.map(([g, i]) => { const t = sw.track[from + i + 1] || []; return `frame ${i} (${Math.round(g)} ms, thumb ${t[0]}, page ${Math.round(t[1] || 0)}, ${Math.round(gapAt[i] - slop)} px behind)`; }).join(", "));
+    const longOnes = moved.filter((g) => g > 25).length;
+    if (longOnes > felt.length) console.log(`       ${longOnes - felt.length} long frame(s) the page rode out at the slop, ${slop} px, which is the runner and not the phone`);
     await paneOn("floor"); await p.waitForTimeout(800);
     await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   } else {

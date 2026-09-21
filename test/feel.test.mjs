@@ -1113,3 +1113,27 @@ test("the month caption measures itself only when its words or its width changed
   assert.ok(/const ro = new ResizeObserver\(\(rs\) => \{\n\s*const w = rs\[0\] && rs\[0\]\.contentRect \? Math\.round\(rs\[0\]\.contentRect\.width\) : 0;\n\s*if \(!w \|\| w === Math\.round\(tlHave\.current\)\) return;\n\s*tlSeen\.current = null;\n\s*fitLine\(\);/.test(core),
     "a width that really differs from the one last fitted to sends the line back to be measured, and one that does not does nothing");
 });
+
+test("a dropped frame is one the person would feel, not one the runner was slow on", () => {
+  /* C82. The row counted every frame over 25 ms, and on a shared CI runner
+     that is the runner: it failed on main again and again, on commits that
+     changed no JavaScript at all, and every frame it named was exactly 33 ms,
+     one skipped vsync, with the page exactly the slop behind the thumb. The
+     scroller is driven by the compositor, so a long frame on the main thread
+     still arrives with the page where the thumb is. A frame counts now only
+     when it is long AND the page lost ground while it lasted.
+     Both halves of the reading are pinned, because each one was got wrong
+     once on the way: the gap is read on the settled frame BEFORE the thumb
+     steps, not at the end of the frame, and only frames the thumb moved
+     through are counted. Reading it the other way made this row count two
+     frames on a scroller whose follow spread was 0. */
+  assert.ok(/const gapAt = moved\.map\(\(g, i\) => \{ const t = sw\.track\[from \+ i\] \|\| \[\]; return \(t\[0\] \|\| 0\) - \(t\[1\] \|\| 0\); \}\);/.test(feel),
+    "the gap is read on the settled frame before the step, the way the follow row reads it");
+  assert.ok(/const stepped = moved\.map\(\(g, i\) => \{ const a = sw\.track\[from \+ i\] \|\| \[\], b = sw\.track\[from \+ i \+ 1\] \|\| \[\]; return b\[0\] !== a\[0\]; \}\);/.test(feel),
+    "and only the frames the thumb moved through count, so a frame where the page was catching up cannot set the floor");
+  assert.ok(/const felt = moved\.map\(\(g, i\) => \[g, i\]\)\.filter\(\(\[g, i\]\) => g > 25 && stepped\[i\] && gapAt\[i\] - slop > 1\);/.test(feel),
+    "long and behind, both, or it is not a dropped frame");
+  assert.ok(/row\("swipe: frames dropped while the thumb moved", felt\.length, BAR\.dropped\);/.test(feel), "and that is the row");
+  assert.ok(/long frame\(s\) the page rode out at the slop/.test(feel),
+    "a long frame that cost the page nothing is still printed, because 'none of them lost ground' is what stops somebody re-running a green check");
+});
