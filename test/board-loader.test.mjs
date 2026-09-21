@@ -65,6 +65,9 @@ function popupHarness(render) {
     buildBoardPayload: () => ({ storeName: "Demo Motors" }),
     publishBoard: async () => ({ ok: true }), boardKey: (id) => "board_" + id,
     SUPABASE_URL: "http://127.0.0.1:5433", SUPABASE_ANON_KEY: "mock-anon-key", PIX: {},
+    /* The board now tells the screen where to read the group's store list, so
+       the real handler needs the constant this context stands in for. C84. */
+    PUBLIC_STORES_KEY: "lpc:board:stores:v1",
     renderLeaderboard: render, console: { error: () => {} },
   });
   return { launch: () => launch({ stores: [] }, "demo store"), events, popup, block: () => { blocked = true; } };
@@ -119,6 +122,7 @@ function screenHarness(render, read = async () => ({ storeName: "Demo Motors" })
     useState: () => [null, ++state === 1 ? (v) => html.push(v) : (v) => messages.push(v)],
     useBuildWatchdog: () => {}, useEffect: (effect) => { cleanup = effect(); },
     loadShared: read, boardKey: (id) => "board_" + id, renderLeaderboard: render, PIX: {},
+    PUBLIC_STORES_KEY: "lpc:board:stores:v1",
     SUPABASE_URL: "http://127.0.0.1:5433", SUPABASE_ANON_KEY: "mock-anon-key",
     setInterval: (fn) => { retry = fn; return 1; }, clearInterval: () => {}, console: { error: () => {} },
   });

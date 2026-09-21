@@ -1368,6 +1368,38 @@ export function LEADERBOARD_HTML(p, PIX) {
     if (pd) pd.textContent = DISP.pad + '%';
   }
 
+  /* One drawing for both, the list the tool hands in and the list a wall
+     reads for itself, so the two can never drift apart. */
+  function drawRota(rl, sibs){
+    if (!sibs.length) { rl.innerHTML = '<div class="none">This is the only store on this account.</div>'; return; }
+    /* A store that has since left the group stops being a tickable row, and
+       stops being in the rota. Only ever run against a list that was actually
+       read: dropping ids against a list that failed to load would quietly
+       empty a working wall's rota. */
+    DISP.rotate = (DISP.rotate || []).filter(function(id){
+      return sibs.some(function(x){ return x.id === id; }); });
+    rl.innerHTML = sibs.map(function(x){
+      var on = (DISP.rotate || []).indexOf(x.id) >= 0;
+      return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
+        + '<span class="tick">' + (on ? '&#10003;' : '') + '</span>'
+        + '<span>' + x.name + '</span></button>';
+    }).join('');
+    rl.querySelectorAll('[data-rot]').forEach(function(b){
+      b.onclick = function(){
+        var id = b.getAttribute('data-rot');
+        var at = (DISP.rotate || []).indexOf(id);
+        if (at >= 0) DISP.rotate.splice(at, 1); else (DISP.rotate = DISP.rotate || []).push(id);
+        /* Back to the home board whenever the list changes, so what is on
+           screen always matches what is ticked. */
+        ROT_I = 0;
+        if (CFG.storeId !== HOME.id) { CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
+          CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
+          CFG.thresholds = HOME.thresholds; SWITCHING = true; loop(); }
+        wireTuner();
+      };
+    });
+  }
+
   function wireTuner(){
     var gear = document.getElementById('gear');
     var tun = document.getElementById('tuner');
@@ -1399,30 +1431,30 @@ export function LEADERBOARD_HTML(p, PIX) {
        removed from the group does not linger as a dead row. */
     var rl = document.getElementById('rot-list');
     if (rl) {
-      var sibs = CFG.siblings || [];
-      if (!sibs.length) rl.innerHTML = '<div class="none">This is the only store on this account.</div>';
+      /* Which stores this screen can hand over to. Opened from the tool it
+         arrives on the payload, because the tool has the config in front of
+         it. On a wall there is no config, so the screen reads the one public
+         row that carries every store's id and name, with its own anon key,
+         the same way it reads a board row.
+
+         Before this the list was empty on every television, which is the one
+         place the control was ever meant to be used: the gear offered a rota
+         and then told whoever was standing there that the account had one
+         store. The rota still ran, because it comes from the published
+         display settings, so a wall could be handing over while its own gear
+         denied there was anywhere to hand over to. C84. */
+      if (CFG.siblings) drawRota(rl, CFG.siblings);
       else {
-        DISP.rotate = (DISP.rotate || []).filter(function(id){
-          return sibs.some(function(x){ return x.id === id; }); });
-        rl.innerHTML = sibs.map(function(x){
-          var on = (DISP.rotate || []).indexOf(x.id) >= 0;
-          return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
-            + '<span class="tick">' + (on ? '&#10003;' : '') + '</span>'
-            + '<span>' + x.name + '</span></button>';
-        }).join('');
-        rl.querySelectorAll('[data-rot]').forEach(function(b){
-          b.onclick = function(){
-            var id = b.getAttribute('data-rot');
-            var at = (DISP.rotate || []).indexOf(id);
-            if (at >= 0) DISP.rotate.splice(at, 1); else (DISP.rotate = DISP.rotate || []).push(id);
-            /* Back to the home board whenever the list changes, so what is on
-               screen always matches what is ticked. */
-            ROT_I = 0;
-            if (CFG.storeId !== HOME.id) { CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
-              CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
-              CFG.thresholds = HOME.thresholds; SWITCHING = true; loop(); }
-            wireTuner();
-          };
+        rl.innerHTML = '<div class="none">Reading the store list...</div>';
+        getStoreByKey(CFG.storesKey || 'lpc:board:stores:v1').then(function(v){
+          /* Read and empty is a one-store account. Not read at all is not the
+             same thing and must not say it is. Opening the gear again tries
+             again, which is what this offers rather than promising a retry
+             that nothing would actually perform: the list is fetched when the
+             tuner is opened, and the board's own refresh does not carry it. */
+          if (!v || v.__err) { rl.innerHTML = '<div class="none">Cannot reach the store list. Close this and open it again to try.</div>'; return; }
+          CFG.siblings = ((v.stores) || []).filter(function(x){ return x && x.id !== HOME.id; });
+          drawRota(rl, CFG.siblings);
         });
       }
     }
