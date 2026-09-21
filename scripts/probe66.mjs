@@ -40,6 +40,25 @@ async function main() {
     console.log(`  at rest ${tag.padEnd(10)} ${String(r.n).padStart(3)} frames in a second, ${String(r.log.length).padStart(4)} DOM writes   ${top}`);
   };
 
+  /* Every layout read the page makes, counted and timed. A read behind a
+     write is a forced synchronous layout, and a big tree costs more in one
+     engine than in another. */
+  const meter = async () => page.evaluate(() => {
+    if (window.__meterOn) return;
+    window.__meterOn = true;
+    window.__m = { rect: 0, rectMs: 0, box: 0, boxMs: 0 };
+    const R = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () { const a = performance.now(); const r = R.call(this); window.__m.rect++; window.__m.rectMs += performance.now() - a; return r; };
+    for (const k of ["offsetWidth", "offsetHeight", "offsetLeft", "offsetTop", "clientWidth", "clientHeight"]) {
+      const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, k) || Object.getOwnPropertyDescriptor(Element.prototype, k);
+      if (!d || !d.get) continue;
+      const g = d.get;
+      Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get() { const a = performance.now(); const v = g.call(this); window.__m.box++; window.__m.boxMs += performance.now() - a; return v; } });
+    }
+  });
+  const readMeter = async (tag) => { const m = await page.evaluate(() => { const v = window.__m; window.__m = { rect: 0, rectMs: 0, box: 0, boxMs: 0 }; return v; });
+    console.log(`  ${tag.padEnd(22)} ${String(m.rect).padStart(4)} rects in ${m.rectMs.toFixed(1)} ms, ${String(m.box).padStart(4)} box reads in ${m.boxMs.toFixed(1)} ms`); };
+
   const tap = async (label) => {
     const sel = ROOM + " .sf-seg-btn";
     const idx = await page.evaluate(([s, l]) => [...document.querySelectorAll(s)].findIndex((x) => x.textContent.includes(l)), [sel, label]);
@@ -85,6 +104,15 @@ async function main() {
   console.log(`  detached ${gone} travelling dots`);
   await page.waitForTimeout(1200);
   await round("neither");
+
+  /* and once more, with every layout read counted */
+  await meter();
+  await page.waitForTimeout(1200);
+  await readMeter("a second at rest");
+  await tap("Lunch"); await readMeter("a tap of Lunch");
+  await tap("Here"); await readMeter("a tap of Here");
+  await cross("Phone"); await readMeter("Floor to Phone");
+  await cross("Live Floor"); await readMeter("Phone to Floor");
 
   await ctx.close(); await b.close();
   if (mock) mock.kill();
