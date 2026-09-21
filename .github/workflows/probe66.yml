@@ -1,0 +1,32 @@
+# C66 probe, deleted when the row is done. What a tap and a cross cost in
+# WebKit, with the rail's travelling dots running and with them detached.
+name: probe66
+
+on:
+  push:
+    branches: ["claude/c66-probe"]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [webkit, chromium]
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Build against the mock
+        run: |
+          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          npm run build
+      - name: Probe
+        shell: bash
+        run: |
+          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          FEEL_BROWSER=${{ matrix.browser }} FEEL_URL=http://127.0.0.1:5178/ node scripts/probe66.mjs
