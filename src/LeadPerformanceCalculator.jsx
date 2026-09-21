@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
+import { renderLeaderboard } from "./board-loader.mjs";
 /* The CSV reader is a manager's tool: it runs when somebody drops a report on
    the Import page. A salesperson on the floor never touches it, so it is fetched
    on the first parse rather than carried in everyone's first load. */
@@ -3712,9 +3713,20 @@ async function openLeaderboard(config, storeId) {
     db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
     tokens: null,
   };
+  let html;
+  try {
+    html = await renderLeaderboard(payload, PIX);
+  } catch (e) {
+    console.error("[Sage board] Template download failed; opening the retrying TV page", e);
+    // Reuse the TV route's loading, retry and build-watchdog states. Its entry
+    // may still come from the service worker, so navigation is not a fresh-build guarantee.
+    if (!w.closed) w.location.replace(window.location.pathname + "?board=" + encodeURIComponent(storeId));
+    return true;
+  }
+  if (w.closed) return true;
+  // Do not erase an already-open board until its replacement is ready.
   w.document.open();
-  const { LEADERBOARD_HTML } = await managerChunk();
-  w.document.write(LEADERBOARD_HTML(payload));
+  w.document.write(html);
   w.document.close();
   return true;
 }
