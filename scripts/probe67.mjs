@@ -33,6 +33,7 @@ async function main() {
   await page.waitForFunction(() => !document.querySelector(".ar-room.ar-in, .ar-room.ar-out"), null, { timeout: 15000 });
   await page.waitForTimeout(800);
 
+  let window_list = false;
   const tap = async (label, n, gap) => {
     const idx = await page.evaluate(([s, l]) => [...document.querySelectorAll(s)].findIndex((x) => x.textContent.includes(l)), [SEL, label]);
     await page.evaluate(() => {
@@ -49,12 +50,31 @@ async function main() {
     await page.locator(SEL).nth(idx).click();
     await page.waitForFunction(([s, k]) => /(^| )on( |$)/.test(document.querySelectorAll(s)[k].className), [SEL, idx], { timeout: 15000 });
     const wall = Date.now() - t;
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(200);
+    const mid = window_list ? await page.evaluate(() => (document.getAnimations ? document.getAnimations() : []).map((a) => {
+      const t2 = a.effect && a.effect.target;
+      const cls = t2 ? ((t2.className && t2.className.baseVal !== undefined ? t2.className.baseVal : t2.className) || t2.nodeName) : "?";
+      return (a.transitionProperty || a.animationName || "?") + " on " + String(cls).split(" ").slice(0, 2).join(".");
+    })) : null;
+    if (mid) { const tl = {}; for (const a of mid) tl[a] = (tl[a] || 0) + 1;
+      console.log("      200 ms in, running: " + Object.entries(tl).sort((x, y) => y[1] - x[1]).slice(0, 7).map(([k, n]) => `${n}x ${k}`).join(" | ")); }
+    await page.waitForTimeout(600);
     const f = await page.evaluate(() => window.__f);
+    if (window_list) {
+      const anims = await page.evaluate(() => (document.getAnimations ? document.getAnimations() : []).map((a) => {
+        const t = a.effect && a.effect.target;
+        const cls = t ? ((t.className && t.className.baseVal !== undefined ? t.className.baseVal : t.className) || t.nodeName) : "?";
+        const what = a.transitionProperty || a.animationName || "?";
+        return what + " on " + String(cls).split(" ").slice(0, 2).join(".");
+      }));
+      const tally = {}; for (const a of anims) tally[a] = (tally[a] || 0) + 1;
+      console.log("      running: " + Object.entries(tally).sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, n]) => `${n}x ${k}`).join(" | "));
+    }
     const worst = Math.max(...f.frames.slice(1, 12));
     console.log(`  ${(n + " " + label).padEnd(10)} after ${String(gap).padStart(4)} ms of quiet   wall ${String(wall).padStart(4)} ms   worst frame ${String(worst).padStart(3)} ms   ${String(calls - before)} requests   ${f.muts} DOM writes   frames ${f.frames.slice(0, 10).join(" ")}`);
   };
 
+  window_list = true;
   await tap("Lunch", 1, 800);
   await page.waitForTimeout(700); await tap("Here", 2, 700);
   await page.waitForTimeout(700); await tap("Lunch", 3, 700);
@@ -62,6 +82,14 @@ async function main() {
   /* and the same first tap again, this time after a long quiet, to tell a
      cold path from a floor that had not finished arriving */
   await page.waitForTimeout(6000); await tap("Lunch", 5, 6000);
+
+  /* and with the two layout-animated properties on the pips taken out: the
+     rail's people grow and shrink through width and height on a re-order, and
+     both lay the rail out again on every frame of half a second. */
+  await page.addStyleTag({ content: ".mcf-pip{ transition:transform .65s cubic-bezier(.3,1.3,.4,1) !important; }" });
+  await page.waitForTimeout(1200);
+  await tap("Here", 6, 1200);
+  await page.waitForTimeout(700); await tap("Lunch", 7, 700);
 
   await ctx.close(); await b.close();
   if (mock) mock.kill();
