@@ -105,6 +105,34 @@ async function main() {
   await page.waitForTimeout(1200);
   await round("neither");
 
+  /* where a cross spends itself: the click, the first DOM change under the
+     rooms, the arriving room's title, and the frame after it */
+  const split = async (to) => {
+    await page.evaluate(() => {
+      window.__c = { t0: performance.now(), first: null, title: null, painted: null };
+      const stack = document.querySelector(".ar-stack") || document.body;
+      const mo = new MutationObserver(() => {
+        if (window.__c.first == null) window.__c.first = performance.now();
+        if (window.__c.title == null && document.querySelector(".sfl-title, .mcf-home, .sf-seg-btn")) {
+          window.__c.title = performance.now();
+          requestAnimationFrame(() => { window.__c.painted = performance.now(); });
+        }
+      });
+      mo.observe(stack, { attributes: true, childList: true, subtree: true });
+      window.__cStop = () => mo.disconnect();
+    });
+    const t = Date.now();
+    await page.locator(`.ar-tab[aria-label*="${to}"]`).click();
+    if (to === "Phone") await page.waitForSelector(".sfl-title, .mcf-home", { timeout: 20000 });
+    else await page.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 20000 });
+    const wall = Date.now() - t;
+    await page.waitForTimeout(1500);
+    const c = await page.evaluate(() => { window.__cStop && window.__cStop(); return window.__c; });
+    const at = (v) => (v == null ? "  ?" : String(Math.round(v - c.t0)).padStart(3));
+    console.log(`  cross to ${to.padEnd(12)} wall ${String(wall).padStart(4)} ms   first DOM change ${at(c.first)}   room's own ${at(c.title)}   painted ${at(c.painted)}`);
+  };
+  for (let k = 0; k < 3; k++) { await split("Phone"); await split("Live Floor"); }
+
   /* and once more, with every layout read counted */
   await meter();
   await page.waitForTimeout(1200);
