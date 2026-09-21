@@ -1008,12 +1008,22 @@ private struct FloorLaneView: View {
   let top: Bool
   var hot: Bool = false
   var strip: Bool = false
+  /* True when the phone lane is on the card underneath this one. */
+  var sharing: Bool = false
   var body: some View {
     let ph = phaseOf(s)
     /* The rail is the picture a hot floor lane keeps (Jorge, 18 September:
        the light funnels in to you on You're up), and the caption is what it
-       gives up to fit: see V2Card for the arithmetic. */
-    let rail: Bool = !strip && showsRail(s, ph) && !((s.line ?? []).isEmpty)
+       gives up to fit: see V2Card for the arithmetic.
+       And it keeps it only when it has the card to itself. Jorge, 21
+       September, A1, decided against drawn heights rather than the sheet's
+       arithmetic: the floor lane alone on You're up draws at 116 and keeps
+       everything, but with the phone lane under it the same rail costs four
+       points that do not exist, 164 against the 160 the lock screen allows.
+       Without it that card draws at 130. Nothing comes back in its place:
+       the caption for this phase is empty, so this is a removal, not a
+       swap. */
+    let rail: Bool = !strip && !(hot && sharing) && showsRail(s, ph) && !((s.line ?? []).isEmpty)
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 2) {
@@ -1091,7 +1101,7 @@ private struct V2Card: View {
           Divider().overlay(Color.white.opacity(0.07))
           FloorLaneView(s: f, big: false, top: false, strip: true)
         } else if hot == "floor" {
-          FloorLaneView(s: f, big: true, top: true, hot: true)
+          FloorLaneView(s: f, big: true, top: true, hot: true, sharing: true)
           Divider().overlay(Color.white.opacity(0.07))
           PhoneLaneView(p: p, big: false, top: false, strip: true)
         } else {
