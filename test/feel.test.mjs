@@ -13,6 +13,7 @@ import fs from "node:fs";
 
 const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
 const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
+const tv = fs.readFileSync(new URL("../src/leaderboard-template.mjs", import.meta.url), "utf8");
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
 const keys = fs.readFileSync(new URL("../api/_store-keys.mjs", import.meta.url), "utf8");
@@ -531,7 +532,7 @@ test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on
     "the direction arrow stays: a tube shows where you are, not which way you are going");
   assert.equal((mgr.match(/<Verdict /g) || []).length, 2,
     "the mark survives exactly where there is no drawing: the pace sentence and the weakest standard");
-  assert.ok(/toneMark\(t\)\{ return pix\(t === 'g' \? 'check' : t === 'y' \? 'clock' : 'warn'\); \}/.test(mgr) && /--green:#1F8A6B; --greenbg:#E1F1EA; --yellow:#E0A100;[^}]*--red:#C8352B;/.test(mgr), "the TV board speaks the same three");
+  assert.ok(/toneMark\(t\)\{ return pix\(t === 'g' \? 'check' : t === 'y' \? 'clock' : 'warn'\); \}/.test(tv) && /--green:#1F8A6B; --greenbg:#E1F1EA; --yellow:#E0A100;[^}]*--red:#C8352B;/.test(tv), "the TV board speaks the same three");
   assert.ok(/--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(mgr) && /--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(core), "the rooms and the phone take the same three");
   assert.ok(/\.vmark\{ display:inline-flex; align-items:center; gap:3px; color:var\(--vc\);/.test(mgr), "the mark takes its figure's colour");
 });

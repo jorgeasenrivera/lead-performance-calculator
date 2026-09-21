@@ -117,4 +117,9 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-_Nothing open. H-X1 was answered by the review and merge of #407._
+**H-X2 · X3 is ready for review.** The `codex/lazy-tv-template` branch moves the
+standalone TV document out of the initial manager download. Evidence, costs and
+verification limits live in `docs/manager-loading.md`. Please check the popup
+fallback and the TV effect's retry/cancellation paths. The template itself is a
+verbatim move with `PIX` passed in. No styling or motion changes are intended.
+The pull request releases X3 on merge. Do not merge before all CI checks pass.
