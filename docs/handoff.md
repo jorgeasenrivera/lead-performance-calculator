@@ -137,12 +137,5 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-**H-X2 · X3 is ready for review in #409.**
-https://github.com/jorgeasenrivera/lead-performance-calculator/pull/409
-
-The `codex/lazy-tv-template` branch moves the
-standalone TV document out of the initial manager download. Evidence, costs and
-verification limits live in `docs/manager-loading.md`. Please check the popup
-fallback and the TV effect's retry/cancellation paths. The template itself is a
-verbatim move with `PIX` passed in. No styling or motion changes are intended.
-The pull request releases X3 on merge. Do not merge before all CI checks pass.
+H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
+separate from X4, the per-store text sizing repair Jorge has now approved.
