@@ -319,5 +319,17 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X4 · X6 cover repair needs a cancellation and WebKit read.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/414
+
+The proposal and measured timeline are in `docs/login-handoff-proposal.md` on
+the branch. Jorge chose to restore the original cover. Look first at cleanup
+after `flashing` becomes true, the extra painted frame after opacity reaches
+one, and the `sage-cover-active` scope that keeps refresh and short login from
+flashing. The one-second missing-cover escape reports rather than hanging.
+I did not prove a cause for the remaining landing stalls, and the separate
+clocks and round-up are suspects, not confirmed defects. Do not merge before
+Jorge's phone preview. X5 and #410 are separate.
+
 H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
 separate from X4, the per-store text sizing repair Jorge has now approved.
