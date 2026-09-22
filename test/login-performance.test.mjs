@@ -60,11 +60,18 @@ test("the static HTML cover keeps its full-screen CSS and reduced-motion excepti
   const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /class="sage-flash"/);
   assert.match(core, /\.sage-flash \{ position:fixed; inset:0; background:#fff; opacity:0;\s*pointer-events:none; z-index:9500; \}/);
-  assert.match(core, /\.sage-beat-flash \.sage-flash, \.sage-flash-hold \.sage-flash \{\s*animation: saFlashUp/);
+  assert.match(core, /\.sage-cover-active\.sage-beat-flash \.sage-flash, \.sage-cover-active\.sage-flash-hold \.sage-flash \{\s*animation: saFlashUp/);
   assert.match(core, /\.sage-assemble\.sage-cover-active \.sage-flash \{ animation: saFlashOut/);
   assert.doesNotMatch(core, /\.sage-assemble \.sage-flash \{/);
   const reduced = core.slice(core.indexOf("@media (prefers-reduced-motion: reduce) {", core.indexOf("@keyframes saRing")));
   assert.match(reduced.slice(0, 700), /\.sage-flash \{ animation:none !important; \}/);
+});
+
+test("a short login waiting for the network cannot raise the full-login cover", () => {
+  assert.doesNotMatch(core, /(?:^|\n)\.sage-flash-hold \.sage-flash/);
+  const short = core.slice(core.indexOf("  if (jumpShort) {", core.indexOf("function runJump(")), core.indexOf("  arrivalTaken();", core.indexOf("function runJump(")));
+  assert.ok(short.includes("onFlash(); onDone();"));
+  assert.ok(!short.includes("sage-cover-active"));
 });
 
 test("a fast display cannot hand over while the cover is still translucent", () => {
