@@ -30,12 +30,16 @@ test("a browser that goes away mid-run is named, and a missed bar is not", () =>
   assert.match(w.why(new Error("anything")), /went away mid-run/);
 });
 
-test("a page that crashes says so, because memory is the suspicion", () => {
+test("a page that crashes says so, and no longer guesses why", () => {
   const b = fakeBrowser(), p = fakePage();
   const w = lostBrowserWatch(b);
   w.watchPage(p);
   p.emit("crash");
   assert.match(w.why(null), /crashed/);
+  /* It used to add that this is usually memory. The first crash measured said
+     13.4 GB free and nothing killed, so the sentence is gone and the machine
+     line beside it is left to say what it was (C85). */
+  assert.doesNotMatch(w.why(null), /memory/);
 });
 
 test("Playwright's own sentence is the fallback, for a throw that beats its event", () => {

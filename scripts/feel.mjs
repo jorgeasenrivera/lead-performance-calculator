@@ -60,28 +60,43 @@ const STORE_TZ = "America/New_York";                 // the app's dealership day
 const day = () => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(new Date());
 
 /* ---- the bar ---- */
-/* The two bars below were set against numbers that were mostly the driver's:
-   the rows used to be timed with a stopwatch outside the browser, and
-   Playwright's click waits for the element to be stable across consecutive
-   frames before it sends anything. Timed on the page's own clock, as the
-   median of three, on the same CI runner and image, 21 September:
+/* Which engine, once, because the two engines get different bars below. */
+const WEBKIT = String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit";
+/* The bars were first set on 21 September from one day of runs, at "roughly
+   four times the slower engine's median", with a note to re-set them once
+   there were a few dozen runs to set them from. That table was wrong for
+   WebKit by two to three times, and the re-set never happened, so for two days
+   two WebKit bars sat inside WebKit's own normal range and failed on runs whose
+   code could not have moved them (C85).
 
-                      Chromium        WebKit
-     tap Lunch        9 to 12 ms      11 ms
-     tap Here         9 to 12 ms      12 ms
-     Floor to Phone   17 to 21 ms     30 ms
-     Phone to Floor   18 to 19 ms     24 ms
+   Read back from 21 CI runs of the WebKit job, 21 and 22 September, each row
+   the median of three on the page's own clock:
 
-   So the bars are set at roughly four times the slower engine's median: tight
-   enough that a real regression cannot hide behind them, loose enough that a
-   loaded shared runner adding a long frame to one of the three samples does
-   not turn the check red for nothing. They are deliberately not set at twice:
-   a bar that flakes teaches everybody to re-run it, which is how a check stops
-   being believed. Tighten them once there are a few dozen runs of history to
-   set them from. */
+                      first table   median   75th   highest seen
+     tap Lunch          11 ms         31      40       54
+     tap Here           12 ms         14      16       33
+     Floor to Phone     30 ms         57      62      128
+     Phone to Floor     24 ms         39      42       44
+
+   Chromium's first table was right, 9 to 21 ms, and its bars are left alone.
+
+   The "four times the median" rule does not survive these numbers: it would
+   put WebKit's tap bar at 124 ms and its tab bar at 228, loose enough to wave
+   through a tap four times slower than it is now. So WebKit's bars are set just
+   above the highest reading in that history instead, which is what "loose
+   enough that the runner cannot turn it red for nothing" meant all along.
+
+   What that costs, said plainly. For taps it costs little: 60 is still under
+   double WebKit's median, so a tap that got twice as slow fails. For tabs it
+   costs more: the runner's slow patches reach 128 on Floor to Phone, about
+   twice its median, so at 140 a room cross that doubled in WebKit alone could
+   hide in the same place. A regression that reaches both engines still fails
+   in Chromium, whose bar is five times its median. The rows now print all
+   three samples, which is what will let a later change tell a slow patch from
+   a slow cross and tighten this, rather than guess. */
 const BAR = {
-  tab: 110,          // a tab is the screen the phone already had
-  tap: 50,           // a tap is drawn in the frame it lands in
+  tab: WEBKIT ? 140 : 110,  // a tab is the screen the phone already had
+  tap: WEBKIT ? 60 : 50,    // a tap is drawn in the frame it lands in
   chip: 100,         // a FlyBy sent is a chip at once
   returnSignIn: 900 + 3 * LAG, // signing in again the same day lands the short way: a few round trips, no jump
   press: 120,        // a control has given under the finger by then
@@ -159,7 +174,7 @@ async function launch() {
      WebView is and Chromium at phone width is not the phone: the 18 September
      glitches that reached Jorge were the kind only a phone shows. CI runs both.
      WebKit has no executable fallback; Playwright's own is the only one. */
-  if (String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit") return pw.webkit.launch();
+  if (WEBKIT) return pw.webkit.launch();
   const tries = [process.env.FEEL_CHROME, undefined];
   try { const root = process.env.PLAYWRIGHT_BROWSERS_PATH; if (root) for (const d of fs.readdirSync(root)) if (/^chromium-\d+$/.test(d)) tries.push(path.join(root, d, "chrome-linux", "chrome")); } catch (e) {}
   let last = null;
@@ -212,10 +227,14 @@ async function run(b) {
   /* Most rows are a time. The swipe's are pixels and a count of frames, the
      ground's a colour step, and a unit that lies is worse than none. */
   const unit = (name) => /px off/.test(name) ? "px" : /frames dropped|change between/.test(name) ? "  " : "ms";
-  const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}`;
-  const row = (name, value, bar, ok = value <= bar) => {
-    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok }; rows.push(r); measured++; console.log(line(r)); };
-  console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
+  /* A median of three hides the three. When one goes over, the question is
+     whether all three were slow, which is the app, or one or two were, which
+     is the runner, and only the samples answer it (C85). */
+  const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}${r.xs ? "   [" + r.xs.join(", ") + "]" : ""}`;
+  const row = (name, value, bar, ok = value <= bar, xs = null) => {
+    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok, xs }; rows.push(r); measured++; console.log(line(r)); };
+  const row3 = (name, xs, bar) => row(name, mid(xs), bar, mid(xs) <= bar, xs);
+  console.log(`feel · ${WEBKIT ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
   const signIn = async () => {
     await p.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app").catch(() => {});
@@ -315,8 +334,8 @@ async function run(b) {
     here.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }));
     await segOn("Here"); await p.waitForTimeout(700);
   }
-  row("tap Lunch to shown", mid(lunch), BAR.tap);
-  row("tap Here to shown", mid(here), BAR.tap);
+  row3("tap Lunch to shown", lunch, BAR.tap);
+  row3("tap Here to shown", here, BAR.tap);
 
   /* the swipe: the page under the thumb, and no frame dropped. Home and Live
      Floor are two pages of the floor page's own scroller (C74), so the thumb
@@ -427,8 +446,8 @@ async function run(b) {
     toFloor.push(await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "visible", sel: ROOM + " .sf-seg-btn" }));
     await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); await p.waitForTimeout(900);
   }
-  row("Floor to Phone tab", mid(toPhone), BAR.tab);
-  row("Phone to Floor tab", mid(toFloor), BAR.tab);
+  row3("Floor to Phone tab", toPhone, BAR.tab);
+  row3("Phone to Floor tab", toFloor, BAR.tab);
   await roomSettled(p);
   await p.waitForTimeout(800);
 

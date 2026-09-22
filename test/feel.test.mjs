@@ -1138,3 +1138,32 @@ test("a dropped frame is one the person would feel, not one the runner was slow 
   assert.ok(/long frame\(s\) the page rode out at the slop/.test(feel),
     "a long frame that cost the page nothing is still printed, because 'none of them lost ground' is what stops somebody re-running a green check");
 });
+
+test("each engine is held to a bar set from its own history, not from one day of the other's", () => {
+  /* C85. The first bars came from one day of runs, and the table behind them
+     had WebKit two to three times faster than it is. Two WebKit bars sat inside
+     WebKit's own normal range and failed on code that could not have moved
+     them. Read back from 21 runs, they are set just above the highest reading
+     seen; Chromium's table was right and its bars are unchanged. */
+  assert.ok(/const WEBKIT = String\(process\.env\.FEEL_BROWSER \|\| ""\)\.toLowerCase\(\) === "webkit";/.test(feel),
+    "the engine is decided once");
+  assert.ok(/tab: WEBKIT \? 140 : 110,/.test(feel) && /tap: WEBKIT \? 60 : 50,/.test(feel),
+    "WebKit gets its own bars and Chromium keeps the ones that were already right");
+  assert.ok(/Floor to Phone     30 ms         57      62      128/.test(feel),
+    "the table shows what the first one said beside what the history says, so the correction is on the page");
+  assert.ok(/The "four times the median" rule does not survive these numbers/.test(feel),
+    "and it says why the old rule was not simply re-applied");
+  assert.ok(/a room cross that doubled in WebKit alone could\n\s*hide in the same place/.test(feel),
+    "the cost of the tab bar is written down, not left for somebody to discover");
+});
+
+test("a timed row prints its three samples, so a miss can be read instead of guessed at", () => {
+  /* The median of three hid which of two things a miss was. On 22 September one
+     commit failed twice with the two runs swapping which row went over, and
+     nothing on the page could say whether one sample was slow or all three. */
+  assert.ok(/const row3 = \(name, xs, bar\) => row\(name, mid\(xs\), bar, mid\(xs\) <= bar, xs\);/.test(feel));
+  assert.ok(/\$\{r\.xs \? "   \[" \+ r\.xs\.join\(", "\) \+ "\]" : ""\}/.test(feel), "the line carries them");
+  for (const name of ["tap Lunch to shown", "tap Here to shown", "Floor to Phone tab", "Phone to Floor tab"]) {
+    assert.ok(feel.includes(`row3("${name}", `), `${name} is a row of three`);
+  }
+});
