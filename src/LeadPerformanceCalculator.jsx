@@ -5739,6 +5739,33 @@ function arrivalEngineCore(ctx, world, post) {
   };
 }
 
+/* A pair of frames is not a duration: at 120 Hz it ends before the cover is
+   opaque. Keep the last tunnel frame until opacity reaches one, then allow a
+   paint before swapping. A missing cover must report, not strand sign-in. */
+function waitForArrivalCover(onCovered) {
+  const cover = document.querySelector(".sage-flash");
+  let stopped = false, raf = 0;
+  const finish = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(limit); cancelAnimationFrame(raf);
+    onCovered();
+  };
+  const limit = setTimeout(() => {
+    console.warn("[Sage arrival] Cover did not become opaque; continuing sign-in.");
+    finish();
+  }, 1000);
+  const check = () => {
+    if (stopped) return;
+    const style = cover && getComputedStyle(cover);
+    if (style && style.position === "fixed" && Number(style.opacity) >= 0.999) {
+      raf = requestAnimationFrame(finish);
+    } else raf = requestAnimationFrame(check);
+  };
+  raf = requestAnimationFrame(check);
+  return () => { stopped = true; clearTimeout(limit); cancelAnimationFrame(raf); };
+}
+
 function runJump({ onFlash, onDone, lead = 0 }) {
   /* The driver. Measures the world at the press, hands the drawing to
      arrivalEngineCore — inside a Worker with an OffscreenCanvas wherever the
@@ -5856,25 +5883,22 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const world = { W, H, dpr, T: JUMP_T, FP: 0.5, mk, field, tunnel, font: bodyFont, lead };
 
   let flashing = false, stopped = false, raf = 0, domRaf = 0;
-  let worker = null, engine = null;
+  let worker = null, engine = null, cancelCover = () => {};
 
   const toFlash = () => {
     if (flashing || stopped) return;
     flashing = true;
     activeEngineSend = null;
-    restoreDom();
-    root.classList.add("sage-beat-flash");
-    root.classList.remove("sage-cv");
+    root.classList.add("sage-beat-flash", "sage-cover-active");
     if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
-    if (cv.parentNode) cv.parentNode.removeChild(cv);
     onFlash();
-    let frames = 0;
-    const painted = () => {
+    cancelCover = waitForArrivalCover(() => {
       if (stopped) return;
-      if (++frames < 2) { requestAnimationFrame(painted); return; }
-      setTimeout(() => { if (!stopped) onDone(); }, 20);
-    };
-    requestAnimationFrame(painted);
+      restoreDom();
+      root.classList.remove("sage-cv");
+      if (cv.parentNode) cv.parentNode.removeChild(cv);
+      onDone();
+    });
   };
 
   const onPost = (type, data) => {
@@ -5958,14 +5982,14 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   domRaf = requestAnimationFrame(domLoop);
 
   return () => {
-    if (flashing) return;
     stopped = true;
+    cancelCover();
     activeEngineSend = null;
     cancelAnimationFrame(raf); cancelAnimationFrame(domRaf);
     if (worker) { try { worker.postMessage({ type: "stop" }); worker.terminate(); } catch (e) {} worker = null; }
     if (engine) engine.msg({ type: "stop" });
     restoreDom();
-    root.classList.remove("sage-cv", "sage-beat-flash");
+    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");
     if (cv.parentNode) cv.parentNode.removeChild(cv);
     jumpOwnsEntrance = false;
     tellPhase("off");   // release the mount gate: this jump is not landing
@@ -14099,6 +14123,10 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          the engine moves them directly. */
 .sage-jump-canvas { position:fixed; inset:0; z-index:300; pointer-events:none; }
 .sage-cv .sg-field, .sage-cv .login-logo svg { visibility:hidden; }
+/* This element lives in index.html, not JSX. Its rules are part of the
+   handoff even though a search through React markup finds no className. */
+.sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
+        pointer-events:none; z-index:9500; }
 /* ---- the white lasts as long as what it is covering ----
          It used to be a fixed 420ms from the flash beat, and the thing it exists
          to hide is not fixed at all: mounting the dashboard took 680ms, so the
@@ -14110,7 +14138,11 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          actually there — .sage-assemble is added on the frame it mounts. Both
          rules fill forwards and the out starts from full, so the handover
          between them cannot show a seam however long the mount takes. */
+.sage-beat-flash .sage-flash, .sage-flash-hold .sage-flash {
+        animation: saFlashUp .34s ease-out both; }
 @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+/* Refresh and the short sign-in use assemble too, but did not raise a cover. */
+.sage-assemble.sage-cover-active .sage-flash { animation: saFlashOut .5s ease-in both; }
 @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
 /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
          Written as animations, with the field's own 28s drift kept first in every
@@ -14342,6 +14374,7 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
         .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
         .sage-assemble .sa-radial  { animation-duration:.18s !important; animation-timing-function:linear !important; }
+        .sage-flash { animation:none !important; }
 
       }
 /* ---- the sign-in layer ----

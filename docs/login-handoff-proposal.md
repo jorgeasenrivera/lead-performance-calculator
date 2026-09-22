@@ -46,3 +46,42 @@ server refuses a build that does not point at the local mock.
 - Run tests, build and Chromium/WebKit checks.
 - Publish a preview for Jorge to try on an iPhone before any merge.
 - Report remaining stalls honestly. Restoring a cover does not fix main-thread work.
+
+## Implemented and measured, 22 September
+
+The cover CSS is restored with its original rise and fade. The fade is scoped
+to a full login that actually raised the cover, so a saved-session refresh or
+short sign-in does not acquire a new white flash. The tunnel remains until
+computed opacity reaches one and a further animation frame has been allowed.
+Cancellation can now stop this wait. A one-second bound reports a missing or
+unstyled cover and releases sign-in rather than trapping a person indefinitely.
+
+The local recorder, in foreground desktop Chromium at 1280 by 720, observed:
+
+| Event | Time after pressing Sign in |
+|---|---:|
+| Tunnel mounted | 384 ms |
+| Cruise began | 3,047 ms |
+| Hero mounted under the tunnel | 4,031 ms |
+| Cover began | 5,033 ms |
+| Tunnel removed and dashboard revealed | 5,343 ms |
+| Round-up opened | 7,643 ms |
+
+At tunnel removal and dashboard reveal, the cover was fixed, white and at
+opacity 1. Afterwards its opacity returned to 0, its animation stopped, the
+canvas was removed and all temporary arrival classes cleared. No warnings or
+errors were captured. This verifies the handoff, not an iPhone frame rate.
+
+Remaining work is real: the largest recorded task after reveal was 156 ms.
+One 506 ms animation frame during the covered mount included 323 ms of forced
+layout attributed to the framework scheduler. That attribution is not enough
+to name a component as the cause. The previous 254 ms sample used a different
+recorder, so these numbers are not an A/B improvement claim. This recorder also
+adds observation overhead. Profile the component before changing its behavior.
+
+636 tests and the mock build pass. The local feel attempt first rejected the
+manager-only mock; after restarting the mock in salesperson mode, it stopped
+because the installed Playwright package has no browser executable on this
+work computer. CI must supply Chromium and WebKit. Slow and failed network
+sign-ins and reduced motion still need browser coverage; cancellation and the
+missing-cover fallback have deterministic tests. No phone approval or merge yet.
