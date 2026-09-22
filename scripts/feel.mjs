@@ -315,8 +315,6 @@ async function run(b) {
     here.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }));
     await segOn("Here"); await p.waitForTimeout(700);
   }
-  // Keep the three measured values; a median alone hides the shape of a miss.
-  console.log(`feel: tap samples in ms: Lunch [${lunch.join(", ")}], Here [${here.join(", ")}]`);
   row("tap Lunch to shown", mid(lunch), BAR.tap);
   row("tap Here to shown", mid(here), BAR.tap);
 
@@ -591,6 +589,6 @@ main().catch((e) => {
      machine looked like when it did. */
   const m = machine && machine.line();
   if (m) console.log("feel: the machine when it went: " + m);
-  console.log("feel: inspect the browser log and machine reading before another run. Do not loosen the check.");
+  console.log("feel: that is C83. Run it again, and if it keeps happening say so with the evidence rather than loosening the check.");
   process.exitCode = 3;
 }).finally(() => { if (mockProc) mockProc.kill(); });

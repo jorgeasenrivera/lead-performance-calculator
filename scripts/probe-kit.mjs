@@ -192,7 +192,7 @@ export function lostBrowserWatch(browser) {
   const note = (w) => { if (!why) why = w; };
   browser.on("disconnected", () => note("it went away mid-run"));
   return {
-    watchPage(page) { page.on("crash", () => note("the page crashed under it; the cause is not established")); },
+    watchPage(page) { page.on("crash", () => note("the page crashed under it, which on a container is usually memory")); },
     why(err) {
       if (why) return why;
       if (browser.isConnected && !browser.isConnected()) return "it went away mid-run";

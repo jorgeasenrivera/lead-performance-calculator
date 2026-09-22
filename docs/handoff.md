@@ -189,8 +189,11 @@ https://github.com/jorgeasenrivera/lead-performance-calculator/pull/410#issuecom
 WebKit feel completed, Lunch's median was 54 ms against 50. Screenshots crashed
 after 15 captures, with oom_kill 0 and 13.41 GB free. No retry or relaxed bar.
 X7 on `codex/webkit-failure-evidence` adds stage labels, retains partial pictures,
-enables Playwright's browser stderr in WebKit CI, and prints the existing tap
-samples. It does not change the application or claim to fix the crash. Review
+and enables Playwright's browser stderr in WebKit CI. C85 arrived during this
+work, so I removed my tap-sample logging and crash-cause wording edits: those
+are now Claude's. The only change left in `probe-kit.mjs` is an optional stage
+callback in `signIn`; new tests are appended to `test/lost-browser.test.mjs`.
+It does not change the application or claim to fix the crash. Review
 the failure-path artifact upload and incomplete-result wording first: a partial
 set must never be reported as complete. The timing loop and bars are unchanged.
 The screenshot run previously discarded all 15 captures, so the next evidence

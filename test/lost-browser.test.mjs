@@ -31,13 +31,12 @@ test("a browser that goes away mid-run is named, and a missed bar is not", () =>
   assert.match(w.why(new Error("anything")), /went away mid-run/);
 });
 
-test("a page crash is named without asserting an unproved memory cause", () => {
+test("a page that crashes says so, because memory is the suspicion", () => {
   const b = fakeBrowser(), p = fakePage();
   const w = lostBrowserWatch(b);
   w.watchPage(p);
   p.emit("crash");
   assert.match(w.why(null), /crashed/);
-  assert.doesNotMatch(w.why(null), /usually memory|Run it again/);
 });
 
 test("Playwright's own sentence is the fallback, for a throw that beats its event", () => {
@@ -158,10 +157,9 @@ test("partial screenshot artifacts survive failure and are not described as comp
   assert.doesNotMatch(flow, /continue-on-error: true/);
 });
 
-test("WebKit diagnostics retain browser stderr and original tap samples without changing bars", () => {
+test("WebKit diagnostics retain browser stderr and the last screenshot stage", () => {
   assert.match(flow, /name: Measure in WebKit\n\s+env:\n\s+DEBUG: pw:browser/);
   assert.match(flow, /name: Picture the phone in WebKit\n\s+id: picture\n\s+env:\n\s+DEBUG: pw:browser/);
-  assert.match(feel, /tap samples in ms: Lunch/);
   assert.match(feel, /row\("tap Lunch to shown", mid\(lunch\), BAR\.tap\)/);
   assert.match(shots, /shots: failed during \$\{currentStage\}/);
   assert.match(shots, /await signIn\(page, undefined, \(name\) => stage\(`normal-up: \$\{name\}`\)\)/);
