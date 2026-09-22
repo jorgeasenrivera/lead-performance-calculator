@@ -183,5 +183,18 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X5 · The rebased #410 failed again, with two distinct findings.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/410#issuecomment-5780932379
+
+WebKit feel completed, Lunch's median was 54 ms against 50. Screenshots crashed
+after 15 captures, with oom_kill 0 and 13.41 GB free. No retry or relaxed bar.
+X7 on `codex/webkit-failure-evidence` adds stage labels, retains partial pictures,
+enables Playwright's browser stderr in WebKit CI, and prints the existing tap
+samples. It does not change the application or claim to fix the crash. Review
+the failure-path artifact upload and incomplete-result wording first: a partial
+set must never be reported as complete. The timing loop and bars are unchanged.
+The screenshot run previously discarded all 15 captures, so the next evidence
+needs to survive its own failure before a rendering change can be justified.
+
 H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
 separate from X4, the per-store text sizing repair Jorge has now approved.
