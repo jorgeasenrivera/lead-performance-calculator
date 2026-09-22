@@ -79,9 +79,18 @@ to name a component as the cause. The previous 254 ms sample used a different
 recorder, so these numbers are not an A/B improvement claim. This recorder also
 adds observation overhead. Profile the component before changing its behavior.
 
-636 tests and the mock build pass. The local feel attempt first rejected the
+637 tests and the mock build pass. The local feel attempt first rejected the
 manager-only mock; after restarting the mock in salesperson mode, it stopped
 because the installed Playwright package has no browser executable on this
 work computer. CI must supply Chromium and WebKit. Slow and failed network
 sign-ins and reduced motion still need browser coverage; cancellation and the
 missing-cover fallback have deterministic tests. No phone approval or merge yet.
+
+Review correction: scoping only the fade was not enough. The short-login path
+can set `sage-flash-hold` while authentication is still pending, so the rise
+must require `sage-cover-active` too. Both selectors now require a full jump.
+
+The first CI run passed tests/build, Chromium feel and WebKit screenshots.
+WebKit feel measured Floor to Phone at 112 ms against its 110 ms bar and failed.
+That is a real failed check, not a browser crash. No threshold was changed and
+no job was retried. The remaining check must be resolved before merge.

@@ -14138,7 +14138,7 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          actually there — .sage-assemble is added on the frame it mounts. Both
          rules fill forwards and the out starts from full, so the handover
          between them cannot show a seam however long the mount takes. */
-.sage-beat-flash .sage-flash, .sage-flash-hold .sage-flash {
+.sage-cover-active.sage-beat-flash .sage-flash, .sage-cover-active.sage-flash-hold .sage-flash {
         animation: saFlashUp .34s ease-out both; }
 @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
 /* Refresh and the short sign-in use assemble too, but did not raise a cover. */
