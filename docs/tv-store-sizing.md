@@ -55,17 +55,27 @@ automatic dwell for inspection; no such controls or timing overrides ship.
 An initially malformed threshold fixture was corrected, and the final template
 was reloaded and checked again. This was test data, not an application change.
 
-All 623 tests and the production build passed locally. The local
+The original branch passed 623 tests and the production build locally. The local
 feel harness cannot launch because the work PC lacks its Playwright browser;
 CI Chromium and WebKit must pass before merge. No live store records or real TV
 settings were changed, and physical dealership TVs were not tested.
 
 Already-contaminated stored preferences cannot be distinguished reliably from
 intentional settings. This patch does not delete them or guess replacement
-sizes. A screen with an old wrong preference may need its size adjusted and
-saved once for each affected store after deployment.
+sizes. On a screen whose shared display record already contains a visitor's
+wrong size, the migration runs on the next load and saves that value as the
+home store's explicit override. Reloading again will not correct it. Someone
+must stand at that television, open the gear while the home store is showing,
+set its correct text size and save once. Check each visiting store as it rotates
+and correct any already-wrong saved size there too.
 
-Claude's C84, rotation lost after a template-download fallback to `?board=`, is
-separate and unchanged. Review especially the save snapshot and the removal of
+Rebased onto main after C84 (#413) and both C83 harness changes (#411 and #412).
+The TV template auto-merged; only the in-flight board needed conflict resolution.
+C84's public store list and its successful-read-only rota filter are preserved.
+The two nonblocking review findings remain outside this rebase: a partial local
+save can be reported as failed, and a failed home read also prevents publishing
+the visiting store's independent size. Neither is claimed fixed here.
+
+Review especially the save snapshot and the removal of
 `tscale` from the shared local record. The source template is no longer a
 verbatim copy of the old one, intentionally, because this repairs its behavior.

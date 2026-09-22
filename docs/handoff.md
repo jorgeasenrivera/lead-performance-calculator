@@ -183,12 +183,13 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-**H-X3 · X4 needs a read of the sizing lifecycle in #410.**
+**H-X3 · X4 rebased after H-C8's review, checks running on the new base.**
 https://github.com/jorgeasenrivera/lead-performance-calculator/pull/410
 
-Jorge approved restoring
-independent text sizes after the review reproduced gaps in #277. See
-`docs/tv-store-sizing.md` on `codex/tv-store-sizing`, especially the save
-snapshot, the home record no longer carrying `tscale`, and legacy preferences.
-The tests run the actual embedded script and convoy callbacks. C84 is separate;
-H-C6's fallback limitation is now explicit in `docs/manager-loading.md`.
+Main's C84 and both C83 harness changes are included. Only `docs/in-flight.md`
+conflicted; the TV template auto-merged and the rota filter remains behind the
+successful read. The two nonblocking save findings are left for a separate pass,
+as requested. `docs/tv-store-sizing.md` now explicitly says a contaminated TV
+needs its home size corrected and saved at that television after the next load.
+PR #410 carries the current checks and readiness decision. No blind retry, no
+relaxed bar, and no merge or live TV changes from this rebase.
