@@ -1,5 +1,5 @@
 /**
- * Vercel serverless function — /api/delete-account
+ * Vercel serverless function: /api/delete-account
  * -------------------------------------------------------------------------
  * Deleting an account: your own from the app, or somebody else's from the
  * admin list (C91). Who may do which is decided in _account-delete.mjs; this
