@@ -319,6 +319,23 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X5 · X6 follow-up: commit-owned login hiding and covered preparation.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/414
+
+Jorge asked to work on the remaining login flash and landing lag on 23 September.
+The timer no longer unhides the form before React removes it. Review the root
+layout effect and `landDashboard` together. The full landing pauses its initial
+pose under opaque white for a paint opportunity, then starts motion and the
+cleanup clock together. Short sign-in does not acquire a cover or a delay.
+The recorder distinguishes this preparation from motion. The measured 297 ms
+first paint was covered; a 133 ms task still followed motion start. These are
+single local samples, not a device performance claim. Neither full-login trace
+captured a flash, but repeat sign-in did: the short path inherited the last
+session's landed latch and exposed the login card for 122 ms. Both paths now
+reset the latch and own the entrance before branching. Read that reset and the
+short cleanup too. Details are in the proposal. Keep #414 draft
+until the browser checks, your review and Jorge's phone check are complete.
+
 **H-X4 · X6 cover repair needs a cancellation and WebKit read.**
 https://github.com/jorgeasenrivera/lead-performance-calculator/pull/414
 

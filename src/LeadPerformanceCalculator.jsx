@@ -1671,6 +1671,9 @@ export default function LeadPerformanceCalculator() {
        change must not hide it again. See the latch's comment. */
     const under = !session || (jumpHold && !jumpLanded);
     document.documentElement.classList.toggle("jump-under", under);
+    // Release only after React has removed the old form, never in the timer
+    // that merely schedules its removal. A busy commit can leave a visible gap.
+    if (!jumpHold) document.documentElement.classList.remove("signin-gone");
     return () => document.documentElement.classList.remove("jump-under");
   }, [session, jumpHold]);
   // True for the length of the build-in only. Set the moment a session appears, so
@@ -2990,15 +2993,16 @@ export default function LeadPerformanceCalculator() {
       <Login config={config}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
-          const undo = landDashboard();
-          /* And the tidying, once the landing is over and a render is free. */
-          setTimeout(() => {
-            undo();
-            jumpOwnsEntrance = false;
-            setJumpHold(false);
-            setHoldMount(false);   // belt and braces: the gate must never outlive the jump
-            setIntroDone(true);
-          }, jumpShort ? 360 : ARRIVAL.assemble);
+          const undo = landDashboard(() => {
+            /* Settle React state after the landing, not during its first paint. */
+            setTimeout(() => {
+              undo();
+              jumpOwnsEntrance = false;
+              setJumpHold(false);
+              setHoldMount(false);   // belt and braces: the gate must never outlive the jump
+              setIntroDone(true);
+            }, jumpShort ? 360 : ARRIVAL.assemble);
+          });
         }}
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
@@ -5775,15 +5779,17 @@ function runJump({ onFlash, onDone, lead = 0 }) {
      and the flash handover. */
   const root = typeof document === "undefined" ? null : document.documentElement;
   if (!root) { onFlash(); onDone(); return () => {}; }
+  // A repeat or reduced-motion sign-in owns a new handoff too. Never inherit
+  // the previous session's landed latch and expose the app before this one ends.
+  jumpOwnsEntrance = true;
+  jumpLanded = false;
   jumpShort = arrivalShort();
   if (jumpShort) {
     tellPhase("cruise");
     const t = setTimeout(() => { onFlash(); onDone(); }, 180);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); jumpOwnsEntrance = false; tellPhase("off"); };
   }
   arrivalTaken();
-  jumpOwnsEntrance = true;
-  jumpLanded = false;
 
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H / 2;
@@ -6139,7 +6145,7 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
-   and a transform on a handful of blocks — and the dashboard itself has been
+   and a transform on a handful of blocks, and the dashboard itself has been
    mounted and laid out since the hold. So the handover is done here, imperatively,
    rather than by setting state.
 
@@ -6147,21 +6153,35 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
    flash: changing anything on the root re-renders the whole app tree, and this
    tree is very large. The mount had already been moved under the streaks by then,
    so what was left was React reconciling a dashboard that was not changing. Now
-   the frame that reveals it touches four class names and reads the geometry of six
-   blocks, and the state is settled a second and a half later when a re-render
-   costs nothing anyone can see. */
-function landDashboard() {
-  if (typeof document === "undefined") return () => {};
+   the handoff changes classes and reads block geometry under the cover. The first
+   landing pose gets a covered paint before motion starts. React state settles
+   after that motion; it can still cost a frame and must be measured separately. */
+function landDashboard(onStarted = () => {}) {
+  if (typeof document === "undefined") { onStarted(); return () => {}; }
   jumpLanded = true;
   const root = document.documentElement;
+  const prepare = !jumpShort && root.classList.contains("sage-cover-active");
+  if (prepare) root.classList.add("sage-preparing");
   /* One style change: the app comes out of hiding, the sign-in layer goes, and the
      landing rules come on together. */
   root.classList.remove("jump-under", "sage-beat-flash");
   root.classList.add("sage-assemble", "sage-beat-assemble", "signin-gone");
   const undo = jumpShort ? () => {} : radialAssemble();
+  let frame = 0;
+  if (prepare) {
+    // Paint the first landing pose under opaque white before its clock starts.
+    // A second frame puts the release after that paint, not in the mount frame.
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        root.classList.remove("sage-preparing");
+        onStarted();
+      });
+    });
+  } else onStarted();
   return () => {
+    cancelAnimationFrame(frame);
     undo();
-    root.classList.remove("sage-assemble", "sage-beat-assemble", "signin-gone");
+    root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-preparing");
   };
 }
 function radialAssemble() {
@@ -14143,6 +14163,8 @@ html:has(.q-page.sf), body:has(.q-page.sf),
 @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
 /* Refresh and the short sign-in use assemble too, but did not raise a cover. */
 .sage-assemble.sage-cover-active .sage-flash { animation: saFlashOut .5s ease-in both; }
+.sage-preparing.sage-cover-active .sage-flash { animation:none; opacity:1; }
+.sage-preparing .lpc, .sage-preparing .lpc * { animation-play-state:paused !important; }
 @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
 /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
          Written as animations, with the field's own 28s drift kept first in every

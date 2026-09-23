@@ -13,9 +13,13 @@ export function summarizeLoginTrace(sample) {
   const frames = sample.frames.map((f) => f.ms).sort((a, b) => a - b);
   const reveal = sample.events.find((e) => e.name === "dashboard-revealed");
   const landingTasks = reveal ? sample.longTasks.filter((t) => t.at >= reveal.at) : [];
+  const motion = sample.events.find((e) => e.name === "landing-started");
+  const movingTasks = motion ? sample.longTasks.filter((t) => t.at >= motion.at) : [];
   return {
     validForegroundSample: !sample.hidden,
     revealedAtMs: reveal?.at ?? null,
+    landingStartedAtMs: motion?.at ?? null,
+    taskMaxAfterLandingStartedMs: movingTasks.length ? Math.max(...movingTasks.map((t) => t.ms)) : null,
     frameMedianMs: frames.length ? frames[Math.floor(frames.length / 2)] : null,
     frameMaxMs: frames.length ? frames[frames.length - 1] : null,
     landingTaskMaxMs: landingTasks.length ? Math.max(...landingTasks.map((t) => t.ms)) : null,
@@ -30,7 +34,7 @@ export function installLoginProbe(summarize) {
   out.hidden = true;
   document.body.appendChild(out);
   let sample = null, start = 0, raf = 0, timeout = 0, last = 0;
-  let phase = "press", classes = "", canvas = false, hero = false, revealed = false, roundup = false;
+  let phase = "press", classes = "", canvas = false, hero = false, revealed = false, roundup = false, loginExposed = false, landingStarted = false;
   const observers = [];
   const round = (n) => Math.round(n * 10) / 10;
   const event = (name, detail) => {
@@ -66,6 +70,15 @@ export function installLoginProbe(summarize) {
     if (!revealed && hero && !document.documentElement.classList.contains("jump-under")
       && !document.documentElement.classList.contains("refresh-hold")) {
       revealed = true; phase = "landing"; event("dashboard-revealed", { cover: cover() });
+    }
+    if (revealed) {
+      if (!landingStarted && !document.documentElement.classList.contains("sage-preparing")) {
+        landingStarted = true; event("landing-started", { cover: cover() });
+      }
+      const layer = document.querySelector(".signin-over"), card = layer?.querySelector(".login-card");
+      const exposed = !!(layer && card && getComputedStyle(layer).display !== "none"
+        && Number(getComputedStyle(card).opacity) > 0.01 && Number(cover().opacity) < 0.999);
+      if (exposed !== loginExposed) { loginExposed = exposed; event(exposed ? "login-exposed-after-reveal" : "login-hidden-after-reveal"); }
     }
     if (!roundup && document.querySelector('[role="dialog"][aria-label="Your round-up"]')) {
       roundup = true; event("round-up-opened");
@@ -107,7 +120,7 @@ export function installLoginProbe(summarize) {
     // A new attempt gets its own record, including retries after a failed login.
     cancelAnimationFrame(raf); clearTimeout(timeout);
     start = performance.now(); last = 0; phase = "press"; classes = "";
-    canvas = false; hero = false; revealed = false; roundup = false;
+    canvas = false; hero = false; revealed = false; roundup = false; loginExposed = false; landingStarted = false;
     sample = { status: "recording", hidden: document.hidden, viewport: [innerWidth, innerHeight],
       events: [], frames: [], longTasks: [], longFrames: [],
       supportedTiming: PerformanceObserver.supportedEntryTypes || [] };
