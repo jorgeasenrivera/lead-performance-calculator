@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { lostBrowserWatch } from "../scripts/probe-kit.mjs";
+import vm from "node:vm";
+import { lostBrowserWatch, signIn } from "../scripts/probe-kit.mjs";
 
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const shots = fs.readFileSync(new URL("../scripts/shots.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -120,4 +121,62 @@ test("the peak is sampled while the run is alive, not read after the browser has
 test("both harnesses print the machine on a good run too, which is what a crash reads against", () => {
   assert.ok(/feel: the machine: /.test(feel) && /feel: the machine when it went: /.test(feel));
   assert.ok(/shots: the machine: /.test(shots) && /shots: the machine when it went: /.test(shots));
+});
+
+test("sign-in reports its failing stage without swallowing the original failure", async () => {
+  const stages = [], calls = [];
+  const failure = new Error("Target crashed");
+  const page = Object.fromEntries(["goto", "waitForTimeout", "fill", "click", "evaluate"].map((name) =>
+    [name, async () => { calls.push(name); }]));
+  page.waitForSelector = async () => { calls.push("waitForSelector"); throw failure; };
+  await assert.rejects(signIn(page, "http://127.0.0.1:5178/", (s) => stages.push(s)), (e) => e === failure);
+  assert.deepEqual(stages, ["open sign-in", "fill demo sign-in", "submit sign-in", "wait for room bar"]);
+  assert.equal(calls.at(-1), "waitForSelector");
+  assert.ok(!calls.includes("evaluate"), "a crash does not continue into welcome dismissal");
+});
+
+test("stage reporting leaves sign-in's operations and waits unchanged", async () => {
+  const calls = [], stages = [];
+  const page = Object.fromEntries(["goto", "waitForTimeout", "fill", "click", "waitForSelector", "evaluate"].map((name) =>
+    [name, async (...args) => { calls.push([name, ...args]); }]));
+  await signIn(page, "http://127.0.0.1:5178/", (s) => stages.push(s));
+  assert.deepEqual(calls.filter(([n]) => n === "waitForTimeout").map(([, ms]) => ms), [2400, 3500, 1000]);
+  assert.deepEqual(calls.find(([n]) => n === "waitForSelector"), ["waitForSelector", ".ar-bar.up", { timeout: 40000 }]);
+  assert.equal(stages.at(-1), "dismiss welcome");
+  calls.length = 0;
+  await signIn(page, "http://127.0.0.1:5178/");
+  assert.equal(calls.filter(([n]) => n === "click").length, 1, "existing callers still submit once");
+});
+
+test("partial screenshot artifacts survive failure and are not described as complete", () => {
+  assert.match(flow, /uses: actions\/upload-artifact@v4\n\s+if: \$\{\{ !cancelled\(\) \}\}\n\s+id: keep/);
+  assert.match(flow, /PICTURE_OUTCOME: \$\{\{ steps\.picture\.outcome \}\}/);
+  assert.match(flow, /const complete = process\.env\.PICTURE_OUTCOME === "success";/);
+  assert.match(flow, /Incomplete phone pictures/);
+  assert.match(flow, /This is not a passing check/);
+  assert.doesNotMatch(flow, /continue-on-error: true/);
+});
+
+test("WebKit diagnostics retain browser stderr and the last screenshot stage", () => {
+  assert.match(flow, /name: Measure in WebKit\n\s+env:\n\s+DEBUG: pw:browser/);
+  assert.match(flow, /name: Picture the phone in WebKit\n\s+id: picture\n\s+env:\n\s+DEBUG: pw:browser/);
+  assert.match(feel, /row\("tap Lunch to shown", mid\(lunch\), BAR\.tap\)/);
+  assert.match(shots, /shots: failed during \$\{currentStage\}/);
+  assert.match(shots, /await signIn\(page, undefined, \(name\) => stage\(`normal-up: \$\{name\}`\)\)/);
+});
+
+test("the actual artifact comment distinguishes complete, partial and missing pictures", () => {
+  const start = flow.indexOf('const complete = process.env.PICTURE_OUTCOME');
+  const end = flow.indexOf('const { data: comments }', start);
+  const comment = (outcome, url) => vm.runInNewContext(flow.slice(start, end) + '\nbody;', {
+    process: { env: { PICTURE_OUTCOME: outcome } }, url, mark: 'shots', context: { sha: '123456789' },
+  });
+  assert.match(comment('success', 'https://example.com/artifact'), /The phone, pictured in WebKit/);
+  for (const outcome of ['failure', 'cancelled', 'skipped']) {
+    const body = comment(outcome, 'https://example.com/artifact');
+    assert.match(body, /Incomplete phone pictures/);
+    assert.match(body, /not a passing check/);
+    assert.doesNotMatch(body, /The phone, pictured in WebKit/);
+  }
+  assert.match(comment('success', ''), /No phone pictures are available/);
 });

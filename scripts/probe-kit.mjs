@@ -124,14 +124,20 @@ export async function phone(browser, { width = 393, height = 852, dark = true, o
 
 /* Signed in as the demo associate and standing in the rooms, the welcome
    dismissed. */
-export async function signIn(page, url = process.env.FEEL_URL || "http://127.0.0.1:5178/") {
+export async function signIn(page, url = process.env.FEEL_URL || "http://127.0.0.1:5178/", stage = () => {}) {
+  stage("open sign-in");
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(2400);
+  stage("fill demo sign-in");
   await page.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app").catch(() => {});
   await page.fill('input[type="password"]', "x");
+  stage("submit sign-in");
   await page.click('button:has-text("Sign in")');
+  stage("wait for room bar");
   await page.waitForSelector(".ar-bar.up", { timeout: 40000 });
+  stage("settle arrival");
   await page.waitForTimeout(3500);
+  stage("dismiss welcome");
   await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find((x) => /Back to work/.test(x.textContent)); if (b) b.click(); });
   await page.waitForTimeout(1000);
 }

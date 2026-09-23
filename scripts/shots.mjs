@@ -28,6 +28,8 @@ const want = (process.env.SHOTS_SIZES || "1,1.15,1.3").split(",").map((s) => s.t
 const browserName = String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium";
 let taken = 0;
 let machine = null;
+let currentStage = "starting";
+const stage = (name) => { currentStage = name; console.log(`shots: stage ${name}`); };
 
 const floorTab = (p) => p.locator('.ar-tab[aria-label="Live Floor"]');
 /* The floor's pane in the frame (C29), or, on a build before the panes, the
@@ -45,41 +47,57 @@ async function main() {
   const lost = lostBrowserWatch(b);
   machine = watchMachine();
   const files = [];
-  const shot = async (page, name) => { const f = path.join(OUT, name + ".png"); await page.screenshot({ path: f }); files.push(f); taken = files.length; };
+  const shot = async (page, name) => {
+    stage(`capture ${name}`);
+    const f = path.join(OUT, name + ".png");
+    await page.screenshot({ path: f }); files.push(f); taken = files.length;
+    console.log(`shots: saved ${f} (${taken})`);
+  };
   try {
     for (const size of want) {
       const tag = SIZES[size];
+      stage(`${tag}: create context`);
       const { ctx, page, errors } = await phone(b, { prefs: { "lpcf:pref:text": size } });
       lost.watchPage(page);
-      await signIn(page);
+      await signIn(page, undefined, (name) => stage(`${tag}: ${name}`));
       await shot(page, `${tag}-home`);
       /* Home, scrolled to the foot: the corner is the one screen that scrolls,
          and its foot is where the bar's reserve shows or does not. */
+      stage(`${tag}: scroll home`);
       await page.evaluate(() => { const s = document.querySelector(".sf-pane-home > .sf-scroll") || document.querySelector('.ar-room[data-room="floor"] .q-page.sf'); if (s) s.scrollTop = 99999; });
       await page.waitForTimeout(400);
       await shot(page, `${tag}-home-foot`);
+      stage(`${tag}: swipe toward floor`);
       await page.evaluate(() => { const s = document.querySelector(".sf-pane-home > .sf-scroll") || document.querySelector('.ar-room[data-room="floor"] .q-page.sf'); if (s) s.scrollTop = 0; });
       /* Halfway to the floor, thumb still down. */
       await swipe(page, { x0: 300, x1: 120, lift: false });
       await settled(page);
       await shot(page, `${tag}-home-to-floor-mid`);
+      stage(`${tag}: cancel swipe and open floor`);
       await page.evaluate(() => { const ev = new Event("touchcancel", { bubbles: true }); document.querySelector(".ar-stack")?.dispatchEvent(ev); });
       await page.waitForTimeout(600);
       await floorTab(page).click(); await paneOn(page, "floor"); await page.waitForTimeout(1200);
       await shot(page, `${tag}-floor`);
+      stage(`${tag}: open phone`);
       await page.locator('.ar-tab[aria-label*="Phone"]').click(); await roomAlone(page); await page.waitForTimeout(1200);
       await shot(page, `${tag}-line`);
+      stage(`${tag}: return to floor`);
       await floorTab(page).click(); await roomAlone(page); await page.waitForTimeout(800);
       if (errors.length) console.error(`shots: page errors at ${tag}:`, errors);
+      stage(`${tag}: close context`);
       await ctx.close();
     }
     /* You're up, at Normal: the one takeover, and the floor snapped to. */
+    stage("normal-up: prepare head of line");
     await setUp(floor);
+    stage("normal-up: create context");
     const { ctx, page } = await phone(b);
     lost.watchPage(page);
-    await signIn(page);
+    await signIn(page, undefined, (name) => stage(`normal-up: ${name}`));
+    stage("normal-up: settle takeover");
     await page.waitForTimeout(1500);
     await shot(page, "normal-up");
+    stage("normal-up: close context");
     await ctx.close();
   }
   /* Asked before the close, which fires the same disconnect: see the watch's
@@ -98,6 +116,7 @@ async function main() {
 }
 
 main().catch((e) => {
+  console.error(`shots: failed during ${currentStage}`);
   const why = e && e.lostBrowser;
   if (!why) { console.error("shots:", e && e.message ? e.message : e); process.exit(1); }
   /* The same exit 3 the feel harness uses, and the same reason: nothing about
@@ -105,6 +124,6 @@ main().catch((e) => {
   console.error(`shots: the browser was lost, ${why}. ${taken} picture(s) were taken before it went, and nothing here is a verdict on the app.`);
   const m = machine && machine.line();
   if (m) console.error("shots: the machine when it went: " + m);
-  console.error("shots: that is C83. Run it again rather than reading this as a change.");
+  console.error("shots: inspect the stage, browser log and machine reading before another run. The crash cause is not established.");
   process.exit(3);
 });
