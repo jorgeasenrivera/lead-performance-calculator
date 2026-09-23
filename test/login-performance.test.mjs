@@ -45,6 +45,21 @@ test("the injected recorder and summary remain serializable browser functions", 
 });
 
 const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
+test("an old daily mark cannot suppress any sign-in; Reduce Motion still can", () => {
+  const source = core.slice(core.indexOf("function arrivalShort("), core.indexOf("/* ---- what the jump is waiting for"));
+  let reduced = false, storageReads = 0;
+  const context = vm.createContext({
+    window: { matchMedia: () => ({ matches: reduced }) },
+    localStorage: { getItem: () => { storageReads++; return "2026-09-23"; } },
+    today: () => "2026-09-23",
+  });
+  vm.runInContext(source, context);
+  assert.equal(context.arrivalShort(), false);
+  assert.equal(context.arrivalShort(), false, "second sign-in on the same day is full too");
+  reduced = true;
+  assert.equal(context.arrivalShort(), true);
+  assert.equal(storageReads, 0, "daily marks no longer participate");
+});
 const coverFunction = core.slice(core.indexOf("function waitForArrivalCover("), core.indexOf("\nfunction runJump("));
 function coverHarness() {
   let style = { position: "fixed", opacity: "0" }, exists = true, calls = 0, warnings = 0, id = 0;
@@ -79,7 +94,7 @@ test("the static HTML cover keeps its full-screen CSS and reduced-motion excepti
 
 test("a short login waiting for the network cannot raise the full-login cover", () => {
   assert.doesNotMatch(core, /(?:^|\n)\.sage-flash-hold \.sage-flash/);
-  const short = core.slice(core.indexOf("  if (jumpShort) {", core.indexOf("function runJump(")), core.indexOf("  arrivalTaken();", core.indexOf("function runJump(")));
+  const short = core.slice(core.indexOf("  if (jumpShort) {", core.indexOf("function runJump(")), core.indexOf("  const W = window.innerWidth", core.indexOf("function runJump(")));
   assert.ok(short.includes("onFlash(); onDone();"));
   assert.ok(!short.includes("sage-cover-active"));
 });

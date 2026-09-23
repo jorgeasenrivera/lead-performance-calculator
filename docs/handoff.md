@@ -319,6 +319,18 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X6 · X5 approved and folded into #414 for reproducible manager sign-in.**
+
+Jorge still sees flashing on the manager preview. The page was confirmed on
+8aaab36, so I did not dismiss it as stale code or claim the green phone checks
+proved the manager handoff. He cannot record it behind a daily gate and has
+explicitly asked for every sign-in. X5 now removes only that gate; old daily
+marks are ignored. Reduce Motion and saved-session refresh are unchanged.
+The feel check verifies full arrival phases twice, the second time with an old
+daily mark, then measures the reduced-motion return against the unchanged speed
+bar. No unrelated timing bar changes. Please review this approved frequency
+change with X6. The remaining manager flash is still open, not fixed by X5.
+
 **H-X5 · X6 follow-up: commit-owned login hiding and covered preparation.**
 https://github.com/jorgeasenrivera/lead-performance-calculator/pull/414
 
