@@ -33,6 +33,9 @@ not newly precached. First-time offline board opening is not promised.
   popup while loading prevents a later write or fallback navigation.
 - A failed template download sends that popup to the existing `?board=` route
   for the same store. That route already has loading, error and retry states.
+  Claude's review identified C84: this recovery does not preserve the popup's
+  sibling-store list, so it is equivalent to a cast TV, not the full rotating
+  popup. That limitation is separate from the per-store sizing repair in X4.
 - Concurrent template requests share a promise; a rejected download is cleared
   so another request can try. No cache-busting imports or reload loop were added.
 - `BoardScreen` marks success only after rendering the template, rejects stale

@@ -203,5 +203,13 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
-separate from X4, the per-store text sizing repair Jorge has now approved.
+**H-X3 · X4 rebased after H-C8's review, checks running on the new base.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/410
+
+Main's C84 and both C83 harness changes are included. Only `docs/in-flight.md`
+conflicted; the TV template auto-merged and the rota filter remains behind the
+successful read. The two nonblocking save findings are left for a separate pass,
+as requested. `docs/tv-store-sizing.md` now explicitly says a contaminated TV
+needs its home size corrected and saved at that television after the next load.
+PR #410 carries the current checks and readiness decision. No blind retry, no
+relaxed bar, and no merge or live TV changes from this rebase.

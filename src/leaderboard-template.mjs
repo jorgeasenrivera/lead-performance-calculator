@@ -1202,18 +1202,6 @@ export function LEADERBOARD_HTML(p, PIX) {
          the store it was opened for. */
       if (mine.tscale != null && !tsizeMine(HOME.id)) tsizeKeep(HOME.id, mine.tscale);
     }
-    /* Text size is the one setting that belongs to the team, not the
-       television: a fifteen-person store and a three-person store on the same
-       rota need different sizes, and one number stamped over both left the
-       small store's rows the wrong size. So it is picked again at every
-       hand-over: this screen's own setting for the store on the wall, else what
-       the store published, else one. */
-    if (!LAST || switched) {
-      var own = tsizeMine(CFG.storeId);
-      var pub = (s && !s.__err && s.boardDisplay && s.boardDisplay.tscale != null) ? s.boardDisplay.tscale : null;
-      DISP.tscale = own != null ? own : (pub != null ? pub : 1);
-      applyDisp();
-    }
     /* Its own row is the authority on who a store is: the sibling list only
        carries a name, and brand, icon and thresholds all differ per store. */
     SWITCHING = switched;
@@ -1315,11 +1303,12 @@ export function LEADERBOARD_HTML(p, PIX) {
       return;
     }
     ROT_I = at;
-    CFG.storeId = id;
-    CFG.storeKey = key;
     var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
     var name = s.storeName || (id === HOME.id ? HOME.name : (known && known.name)) || 'Next store';
     driveTo(name, function(){
+      // Until the covered swap, the controls still belong to the leaving store.
+      CFG.storeId = id;
+      CFG.storeKey = key;
       storeShownAt = Date.now();
       SWITCHING = true;
       renderStore(s);
@@ -1330,6 +1319,14 @@ export function LEADERBOARD_HTML(p, PIX) {
      must not fetch it a second time. */
   function renderStore(s){
     var switched = SWITCHING; SWITCHING = false;
+    /* Both a refresh and the convoy arrive here. Picking the team's size in
+       loop() alone missed the convoy, which calls this directly with its row.
+       Leave same-store refreshes alone so an adjustment in progress survives. */
+    if (!LAST || switched) {
+      var own = tsizeMine(CFG.storeId);
+      var pub = (s && !s.__err && s.boardDisplay && s.boardDisplay.tscale != null) ? s.boardDisplay.tscale : null;
+      DISP.tscale = own != null ? own : (pub != null ? pub : 1);
+    }
     if (switched && s && !s.__err) {
       if (s.storeName) CFG.storeName = s.storeName;
       if (s.icon !== undefined) CFG.icon = s.icon;
@@ -1349,7 +1346,7 @@ export function LEADERBOARD_HTML(p, PIX) {
   var DKEY = 'lpc:disp:' + (CFG.storeId || 'board');
   /* the text size this screen was given for one store, kept by that store */
   function tsizeMine(id){ try { var v = localStorage.getItem('lpc:disp:t:' + id); return v == null ? null : Number(v); } catch (e) { return null; } }
-  function tsizeKeep(id, v){ try { localStorage.setItem('lpc:disp:t:' + id, String(v)); } catch (e) {} }
+  function tsizeKeep(id, v){ try { localStorage.setItem('lpc:disp:t:' + id, String(v)); return true; } catch (e) { return false; } }
 
   function applyDisp(){
     var b = CFG.brand || {};
@@ -1478,11 +1475,23 @@ export function LEADERBOARD_HTML(p, PIX) {
 
     document.getElementById('tsave').onclick = async function(){
       var msg = document.getElementById('tmsg');
+      // The convoy can move on while a save waits. Keep the store and its size
+      // from the press together, not whichever store happens to be next.
+      var storeId = CFG.storeId;
+      var display = JSON.parse(JSON.stringify(DISP));
+      var current = LAST;
       try {
         // Always keep it on the screen itself first, so a reboot, a nightly
         // reload or a new build cannot undo what someone set by hand.
         var kept = false;
-        try { localStorage.setItem(DKEY, JSON.stringify(DISP)); tsizeKeep(CFG.storeId, DISP.tscale); kept = true; } catch (e) {}
+        try {
+          // The home record holds the screen's look, never a visitor's size.
+          // Otherwise the legacy migration can give that size to home on reopen.
+          var look = {}; for (var k in display) if (k !== 'tscale') look[k] = display[k];
+          var sizeKept = tsizeKeep(storeId, display.tscale);
+          localStorage.setItem(DKEY, JSON.stringify(look));
+          kept = sizeKept;
+        } catch (e) {}
         var op = window.opener || (window.parent !== window ? window.parent : null);
         if (op && op.__lpcSaveBoardDisplay) {
           /* The look of the board belongs to the board this screen was opened
@@ -1490,15 +1499,21 @@ export function LEADERBOARD_HTML(p, PIX) {
              to the store on the wall right now, so it is published to that
              store, merged into what it already had. */
           var ok = true;
-          if (CFG.storeId === HOME.id) {
-            ok = await op.__lpcSaveBoardDisplay(HOME.id, DISP);
+          if (storeId === HOME.id) {
+            ok = await op.__lpcSaveBoardDisplay(HOME.id, display);
           } else {
-            var cur = (LAST && !LAST.__err && LAST.boardDisplay) ? LAST.boardDisplay : {};
-            var curNext = {}; for (var ck in cur) curNext[ck] = cur[ck]; curNext.tscale = DISP.tscale;
+            var cur = (current && !current.__err && current.boardDisplay) ? current.boardDisplay : {};
+            var curNext = {}; for (var ck in cur) curNext[ck] = cur[ck]; curNext.tscale = display.tscale;
             var home = await getStoreByKey(HOME.key);
-            var homeNext = {}; for (var dk in DISP) homeNext[dk] = DISP[dk];
-            homeNext.tscale = (home && !home.__err && home.boardDisplay && home.boardDisplay.tscale != null) ? home.boardDisplay.tscale : 1;
-            ok = (await op.__lpcSaveBoardDisplay(CFG.storeId, curNext)) && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
+            // A failed read is not a home size of 100%. Keep the local save and
+            // report it as local only instead of publishing an invented size.
+            if (!home || home.__err) {
+              ok = false;
+            } else {
+              var homeNext = {}; for (var dk in display) homeNext[dk] = display[dk];
+              homeNext.tscale = (home.boardDisplay && home.boardDisplay.tscale != null) ? home.boardDisplay.tscale : 1;
+              ok = (await op.__lpcSaveBoardDisplay(storeId, curNext)) && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
+            }
           }
           msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
         } else {
