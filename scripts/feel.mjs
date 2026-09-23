@@ -129,6 +129,24 @@ async function setMine(status, table) {
   await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify([{ ...cur, data: d, updated_at: new Date().toISOString() }]) });
 }
+/* My FlyBys on the server, by id, so a wait can tell the one just sent from
+   the finished ones earlier runs leave on the row. */
+async function myAssists() {
+  const rows = await (await fetch(MOCK + "/rest/v1/floor_public?select=*")).json();
+  const cur = rows.find((r) => r.id === floor.id);
+  return ((cur && cur.data && cur.data.assists) || []).filter((a) => a.byId === floor.me.id);
+}
+/* Returns once a FlyBy that was not there before is on the server and marked
+   done, which is the cancel having landed; throws rather than let the next
+   step race it. */
+async function cancelLanded(before, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if ((await myAssists()).some((a) => !before.has(a.id) && a.doneAt)) return;
+    await new Promise((z) => setTimeout(z, 100));
+  }
+  throw new Error(`the FlyBy's Never mind had not reached the server after ${ms} ms`);
+}
 async function prepFloor() {
   const j = async (u) => (await fetch(u)).json();
   const all = await j(MOCK + "/rest/v1/app_data?select=key,value");
@@ -549,8 +567,17 @@ async function run(b) {
   await setMine("customer", 3); await p.waitForSelector(".fba-btn.fly", { timeout: 15000 });
   /* a FlyBy sent is a chip at once, and taken back at once */
   await p.locator(".fba-btn.fly").click(); await p.waitForSelector(".fba-sheet.ask");
+  const before = new Set((await myAssists()).map((a) => a.id));
   await p.locator('.fba-go:has-text("Send the FlyBy")').click(); t = Date.now(); await p.waitForSelector(".fba-chip", { timeout: 5000 }); row("FlyBy sent to chip", ms(t), BAR.chip);
   await p.waitForTimeout(300); await p.locator(".fba-x").click(); t = Date.now(); await p.waitForSelector(".fba-chip", { state: "detached", timeout: 5000 }); row("Never mind to chip gone", ms(t), BAR.chip);
+  /* The chip goes at once, but the send and the cancel are still on their way
+     to the server as two read-then-writes, the last landing about four LAGs
+     after the send. setMine has no lag, so written now it lands between one of
+     those reads and its write, the page writes "customer" back over it, and the
+     button stays for good. That was C87: the server itself read "customer"
+     when the wait gave up. So wait for the cancel to be on the server, which is
+     the page's last write here, and only then change the status. */
+  await cancelLanded(before, 8 * LAG + 5000);
   await setMine("waiting", null); await p.waitForSelector(".fba-btn.fly", { state: "detached", timeout: 15000 });
   await p.waitForTimeout(600);
 
