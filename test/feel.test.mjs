@@ -1167,3 +1167,16 @@ test("a timed row prints its three samples, so a miss can be read instead of gue
     assert.ok(feel.includes(`row3("${name}", `), `${name} is a row of three`);
   }
 });
+
+test("the FlyBy row waits for the page's own writes before it changes the status under them", () => {
+  /* C87. The harness wrote "waiting" with no lag while the page's send and
+     cancel were still read-then-writes in flight; landing between one read and
+     its write, it was written over, the server read "customer", and the button
+     stayed for good. Reproduced locally by moving that write 150 to 900 ms
+     later: every run left the server on "customer". The timeout is not the fix. */
+  assert.ok(/const before = new Set\(\(await myAssists\(\)\)\.map\(\(a\) => a\.id\)\);\n\s*await p\.locator\('\.fba-go:has-text\("Send the FlyBy"\)'\)\.click\(\);/.test(feel),
+    "the FlyBys already on the row are noted before the send, so an old finished one cannot pass the wait");
+  assert.ok(/await cancelLanded\(before, 8 \* LAG \+ 5000\);\n\s*await setMine\("waiting", null\); await p\.waitForSelector\("\.fba-btn\.fly", \{ state: "detached", timeout: 15000 \}\);/.test(feel),
+    "the status changes only once the cancel is on the server, and the button's wait is still 15 s");
+  assert.ok(/!before\.has\(a\.id\) && a\.doneAt/.test(feel), "the wait is for the new FlyBy, marked done");
+});
