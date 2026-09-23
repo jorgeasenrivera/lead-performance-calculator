@@ -26,6 +26,16 @@ test("a backgrounded sample cannot be used as foreground performance evidence", 
   assert.equal(summarizeLoginTrace({ hidden: true, events: [], frames: [], longTasks: [] }).validForegroundSample, false);
 });
 
+test("the recorder separates covered preparation from the landing clock", () => {
+  const result = summarizeLoginTrace({ hidden: false, frames: [],
+    events: [{ name: "dashboard-revealed", at: 4000 }, { name: "landing-started", at: 4400 }],
+    longTasks: [{ at: 4100, ms: 297 }, { at: 4450, ms: 133 }],
+  });
+  assert.equal(result.landingTaskMaxMs, 297, "covered work remains visible in the full cost");
+  assert.equal(result.landingStartedAtMs, 4400);
+  assert.equal(result.taskMaxAfterLandingStartedMs, 133);
+});
+
 test("the injected recorder and summary remain serializable browser functions", () => {
   assert.doesNotThrow(() => new Function(`(${installLoginProbe.toString()})(${summarizeLoginTrace.toString()})`));
   const source = installLoginProbe.toString();
@@ -109,4 +119,75 @@ test("tunnel removal and DOM restoration happen inside the covered callback", ()
     assert.ok(flash.indexOf(operation) > boundary, operation + " stays behind the cover");
   const cleanup = core.slice(core.indexOf("  return () => {\n    stopped = true;", core.indexOf("function runJump(")), core.indexOf("let jumpOwnsEntrance"));
   assert.match(cleanup, /cancelCover\(\);/);
+});
+
+function landingHarness({ short = false, cover = true } = {}) {
+  const classes = new Set(cover ? ["sage-cover-active", "jump-under", "sage-beat-flash"] : ["jump-under"]);
+  const frames = new Map(); let id = 0, starts = 0, radial = 0, cleaned = 0;
+  const context = vm.createContext({
+    document: { documentElement: { classList: {
+      contains: (c) => classes.has(c), add: (...cs) => cs.forEach((c) => classes.add(c)),
+      remove: (...cs) => cs.forEach((c) => classes.delete(c)),
+    } } }, jumpShort: short, jumpLanded: false,
+    radialAssemble: () => { radial++; return () => cleaned++; },
+    requestAnimationFrame: (fn) => { frames.set(++id, fn); return id; }, cancelAnimationFrame: (n) => frames.delete(n),
+  });
+  vm.runInContext(core.slice(core.indexOf("function landDashboard("), core.indexOf("function radialAssemble(")), context);
+  return { classes, start: () => context.landDashboard(() => starts++),
+    frame: () => { const batch = [...frames.values()]; frames.clear(); batch.forEach((f) => f()); },
+    state: () => ({ starts, radial, cleaned, pending: frames.size }),
+  };
+}
+
+test("full landing paints its first pose under the cover before starting its clock", () => {
+  const h = landingHarness(), undo = h.start();
+  assert.ok(h.classes.has("sage-preparing") && h.classes.has("signin-gone"));
+  assert.equal(h.state().starts, 0);
+  h.frame(); assert.equal(h.state().starts, 0);
+  h.frame(); assert.equal(h.state().starts, 1);
+  assert.ok(!h.classes.has("sage-preparing"));
+  undo();
+  assert.ok(h.classes.has("signin-gone"), "timer cleanup cannot resurrect the login layer before its React removal");
+  assert.deepEqual(h.state(), { starts: 1, radial: 1, cleaned: 1, pending: 0 });
+});
+
+test("a cancelled preparation never starts the landing later", () => {
+  const h = landingHarness(), undo = h.start(); h.frame(); undo(); h.frame();
+  assert.deepEqual(h.state(), { starts: 0, radial: 1, cleaned: 1, pending: 0 });
+  assert.ok(!h.classes.has("sage-preparing"));
+});
+
+test("short and uncovered landings do not acquire a white preparation delay", () => {
+  for (const options of [{ short: true }, { cover: false }]) {
+    const h = landingHarness(options), undo = h.start();
+    assert.equal(h.state().starts, 1);
+    assert.equal(h.state().pending, 0);
+    assert.ok(!h.classes.has("sage-preparing")); undo();
+  }
+});
+
+test("login visibility belongs to the React commit and preparation stays fully covered", () => {
+  assert.match(core, /if \(!jumpHold\) document\.documentElement\.classList\.remove\("signin-gone"\);/);
+  assert.match(core, /\.sage-preparing\.sage-cover-active \.sage-flash \{ animation:none; opacity:1; \}/);
+  assert.match(core, /\.sage-preparing \.lpc, \.sage-preparing \.lpc \* \{ animation-play-state:paused !important; \}/);
+});
+
+test("repeat short login resets the previous landing and owns its entrance until cleanup", () => {
+  const timers = new Map(), phases = []; let flashes = 0, done = 0;
+  const context = vm.createContext({
+    document: { documentElement: {} }, jumpLanded: true, jumpOwnsEntrance: false,
+    arrivalShort: () => true, tellPhase: (p) => phases.push(p),
+    setTimeout: (f) => { timers.set(1, f); return 1; }, clearTimeout: (id) => timers.delete(id),
+  });
+  vm.runInContext(core.slice(core.indexOf("function runJump("), core.indexOf("\n/* True from the press")), context);
+  const undo = context.runJump({ onFlash: () => flashes++, onDone: () => done++ });
+  assert.equal(context.jumpLanded, false);
+  assert.equal(context.jumpOwnsEntrance, true);
+  assert.deepEqual(phases, ["cruise"]);
+  timers.get(1)();
+  assert.equal(flashes, 1); assert.equal(done, 1);
+  undo();
+  assert.equal(context.jumpOwnsEntrance, false);
+  assert.equal(timers.size, 0);
+  assert.deepEqual(phases, ["cruise", "off"]);
 });

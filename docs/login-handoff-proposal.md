@@ -94,3 +94,53 @@ The first CI run passed tests/build, Chromium feel and WebKit screenshots.
 WebKit feel measured Floor to Phone at 112 ms against its 110 ms bar and failed.
 That is a real failed check, not a browser crash. No threshold was changed and
 no job was retried. The remaining check must be resolved before merge.
+
+## Follow-up repair, 23 September
+
+Jorge asked to address the login flash and laggy landing without removing the
+arrival. The cleanup timer previously removed `signin-gone` before scheduling
+React to remove the login form. That leaves an unsafe interval when React is
+busy. The form now stays hidden until the commit that removes it. A local trace
+shows the class staying through cleanup. Neither the before nor after recording
+captured an exposed login card, so this is a repaired ordering defect, not a
+claim that a recording reproduced every reported flash.
+
+The full landing now prepares its first pose under the opaque cover, with its
+existing animations paused for a paint opportunity. The next frame releases
+the cover and motion together, and only then starts the cleanup clock. The
+tunnel, easing, cards and round-up remain. Short sign-in and uncovered arrival
+skip this preparation. Reduce Motion still uses the short path.
+
+Two foreground recordings used the same fictional manager fixture at 1280 by
+720. Before this change, the largest task after dashboard exposure was 228 ms.
+Afterwards the 297 ms first-paint task was inside the covered preparation
+interval (5,563 to 5,938 ms after the press). The largest recorded task after
+motion started was 133 ms. This moves work behind the cover; it does not remove
+all of it. One sample per version, recorder overhead and the embedded browser
+make these diagnostic observations, not an improvement percentage or device
+frame-rate claim. The recorder now reports preparation and motion separately.
+
+No console warnings or errors were captured. The final dashboard and round-up
+rendered, and signing out returned the form normally. New regression tests
+cover the two-frame preparation, cancellation, short-path exclusion and keeping
+the form hidden through timer cleanup. The remaining landing stalls still need
+profiling. This is not a declaration of 60 fps, much less 120 fps. The preview
+still needs Jorge's iPhone check before merge.
+
+The follow-up repeat-login check did reproduce an exposed login card for about
+122 ms. Unlike the first-login recordings, this is a captured flash. The short
+path inherited `jumpLanded = true` from the previous session and did not own its
+entrance. Both paths now reset the latch and take ownership before branching;
+short-path cleanup releases that ownership too. A regression executes the
+actual short path starting with the stale latch. The final local suite has
+643 passing tests and the mock build passes.
+
+Final browser coverage: sign-in, sign-out, repeat sign-in and saved-session
+refresh complete. Later recordings ran at roughly one frame per second despite
+the page reporting visible, even after explicitly bringing it forward. A full
+arrival hit the existing one-second cover safety escape. These later recordings
+cannot establish frame-level absence of the repeat flash or smoothness and are
+excluded from performance evidence. The local feel attempt stopped at browser
+launch because no Playwright executable is installed. Hosted browser checks
+and a foreground phone recording are still required; nothing was retried in CI
+and no timing bar was relaxed.
