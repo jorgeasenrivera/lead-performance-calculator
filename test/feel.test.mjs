@@ -62,8 +62,9 @@ test("waiting screens show soon and leave the moment the wait is over", () => {
   assert.ok(Number(m[1]) <= 500, "shown within half a second"); assert.ok(Number(m[2]) <= 300, "held no longer than 300 ms");
 });
 
-test("the jump is once a day; a return the same day lands short", () => {
-  assert.ok(/jumpShort = arrivalShort\(\);/.test(core) && /arrivalTaken\(\);/.test(core), "decided at the press");
+test("every sign-in gets the arrival; only reduced motion lands short", () => {
+  assert.ok(/jumpShort = arrivalShort\(\);/.test(core), "decided at the press");
+  assert.ok(!/JUMP_DAY_KEY|arrivalTaken/.test(core), "no daily read or write suppresses a repeat");
   assert.ok(/reduce \? 320 : ARRIVAL\.assemble/.test(core) && /const reduce = jumpShort;/.test(core), "the landing reads the same decision");
 });
 

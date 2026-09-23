@@ -224,12 +224,6 @@ const STORE_TZ = "America/New_York";
 const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
 const today = () => dayIn();
 
-/* The arrival plays only on the first sign-in of each calendar day, per person:
-   keyed by dealership day plus user, so it resets at midnight and is independent
-   per account on a shared machine. The key is `lpc:arrival` rather than the old
-   `lpc:intro-played`, which means everybody sees the new arrival once even if
-   they had already seen the old cinematic today — which is the right way round,
-   since it is the thing they have not seen. */
 const ym = () => today().slice(0, 7);
 
 const dayOfMonth = () => Number(today().slice(8, 10));
@@ -885,7 +879,7 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         // Keep people signed in across reloads and across days. The cinematic
-        // loading sequence is gated separately (once per calendar day); the login
+        // loading sequence belongs to explicit sign-in; the login
         // itself persists so The Board and their session survive between visits.
         persistSession: true,
         autoRefreshToken: true,
@@ -1680,9 +1674,8 @@ export default function LeadPerformanceCalculator() {
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
-  // means the next sign-in plays it as well, which is what makes it possible to
-  // review the whole handover end to end.
+  // Replay the dashboard landing from the account menu. The complete tunnel
+  // still begins at explicit sign-in, where the login mark is available.
   /* Kept for the account menu, which has always had it, though with the arrival
      playing every time there is far less for it to do. */
   const replayIntro = () => {
@@ -1746,7 +1739,7 @@ export default function LeadPerformanceCalculator() {
     wait();
     return () => { cancelAnimationFrame(raf); clearTimeout(doneT); undo(); clear(); };
   }, [session]);
-  // The cinematic intro plays once per calendar day per user. null = not decided yet.
+  // Tracks whether the current arrival has completed.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
   /* Opens on the store this browser last worked in; see rememberView. Starting
@@ -3078,7 +3071,7 @@ export default function LeadPerformanceCalculator() {
 
   // The Tools chooser is gone. Signing in drops the person straight into the
   // Performance dashboard; the cinematic intro (below) covers the transition on the
-  // first sign-in of the day. chooseModule stays for the in-app "Tools" button.
+  // explicit sign-in. chooseModule stays for the in-app "Tools" button.
   const chooseModule = (mod) => {
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
@@ -5465,17 +5458,13 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    not. */
 const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };
 
-/* The jump is for the first sign-in of the day on this phone. Signing in again
-   the same day (a switch, a sign-out and back) lands the short way, the quick
-   fade reduced motion gets: the tunnel is an arrival, not a toll on every
-   return. Decided once, at the press, and read by every beat after it. */
-const JUMP_DAY_KEY = "lpc:jump:day";
+/* Every explicit sign-in gets the existing arrival. Only Reduce Motion takes
+   the short path. Old daily marks are ignored, including on shared computers. */
 let jumpShort = false;
 function arrivalShort() {
   try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true; } catch (e) {}
-  try { return localStorage.getItem(JUMP_DAY_KEY) === today(); } catch (e) { return false; }
+  return false;
 }
-function arrivalTaken() { try { localStorage.setItem(JUMP_DAY_KEY, today()); } catch (e) {} }
 
 /* ---- what the jump is waiting for, and where it is going ----
    Told by the root, read by the engine each frame of the cruise. Module state
@@ -5789,7 +5778,6 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     const t = setTimeout(() => { onFlash(); onDone(); }, 180);
     return () => { clearTimeout(t); jumpOwnsEntrance = false; tellPhase("off"); };
   }
-  arrivalTaken();
 
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H / 2;

@@ -6,7 +6,7 @@
  * in the same frame it lands in; a tab has to be the screen the phone already
  * had; the second tap inside a slow lot's round trip has to win, on the screen
  * and on the server; a control has to give under the finger and tick once; a
- * return sign-in has to land in about a second. Every one of those was
+ * reduced-motion return sign-in has to land in about a second. Every one of those was
  * something a person had already felt go wrong on the floor before it was
  * measured here, so this keeps the numbers from drifting back.
  *
@@ -255,15 +255,27 @@ async function run(b) {
   const row3 = (name, xs, bar) => row(name, mid(xs), bar, mid(xs) <= bar, xs);
   console.log(`feel · ${WEBKIT ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
-  const signIn = async () => {
+  const signIn = async (full = true) => {
+    await p.evaluate(() => {
+      window.__loginPhases = [];
+      window.__loginPhaseListener = (e) => window.__loginPhases.push(e.detail);
+      document.addEventListener("sage-jump-phase", window.__loginPhaseListener);
+    });
     await p.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app").catch(() => {});
     await p.fill('input[type="password"]', "x");
     const t0 = Date.now(); await p.click('button:has-text("Sign in")');
-    await p.waitForSelector(".ar-bar", { timeout: 40000 }); return ms(t0);
+    await p.waitForSelector(".ar-bar", { timeout: 40000 });
+    const elapsed = ms(t0);
+    const phases = await p.evaluate(() => {
+      document.removeEventListener("sage-jump-phase", window.__loginPhaseListener);
+      return window.__loginPhases;
+    });
+    if (phases.includes("burst") !== full) throw new Error(`sign-in used the wrong arrival: expected ${full ? "full" : "reduced motion"}, saw ${phases.join(", ")}`);
+    return elapsed;
   };
   await p.goto(URL_APP, { waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400); say("page loaded");
   const first = await signIn();
-  console.log(`  first sign-in of the day to the floor  ${first} ms  (the jump; by design)`);
+  console.log(`  full sign-in to the floor  ${first} ms  (the jump; by design)`);
   await p.waitForTimeout(1500); await p.evaluate(() => document.querySelector(".mc-flash-b")?.click()); await p.waitForTimeout(600);
 
   /* tabs: the other room is already mounted. Home and the floor are two panes
@@ -623,10 +635,21 @@ async function run(b) {
   const tickOk = vib.length === 1 && vib[0] === 6;
   row(`press: one tick at touch-down (${JSON.stringify(vib)})`, tickOk ? 0 : 1, 0, tickOk);
 
-  /* signing in again the same day lands the short way */
+  /* X5: repeat sign-in deliberately plays the whole arrival. Seed an older
+     version's daily mark so this catches reintroducing the shortcut. */
+  await p.evaluate(() => {
+    localStorage.setItem("lpc:jump:day", new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()));
+    for (const k of Object.keys(localStorage)) if (k === "lpc-auth" || /^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k);
+  });
+  await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400);
+  console.log(`  repeat full sign-in to the floor  ${await signIn()} ms  (the jump; by design)`);
+
+  /* Keep the speed bar for the short path that still exists, not for the
+     full animation Jorge explicitly asked to replay. */
+  await p.emulateMedia({ reducedMotion: "reduce" });
   await p.evaluate(() => { for (const k of Object.keys(localStorage)) if (k === "lpc-auth" || /^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k); });
   await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400);
-  row("return sign-in to floor", await signIn(), BAR.returnSignIn);
+  row("reduced-motion return sign-in to floor", await signIn(false), BAR.returnSignIn);
 
   const bad = rows.filter((r) => !r.ok);
   if (errs.length) console.log("  page errors: " + errs.join(" | "));

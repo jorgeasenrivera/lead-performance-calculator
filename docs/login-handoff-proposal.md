@@ -1,5 +1,12 @@
 # Repair the login handoff
 
+Update, 23 September: Jorge still sees a manager flash in the preview. It is
+not resolved by the checks below. He has now explicitly approved X5, replaying
+the existing full arrival on every sign-in, to make the defect reproducible.
+The daily limit is removed in this branch; Reduce Motion and saved-session
+refresh remain unchanged. See `docs/login-arrival-proposal.md`. Earlier notes
+below that describe X5 as separate record the scope at that time.
+
 X6, 22 September 2026. Approved for implementation, not yet released.
 
 ## Confirmed defect
