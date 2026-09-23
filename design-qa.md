@@ -2,6 +2,34 @@
 
 Date: 23 September 2026. Scope: local proposal, not production approval.
 
+## Creative follow-up, C
+
+Source: the current B render at http://127.0.0.1:49210/. Implementation: C at
+the same URL. The revised page exposes A, B and C, plus a separate scan
+decision. Captured B and C at 778 x 698 CSS px and matching 778 x 698 image
+pixels, same demo store, theme and settled dashboard. Both images were emitted
+together for comparison in this task. The hero type, dotted units, header,
+store selector and navigation are readable without enlargement. Their
+fonts, geometry, colors, real assets and application copy remain the same.
+
+P2 found in the first C landing: scaling .lpc also shrank the full-screen
+backdrop and exposed pale borders. Removed that parent animation. C now uses
+one shared foreground clock, and the full-size ground stays behind it. The
+revised full login and landing-only replay were captured again; the finished
+dashboard matches B, the content width remains 763.200 px through release,
+and no sampled landing frame unlocks scrolling. Existing A/B are preserved.
+
+Browser logs include local mock floor-row poll timeouts at 23:46:59 and
+23:52:35 UTC. They did not prevent login, landing, or the populated dashboard.
+Their cause is not established here. They are a local data-harness limitation,
+not evidence about live store reliability, and the current run is not claimed
+to have a clean console. No application backend or polling code was changed.
+
+C adds one translucent scan layer, only during arrival, with no loops or blur.
+Reduced-motion CSS disables it and removes C's spatial travel. Physical phone
+and reduced-motion browser verification remain prerequisites for production,
+not a claim made by this desktop-only proposal.
+
 ## Source and implementation
 
 - Source visual truth: actual Sage manager render from the login-handoff
