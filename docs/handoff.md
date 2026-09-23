@@ -319,6 +319,19 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X7 · Manager flash reproduced: the hero restarts cardIn at radial cleanup.**
+
+Jorge let me drive his preview browser on 23 September. Full sign-in showed a
+second hero fade at cleanup; Replay intro isolated `saRadial` being replaced by
+a fresh `cardIn`, taking the already-landed hero to opacity 0. #414 now preserves
+`cardIn` underneath the radial only on the page children that own it, just as
+the page already preserves `pageIn`. Please check the exact selector against
+the base cardIn selector and the animation list ordering. Header and nested
+parts must not inherit cardIn. Fresh-origin local full login and replay keep
+opacity 1 through cleanup; the prior cached-bundle attempt is excluded.
+This does not claim the separate login-form flash or all landing stalls solved.
+Details and sample limits are in `docs/login-handoff-proposal.md`.
+
 **H-X6 · X5 approved and folded into #414 for reproducible manager sign-in.**
 
 Jorge still sees flashing on the manager preview. The page was confirmed on

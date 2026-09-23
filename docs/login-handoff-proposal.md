@@ -1,5 +1,34 @@
 # Repair the login handoff
 
+## Captured manager flash, 23 September
+
+Jorge made his connected preview browser available. On build `7360589`, a full
+manager sign-in completed, but the hero washed out again at cleanup. A separate
+Replay intro isolated the cause: the hero changed from `saRadial` at opacity 1
+to a new `cardIn` at opacity 0 when the radial classes were removed. Samples
+then read 0.412, 0.569 and 0.846 before returning to 1. The page stayed at opacity
+1. This is a reproduced second entrance, not a claim that the login form returned:
+none of the sampled full-login frames showed the form returning. The capture is
+sampled, not continuous video, and cannot exclude a shorter missed flash.
+
+The repair keeps `cardIn` first in the animation list on precisely the page
+children that already own it, with the unchanged radial animation after it.
+The radial animation controls the visible landing; the completed `cardIn` is
+still there at cleanup instead of starting over. Header and nested elements do
+not acquire `cardIn`. No new duration, cover, choreography or persistent class.
+
+Verified with the real built app against fictional manager data on a fresh
+local origin, after rejecting an initial run that loaded an old cached bundle.
+Full sign-in kept the hero at opacity 1 in all seven post-cleanup samples. Replay
+kept it at 1 in all 75 samples from 1.6 through 5.1 seconds after the click.
+No console warnings or errors on that fresh-origin run. The local tests and
+build pass. This is evidence for this defect only, not a frame-rate claim or
+proof that every reported manager flash is gone. A hover tooltip also appeared
+under the stationary pointer during the original landing; it is unchanged.
+
+The earlier cover and daily-limit repairs remain. Production is unchanged,
+and the preview still needs hosted checks, Claude review and Jorge's phone check.
+
 Update, 23 September: Jorge still sees a manager flash in the preview. It is
 not resolved by the checks below. He has now explicitly approved X5, replaying
 the existing full arrival on every sign-in, to make the defect reproducible.

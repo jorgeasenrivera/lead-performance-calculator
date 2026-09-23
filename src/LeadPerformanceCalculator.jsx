@@ -14306,6 +14306,13 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         opacity:0;
         animation: saRadial .68s cubic-bezier(.16,0,.3,1) both;
         animation-delay: var(--rd, 0ms); }
+/* Keep a page child's mount animation alive underneath the radial landing.
+         Replacing it restarted cardIn at cleanup: the already-landed hero
+         disappeared and faded in again. Only these children have cardIn;
+         putting it on the header would invent another entrance there. */
+.sage-assemble :where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *).sa-radial {
+        animation: cardIn var(--t-settle) var(--ease) both, saRadial .68s cubic-bezier(.16,0,.3,1) both;
+        animation-delay: 0ms, var(--rd, 0ms); }
 /* No shadow while a block is in flight - a scaled shadow re-rasterising at
          the end is the "click" - and a soft bloom the moment it lands. */
 .sage-assemble .sa-radial:not(.sa-shadowin) { box-shadow:none !important; }
