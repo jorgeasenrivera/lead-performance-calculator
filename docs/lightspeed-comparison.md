@@ -17,6 +17,32 @@ they are not submitted or applied. Jorge communicates the choice in chat.
 
 ## What is being compared
 
+### Creative follow-up: C, Through the light
+
+Jorge asked for a more creative direction after seeing A and B. C keeps both
+for comparison and adds a destination-like arrival: foreground blocks approach
+together from 78% scale, with a shared 40 ms delay rather than the distance
+stagger. Their travel is 20% of the existing radial vectors, overshoot is only
+0.6% of each vector, and peak scale is 1.003. The background stays full-screen
+and settles from a shallower 32 px descent. One translucent green-white scan
+passes downward in 860 ms, once, and disappears. No blur, repeated flicker,
+new particle system or animation library. The scan is a separate decision.
+
+The first C draft scaled the whole app. Browser replay showed pale borders
+around the shrinking backdrop, so that was removed. C now moves only the
+foreground. Reduced Motion disables the scan and background motion and uses
+an opacity-only radial keyframe. No device motion setting is overridden.
+
+At 778 px the corrected full C replay held body width at 763.200 CSS px
+through release, with no sampled unlocked landing frame. Full replay and
+landing-only replay both returned to Ready to replay. B and C settled captures
+were compared together at 778 x 698 and retained the same finished layout.
+The browser also recorded two timed-out reads of the fictional floor row;
+they did not stop playback, but this is not a clean-console claim or a claim
+that the local data harness has production-like timing. See design-qa.md.
+
+The application build remains unchanged. All changes live in this proposal.
+
 A uses the existing radial motion with preview-only scroll and hover repairs.
 B adds alternative keyframes, using the same animation names and the same
 animation list ordering so the underlying cardIn does not restart at cleanup.

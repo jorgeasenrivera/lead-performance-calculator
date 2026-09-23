@@ -4,7 +4,19 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import { commonMotionCSS, tighterMotionCSS, comparisonPage, installMotionComparison, serveMotionComparison } from "../scripts/motion-compare.mjs";
+import { commonMotionCSS, tighterMotionCSS, destinationMotionCSS, comparisonPage, installMotionComparison, serveMotionComparison } from "../scripts/motion-compare.mjs";
+
+test("destination keeps the final geometry and disables its scan for Reduce Motion", () => {
+  assert.match(destinationMotionCSS, /@keyframes saRadial/);
+  assert.match(destinationMotionCSS, /\.sage-assemble \.lpc \{ animation:none; \}/);
+  assert.match(destinationMotionCSS, /--rd:40ms !important/);
+  assert.match(destinationMotionCSS, /100% \{ opacity:1; transform:none; \}/);
+  assert.match(destinationMotionCSS, /comparisonScan \.86s/);
+  assert.match(destinationMotionCSS, /prefers-reduced-motion:reduce/);
+  assert.match(destinationMotionCSS, /\.comparison-scan \{ display:none; \}/);
+  assert.match(destinationMotionCSS, /sage-preparing .*animation-play-state:paused/);
+  assert.doesNotMatch(destinationMotionCSS, /infinite|filter:|backdrop-filter:/);
+});
 
 test("comparison preserves animation identity instead of restarting cardIn", () => {
   assert.match(tighterMotionCSS, /@keyframes saRadial/);
@@ -19,6 +31,8 @@ test("comparison has one actual app viewport and separate decisions", () => {
   assert.equal((html.match(/<iframe /g) || []).length, 1);
   assert.match(html, /id="repair"/);
   assert.match(html, /id="motion"/);
+  assert.match(html, /id="scan"/);
+  assert.match(html, /C · Through the light/);
   assert.match(html, /Landing only/);
   assert.match(html, /Choices stay on this page only/);
   assert.doesNotMatch(html, /<iframe[^>]+src=/);
@@ -56,10 +70,13 @@ test("comparison serves isolated variants and refuses writes and service workers
   const base = `http://127.0.0.1:${server.address().port}`;
   const a = await (await fetch(base + "/app?variant=A")).text();
   const b = await (await fetch(base + "/app?variant=B")).text();
+  const c = await (await fetch(base + "/app?variant=C")).text();
   assert.match(a, /localStorage.removeItem\("lpc-auth"\)/);
   assert.doesNotMatch(a, /@keyframes saRadial/);
   assert.match(b, /@keyframes saRadial/);
   assert.match(b, /index-demo.js/);
+  assert.match(c, /@keyframes comparisonScan/);
+  assert.doesNotMatch(b, /@keyframes comparisonScan/);
   assert.equal((await fetch(base, {method:"POST"})).status, 405);
   assert.equal((await fetch(base + "/sw.js")).status, 204);
   // Node's fetch normalizes Host. Use an actual HTTP header for this guard.

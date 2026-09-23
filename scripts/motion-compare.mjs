@@ -25,6 +25,40 @@ export const tighterMotionCSS = `
 @keyframes saBreath { from { transform:scale(1.008); } to { transform:none; } }
 `;
 
+// C treats the dashboard as the destination, not fragments thrown out of a
+// point. A shared clock carries the foreground while the ground stays full
+// bleed. Scaling .lpc would expose pale edges around its fixed backdrop.
+export const destinationMotionCSS = `
+@keyframes saRadial {
+  0% { opacity:0; transform:translate3d(calc(var(--rx,0px) * .20),calc(var(--ry,0px) * .20),0) scale(.78); }
+  22% { opacity:1; }
+  82% { opacity:1; transform:translate3d(calc(var(--rx,0px) * -.006),calc(var(--ry,0px) * -.006),0) scale(1.003); }
+  100% { opacity:1; transform:none; }
+}
+.sage-assemble .lpc { animation:none; }
+.sage-assemble .sa-radial { --rd:40ms !important; }
+@keyframes saCloudDrop {
+  from { transform:translateY(-32px) scale(1.10); }
+  to { transform:none; }
+}
+.comparison-scan { position:fixed; inset:0; z-index:9000; pointer-events:none; overflow:hidden; }
+.comparison-scan::before { content:""; position:absolute; top:0; left:0; width:100%; height:18vh; opacity:0;
+  background:linear-gradient(to bottom,transparent 15%,rgba(213,245,220,.045) 60%,rgba(228,255,232,.16) 96%,rgba(245,255,240,.22) 98%,transparent 100%); }
+.sage-assemble .comparison-scan::before { animation:comparisonScan .86s cubic-bezier(.22,.5,.32,1) .12s both; }
+.sage-preparing .comparison-scan::before { animation-play-state:paused; }
+@keyframes comparisonScan {
+  0% { opacity:0; transform:translateY(-20vh); }
+  12% { opacity:1; }
+  82% { opacity:1; }
+  100% { opacity:0; transform:translateY(100vh); }
+}
+@media(prefers-reduced-motion:reduce) {
+  .comparison-scan { display:none; }
+  .sage-assemble .lpc, .sage-assemble .sg-blobs { animation:none !important; }
+  @keyframes saRadial { from { opacity:0; transform:none; } to { opacity:1; transform:none; } }
+}
+`;
+
 export function installMotionComparison(variant, css) {
   if (location.hostname !== "127.0.0.1" || window.parent === window) return;
   const root = document.documentElement;
@@ -36,6 +70,11 @@ export function installMotionComparison(variant, css) {
     if (document.body.lastElementChild !== style) document.body.appendChild(style);
   };
   ensureStyle();
+  if (variant === "C") {
+    const scan = document.createElement("div");
+    scan.className = "comparison-scan"; scan.setAttribute("aria-hidden", "true");
+    document.body.appendChild(scan); ensureStyle();
+  }
   let started = false, locked = false, landed = false, settled = false;
   let start = 0, raf = 0, watchdog = 0, signInTimer = 0;
   let sample, lastPhase = "", loginAttempted = false;
@@ -134,19 +173,20 @@ export function comparisonPage() {
 *{box-sizing:border-box}body{margin:0;background:#e8ede8;color:#1e3329;font:14px system-ui,sans-serif}main{height:100dvh;display:flex;flex-direction:column}header{padding:14px 20px;background:#f8faf7;border-bottom:1px solid #b9c9bd}h1{font-size:18px;letter-spacing:-.4px;margin:0 0 4px}p{margin:5px 0;color:#526358;font-size:13px;line-height:1.45}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}button,select{font:inherit;border:1px solid #b6c8ba;border-radius:8px;background:#fff;color:#21392c;padding:9px 12px;cursor:pointer}button[aria-pressed=true]{background:#284b38;color:#fff;border-color:#284b38}button:disabled{opacity:.45;cursor:default}button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #ba7510;outline-offset:2px}.status{font-size:12px;margin-left:auto;color:#536257}iframe{width:100%;flex:1;min-height:0;border:0;background:#eef2ee}.details{position:relative}details{font-size:12px;margin-top:9px}summary{cursor:pointer;width:max-content}fieldset{border:0;padding:9px 0 0;margin:0}label{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 0}select{padding:6px 8px;font-size:12px}#decisions{font-size:12px;color:#345040}.compact header{padding:8px 12px}.compact h1,.compact .intro,.compact details{display:none}.compact .controls{margin:0}.hint{font-size:12px;margin:6px 0 0;color:#617466}@media(max-width:540px){header{padding:10px 12px}h1{font-size:16px}.status{margin-left:0;flex-basis:100%}button{padding:8px 10px}.intro{font-size:12px}}
 </style></head><body><main><header><h1>Sage, arriving at lightspeed</h1>
 <p class="intro">A motion comparison, not a redesign. Real Sage screens with fictional store data. Your live site is untouched.</p>
-<div class="controls"><button id="a" aria-pressed="true">A · Current motion, repaired</button><button id="b" aria-pressed="false">B · Tighter landing</button><button id="replay">Full replay</button><button id="landing" disabled>Landing only</button><button id="compact">More room</button><span class="status" id="status" role="status">Choose a version to begin</span></div>
+<div class="controls"><button id="a" aria-pressed="true">A · Current motion, repaired</button><button id="b" aria-pressed="false">B · Tighter landing</button><button id="c" aria-pressed="false">C · Through the light</button><button id="replay">Full replay</button><button id="landing" disabled>Landing only</button><button id="compact">More room</button><span class="status" id="status" role="status">Choose a version to begin</span></div>
 <p class="hint intro" id="description">A keeps the existing outward flight and rebound. Scrolling waits until the landing finishes; hover cards wait for your pointer.</p>
-<details><summary>What changes, and your decisions</summary><p>Both versions keep the Sage mark, tunnel, white cover, colors and dashboard. B travels less, starts less miniature, and settles with a much smaller rebound. No new animation library.</p>
-<fieldset><label>1. Scrollbar and hover interruption repair <select id="repair"><option value="Not decided">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></label><label>2. Tighter landing <select id="motion"><option value="Not decided">Not decided</option><option>Approve B</option><option>Adjust B</option><option>Keep A motion</option></select></label></fieldset><p id="decisions">Choices stay on this page only. Tell me your decisions in our chat.</p>
+<details><summary>What changes, and your decisions</summary><p>All three keep the Sage mark, tunnel, white cover, colors and finished dashboard. B refines the existing flight. C approaches the dashboard as one destination: a forward glide, background depth, then one soft CRT scan. No new animation library.</p>
+<fieldset><label>1. Scrollbar and hover interruption repair <select id="repair"><option value="Not decided">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></label><label>2. Arrival direction <select id="motion"><option value="Not decided">Not decided</option><option>Keep A motion</option><option>Approve B</option><option>Adjust B</option><option>Approve C</option><option>Adjust C</option></select></label><label>3. One soft CRT scan in C <select id="scan"><option value="Not decided">Not decided</option><option>Keep the scan</option><option>Adjust the scan</option><option>No scan</option></select></label></fieldset><p id="decisions">Choices stay on this page only. Tell me your decisions in our chat.</p>
 <p>Full replay runs the actual mock sign-in. Landing only isolates the dashboard entrance, without the tunnel or login cover. The demo's daily round-up is marked read so it does not cover the comparison. Reduce Motion follows your device setting. Only one version runs at a time. This page is not an FPS benchmark or an iPhone approval.</p><pre id="evidence" style="white-space:pre-wrap"></pre></details></header><iframe id="preview" title="Actual Sage application, fictional data"></iframe></main>
 <script>
 const frame=document.querySelector('#preview'),status=document.querySelector('#status');let variant='A',run=0;
-function play(next){variant=next;document.querySelector('#a').setAttribute('aria-pressed',String(next==='A'));document.querySelector('#b').setAttribute('aria-pressed',String(next==='B'));document.querySelector('#landing').disabled=true;status.textContent='Loading '+next;document.querySelector('#evidence').textContent='';document.querySelector('#description').textContent=next==='A'?'A keeps the existing outward flight and rebound. Scrolling waits until the landing finishes; hover cards wait for your pointer.':'B keeps the same tunnel and white cover. The dashboard travels a shorter distance and lands with a smaller rebound.';frame.src='/app?variant='+next+'&run='+(++run);}
-document.querySelector('#a').onclick=()=>play('A');document.querySelector('#b').onclick=()=>play('B');document.querySelector('#replay').onclick=()=>play(variant);
+const descriptions={A:'A keeps the existing outward flight and rebound. Scrolling waits until the landing finishes; hover cards wait for your pointer.',B:'B keeps the same tunnel and white cover. The dashboard travels a shorter distance and lands with a smaller rebound.',C:'C moves you toward the whole dashboard. The background settles behind it, then one soft CRT scan completes the arrival.'};
+function play(next){variant=next;for(const id of ['a','b','c'])document.querySelector('#'+id).setAttribute('aria-pressed',String(next===id.toUpperCase()));document.querySelector('#landing').disabled=true;status.textContent='Loading '+next;document.querySelector('#evidence').textContent='';document.querySelector('#description').textContent=descriptions[next];frame.src='/app?variant='+next+'&run='+(++run);}
+for(const id of ['a','b','c'])document.querySelector('#'+id).onclick=()=>play(id.toUpperCase());document.querySelector('#replay').onclick=()=>play(variant);
 document.querySelector('#landing').onclick=()=>{document.querySelector('#landing').disabled=true;frame.contentWindow.postMessage({type:'sage-motion-landing'},location.origin)};
 document.querySelector('#compact').onclick=()=>{const small=document.body.classList.toggle('compact');document.querySelector('#compact').textContent=small?'Show notes':'More room'};
 window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==frame.contentWindow||event.data?.type!=='sage-motion-status')return;status.textContent=event.data.variant+' · '+event.data.status;document.querySelector('#landing').disabled=event.data.status!=='Ready to replay';if(event.data.sample?.status!=='playing')document.querySelector('#evidence').textContent=JSON.stringify(event.data.sample,null,2)});
-for(const id of ['repair','motion'])document.querySelector('#'+id).onchange=()=>{document.querySelector('#decisions').textContent='Repair: '+document.querySelector('#repair').value+'. Motion: '+document.querySelector('#motion').value+'. Tell me these choices in chat; nothing has been applied.'};
+for(const id of ['repair','motion','scan'])document.querySelector('#'+id).onchange=()=>{document.querySelector('#decisions').textContent='Repair: '+document.querySelector('#repair').value+'. Motion: '+document.querySelector('#motion').value+'. Scan: '+document.querySelector('#scan').value+'. Tell me these choices in chat; nothing has been applied.'};
 </script></body></html>`;
 }
 
@@ -165,8 +205,9 @@ export async function serveMotionComparison(root, port) {
       let bytes, type = "text/html";
       if (url.pathname === "/") bytes = comparisonPage();
       else if (url.pathname === "/app") {
-        const variant = url.searchParams.get("variant") === "B" ? "B" : "A";
-        const css = commonMotionCSS + (variant === "B" ? tighterMotionCSS : "");
+        const requested = url.searchParams.get("variant");
+        const variant = ["B","C"].includes(requested) ? requested : "A";
+        const css = commonMotionCSS + (variant === "C" ? destinationMotionCSS : variant === "B" ? tighterMotionCSS : "");
         // This server owns a fresh loopback origin. Remove only its mock auth,
         // before the app module starts, so every replay is an ordinary login.
         const reset = '<script>localStorage.removeItem("lpc-auth");const d=new Date();localStorage.setItem("lpc:roundup:sage-demo:"+d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"),"1");</script>';
