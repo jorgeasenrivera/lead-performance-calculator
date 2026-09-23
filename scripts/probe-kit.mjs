@@ -186,7 +186,11 @@ export function lostBrowserWatch(browser) {
   const note = (w) => { if (!why) why = w; };
   browser.on("disconnected", () => note("it went away mid-run"));
   return {
-    watchPage(page) { page.on("crash", () => note("the page crashed under it, which on a container is usually memory")); },
+    /* It used to add "which on a container is usually memory". The first crash
+       measured after #412 said otherwise, 13.4 GB free and nothing killed, and
+       a sentence printed beside the numbers that disprove it teaches the reader
+       to stop reading either. The machine line says what it was. */
+    watchPage(page) { page.on("crash", () => note("the page crashed under it")); },
     why(err) {
       if (why) return why;
       if (browser.isConnected && !browser.isConnected()) return "it went away mid-run";
@@ -197,10 +201,11 @@ export function lostBrowserWatch(browser) {
 
 /* ---- what the machine looked like ----
    C83's second half. Knowing the browser was lost is not knowing why, and the
-   standing suspicion is that the container runs out of memory under a screen
-   carrying two canvases, a lot of gradients and a backdrop filter. That is a
-   guess until something measures it, so this reads the few facts the kernel
-   will hand over and the harnesses print them.
+   suspicion when this was written was that the container runs out of memory
+   under a screen carrying two canvases, a lot of gradients and a backdrop
+   filter. The first crash it caught, on 22 September, settled that: the page
+   crashed with 1.84 GB used, 13.41 GB free and no process killed. It is not
+   memory, and this is how we know.
 
    The one that settles it is the OOM counter. If the container killed the
    browser, that number goes up, and no amount of reading a Playwright stack
