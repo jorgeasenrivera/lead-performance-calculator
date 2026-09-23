@@ -45,6 +45,17 @@ test("the injected recorder and summary remain serializable browser functions", 
 });
 
 const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
+test("radial landing preserves a page child's cardIn instead of restarting it at cleanup", () => {
+  const children = ":where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *)";
+  assert.ok(core.includes(children + " { animation: cardIn var(--t-settle) var(--ease) both; }"));
+  const selector = ".sage-assemble " + children + ".sa-radial";
+  const rule = core.slice(core.indexOf(selector), core.indexOf("}", core.indexOf(selector)) + 1);
+  assert.match(rule, /animation: cardIn var\(--t-settle\) var\(--ease\) both, saRadial \.68s cubic-bezier\(\.16,0,\.3,1\) both;/);
+  assert.match(rule, /animation-delay: 0ms, var\(--rd, 0ms\);/);
+  assert.ok(core.indexOf(selector) > core.indexOf(".sage-assemble .sa-radial {"));
+  assert.doesNotMatch(core, /\.sage-assemble \.sa-radial\s*\{[^}]*animation: cardIn/,
+    "header and nested parts must not acquire a mount animation they never had");
+});
 test("an old daily mark cannot suppress any sign-in; Reduce Motion still can", () => {
   const source = core.slice(core.indexOf("function arrivalShort("), core.indexOf("/* ---- what the jump is waiting for"));
   let reduced = false, storageReads = 0;
