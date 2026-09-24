@@ -110,19 +110,25 @@ test("saved draft stays separate and neither recovery view has the extra label",
   assert.match(studyCSS,/prefers-reduced-motion:reduce/);
 });
 
-test("study login folds downward without horizontal travel or outward enlargement",()=>{
+test("study login folds into the viewport centre without outward enlargement",()=>{
   const expression=/card\.style\.transform = (window\.__sageProposalStudy[^;]+);/.exec(transformed)[1];
-  let previousY=-1;
-  for(let k=0;k<=1;k+=.05){
-    const transform=vm.runInNewContext(expression,{window:{__sageProposalStudy:true},k});
-    const match=/^translate3d\(0,([\d.]+)px,0\) scale\(([\d.]+),([\d.]+)\)$/.exec(transform);
-    assert.ok(match,transform);
-    const [,y,sx,sy]=match.map(Number);
-    assert.ok(y>=previousY && y<=96);previousY=y;
-    assert.ok(sx>=.96 && sx<=1 && sy>=.82 && sy<=1);
+  for(const [foldX,foldY] of [[0,0],[8,-150],[-20,90]]){
+    let previousDistance=Infinity,previousScale=1;
+    for(let i=0;i<=20;i++){
+      const k=i/20;
+      const transform=vm.runInNewContext(expression,{window:{__sageProposalStudy:true},k,foldX,foldY});
+      const match=/^translate3d\(([-\d.]+)px,([-\d.]+)px,0\) scale\(([\d.]+),([\d.]+)\)$/.exec(transform);
+      assert.ok(match,transform);
+      const [,x,y,sx,sy]=match.map(Number),distance=Math.hypot(foldX-x,foldY-y);
+      assert.ok(distance<=previousDistance);previousDistance=distance;
+      assert.ok(sx>0 && sx<=previousScale && sy>0 && sy<=sx);previousScale=sx;
+      if(i===20)assert.equal(distance,0);
+    }
   }
   assert.equal(vm.runInNewContext(expression,{window:{__sageProposalStudy:false},k:1}),'scale(0.92)');
-  assert.match(studyCSS,/\.proposal-study \.login-card \{ transform-origin:50% 100%; \}/);
+  assert.match(transformed,/const foldX = foldBox \? cx-foldBox.left-foldBox.width\/2 : 0;/);
+  assert.match(transformed,/const foldY = foldBox \? cy-foldBox.top-foldBox.height\/2 : 0;/);
+  assert.match(studyCSS,/\.proposal-study \.login-card \{ transform-origin:50% 50%; \}/);
 });
 
 test("study scan follows the white cover and completes within the landing hold",()=>{

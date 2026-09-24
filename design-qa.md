@@ -1,5 +1,21 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: centre-fold menu
+
+Study-only alternative requested by Jorge: the login card closes toward the
+flight origin with centre-anchored compression, replacing downward translation.
+One initial geometry read; existing animation clock; only transform and opacity
+change. No production or saved-draft change. Tests check convergence from both
+sides of centre, compression without enlargement and the saved draft fallback.
+
+690 tests and both builds pass. Browser Fast and replay reach the unchanged
+dashboard, with all 73 logo dots departed and constant width through unlock.
+The screenshot captures the settled result, not the brief intermediate fold:
+the Signing in label wait missed it. This variation awaits Jorge's motion review.
+Both runs omitted scanEndedAt from their completion sample, an open lifecycle
+observation recorded in the proposal document, not treated as a pass. Prior
+feel and physical-device gaps remain.
+
 ## 24 September follow-up: later scan
 
 Study-only delay shifts the unchanged 860 ms sweep from 120 to 520 ms after

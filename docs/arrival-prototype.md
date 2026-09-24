@@ -1,5 +1,31 @@
 # One continuous arrival
 
+## 24 September follow-up: menu folds into the centre
+
+Jorge proposed replacing the downward exit with a fold into the screen centre.
+The study measures the actual login card once, then translates its centre to
+the existing flight origin while compressing both axes, more strongly vertically.
+Transform origin is the card centre. The form fades with that same progress so
+the folding remains visible longer than the former quick opacity drop. No new
+timer, per-frame geometry read, blur or layer. GSAP timeline and performance
+guidance informed the shared clock and transform/opacity-only implementation.
+Saved draft and production remain unchanged; flight, title and scan code were
+not retimed by this change.
+
+690 tests and both builds pass. The replacement regression checks above-centre,
+below-centre and already-centred cards, monotonic convergence and compression,
+no enlargement, and the saved draft's unchanged transform. Browser Fast and
+replay both completed: replay landing 5363 ms, ready 6844 ms, all 73 logo dots
+departed, width 762.4 px throughout, zero unlocked landing frames. Captured the
+settled dashboard. The short Signing in label was missed by the browser wait,
+so an isolated mid-fold screenshot is not claimed. Jorge's motion review remains.
+
+Additional observation, not fixed in this scoped change: both runs reported
+scanStartedAt but no scanEndedAt in the completion sample. The earlier run did
+record both events. This does not establish whether the last scan frame was
+cut off or the event arrived after reporting; inspect that lifecycle before
+production. Existing feel mock-preflight, WebKit and physical-device gaps remain.
+
 ## 24 September follow-up: later finishing scan
 
 Jorge asked for the scan to start and finish later. The shared sweep started
