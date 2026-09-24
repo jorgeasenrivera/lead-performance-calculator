@@ -1,5 +1,23 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: scrollbar rail
+
+The earlier scroll-lock assertion was insufficient. The visible pale strip was
+reserved by scrollbar-gutter:stable even while overflow was hidden. Removed that
+gutter only in the locked study, keeping body content width separately and using
+a full-viewport flight canvas. The original saved draft remains untouched.
+
+Before screenshot: interrupted recovery had a pale right rail. After screenshots:
+the flight and recovery paint to the edge. Fast and Reduced Motion retain the
+same 762.4000244140625 px body width on both sides of unlock. Native scrolling
+returns after completion; a scrolled dashboard screenshot confirms it works.
+The first iteration's 0.4 px rounding error was found and corrected before this
+handoff. Two iframe style probes timed out, so no results from those are claimed.
+
+688 tests and both builds pass. Feel is blocked at its salesperson-mock preflight,
+not passed. Existing physical-device and performance gaps remain. This is a local
+draft repair requested by Jorge, not a production visual approval.
+
 ## 24 September follow-up: downward form exit
 
 Scoped to Jorge's request: replace outward login enlargement with a straight
