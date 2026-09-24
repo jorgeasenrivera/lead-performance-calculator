@@ -1,5 +1,25 @@
 # One continuous arrival
 
+## 24 September follow-up: login folds down
+
+Jorge asked for the login area to fold or slide down rather than be pushed to
+the side. Replaced the study's outward enlargement with centred downward
+translation, up to 96 px, and restrained compression towards the bottom edge.
+Horizontal translation stays zero; neither scale axis exceeds one. The existing
+opacity fade and clock are retained. Saved draft, store title, streak engine,
+readiness and landing are unchanged. GSAP guidance informed transform/opacity
+only, with no new layout reads or layers.
+
+687 tests and both builds pass. A regression evaluates the actual transformed
+expression across the exit, checking monotonically downward travel, no outward
+enlargement and the saved draft's original scale. Browser Fast reached the store
+title at 2295 ms, landing at 4576 ms and completed at 6034 ms. Width stayed
+762.4 px with zero unlocked landing frames. Captures showed the flight and the
+settled dashboard, not an isolated intermediate form frame. Existing feel and
+physical-device gaps remain; 25 longer frame intervals in this run prevent any
+new smoothness guarantee. Read console errors were from the previous bundle's
+intentional interrupted run.
+
 ## 24 September follow-up: the store is the destination
 
 Jorge requested the store name in the middle of the flight. The study now
