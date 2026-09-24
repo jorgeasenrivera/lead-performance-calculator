@@ -1,0 +1,31 @@
+#!/bin/bash
+# Tells Sage about every finished file in an account's incoming folder, once
+# (C96). Run by the watcher the moment an upload closes, and every ten minutes
+# as a catch-up, so a notice that could not be delivered is sent again.
+set -uo pipefail
+. /etc/sage-sftp/env                       # SAGE_URL
+state=/var/lib/sage-sftp/notified
+mkdir -p "$state"
+for dir in /srv/sftp/*/incoming; do
+  [ -d "$dir" ] || continue
+  acct=$(basename "$(dirname "$dir")")
+  find "$dir" -maxdepth 1 -type f -print0 | while IFS= read -r -d '' f; do
+    # Still being written: its turn comes when it closes.
+    fuser -s "$f" 2>/dev/null && continue
+    name=$(basename "$f")
+    sha=$(sha256sum "$f" | cut -d' ' -f1)
+    mark="$state/$acct.$sha.$(printf '%s' "$name" | sha256sum | cut -c1-16)"
+    [ -e "$mark" ] || [ -e "$mark.rejected" ] && continue
+    size=$(stat -c %s "$f")
+    body=$(ACCT="$acct" NAME="$name" SIZE="$size" SHA="$sha" python3 -c 'import json,os; print(json.dumps({"account":os.environ["ACCT"],"filename":os.environ["NAME"],"size":int(os.environ["SIZE"]),"sha256":os.environ["SHA"]}))')
+    # The secret is read from a root-only file, never put on a command line.
+    code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+      -H 'content-type: application/json' -H @/etc/sage-sftp/secret-header \
+      --data "$body" "$SAGE_URL/api/sftp-arrival") || code=000
+    case "$code" in
+      200|201) touch "$mark"; logger -t sage-notify "recorded $acct/$name ($size bytes)" ;;
+      400)     touch "$mark.rejected"; logger -p user.warning -t sage-notify "Sage refused $acct/$name; not retried" ;;
+      *)       logger -p user.warning -t sage-notify "could not reach Sage ($code) for $acct/$name; will retry" ;;
+    esac
+  done
+done

@@ -1,0 +1,30 @@
+#!/bin/bash
+# Keeps each account's SSH keys the same as infra/sftp/keys/<account>.pub on
+# main (C96). Adding a key is a commit; removing the file removes access. A
+# failed download changes nothing, and a file with anything that is not a
+# public key in it is refused whole.
+set -uo pipefail
+. /etc/sage-sftp/env                       # KEYS_BASE
+while read -r acct; do
+  [ -n "$acct" ] || continue
+  target="/etc/ssh/authorized_keys/$acct"
+  tmp=$(mktemp)
+  code=$(curl -sS -o "$tmp" -w '%{http_code}' --max-time 20 "$KEYS_BASE/$acct.pub") || code=000
+  if [ "$code" = 404 ]; then
+    if [ -s "$target" ]; then : > "$target"; logger -t sage-keysync "$acct has no key in the repository; access removed"; fi
+  elif [ "$code" = 200 ]; then
+    ok=1; n=0
+    while IFS= read -r line; do
+      case "$line" in ''|'#'*) continue ;; esac
+      printf '%s\n' "$line" | ssh-keygen -l -f - >/dev/null 2>&1 || ok=0
+      n=$((n+1))
+    done < "$tmp"
+    if [ "$ok" = 1 ] && ! cmp -s "$tmp" "$target"; then
+      install -m 0644 -o root -g root "$tmp" "$target"
+      logger -t sage-keysync "$acct now has $n key(s)"
+    elif [ "$ok" != 1 ]; then
+      logger -p user.warning -t sage-keysync "$acct's key file has a line that is not a public key; kept the old one"
+    fi
+  fi
+  rm -f "$tmp"
+done < /etc/sage-sftp/accounts

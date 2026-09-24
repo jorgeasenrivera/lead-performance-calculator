@@ -1,0 +1,200 @@
+# Sage's SFTP server on DigitalOcean (C96): PromptPath delivers its analytics
+# exports here, the files stay in New York, and Sage records that each one
+# arrived. Run by hand: Actions → SFTP server → Run workflow.
+#
+#   create     make the server, with backups, a fixed address and a firewall,
+#              then prove it works from outside (infra/sftp/check.sh)
+#   firewall   let in exactly the addresses in infra/sftp/allowed-ips.txt
+#   status     what exists, and the outside checks that need no key
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   DIGITALOCEAN_TOKEN   a DigitalOcean key limited to droplets, firewalls,
+#                        reserved IPs, SSH keys, regions and sizes
+#   SFTP_NOTIFY_SECRET   the same value as in Vercel; the server sends it
+#                        with every notice to /api/sftp-arrival
+#
+# Nothing here opens the server to the world. Port 22 is shut unless an
+# address is listed in allowed-ips.txt, and a run lets its own runner in
+# for its length only and takes that rule out again however it ends.
+name: SFTP server
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [status, create, firewall]
+        default: status
+
+concurrency:
+  group: sftp-server
+  cancel-in-progress: false
+
+env:
+  NAME: sage-sftp
+  REGION: nyc3
+  SIZE: s-1vcpu-1gb
+  IMAGE: ubuntu-24-04-x64
+  SAGE_URL: https://www.sageonline.io
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Both secrets are set
+        run: |
+          [ -n "${{ secrets.DIGITALOCEAN_TOKEN }}" ] || { echo "::error::DIGITALOCEAN_TOKEN is not set. See infra/sftp/README.md."; exit 1; }
+          if [ "${{ inputs.action }}" = create ] && [ ${#SECRET} -lt 32 ]; then
+            echo "::error::SFTP_NOTIFY_SECRET is missing or shorter than 32 characters. See infra/sftp/README.md."; exit 1
+          fi
+        env:
+          SECRET: ${{ secrets.SFTP_NOTIFY_SECRET }}
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: What exists
+        id: state
+        run: |
+          doctl account get --format Email,Status --no-header
+          id=$(doctl compute droplet list --tag-name "$NAME" --format ID --no-header | head -1)
+          fw=$(doctl compute firewall list --format ID,Name --no-header | awk -v n="$NAME" '$2==n{print $1}' | head -1)
+          ip=""
+          if [ -n "$id" ]; then ip=$(doctl compute reserved-ip list --format IP,DropletID --no-header | awk -v d="$id" '$2==d{print $1}' | head -1); fi
+          echo "droplet=$id" >> "$GITHUB_OUTPUT"; echo "firewall=$fw" >> "$GITHUB_OUTPUT"; echo "ip=$ip" >> "$GITHUB_OUTPUT"
+          echo "server: ${id:-none}  firewall: ${fw:-none}  address: ${ip:-none}"
+          # The region, before anything is made in it.
+          doctl compute region list --format Slug,Available --no-header | awk -v r="$REGION" '$1==r' | grep -q true \
+            || { echo "::error::$REGION is not taking new servers right now."; exit 1; }
+
+      - name: The addresses allowed in
+        id: allow
+        run: |
+          # One address or range per line; # starts a comment. Empty means
+          # nobody from outside, which is where it starts.
+          rules=""
+          while read -r a; do
+            a=${a%%#*}; a=$(echo "$a" | tr -d ' ')
+            [ -n "$a" ] || continue
+            echo "$a" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$' || { echo "::error::not an IPv4 address or range: $a"; exit 1; }
+            rules="$rules protocol:tcp,ports:22,address:$a"
+          done < infra/sftp/allowed-ips.txt
+          echo "rules=${rules# }" >> "$GITHUB_OUTPUT"
+          echo "allowed: ${rules:-nobody}"
+          runner=$(curl -fsS https://api.ipify.org)
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+
+      - name: Create the server
+        if: inputs.action == 'create'
+        id: create
+        env:
+          NOTIFY_SECRET: ${{ secrets.SFTP_NOTIFY_SECRET }}
+        run: |
+          if [ -n "${{ steps.state.outputs.droplet }}" ] || [ -n "${{ steps.state.outputs.firewall }}" ]; then
+            echo "::error::A $NAME server or firewall already exists. Nothing was changed."; exit 1
+          fi
+          # The check account's key lives for this run only; its public half
+          # goes into the server's first boot, and the account removes itself
+          # an hour later.
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/check" -C sage-check
+          CHECK_PUBKEY=$(cat "$RUNNER_TEMP/check.pub") node infra/sftp/render.mjs > "$RUNNER_TEMP/user-data"
+          # The firewall first: it follows the tag, so the server is behind it
+          # from its first second rather than open while it boots.
+          fw=$(doctl compute firewall create --name "$NAME" --tag-names "$NAME" \
+                 --inbound-rules "protocol:tcp,ports:22,address:${{ steps.allow.outputs.runner }}/32 ${{ steps.allow.outputs.rules }}" \
+                 --outbound-rules "protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0" \
+                 --format ID --no-header)
+          echo "firewall=$fw" >> "$GITHUB_OUTPUT"
+          id=$(doctl compute droplet create "$NAME" --region "$REGION" --size "$SIZE" --image "$IMAGE" \
+                 --enable-backups --enable-monitoring --tag-names "$NAME" \
+                 --user-data-file "$RUNNER_TEMP/user-data" --wait --format ID --no-header)
+          rm -f "$RUNNER_TEMP/user-data"
+          echo "droplet=$id" >> "$GITHUB_OUTPUT"
+          ip=$(doctl compute reserved-ip create --droplet-id "$id" --format IP --no-header)
+          echo "ip=$ip" >> "$GITHUB_OUTPUT"
+          echo "server $id at $ip"
+
+      - name: Let this run in
+        id: letin
+        if: inputs.action != 'firewall' && (steps.create.outputs.firewall || steps.state.outputs.firewall)
+        run: |
+          fw="${{ steps.create.outputs.firewall || steps.state.outputs.firewall }}"
+          doctl compute firewall add-rules "$fw" --inbound-rules "protocol:tcp,ports:22,address:${{ steps.allow.outputs.runner }}/32" || true
+          echo "fw=$fw" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the first boot to finish
+        if: inputs.action == 'create'
+        run: |
+          ip="${{ steps.create.outputs.ip }}"
+          for i in $(seq 1 60); do
+            if sftp -P 22 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/sage-check-known -o ConnectTimeout=10 -o BatchMode=yes \
+                 -i "$RUNNER_TEMP/check" -b - "sagecheck@$ip" <<< 'ls' >/dev/null 2>&1; then
+              echo "ready after about $((i*10)) seconds"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The server did not finish setting itself up within ten minutes."; exit 1
+
+      - name: Prove it works from outside
+        if: inputs.action == 'create'
+        env:
+          SAGE_SECRET: ${{ secrets.SFTP_NOTIFY_SECRET }}
+        run: |
+          # The server has just rebooted into its first-boot setup; give the
+          # watcher a moment to be listening.
+          sleep 20
+          infra/sftp/check.sh "${{ steps.create.outputs.ip }}" 22 "$RUNNER_TEMP/check" "$SAGE_URL" | tee "$RUNNER_TEMP/check.txt"
+
+      - name: Outside checks without a key
+        if: inputs.action == 'status' && steps.state.outputs.ip
+        run: |
+          ip="${{ steps.state.outputs.ip }}"
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/nobody"
+          out=$(ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/k -o ConnectTimeout=15 -o BatchMode=yes \
+                  -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive promptpath@"$ip" true 2>&1) || true
+          echo "$out" | grep -q "Permission denied (publickey)" && echo "ok    passwords are refused" || { echo "FAIL  $out"; exit 1; }
+          out=$(ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/k -o ConnectTimeout=15 -o BatchMode=yes \
+                  -i "$RUNNER_TEMP/nobody" root@"$ip" true 2>&1) || true
+          echo "$out" | grep -q "Permission denied" && echo "ok    root cannot sign in" || { echo "FAIL  $out"; exit 1; }
+
+      - name: Set the firewall to the allowed addresses
+        if: inputs.action == 'firewall'
+        run: |
+          fw="${{ steps.state.outputs.firewall }}"
+          [ -n "$fw" ] || { echo "::error::There is no $NAME firewall yet. Run create first."; exit 1; }
+          rules="${{ steps.allow.outputs.rules }}"
+          # A firewall needs at least one rule to be updated; an empty list
+          # becomes a rule nobody can match, so nothing gets in.
+          [ -n "$rules" ] || rules="protocol:tcp,ports:22,address:127.0.0.1/32"
+          doctl compute firewall update "$fw" --name "$NAME" --tag-names "$NAME" --inbound-rules "$rules" \
+            --outbound-rules "protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0"
+          doctl compute firewall get "$fw" --format InboundRules --no-header
+
+      - name: Let this run out again
+        if: always() && steps.letin.outputs.fw
+        run: |
+          doctl compute firewall remove-rules "${{ steps.letin.outputs.fw }}" \
+            --inbound-rules "protocol:tcp,ports:22,address:${{ steps.allow.outputs.runner }}/32"
+          echo "the runner's address is out of the firewall again"
+
+      - name: Summary
+        if: always()
+        run: |
+          ip="${{ steps.create.outputs.ip || steps.state.outputs.ip }}"
+          {
+            echo "### SFTP server"
+            echo
+            echo "- Server: ${{ steps.create.outputs.droplet || steps.state.outputs.droplet || 'none' }}, $REGION, $SIZE"
+            echo "- Address: ${ip:-none}"
+            if [ -n "$ip" ]; then
+              echo "- DNS, in Cloudflare: an **A** record, name **sftp**, content **$ip**, proxy status **DNS only** (grey cloud)."
+            fi
+            if [ -f "$RUNNER_TEMP/check.txt" ]; then echo; echo '```'; cat "$RUNNER_TEMP/check.txt"; echo '```'; fi
+          } >> "$GITHUB_STEP_SUMMARY"

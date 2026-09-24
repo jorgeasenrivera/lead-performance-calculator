@@ -1,0 +1,7 @@
+#!/bin/bash
+# The check account exists for the first hour only: long enough for the
+# workflow that created the server to prove it works from outside.
+set -uo pipefail
+userdel sagecheck 2>/dev/null
+rm -rf /srv/sftp/sagecheck /etc/ssh/authorized_keys/sagecheck
+logger -t sage-check "the check account is gone"
