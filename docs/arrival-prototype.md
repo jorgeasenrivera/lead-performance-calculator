@@ -1,5 +1,60 @@
 # One continuous arrival
 
+## 24 September: preserved draft and lightspeed study
+
+Jorge accepted the recovery direction, requested removal of `SAGE / ARRIVAL
+PAUSED`, and asked to retain the draft while exploring a stronger flight.
+The saved draft remains at http://127.0.0.1:49211/ with that label removed.
+The new, unapproved study is at http://127.0.0.1:49211/study. Neither is deployed.
+
+The study uses the measured logo dots and visible background dots, not a new
+star asset. The form travels outward as the logo gathers. Perspective depth
+turns the existing dots into tapered exposures, then the dashboard approaches
+along the same radial field. The final dashboard is unchanged. Colors ramp into
+Sage green, with two line passes, no blur and a 1.5 pixel-density ceiling.
+No package or runtime dependency was added. The saved draft retains its engine.
+
+Readiness still requires successful store data and the prepared dashboard.
+Drawing stops at the cruise cap while recovery retains the stopped flight.
+The scheduler still ticks in that state, a production integration task below.
+Reduced Motion bypasses travel and the scan. Narrow recovery buttons now have
+separation after a 390 x 844 screenshot exposed their touching edges.
+
+Research: the [official hyperspace reference](https://www.starwars.com/news/star-wars-inside-intel-hyperspace)
+informed the distinction between acceleration and sustained travel, not copied
+assets. [Google's animation guidance](https://web.dev/articles/animations-guide)
+supports using transforms and opacity for the foreground and avoiding costly
+filters. Optional agent guidance exists in the official
+[GSAP skills](https://github.com/greensock/gsap-skills): `gsap-timeline` and
+`gsap-performance` are relevant, with `gsap-react` if GSAP is later integrated.
+Those skills have not been installed. Skills and an app dependency are separate
+decisions, and this prototype does not require GSAP.
+
+Verification: the full repository suite, normal Vite build and isolated proposal
+build passed. All 11 proposal tests also passed after the final CSS adjustment.
+Existing PDF eval and large-chunk warnings remain. The feel harness was attempted
+but stopped at its preflight: `the mock is not in SALESPERSON=1 mode, or has no
+demo store`. The running mock is the manager proposal's fixture. This supersedes
+the earlier assumption that no local Playwright package was available. Feel
+performance bars have not passed for this study.
+
+Connected Chromium observations, single samples rather than FPS guarantees:
+
+| Scenario | Evidence |
+| --- | --- |
+| Fast, 1280 x 720 | Prepared 3176 ms, landing 4265 ms, finished 5864 ms |
+| Slow, 1280 x 720 | Wait 4901 ms, prepared 4919 ms, landing 5914 ms, finished 7478 ms |
+| Interrupted, 390 x 844 | No data or landing; readable recovery over the retained flight |
+| Retry, narrow | Prepared 2656 ms, landing 3400 ms, finished 4856 ms |
+| Reduced motion, narrow | Prepared 860 ms, landing 885 ms, finished 1256 ms; scan hidden |
+| Cancel | Preview iframe unloaded; stopped status confirmed |
+
+The Fast canvas sample used 450 points, averaged 2.59 ms of drawing submission,
+peaked at 32.1 ms and recorded 16 intervals above 25 ms. Slow averaged 1.84 ms,
+peaked at 6.7 ms and recorded 10 such intervals. These are not GPU timings or
+proof of 60 fps. Both kept body width at 1264.8 px and had zero unlocked landing
+frames. Physical iPhone, WebKit and older-office-PC checks remain outstanding.
+
 ## Revision 2: a stronger flight, same destination
 
 Jorge selected Adjust for launch/landing, Adjust for recovery and Approve for
