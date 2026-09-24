@@ -52,7 +52,8 @@ name: Sage app
 on:
   push:
     branches: [main]
-    paths: ['native/**']
+    # A README line is not worth a store build: each merge here spends one.
+    paths: ['native/**', '!native/**/*.md']
   pull_request:
     # The workflow itself too, so a change to the check is checked by itself
     # on its own pull request. The merge's build still watches native/ only.

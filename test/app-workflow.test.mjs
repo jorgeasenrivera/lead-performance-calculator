@@ -27,7 +27,7 @@ test("the Expo build is for merges and hand-started runs only", () => {
   assert.match(job("build"), /if: github\.event_name != 'pull_request'/);
 });
 
-test("a merge still builds only for native changes", () => {
+test("a merge still builds only for native changes, and not for their READMEs", () => {
   const push = wf.slice(wf.indexOf("  push:"), wf.indexOf("  pull_request:"));
-  assert.match(push, /paths: \['native\/\*\*'\]/);
+  assert.match(push, /paths: \['native\/\*\*', '!native\/\*\*\/\*\.md'\]/, "native changes build, a README in native/ does not");
 });
