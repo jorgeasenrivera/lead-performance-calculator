@@ -144,6 +144,41 @@ test("study handles early readiness and cancellation without a second completion
   assert.ok(!stopped.events.some(e=>e[0]==='flash'));
 });
 
+test("study keeps mirrored stars balanced and every exposure radial to one fixed centre",()=>{
+  const arcs=[],segments=[];let tail;
+  const ctx=new Proxy({}, {get:(_,key)=>{
+    if(key==='createRadialGradient')return ()=>({addColorStop(){}});
+    if(key==='arc')return (x,y)=>arcs.push([x,y]);
+    if(key==='moveTo')return (x,y)=>{tail=[x,y];};
+    if(key==='lineTo')return (x,y)=>segments.push({tail,head:[x,y]});
+    return ()=>{};
+  }});
+  const field=[[70,80],[330,220],[70,220],[330,80]].map(([x,y])=>({x,y,size:2,tint:'#294b3b'}));
+  const engine=lightspeedStudyEngine(ctx,{W:400,H:300,dpr:1,mk:[],field,lead:0},()=>{});
+  engine.tick(0);
+  for(let i=0;i<4;i++){
+    assert.ok(Math.abs(arcs[i][0]-field[i].x)<1e-8);
+    assert.ok(Math.abs(arcs[i][1]-field[i].y)<1e-8);
+  }
+  let checked=0;
+  for(let t=16;t<=2400;t+=16){
+    segments.length=0;engine.tick(t);
+    if(!segments.length)continue;
+    assert.equal(segments.length,8);
+    for(const {tail:[tx,ty],head:[hx,hy]} of segments){
+      assert.ok(Math.abs((tx-200)*(hy-150)-(ty-150)*(hx-200))<1e-7);
+      assert.ok(Math.hypot(hx-200,hy-150)>Math.hypot(tx-200,ty-150));
+    }
+    for(const [a,b] of [[0,2],[4,6]]){
+      assert.ok(Math.abs(segments[a].head[0]+segments[b].head[0]-400)<1e-8);
+      assert.ok(Math.abs(segments[a].head[1]+segments[b].head[1]-300)<1e-8);
+    }
+    checked++;
+  }
+  assert.ok(checked>20);
+  assert.match(transformed,/window.__sageProposalStudy \? document.body.getBoundingClientRect\(\).width : window.innerWidth/);
+});
+
 test("server refuses production bundles and blocks writes, traversal and service workers", async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(),"sage-arrival-test-"));
   t.after(()=>fs.rm(root,{recursive:true,force:true}));

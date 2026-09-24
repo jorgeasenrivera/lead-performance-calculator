@@ -1,5 +1,38 @@
 # One continuous arrival
 
+## 24 September follow-up: one fixed centre
+
+Jorge liked the study's look but saw sideways movement. Installed the requested
+official `gsap-timeline` and `gsap-performance` skills using Codex's installer,
+then read both installed SKILL.md files. They are agent guidance only; no app
+dependency was installed. Their sequencing and performance advice informed the
+shared motion clock and setup-time calculations, not a runtime migration.
+
+The canvas was 1075 px wide while the visible page was 1060 px. Including the
+reserved gutter displaced the flight centre by 7.5 px. The study now measures
+the body's visible width once. Browser verification reads both centres at
+530 px, both widths at 1060 px, and no canvas transform. The saved draft is
+unchanged.
+
+The old study also assigned repeating speeds by left-to-right grid index.
+That is a plausible contributor to the reported sideways impression, not a
+proven account of everything Jorge saw. Points now share one forward camera
+advance, with position-derived depth and mirrored depth symmetry. Initial
+positions still coincide with the real dots. Exposure tails remain radial,
+with no lateral camera motion, new particles, blur, or per-frame DOM reads.
+The official Star Wars references above informed forward travel and a fixed
+vanishing point; this is our interpretation, not a claim about their VFX code.
+
+682 tests and both builds passed. A new geometric guard checks original dot
+positions, mirrored balance and radial exposure segments across frames.
+At the existing 1075 x 910 browser viewport, Fast prepared at 2690 ms, landed
+at 3480 ms and finished at 4989 ms. Body width stayed 1060 px, unlocked landing
+frames were zero. Drawing submission averaged 1.44 ms, maximum 4.1 ms, with
+zero intervals over 25 ms in this one sample. No new Fast errors were captured;
+the log entries read before Interrupted belonged to the prior bundle's
+intentional failed requests. Interrupted retained the flight and revealed no
+dashboard. Existing feel, WebKit and physical-device gaps still apply.
+
 ## 24 September: preserved draft and lightspeed study
 
 Jorge accepted the recovery direction, requested removal of `SAGE / ARRIVAL

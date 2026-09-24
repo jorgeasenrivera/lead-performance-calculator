@@ -19,17 +19,23 @@ export function lightspeedStudyEngine(ctx, world, post) {
   const cx = W / 2, cy = H / 2, far = Math.hypot(W,H) * .7;
   const clamp = p => Math.max(0,Math.min(1,p));
   const smooth = p => { p=clamp(p); return p*p*(3-2*p); };
-  const ease = p => 1-Math.pow(1-clamp(p),3);
   ctx.scale(dpr,dpr);
   const ground = ctx.createRadialGradient(cx,cy,0,cx,cy,far);
   ground.addColorStop(0,'#294B3B'); ground.addColorStop(.4,'#152B22'); ground.addColorStop(1,'#0B1712');
   const palette = ['#d4ebd6','#92bfa6','#eef5dd','#739e86'];
-  const points = field.filter(d => d.x>0 && d.x<W && d.y>0 && d.y<H).map((d,i) => ({
-    x:d.x-cx,y:d.y-cy,r:d.size/2,color:d.tint,light:palette[i%4],z:1,
-    depth:.72+(i%7)*.13,seed:((i*73)%997)/997,mark:false,
-  }));
-  for (const d of mk) points.push({x:d.hx-cx,y:d.hy-cy,r:d.hr,color:d.fill,
-    sx:d.sx-cx,sy:d.sy-cy,sr:d.sr,light:palette[2],z:1,depth:1.15,seed:d.jit,mark:true});
+  // Depth is spatial, not a repeating left-to-right velocity sequence. A
+  // shared camera advances every point equally; near points expand faster
+  // because of perspective. Mirrored positions receive the same depth.
+  const seedAt = (x,y) => { const n=Math.sin(Math.abs(x)*12.9898+Math.abs(y)*78.233)*43758.5453; return n-Math.floor(n); };
+  const points = field.filter(d => d.x>0 && d.x<W && d.y>0 && d.y<H).map((d,i) => {
+    const seed=seedAt(d.x-cx,d.y-cy),depth=.8+seed*.8;
+    return {x:d.x-cx,y:d.y-cy,r:d.size/2,color:d.tint,light:palette[i%4],z:depth,depth,seed,mark:false};
+  });
+  for (const d of mk) {
+    const seed=seedAt(d.sx-cx,d.sy-cy),depth=.8+seed*.8;
+    points.push({x:d.hx-cx,y:d.hy-cy,r:d.hr,color:d.fill,
+      sx:d.sx-cx,sy:d.sy-cy,sr:d.sr,light:palette[2],z:depth,depth,seed,mark:true});
+  }
   // Build exposure colors once, not a new color string for every star/frame.
   const ramps=new Map();
   for(const p of points){
@@ -73,18 +79,18 @@ export function lightspeedStudyEngine(ctx, world, post) {
       if(p.mark){x+=(p.sx-x)*gather;y+=(p.sy-y)*gather;r+=(p.sr-r)*gather;}
       else {x*=1-gather*.14;y*=1-gather*.14;}
       if(launch>0){
-        p.z-=dt*velocity*p.depth;
+        p.z-=dt*velocity;
         // Recycle the same point on its original ray. No random direction
         // changes, spokes through the centre, or particle allocations in flight.
         if(p.z<.08){p.z=2.3+p.seed*.2;}
       }
-      const zoom=1/Math.max(.08,p.z),distance=Math.hypot(x,y)||1;
+      const zoom=p.depth/Math.max(.08,p.z),distance=Math.hypot(x,y)||1;
       const head=distance*zoom;
       if(head>far*1.65)continue;
       const shutter=(.006+launch*.095)*(1+exit*.6);
-      const tail=distance/Math.max(.08,p.z+velocity*p.depth*shutter);
+      const tail=distance*p.depth/Math.max(.08,p.z+velocity*shutter);
       const ux=x/distance,uy=y/distance;
-      const alpha=clamp((2.3-p.z)/1.3)*(p.mark?1:.4+.6*exposure);
+      const alpha=clamp((2.3-p.z)/.7)*(p.mark?1:.4+.6*exposure);
       const width=Math.min(4.5,Math.max(.65,r*(.5+zoom*.25)));
       ctx.globalAlpha=alpha;
       ctx.strokeStyle=p.ramp[Math.round(exposure*32)];
@@ -190,6 +196,10 @@ export function transformArrival(source) {
   swap('function arrivalEngineCore(ctx, world, post) {',
     'function arrivalEngineCore(ctx, world, post) {\n  if (world.study) return (' + lightspeedStudyEngine.toString() + ')(ctx, world, post);');
   swap('const world = { W, H, dpr, T: JUMP_T,', 'const world = { study:window.__sageProposalStudy === true, W, H, dpr, T: JUMP_T,');
+  // The reserved scrollbar gutter is not part of the visible flight. Its
+  // width previously shifted the vanishing point to the right of the page.
+  swap('  const W = window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin',
+    '  const W = window.__sageProposalStudy ? document.body.getBoundingClientRect().width : window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin');
   swap('cv.className = "sage-jump-canvas";\n  const dpr = Math.min(2, window.devicePixelRatio || 1);', 'cv.className = "sage-jump-canvas";\n  const dpr = Math.min(window.__sageProposalStudy ? 1.5 : 2, window.devicePixelRatio || 1);');
   swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "flash") toFlash();');
   swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "scale(" + (1 + Math.pow(k,3) * 1.7) + ") translateY(" + (k*k*90) + "px)" : "scale(" + (1 - k * 0.08) + ")";');
