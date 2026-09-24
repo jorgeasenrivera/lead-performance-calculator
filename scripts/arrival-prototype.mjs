@@ -344,9 +344,11 @@ html.proposal-study.comparison-lock body { width:calc(100% - var(--proposal-scro
   100% { opacity:1; transform:none; }
 }
 .sage-assemble .sa-radial { --rd:0ms !important; }
-/* Let the .5s white cover clear first. The .86s sweep then finishes at 1.38s,
-   inside the existing landing hold, without slowing the scan or delaying input. */
-.proposal-study.sage-assemble .comparison-scan::before { animation-delay:.52s; }
+/* The dashboard's cleanup must not cancel a scan still finishing on the next
+   rendered frame. This class belongs to the scan, not the assembly timer. */
+.proposal-study .comparison-scan::before { animation:none; }
+.proposal-study.proposal-scan-active .comparison-scan::before { animation:comparisonScan .86s cubic-bezier(.22,.5,.32,1) .52s both; }
+.proposal-study.sage-preparing .comparison-scan::before { animation-play-state:paused; }
 .proposal-study .login-card { transform-origin:50% 50%; }
 .proposal-study .proposal-wait button { margin-top:5px; margin-bottom:5px; }
 .proposal-destination { position:fixed; z-index:301; pointer-events:none; left:var(--jx,50%); top:var(--jy,50%); width:min(680px,calc(100% - 48px)); transform:translate(-50%,-50%); opacity:0; visibility:hidden; transition:opacity 350ms ease,visibility 0s 350ms; }
@@ -381,12 +383,14 @@ export function installArrivalPreview(css) {
   panel.querySelector(".cancel").onclick = () => send("sage-arrival-cancel");
   let started = 0, raf = 0, signed = false, preparing = false, prepared = false, landed = false, finished = false, failed = false, waiting = false;
   let lastStatus = "", timer = 0, auto = 0, safety = 0;
+  let scanSettled = false;
   const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, lockedGutterMax:0, widthAfterUnlock:null, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
   document.addEventListener("sage-study-metrics",e=>{sample.drawing=e.detail;});
   for (const [event,key] of [["animationstart","scanStartedAt"],["animationend","scanEndedAt"],["animationcancel","scanCancelledAt"]]) {
     scan.addEventListener(event,e=>{
       if(e.animationName!=="comparisonScan")return;
       sample[key]=Math.round(performance.now()-started);
+      if(event!=="animationstart") scanSettled=true;
       // Cleanup and CSS events can arrive in adjacent frames. Keep the final
       // report honest instead of losing an end or cancellation after unlock.
       if(finished) send("sage-arrival-status",{text:lastStatus,sample});
@@ -448,13 +452,20 @@ export function installArrivalPreview(css) {
     if (window.__sageProposalStudy && c.contains("comparison-lock")) sample.lockedGutterMax = Math.max(sample.lockedGutterMax,window.innerWidth-root.getBoundingClientRect().width);
     if (c.contains("sage-cover-active") && prepared) { panel.hidden = true; root.classList.remove("proposal-waiting"); }
     if (c.contains("sage-assemble")) {
-      if (!landed) { landed = true; sample.landingAt = Math.round(performance.now() - started); status("Landing on the prepared dashboard"); }
+      if (!landed) {
+        landed = true; sample.landingAt = Math.round(performance.now() - started);
+        if(window.__sageProposalStudy && !sample.reduced) c.add("proposal-scan-active");
+        status("Landing on the prepared dashboard");
+      }
       if (getComputedStyle(root).overflowY !== "hidden") sample.unlockedLandingFrames++;
     }
     const reducedDone = sample.reduced && prepared && !document.querySelector(".signin-over") && !c.contains("jump-under");
-    if ((landed && !c.contains("sage-assemble") && !c.contains("sage-preparing")) || reducedDone) {
+    const scanPending = window.__sageProposalStudy && !sample.reduced && landed && !scanSettled;
+    const scanExpired = scanPending && performance.now()-started-sample.landingAt>=2800;
+    if (((landed && !c.contains("sage-assemble") && !c.contains("sage-preparing")) || reducedDone) && (!scanPending || scanExpired)) {
+      if(scanExpired) sample.scanFallback="timeout";
       finished = true; clearTimeout(safety); panel.hidden = true;
-      root.classList.remove("comparison-lock","proposal-waiting");
+      root.classList.remove("comparison-lock","proposal-waiting","proposal-scan-active");
       sample.widthAfterUnlock = document.body.getBoundingClientRect().width;
       sample.viewport = {width:window.innerWidth,height:window.innerHeight,clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,bodyScrollWidth:document.body.scrollWidth};
       sample.totalMs = Math.round(performance.now() - started);
