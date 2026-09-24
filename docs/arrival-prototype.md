@@ -1,5 +1,39 @@
 # One continuous arrival
 
+## 24 September follow-up: remove the scrollbar rail
+
+Jorge was right: my earlier zero-unlocked-frame check missed the visible strip.
+Chromium kept a stable scrollbar gutter even with overflow hidden. At his zoom,
+the root was 762.4 px wide against an innerWidth reported as 778. The interrupted
+screen visibly retained that pale rail throughout the locked state.
+
+The study now removes the gutter before sign-in and holds the body's original
+content width separately until landing completes. The canvas uses the full
+viewport again, so its centre is the centre of the actual edge-to-edge flight.
+Native scrolling and the stable gutter return together after the landing. The
+saved draft and production code are unchanged. GSAP performance guidance kept
+this at the lock/unlock boundaries, not a width animation or a new visual layer.
+
+An initial measurement using integer innerWidth introduced a 0.4 px change at
+browser zoom. Corrected it using precise root rectangles before and after lock,
+within the same task before paint. The width remains responsive to resizing.
+688 tests and both builds pass. Regression covers classic and overlay scrollbar
+widths, fractional CSS sizes, the full-viewport canvas and unlock path.
+
+Browser Fast: body width was exactly 762.4000244140625 px during flight and after
+unlock, with zero unlocked landing frames. Completed at 8700 ms. Reduced Motion
+completed at 3438 ms with the same exact width and no landing animation. Slow
+landed successfully in the earlier iteration. Captured an edge-to-edge flight,
+interrupted recovery without the pale rail, and a scrolled settled dashboard.
+Two later iframe style probes timed out; their values are not claimed. The
+diagnostic lockedGutterMax reads 0.4 px because innerWidth itself rounds, not
+because a native rail remains. Screenshots confirm the full-width paint.
+
+The feel preflight still exits 1: the running mock is not in SALESPERSON=1 mode
+or has no salesperson demo store. It was not replaced to make the check pass.
+Physical iPhone, WebKit and older-computer verification remain open. No FPS
+guarantee, deployment or production approval is implied.
+
 ## 24 September follow-up: login folds down
 
 Jorge asked for the login area to fold or slide down rather than be pushed to

@@ -236,10 +236,8 @@ export function transformArrival(source) {
   swap('function arrivalEngineCore(ctx, world, post) {',
     'function arrivalEngineCore(ctx, world, post) {\n  if (world.study) return (' + lightspeedStudyEngine.toString() + ')(ctx, world, post);');
   swap('const world = { W, H, dpr, T: JUMP_T,', 'const world = { study:window.__sageProposalStudy === true, W, H, dpr, T: JUMP_T,');
-  // The reserved scrollbar gutter is not part of the visible flight. Its
-  // width previously shifted the vanishing point to the right of the page.
-  swap('  const W = window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin',
-    '  const W = window.__sageProposalStudy ? document.body.getBoundingClientRect().width : window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin');
+  // The study removes the gutter while locked. Keep the original viewport
+  // canvas dimensions so the flight paints edge to edge with one true centre.
   swap('cv.className = "sage-jump-canvas";\n  const dpr = Math.min(2, window.devicePixelRatio || 1);', 'cv.className = "sage-jump-canvas";\n  const dpr = Math.min(window.__sageProposalStudy ? 1.5 : 2, window.devicePixelRatio || 1);');
   swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "destination") document.dispatchEvent(new CustomEvent("sage-study-destination",{detail:data}));\n    else if (type === "flash") toFlash();');
   // Fold towards the lower edge as the form slides down. Never expand it
@@ -321,6 +319,10 @@ export const arrivalCSS = commonMotionCSS + destinationMotionCSS + `
 `;
 
 export const studyCSS = `
+/* overflow:hidden alone keeps a stable gutter visible. Hold the content width
+   separately so the full-bleed flight has no rail and landing has no reflow. */
+html.proposal-study.comparison-lock { scrollbar-gutter:auto; }
+html.proposal-study.comparison-lock body { width:calc(100% - var(--proposal-scrollbar-width,0px)); }
 /* Same settled dashboard, a stronger common perspective on the way in. */
 @keyframes saRadial {
   0% { opacity:0; transform:translate3d(calc(var(--rx,0px) * .46),calc(var(--ry,0px) * .46),0) scale(.54); animation-timing-function:cubic-bezier(.12,.76,.19,1); }
@@ -363,7 +365,7 @@ export function installArrivalPreview(css) {
   panel.querySelector(".cancel").onclick = () => send("sage-arrival-cancel");
   let started = 0, raf = 0, signed = false, preparing = false, prepared = false, landed = false, finished = false, failed = false, waiting = false;
   let lastStatus = "", timer = 0, auto = 0, safety = 0;
-  const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
+  const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, lockedGutterMax:0, widthAfterUnlock:null, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
   document.addEventListener("sage-study-metrics",e=>{sample.drawing=e.detail;});
   const status = (text) => {
     if (text === lastStatus) return;
@@ -418,6 +420,7 @@ export function installArrivalPreview(css) {
     const width = document.body.getBoundingClientRect().width;
     sample.widthMin = Math.min(sample.widthMin ?? width, width); sample.widthMax = Math.max(sample.widthMax,width);
     const c = root.classList;
+    if (window.__sageProposalStudy && c.contains("comparison-lock")) sample.lockedGutterMax = Math.max(sample.lockedGutterMax,window.innerWidth-root.getBoundingClientRect().width);
     if (c.contains("sage-cover-active") && prepared) { panel.hidden = true; root.classList.remove("proposal-waiting"); }
     if (c.contains("sage-assemble")) {
       if (!landed) { landed = true; sample.landingAt = Math.round(performance.now() - started); status("Landing on the prepared dashboard"); }
@@ -427,6 +430,7 @@ export function installArrivalPreview(css) {
     if ((landed && !c.contains("sage-assemble") && !c.contains("sage-preparing")) || reducedDone) {
       finished = true; clearTimeout(safety); panel.hidden = true;
       root.classList.remove("comparison-lock","proposal-waiting");
+      sample.widthAfterUnlock = document.body.getBoundingClientRect().width;
       sample.totalMs = Math.round(performance.now() - started);
       status("Ready. Try another connection."); observer.disconnect(); return;
     }
@@ -449,7 +453,17 @@ export function installArrivalPreview(css) {
     },650);
   };
   const observer = new MutationObserver(() => { ensureStyle(); fill(); prepare(); });
-  observer.observe(document.body,{childList:true,subtree:true}); ensureStyle(); fill();
+  observer.observe(document.body,{childList:true,subtree:true}); ensureStyle();
+  if (window.__sageProposalStudy) {
+    // Measure at this boundary, not in the drawing loop. innerWidth rounds at
+    // browser zoom, so use two precise boxes. Both changes finish before paint.
+    // Percentage width still follows a resize; overlay scrollbars measure zero.
+    const beforeLock = root.getBoundingClientRect().width;
+    root.classList.add("comparison-lock");
+    const gutter = Math.max(0,root.getBoundingClientRect().width-beforeLock);
+    root.style.setProperty("--proposal-scrollbar-width",gutter+"px");
+  }
+  fill();
   const hover = () => { if (finished) root.classList.remove("comparison-hover-hold"); };
   for (const name of ["pointermove","pointerdown","keydown"]) window.addEventListener(name,hover,{passive:true});
   // A module or mock that never opens still leaves a visible exit.

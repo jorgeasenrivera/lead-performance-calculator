@@ -220,7 +220,25 @@ test("study keeps the first pass balanced and every exposure radial to one fixed
     checked++;
   }
   assert.ok(checked>20);
-  assert.match(transformed,/window.__sageProposalStudy \? document.body.getBoundingClientRect\(\).width : window.innerWidth/);
+  assert.match(transformed,/const W = window.innerWidth, H = window.innerHeight;/);
+  assert.doesNotMatch(transformed,/const W = window.__sageProposalStudy \? document.body/);
+});
+
+test("study removes the locked gutter without changing dashboard width",()=>{
+  assert.match(studyCSS,/html\.proposal-study\.comparison-lock \{ scrollbar-gutter:auto; \}/);
+  assert.match(studyCSS,/body \{ width:calc\(100% - var\(--proposal-scrollbar-width,0px\)\); \}/);
+  const preview=installArrivalPreview.toString();
+  const begin=preview.indexOf('const beforeLock = root.getBoundingClientRect');
+  const end=preview.indexOf('\n  }',begin);
+  for(const gutter of [0,15,15.6]){
+    const properties={},classes=[];
+    const root={getBoundingClientRect:()=>({width:777.6-(classes.length?0:gutter)}),style:{setProperty:(k,v)=>{properties[k]=v;}},classList:{add:c=>classes.push(c)}};
+    vm.runInNewContext(preview.slice(begin,end),{root,window:{innerWidth:778}});
+    const measured=parseFloat(properties['--proposal-scrollbar-width']);
+    assert.ok(Math.abs((777.6-measured)-(777.6-gutter))<1e-8);
+    assert.deepEqual(classes,['comparison-lock']);
+  }
+  assert.match(preview,/remove\("comparison-lock","proposal-waiting"\);\s+sample.widthAfterUnlock/);
 });
 
 test("the pull reveals existing offscreen grid dots rather than an empty border",()=>{
