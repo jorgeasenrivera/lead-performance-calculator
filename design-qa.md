@@ -1,5 +1,22 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: radial correction
+
+User-directed refinement of the existing study, not a new design. Browser
+evidence confirmed a 7.5 px rightward offset from including the scrollbar
+gutter. The revised canvas and visible page both measure 1060 px, with centre
+530 px and no CSS translation. A mid-flight capture shows the original green
+palette and Sage mark with streaks radiating around that centre. The settled
+dashboard and interrupted recovery were captured again at the same default
+1075 x 910 viewport. Layout, fonts, controls and recovery wording are unchanged.
+
+The repeating index-based star speeds were replaced by common forward travel
+through varied depths. Geometry tests verify radial alignment and mirrored
+balance; this establishes the motion model, not subjective approval of every
+frame. The saved draft remains separate. 682 tests and both builds pass.
+The first revised Fast sample recorded no intervals above 25 ms, but physical
+device and feel verification remain open. Ready for Jorge's draft review only.
+
 ## 24 September: isolated lightspeed study
 
 Local proposal QA passes for review, not production approval. The saved draft is
