@@ -66,6 +66,7 @@ export function lightspeedStudyEngine(ctx, world, post) {
     p.ramp=ramps.get(key);
   }
   let start=null,last=null,phase='ratchet',ready=false,done=false,painted=false,cruiseStart=0,exitStart=0;
+  let destination='',shownName='',signStarted=null;
   let frames=0,drawTotal=0,drawMax=0,previousDraw=null,gaps=0;
   const setPhase = next => { if(phase!==next){phase=next;post('phase',next);} };
   const finish = () => { if(done)return; done=true; post('metrics',{particles:points.length,frames,drawAverageMs:frames?drawTotal/frames:0,drawMaxMs:drawMax,frameGapsOver25Ms:gaps}); post('flash'); };
@@ -83,7 +84,13 @@ export function lightspeedStudyEngine(ctx, world, post) {
     if(elapsed>=140 && phase==='ratchet')setPhase('reform');
     if(elapsed>=880 && phase==='reform')setPhase('streaks');
     if(elapsed>=1600 && phase==='streaks'){cruiseStart=now;setPhase('cruise');}
-    if(phase==='cruise' && ready && now-cruiseStart>=360){exitStart=now;setPhase('burst');}
+    if(phase==='cruise' && destination && destination!==shownName){
+      shownName=destination;signStarted=now;post('destination',destination);
+    }
+    // Let the manager read the destination. Repeated readiness messages must
+    // not restart this beat, and an absent name must not hold sign-in forever.
+    const signRead=signStarted===null || now-signStarted>=1400;
+    if(phase==='cruise' && ready && now-cruiseStart>=360 && signRead){exitStart=now;setPhase('burst');}
     if(phase==='cruise' && now-cruiseStart>=2600){setPhase('waiting');return;}
     const gather=smooth((elapsed-140)/740), launch=clamp((elapsed-880)/720);
     const exit=phase==='burst'?clamp((now-exitStart)/520):0;
@@ -141,7 +148,14 @@ export function lightspeedStudyEngine(ctx, world, post) {
     drawTotal+=cost;drawMax=Math.max(drawMax,cost);
     if(exit>=1)finish();
   };
-  return {tick,msg:m=>{if(m.type==='ready')ready=!!m.ready;if(m.type==='stop')done=true;}};
+  return {tick,msg:m=>{
+    if(m.type==='ready')ready=!!m.ready;
+    if(m.type==='dest'){
+      destination=typeof m.dest?.name==='string'?m.dest.name.trim():'';
+      if(!destination && shownName){shownName='';signStarted=null;post('destination','');}
+    }
+    if(m.type==='stop')done=true;
+  }};
 }
 
 export function transformArrival(source) {
@@ -227,7 +241,7 @@ export function transformArrival(source) {
   swap('  const W = window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin',
     '  const W = window.__sageProposalStudy ? document.body.getBoundingClientRect().width : window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin');
   swap('cv.className = "sage-jump-canvas";\n  const dpr = Math.min(2, window.devicePixelRatio || 1);', 'cv.className = "sage-jump-canvas";\n  const dpr = Math.min(window.__sageProposalStudy ? 1.5 : 2, window.devicePixelRatio || 1);');
-  swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "flash") toFlash();');
+  swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "destination") document.dispatchEvent(new CustomEvent("sage-study-destination",{detail:data}));\n    else if (type === "flash") toFlash();');
   swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "scale(" + (1 + Math.pow(k,3) * 1.7) + ") translateY(" + (k*k*90) + "px)" : "scale(" + (1 - k * 0.08) + ")";');
   return out;
 }
@@ -315,6 +329,14 @@ export const studyCSS = `
 .sage-assemble .sa-radial { --rd:0ms !important; }
 .proposal-study .login-card { transform-origin:50% 0%; }
 .proposal-study .proposal-wait button { margin-top:5px; margin-bottom:5px; }
+.proposal-destination { position:fixed; z-index:301; pointer-events:none; left:var(--jx,50%); top:var(--jy,50%); width:min(680px,calc(100% - 48px)); transform:translate(-50%,-50%); opacity:0; visibility:hidden; transition:opacity 350ms ease,visibility 0s 350ms; }
+.proposal-destination::before { content:''; position:absolute; inset:-100px -24px; background:radial-gradient(ellipse,#152b22 0%,rgba(21,43,34,.92) 25%,rgba(21,43,34,0) 70%); }
+.proposal-destination span { position:relative; display:block; text-align:center; font:600 clamp(24px,4.5vw,48px)/1.12 var(--font-display,'Space Grotesk',sans-serif); letter-spacing:-.035em; color:#eef5dd; overflow-wrap:anywhere; text-wrap:balance; transform:scale(.94); transition:transform 650ms cubic-bezier(.16,1,.3,1); }
+.proposal-destination[data-state=show] { opacity:1; visibility:visible; transition:opacity 350ms ease; }
+.proposal-destination[data-state=show] span { transform:scale(1); }
+.proposal-destination[data-state=exit] span { transform:scale(1.1); transition:transform 350ms cubic-bezier(.4,0,1,1); }
+.proposal-waiting .proposal-destination,.sage-cover-active .proposal-destination,.proposal-reduce .proposal-destination { display:none; }
+@media(prefers-reduced-motion:reduce){.proposal-destination{display:none}}
 @media(prefers-reduced-motion:reduce){@keyframes saRadial {from{opacity:0;transform:none}to{opacity:1;transform:none}}}
 `;
 
@@ -328,6 +350,11 @@ export function installArrivalPreview(css) {
   const panel = document.createElement("section"); panel.className = "proposal-wait"; panel.hidden = true;
   panel.innerHTML = '<article><h1 tabindex="-1">Preparing your dashboard</h1><p>Your store is taking a little longer to arrive.</p><button class="primary" hidden>Restore connection &amp; retry</button><button class="cancel">Cancel preview</button></article>';
   document.body.append(panel);
+  const destination = window.__sageProposalStudy ? document.createElement('div') : null;
+  if(destination){
+    destination.className='proposal-destination';destination.setAttribute('aria-hidden','true');
+    destination.append(document.createElement('span'));document.body.append(destination);
+  }
   const heading = panel.querySelector("h1"), explanation = panel.querySelector("p"), retry = panel.querySelector(".primary");
   const send = (type, detail) => parent.postMessage({type, detail}, location.origin);
   retry.onclick = () => send("sage-arrival-retry");
@@ -341,6 +368,12 @@ export function installArrivalPreview(css) {
     lastStatus = text; sample.phases.push({text, ms:Math.round(performance.now() - (started || performance.now()))});
     send("sage-arrival-status", {text, sample});
   };
+  document.addEventListener('sage-study-destination',e=>{
+    if(!destination || failed || waiting || finished || sample.reduced)return;
+    destination.firstChild.textContent=e.detail;
+    destination.dataset.state=e.detail?'show':'hidden';
+    if(e.detail){sample.destination=e.detail;sample.destinationAt=Math.round(performance.now()-started);status('Arriving at '+e.detail);}
+  });
   const showWait = (error = false) => {
     if (finished) return;
     waiting = true; panel.hidden = false; root.classList.add("proposal-waiting");
@@ -373,6 +406,7 @@ export function installArrivalPreview(css) {
     if (["interrupted","failed"].includes(e.detail)) { failed = true; if (waiting) showWait(true); }
   });
   document.addEventListener("sage-jump-phase", e => {
+    if(destination && ['burst','waiting','off'].includes(e.detail)) destination.dataset.state=e.detail==='burst'?'exit':'hidden';
     const labels = {ratchet:"Logo dots gather",reform:"Logo becomes the launch point",streaks:"Background dots become lightspeed",cruise:"Preparing the destination",burst:"Dashboard ready. Arriving"};
     if (e.detail === "waiting") showWait(failed);
     else if (labels[e.detail]) status(labels[e.detail]);

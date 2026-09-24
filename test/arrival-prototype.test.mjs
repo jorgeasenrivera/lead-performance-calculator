@@ -144,6 +144,32 @@ test("study handles early readiness and cancellation without a second completion
   assert.ok(!stopped.events.some(e=>e[0]==='flash'));
 });
 
+test("store name holds a readable cruise beat and repeated messages do not restart it",()=>{
+  const {instance,events}=studyEngine();
+  instance.msg({type:'ready',ready:true});
+  for(let t=0;t<=2800;t+=16){
+    instance.msg({type:'dest',dest:{name:'  Driver’s Mart Winter Park  '}});instance.tick(t);
+  }
+  assert.deepEqual(events.filter(e=>e[0]==='destination'),[['destination','Driver’s Mart Winter Park']]);
+  assert.ok(!events.some(e=>e[1]==='burst'));
+  for(let t=2816;t<=3700;t+=16)instance.tick(t);
+  assert.equal(events.filter(e=>e[0]==='flash').length,1);
+  assert.match(installArrivalPreview.toString(),/destination.firstChild.textContent=e.detail/);
+  assert.match(studyCSS,/proposal-waiting \.proposal-destination/);
+  assert.match(studyCSS,/prefers-reduced-motion:reduce\)\{\.proposal-destination\{display:none/);
+});
+
+test("late store names are readable without allowing a failed load to land",()=>{
+  const {instance,events}=studyEngine();
+  for(let t=0;t<=2400;t+=16)instance.tick(t);
+  assert.ok(!events.some(e=>e[0]==='destination'));
+  instance.msg({type:'dest',dest:{name:'East Orlando Mitsubishi'}});
+  for(let t=2416;t<=5000;t+=16)instance.tick(t);
+  assert.deepEqual(events.filter(e=>e[0]==='destination'),[['destination','East Orlando Mitsubishi']]);
+  assert.ok(events.some(e=>e[1]==='waiting'));
+  assert.ok(!events.some(e=>e[0]==='flash'));
+});
+
 test("study keeps the first pass balanced and every exposure radial to one fixed centre",()=>{
   const arcs=[],segments=[];let tail;
   const ctx=new Proxy({}, {get:(_,key)=>{

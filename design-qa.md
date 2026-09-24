@@ -1,5 +1,22 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: destination name
+
+Added the requested store-name beat to the study only. Actual config supplies
+the name. Captured its reveal at the existing desktop viewport and 390 x 844:
+Space Grotesk, warm light text, central vanishing point, restrained scale-in,
+and a static green readability backing. The name is readable at both sizes.
+No slogan, pill or new navigation control. The fixed overlay leaves dashboard
+geometry untouched; the saved draft does not receive it.
+
+Narrow Fast held the name from 2267 ms until the burst at 3667 ms, then landed
+at 4385 ms. Slow held while data prepared and completed successfully. Interrupted
+hid the title and never revealed a dashboard. Reduced Motion completed in
+1249 ms without a destination event; its later computed-style probe timed out.
+686 tests and both builds passed. Width stayed stable with zero unlocked landing
+frames. Desktop still had long frame intervals, so this is approved for draft
+review only, not a sustained-FPS claim or physical-phone verification.
+
 ## 24 September follow-up: remove recycled cohorts
 
 The preceding radial fix was incomplete: reset depths were still narrowly
