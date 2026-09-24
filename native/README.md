@@ -44,12 +44,16 @@ personal token of an owner of the team, which is enough.
 
 ## Checked before the merge
 
-A pull request that touches `native/` and carries the label `build ios` gets an
-iOS build with no upload, and a comment on the pull request saying whether the
-app builds from the change. The label is the switch because Expo's plan allows
-a fixed number of builds a month (twenty-five on Starter) and every merge that
-touches `native/` spends one too: add it when the Swift or the native config
-changed, leave it off for a README line or a workflow comment.
+Every pull request that touches `native/` is compiled by Xcode on GitHub's own
+macOS runner: the project Expo would generate, for the simulator, unsigned, in
+Release, and a comment on the pull request says whether the app compiles. It
+spends no Expo build, and the repository is public, so the runner's minutes
+cost nothing and no label is needed.
+
+It used to be an Expo build behind a `build ios` label, and that was where the
+plan went: nearly every native change cost two builds, one to check and one to
+merge (C95, 24 September). The merge still builds on Expo, signs and uploads,
+so a native change that is not urgent waits and merges with the next one.
 The Xcode log is kept with the run for fourteen days, and the lines that
 matter (`error:`, and expressions Swift found slow) are printed in the job's
 log, so nobody has to open it.
