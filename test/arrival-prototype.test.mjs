@@ -131,14 +131,34 @@ test("study login folds into the viewport centre without outward enlargement",()
   assert.match(studyCSS,/\.proposal-study \.login-card \{ transform-origin:50% 50%; \}/);
 });
 
-test("study scan nominal timing follows the white cover without extending the hold",()=>{
-  const delay=Number(/\.proposal-study\.sage-assemble \.comparison-scan::before \{ animation-delay:([.\d]+)s; \}/.exec(studyCSS)[1]);
+test("study scan follows the white cover on its own completion-owned class",()=>{
+  const delay=Number(/comparisonScan .86s cubic-bezier\(.22,.5,.32,1\) ([.\d]+)s both/.exec(studyCSS)[1]);
   const duration=Number(/animation:comparisonScan ([.\d]+)s/.exec(destinationMotionCSS)[1]);
   assert.ok(delay>=.5);
   assert.ok(delay+duration<1.45);
   assert.match(destinationMotionCSS,/\.sage-preparing \.comparison-scan::before \{ animation-play-state:paused; \}/);
   assert.match(destinationMotionCSS,/prefers-reduced-motion:reduce[\s\S]*\.comparison-scan \{ display:none; \}/);
   assert.match(destinationMotionCSS,/comparisonScan .86s cubic-bezier\(.22,.5,.32,1\) .12s both/);
+  assert.match(studyCSS,/\.proposal-study\.proposal-scan-active \.comparison-scan::before/);
+  assert.match(studyCSS,/\.proposal-study\.sage-preparing \.comparison-scan::before \{ animation-play-state:paused; \}/);
+});
+
+test("scan completion gates unlock, with reduced-motion bypass and a bounded fallback",()=>{
+  const preview=installArrivalPreview.toString();
+  const begin=preview.indexOf('const scanPending ='),end=preview.indexOf('\n      finished = true;',begin);
+  const fragment=preview.slice(begin,end)+' return true; } return false;';
+  const run=(overrides={})=>{
+    const ctx={window:{__sageProposalStudy:true},sample:{reduced:false,landingAt:1000},landed:true,scanSettled:false,
+      performance:{now:()=>2500},started:0,c:{contains:()=>false},reducedDone:false,...overrides};
+    return {ready:vm.runInNewContext('(function(){'+fragment+'})()',ctx),sample:ctx.sample};
+  };
+  assert.equal(run().ready,false);
+  assert.equal(run({scanSettled:true}).ready,true);
+  assert.equal(run({sample:{reduced:true,landingAt:1000},reducedDone:true}).ready,true);
+  assert.equal(run({window:{__sageProposalStudy:false}}).ready,true);
+  const expired=run({performance:{now:()=>3800}});
+  assert.equal(expired.ready,true);assert.equal(expired.sample.scanFallback,'timeout');
+  assert.equal(run({scanSettled:true,c:{contains:()=>true}}).ready,false);
 });
 
 test("arrival evidence retains scan cancellation or completion delivered after unlock",()=>{
@@ -290,7 +310,7 @@ test("study removes the locked gutter without changing dashboard width",()=>{
     assert.ok(Math.abs((777.6-measured)-(777.6-gutter))<1e-8);
     assert.deepEqual(classes,['comparison-lock']);
   }
-  assert.match(preview,/remove\("comparison-lock","proposal-waiting"\);\s+sample.widthAfterUnlock/);
+  assert.match(preview,/remove\("comparison-lock","proposal-waiting","proposal-scan-active"\);\s+sample.widthAfterUnlock/);
 });
 
 test("the pull reveals existing offscreen grid dots rather than an empty border",()=>{

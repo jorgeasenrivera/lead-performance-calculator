@@ -1,5 +1,16 @@
 # Lightspeed comparison QA
 
+## 24 September: finishing scan no longer cancelled by assembly cleanup
+
+Study-only repair gives the scan its own lifetime and holds scrolling until
+both the landing and scan finish, with a recorded 2800 ms escape for a missing
+event. Desktop 1440 x 900, portrait tablet 820 x 1180, landscape tablet
+1180 x 820 and phone 390 x 844 all record scan completion, not cancellation.
+No fallback, horizontal overflow or content-width jump in those samples.
+Reduce Motion completes without a scan at 1074 ms. 692 tests and normal build
+pass. No source integration or deployment is claimed by this repair. Details
+and the remaining production/device gates are in docs/arrival-prototype.md.
+
 ## 24 September: responsive verification, release held
 
 Jorge approved the design, conditional on successful responsive verification.

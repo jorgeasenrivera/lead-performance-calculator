@@ -1,5 +1,39 @@
 # One continuous arrival
 
+## 24 September: scan completion repair verified in the draft
+
+The earlier scan cancellation is fixed in the study. Its animation now has its
+own class, independent of the dashboard assembly timer. Scroll unlock waits for
+both assembly and the scan to finish. A missing animation event releases the
+lock after 2800 ms and records a timeout rather than leaving the page stuck.
+Reduce Motion and the original saved draft bypass that additional gate.
+
+Fresh connected-Chromium runs after the repair:
+
+| Browser viewport | Scenario | Scan start / end | Ready |
+| --- | --- | --- | --- |
+| 1440 x 900 | Fast | 6090 / 6941 ms | 6982 ms |
+| 820 x 1180 | Fast | 5970 / 6850 ms | 6884 ms |
+| 1180 x 820 | Slow | 6130 / 6997 ms | 7032 ms |
+| 390 x 844 | Fast | 5766 / 6615 ms | 6650 ms |
+| 390 x 844 | Reduce Motion | No scan or flight | 1074 ms |
+
+All four full arrivals recorded animationend, no cancellation or fallback,
+73/73 logo departures, constant body width and zero unlocked landing frames.
+Client, root scroll and body scroll widths matched in every completion report.
+The reduced path also kept its width and did not wait for a nonexistent scan.
+Browser sizing and the preview accessibility toggle were restored afterward.
+
+The completion gate is exercised with pending, settled, reduced, saved-draft,
+timeout and still-assembling states. 692 tests and the normal build pass.
+No new runtime dependency. The GSAP timing and performance guidance informed
+the independent lifecycle without adding another animation library or effect.
+
+This clears the observed draft defect, not the production release requirements
+below. Desktop still recorded 35 frame gaps over 25 ms, portrait tablet 14,
+landscape tablet 6 and phone zero. These are host-browser samples, not physical
+device or sustained-frame-rate certification.
+
 ## 24 September: responsive release check, not cleared to merge
 
 Jorge approved the design and asked for desktop, tablet and mobile verification,
