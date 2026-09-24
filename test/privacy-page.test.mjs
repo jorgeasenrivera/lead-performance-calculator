@@ -44,7 +44,19 @@ test("where you are is never sent, and the lot check says the same", () => {
 
 test("the page is reachable at /privacy, even on a phone that has opened Sage", () => {
   assert.ok((vercel.rewrites || []).some((r) => r.source === "/privacy" && r.destination === "/privacy.html"));
-  const pass = sw.indexOf('url.pathname === "/privacy"');
+  const pass = sw.indexOf("(privacy|support)");
   assert.ok(pass > 0 && pass < sw.indexOf('req.mode === "navigate"'),
     "the worker lets the policy through before it answers page visits with the app");
+});
+
+test("the support page: reachable, plain, and naming the app's real controls", () => {
+  const support = read("public/support.html");
+  const app = read("src/LeadPerformanceCalculator.jsx");
+  assert.ok((vercel.rewrites || []).some((r) => r.source === "/support" && r.destination === "/support.html"));
+  assert.ok(!/[\u2014\u2013]/.test(support) && !/<script/i.test(support));
+  /* It tells people what to tap, so the words have to be the ones on the
+     screen: the sign-in link says "Forgot?", not "Forgot your password?". */
+  assert.ok(support.includes('Tap "Forgot?"') && app.includes(">Forgot?</button>"));
+  assert.ok(support.includes('"Something looks wrong"') && app.includes(">Something looks wrong<"));
+  assert.ok(support.includes('href="/privacy"'));
 });
