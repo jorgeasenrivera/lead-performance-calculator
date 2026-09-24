@@ -105,3 +105,61 @@ to the page and must be communicated in chat.
   and obtain the phone preview approval before merging.
 
 final result: passed
+# Full arrival proposal, 23 September local time
+
+Source visual truth: existing C preview at http://127.0.0.1:49210/.
+Implementation: http://127.0.0.1:49211/. Both opened and captured in the connected
+browser, not inferred from source code. Screenshots are inline in this task;
+no disk screenshot path was produced by the browser tool.
+
+Viewport: 1280 x 720 CSS px. Source and implementation captures were emitted
+together, each 1280 x 580 image pixels, using a matching 1280 x 580 CSS crop
+starting at its actual iframe top. Same browser, density and fictional seed.
+The two proposal toolbars differ by 2 CSS px and were excluded from the crops.
+The screenshot tool scales page content within clipped output on this host;
+therefore this is a visual fidelity comparison, not a pixel-difference score.
+
+State: settled manager dashboard. The existing backdrop moves and the lower
+coaching card rotates, so different backdrop positions and coaching-card text
+between captures are expected. The hero data, logo, controls, hierarchy, spacing
+and final dashboard structure are preserved. No source image was replaced.
+
+Required fidelity surfaces:
+
+- Fonts and typography: existing application fonts and weights preserved.
+  Header, store title, dot numerals and compact labels remain legible.
+- Spacing and layout: same app layout, hero proportions and navigation. No
+  foreground geometry override survives the landing. Width stable during runs.
+- Colors and tokens: existing greens, channel colors, dot treatments and ground.
+  Animated backdrop phase differs between captures, an expected temporal change.
+- Image quality: actual Sage mark and glyph assets retained, not approximated.
+- Copy/content: actual fictional dashboard data retained. New waiting copy and
+  explicit simulated-retry copy are proposal items, not changes to the live app.
+
+Full-view comparison evidence: paired source and implementation crops in this
+task. Focused pass: title, units, channels and video rings were readable in the
+paired crops; no extra enlarged crop was needed for these unchanged elements.
+
+Comparison and verification history:
+
+1. Slow simulation triggered a delayed data-protection warning by delaying each
+   sequential read. Fixed to one initial four-second connection window.
+2. Post-fix Slow browser evidence: prepared 4983 ms, landing 5352 ms, finish
+   6902 ms. No new data-protection warning or console error in that check.
+3. Interrupted recovery captured: no prepared or landing timestamp, honest
+   error screen, retry and cancel available. Retry successfully landed.
+4. Reduced-motion preview landed with scan display none. Cancel unloaded iframe.
+
+Findings: no actionable P0/P1/P2 visual mismatch in the checked desktop states.
+P3: the recovery heading's programmatic focus outline is visually strong; refine
+the focus treatment with the recovery design before production implementation.
+
+Residual gaps: not a physical iPhone or low-end-device approval, not a 60/120 fps
+measurement, and not the unavailable local Chromium/WebKit feel harness.
+Auth failures, all asset failures and offline-cache recovery are outside this
+prototype's tested scenarios. The waiting engine stops drawing but its scheduler
+still ticks; production implementation must fully bound resource cleanup.
+
+final result: passed
+
+---
