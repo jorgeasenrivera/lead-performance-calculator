@@ -99,10 +99,11 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (!sameOrigin(url)) return;                       // the database, the fonts, anything else: straight through
   if (url.pathname.startsWith("/api/")) return;       // never the API
-  /* The privacy policy is its own page, not the app (C90). Answered with the
-     app like every other visit, a phone that had opened Sage once could never
-     read it, and it is the one page Apple and the sign-in screen link to. */
-  if (url.pathname === "/privacy" || url.pathname === "/privacy.html") return;
+  /* The privacy policy and the support page are their own pages, not the app
+     (C90, C93). Answered with the app like every other visit, a phone that had
+     opened Sage once could never read them, and they are the pages Apple and
+     the sign-in screen link to. */
+  if (/^\/(privacy|support)(\.html)?$/.test(url.pathname)) return;
 
   /* Opening the app: the page from this build, from the phone. The network
      only when the phone has nothing, which is the first open ever. */
