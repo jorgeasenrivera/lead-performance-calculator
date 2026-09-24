@@ -1,5 +1,55 @@
 # One continuous arrival
 
+## 24 September: responsive release check, not cleared to merge
+
+Jorge approved the design and asked for desktop, tablet and mobile verification,
+then application and merge if it passed. The design approval is recorded; the
+release condition is not met. These checks used the connected Chromium browser
+and the fictional-data study, not an iPhone, WebKit or the production app.
+Sizes below are the browser viewport; the proposal toolbar reduces app height.
+
+| Browser viewport | Scenario | Result |
+| --- | --- | --- |
+| 1440 x 900, desktop | Fast | Correct wide dashboard, stable 1424.8 px body, 73/73 logo departures, ready at 7102 ms. Scan start recorded, end absent in initial reporting. |
+| 820 x 1180, portrait tablet | Fast | Correct stacked dashboard, stable 804.8 px body, 73/73 logo departures, ready at 6895 ms. Scan end absent in initial reporting. |
+| 1180 x 820, landscape tablet | Slow | Prepared 4596 ms, landed 5395 ms, ready 6918 ms. No horizontal overflow: client and scroll width 1165 px, actual app height 767 px. Scan cancelled at 6964 ms. |
+| 390 x 844, phone | Fast | Mobile dashboard fits, stable 375.2 px body, 73/73 logo departures, ready at 6658 ms. Scan ended at 6623 ms. |
+| 375 x 667, small phone | Interrupted | No data or landing; readable recovery and both controls fully visible, no scrollbar rail. |
+| 375 x 667, small phone | Recovery retry | Retry button successfully starts Fast. Ready at 6579 ms, 73/73 logo departures, scan ended at 6548 ms. Client, root scroll and body scroll widths all 360 px; actual app height 550 px. |
+| 375 x 667, small phone | Reduce Motion | Ready at 994 ms, no tunnel metrics or scan events, stable 360 px width and no horizontal overflow. |
+
+All completed arrivals kept scrolling locked during landing. Screenshots captured
+the settled desktop/tablet/phone layouts and small-phone interrupted recovery.
+The viewport override and Reduce Motion preview were restored afterward.
+Desktop recorded 35 frame intervals over 25 ms; portrait tablet 14, landscape
+tablet 5, both phone full-arrival samples zero. These are single host-browser
+samples, not sustained 60 fps certification or measurements of real devices.
+
+### Confirmed blocker: scan cancelled by cleanup
+
+The scan duration plus its delay is nominally 1380 ms, almost the entire 1400 ms
+landing hold. CSS preparation, frame scheduling and the JavaScript cleanup are
+not a reliable shared finish boundary. The earlier static timing assertion did
+not prove real completion. Added animationcancel evidence and late-event updates
+to distinguish an omitted end event from a genuinely cancelled animation.
+Landscape-tablet Slow recorded scan start 5997, unlock 6918, animationcancel
+6964 ms, with no animationend. This is not called a passing scan.
+
+Next repair: give the scan a completion-owned lifecycle, with bounded cleanup
+and Reduce Motion bypass, rather than merely guessing another delay. Repeat
+the size matrix afterward. No behavior was changed during this verification.
+
+### Integration and merge remain separate
+
+PR #414 is still draft, remote head 2a0e834. Its green checks and Claude's
+non-blocking review apply to the older handoff repair, not this study. Current
+main was fetched at e300b8c; GitHub reports the PR not mergeable. The approved
+study still needs production-owned readiness, cancellation and error recovery,
+not a copy of the mock-only DOM observer and retry simulation. The local feel
+harness remains blocked at its salesperson-mock preflight. Rebase, production
+integration, current Chromium/WebKit checks, updated review and Jorge's real
+iPhone preview are required before merge. Nothing was pushed or deployed.
+
 ## 24 September follow-up: menu folds into the centre
 
 Jorge proposed replacing the downward exit with a fold into the screen centre.

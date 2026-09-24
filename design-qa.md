@@ -1,5 +1,28 @@
 # Lightspeed comparison QA
 
+## 24 September: responsive verification, release held
+
+Jorge approved the design, conditional on successful responsive verification.
+Checked browser viewports 1440 x 900, 820 x 1180, 1180 x 820, 390 x 844 and
+375 x 667. Screenshots show the correct wide, stacked and mobile dashboards.
+Small-phone interruption remains readable with visible retry/cancel controls;
+retry lands successfully. Reduce Motion completes without flight or scan.
+Stable content width and 73/73 logo departures in all full-arrival samples.
+Measured root/body horizontal overflow was absent in landscape-tablet and
+small-phone checks. Other widths were visually checked, not measured for overflow.
+
+Release failure: landscape-tablet Slow emitted animationcancel for the finishing
+scan after landing cleanup, with no animationend. Added evidence for late end
+and cancel events instead of hiding that failure. Desktop and portrait-tablet
+initial reports also lacked end events, but do not prove cancellation by
+themselves. The design is approved; animation lifecycle verification has not
+passed. Detailed matrix and exact timing are in docs/arrival-prototype.md.
+
+Production integration, fresh Chromium/WebKit checks and real iPhone approval
+remain outstanding. Existing PR checks and Claude review cover an older repair,
+not this study. No production change, push or merge. Browser sizing and the
+Reduce Motion toggle were restored after the checks.
+
 ## 24 September follow-up: centre-fold menu
 
 Study-only alternative requested by Jorge: the login card closes toward the
