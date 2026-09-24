@@ -109,6 +109,21 @@ test("saved draft stays separate and neither recovery view has the extra label",
   assert.match(studyCSS,/prefers-reduced-motion:reduce/);
 });
 
+test("study login folds downward without horizontal travel or outward enlargement",()=>{
+  const expression=/card\.style\.transform = (window\.__sageProposalStudy[^;]+);/.exec(transformed)[1];
+  let previousY=-1;
+  for(let k=0;k<=1;k+=.05){
+    const transform=vm.runInNewContext(expression,{window:{__sageProposalStudy:true},k});
+    const match=/^translate3d\(0,([\d.]+)px,0\) scale\(([\d.]+),([\d.]+)\)$/.exec(transform);
+    assert.ok(match,transform);
+    const [,y,sx,sy]=match.map(Number);
+    assert.ok(y>=previousY && y<=96);previousY=y;
+    assert.ok(sx>=.96 && sx<=1 && sy>=.82 && sy<=1);
+  }
+  assert.equal(vm.runInNewContext(expression,{window:{__sageProposalStudy:false},k:1}),'scale(0.92)');
+  assert.match(studyCSS,/\.proposal-study \.login-card \{ transform-origin:50% 100%; \}/);
+});
+
 function studyEngine() {
   const events=[],geometry=[];
   const ctx=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):(...args)=>{

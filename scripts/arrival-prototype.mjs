@@ -242,7 +242,9 @@ export function transformArrival(source) {
     '  const W = window.__sageProposalStudy ? document.body.getBoundingClientRect().width : window.innerWidth, H = window.innerHeight;\n  const cx = W / 2, cy = H / 2;\n  lastJumpOrigin');
   swap('cv.className = "sage-jump-canvas";\n  const dpr = Math.min(2, window.devicePixelRatio || 1);', 'cv.className = "sage-jump-canvas";\n  const dpr = Math.min(window.__sageProposalStudy ? 1.5 : 2, window.devicePixelRatio || 1);');
   swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "destination") document.dispatchEvent(new CustomEvent("sage-study-destination",{detail:data}));\n    else if (type === "flash") toFlash();');
-  swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "scale(" + (1 + Math.pow(k,3) * 1.7) + ") translateY(" + (k*k*90) + "px)" : "scale(" + (1 - k * 0.08) + ")";');
+  // Fold towards the lower edge as the form slides down. Never expand it
+  // past its own width: the old enlargement looked like a sideways shove.
+  swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "translate3d(0," + (k*k*96) + "px,0) scale(" + (1-k*k*.04) + "," + (1-k*k*.18) + ")" : "scale(" + (1 - k * 0.08) + ")";');
   return out;
 }
 
@@ -327,7 +329,7 @@ export const studyCSS = `
   100% { opacity:1; transform:none; }
 }
 .sage-assemble .sa-radial { --rd:0ms !important; }
-.proposal-study .login-card { transform-origin:50% 0%; }
+.proposal-study .login-card { transform-origin:50% 100%; }
 .proposal-study .proposal-wait button { margin-top:5px; margin-bottom:5px; }
 .proposal-destination { position:fixed; z-index:301; pointer-events:none; left:var(--jx,50%); top:var(--jy,50%); width:min(680px,calc(100% - 48px)); transform:translate(-50%,-50%); opacity:0; visibility:hidden; transition:opacity 350ms ease,visibility 0s 350ms; }
 .proposal-destination::before { content:''; position:absolute; inset:-100px -24px; background:radial-gradient(ellipse,#152b22 0%,rgba(21,43,34,.92) 25%,rgba(21,43,34,0) 70%); }

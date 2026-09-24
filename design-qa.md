@@ -1,5 +1,17 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: downward form exit
+
+Scoped to Jorge's request: replace outward login enlargement with a straight
+downward slide and slight bottom-anchored compression. No horizontal translation
+or layout animation. The actual transform expression is regression-tested;
+the saved draft retains its previous motion. Browser Fast completed the full
+flight, name reveal and dashboard landing at the current desktop viewport.
+Captured flight and settled dashboard; no isolated intermediate form screenshot
+was captured. Body width held at 762.4 px and landing remained scroll-locked.
+687 tests and both builds pass. Still draft-only, with the existing device and
+frame-rate verification gaps, and awaiting Jorge's judgment in motion.
+
 ## 24 September follow-up: destination name
 
 Added the requested store-name beat to the study only. Actual config supplies
