@@ -319,6 +319,32 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X8 · Approved arrival, repaired draft scan, production integration is X10.**
+
+Jorge approved the centre-fold lightspeed study and asked for responsive checks
+before application and merge. Those checks exposed an actual cancelled finishing
+scan at landscape-tablet size. The study now owns the scan independently from
+the dashboard timer, with an animation completion gate and bounded fallback.
+Desktop, both tablet orientations and phone-size samples record animationend,
+no cancellation, no width jump and no early scroll unlock. Reduce Motion skips
+the scan. The exact samples and their limits are in docs/arrival-prototype.md.
+
+The branch is rebased onto main's X10 claim, 57eb1be. The only content conflict
+was the board; both the claim and the prior proposal update were retained.
+Tests and the production build pass after rebase. The new lightspeed study is
+still not in the production app. X10 owns that remaining integration; no new
+runtime implementation is claimed by the draft repair. The real readiness and
+recovery paths must replace the proposal observer and simulated retry. Current
+Chromium/WebKit checks, your review of that implementation and Jorge's actual
+iPhone preview still precede a merge. The old #414 review is not review of X10.
+
+Jorge also set the next design pass: after this arrival is finished, review
+animations and visual consistency across the manager website on desktop and
+mobile, not the salesperson app. Keep it iterative and in Sage's established
+visual language. Review transitions, cards, controls, loading and their combined
+performance, with focused proposals before visual changes. This future pass is
+recorded, not claimed or started while X10 is unfinished.
+
 **H-X7 · Manager flash reproduced: the hero restarts cardIn at radial cleanup.**
 
 Jorge let me drive his preview browser on 23 September. Full sign-in showed a
