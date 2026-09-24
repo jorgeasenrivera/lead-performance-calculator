@@ -340,6 +340,9 @@ html.proposal-study.comparison-lock body { width:calc(100% - var(--proposal-scro
   100% { opacity:1; transform:none; }
 }
 .sage-assemble .sa-radial { --rd:0ms !important; }
+/* Let the .5s white cover clear first. The .86s sweep then finishes at 1.38s,
+   inside the existing landing hold, without slowing the scan or delaying input. */
+.proposal-study.sage-assemble .comparison-scan::before { animation-delay:.52s; }
 .proposal-study .login-card { transform-origin:50% 100%; }
 .proposal-study .proposal-wait button { margin-top:5px; margin-bottom:5px; }
 .proposal-destination { position:fixed; z-index:301; pointer-events:none; left:var(--jx,50%); top:var(--jy,50%); width:min(680px,calc(100% - 48px)); transform:translate(-50%,-50%); opacity:0; visibility:hidden; transition:opacity 350ms ease,visibility 0s 350ms; }
@@ -376,6 +379,11 @@ export function installArrivalPreview(css) {
   let lastStatus = "", timer = 0, auto = 0, safety = 0;
   const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, lockedGutterMax:0, widthAfterUnlock:null, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
   document.addEventListener("sage-study-metrics",e=>{sample.drawing=e.detail;});
+  for (const [event,key] of [["animationstart","scanStartedAt"],["animationend","scanEndedAt"]]) {
+    scan.addEventListener(event,e=>{
+      if(e.animationName==="comparisonScan") sample[key]=Math.round(performance.now()-started);
+    });
+  }
   const status = (text) => {
     if (text === lastStatus) return;
     lastStatus = text; sample.phases.push({text, ms:Math.round(performance.now() - (started || performance.now()))});

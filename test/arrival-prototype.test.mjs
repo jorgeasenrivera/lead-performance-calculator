@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { transformArrival, replaceOnce, arrivalPage, installScenario, serveArrivalPrototype, lightspeedStudyEngine, installArrivalPreview, studyCSS } from "../scripts/arrival-prototype.mjs";
+import { destinationMotionCSS } from "../scripts/motion-compare.mjs";
 
 const source = await fs.readFile(new URL("../src/LeadPerformanceCalculator.jsx",import.meta.url),"utf8");
 const transformed = transformArrival(source);
@@ -122,6 +123,16 @@ test("study login folds downward without horizontal travel or outward enlargemen
   }
   assert.equal(vm.runInNewContext(expression,{window:{__sageProposalStudy:false},k:1}),'scale(0.92)');
   assert.match(studyCSS,/\.proposal-study \.login-card \{ transform-origin:50% 100%; \}/);
+});
+
+test("study scan follows the white cover and completes within the landing hold",()=>{
+  const delay=Number(/\.proposal-study\.sage-assemble \.comparison-scan::before \{ animation-delay:([.\d]+)s; \}/.exec(studyCSS)[1]);
+  const duration=Number(/animation:comparisonScan ([.\d]+)s/.exec(destinationMotionCSS)[1]);
+  assert.ok(delay>=.5);
+  assert.ok(delay+duration<1.45);
+  assert.match(destinationMotionCSS,/\.sage-preparing \.comparison-scan::before \{ animation-play-state:paused; \}/);
+  assert.match(destinationMotionCSS,/prefers-reduced-motion:reduce[\s\S]*\.comparison-scan \{ display:none; \}/);
+  assert.match(destinationMotionCSS,/comparisonScan .86s cubic-bezier\(.22,.5,.32,1\) .12s both/);
 });
 
 function studyEngine() {
