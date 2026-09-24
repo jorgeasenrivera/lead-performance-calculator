@@ -15,7 +15,55 @@ export function transformArrival(source) {
   let out = source.replace(/\r\n/g, "\n");
   const swap = (a, b) => { out = replaceOnce(out, a, b); };
   swap("const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };",
-    "const JUMP_T = { ratchet: 340, reform: 520, streaks: 580, cruiseMin: 360, cruiseCap: 2600, burst: 360 };");
+    "const JUMP_T = { ratchet: 120, reform: 720, streaks: 620, cruiseMin: 360, cruiseCap: 2600, burst: 420 };");
+  // Keep the actual mark and dot field. Remove the sideways kick and hanging
+  // arc so the first movement is already travelling towards the destination.
+  swap("ctx.arc(d.hx + k * 2.5, d.hy, d.hr * (1 + k * 0.5), 0, 7)", "ctx.arc(d.hx, d.hy, d.hr, 0, 7)");
+  swap("const mx = (d.hx + d.sx) / 2, my = Math.max(d.hy, d.sy) + 90;", "const mx = (d.hx + d.sx) / 2, my = (d.hy + d.sy) / 2;");
+  swap("const seatScale = scale * 0.62;", "const seatScale = scale * 0.46;");
+  swap("if (t >= R && t < R + F) {\n      const k = ease3((t - R) / F);", "if (t >= 0 && t < R + F) {\n      const k = ease3(t / (R + F));");
+  swap("if (p > 0.45) drawTunnel(dt, 0.6 * ((p - 0.45) / 0.55));", "if (p > 0.2) drawTunnel(dt, 0.15 + 0.85 * easeInOut((p - 0.2) / 0.8));");
+  swap("drawTunnel(dt, 1);", "drawTunnel(dt, 1 + 0.65 * ease(Math.min(1, (now - cruiseT0) / 650)));");
+  swap("drawTunnel(dt, 1 + pow(t / T.burst, 1.6) * 7);", "drawTunnel(dt, 1.65 + pow(t / T.burst, 1.6) * 6);");
+  swap("q.t = Math.max(0, q.r - (200 + q.size * 55));", "q.t = Math.max(q.r * 0.25, q.r - (40 + q.r * 0.48) * Math.min(1.3, S));");
+  // One cached gradient, the existing particles, no blur or extra canvas.
+  // The changing exposure makes their depth readable against Sage's own green.
+  swap("  const drawTunnel = (dt, S) => {", `  const flightGround = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
+  flightGround.addColorStop(0, '#294B3B');
+  flightGround.addColorStop(0.5, '#152B22');
+  flightGround.addColorStop(1, '#0B1712');
+  let exposure = 0;
+  const tones = new Map(), frameTones = new Map();
+  const lightTone = (color) => {
+    if (!exposure) return color;
+    if (frameTones.has(color)) return frameTones.get(color);
+    let rgba = tones.get(color);
+    if (!rgba) {
+      rgba = color.startsWith('#') ? [parseInt(color.slice(1,3),16),parseInt(color.slice(3,5),16),parseInt(color.slice(5,7),16),1] : color.match(/[\\d.]+/g).map(Number);
+      tones.set(color,rgba);
+    }
+    const target = [201,232,208,0.82];
+    const mixed = rgba.map((n,i) => n + (target[i] - n) * exposure);
+    const result = 'rgba(' + mixed.join(',') + ')';
+    frameTones.set(color,result); return result;
+  };
+  const drawTunnel = (dt, S) => {`);
+  swap("    ctx.clearRect(0, 0, W, H);", `    ctx.clearRect(0, 0, W, H);
+    exposure = phase === 'reform' ? easeInOut(Math.min(1,t / T.reform)) : ['streaks','cruise','burst'].includes(phase) ? 1 : 0;
+    frameTones.clear();
+    if (exposure) { ctx.globalAlpha = exposure; ctx.fillStyle = flightGround; ctx.fillRect(0,0,W,H); ctx.globalAlpha = 1; }`);
+  const engineStart = out.indexOf("function arrivalEngineCore(");
+  const engineEnd = out.indexOf("/* A pair of frames",engineStart);
+  const engine = out.slice(engineStart,engineEnd).replaceAll("= d.tint;", "= lightTone(d.tint);").replaceAll("= q.tint;", "= lightTone(q.tint);").replaceAll("= d.fill;", "= lightTone(d.fill);");
+  out = out.slice(0,engineStart) + engine + out.slice(engineEnd);
+  // The original hid the real logo while the engine was still waiting for
+  // the 320 ms hurry lead. Exchange the two only after a canvas frame exists.
+  swap('  root.classList.add("sage-cv");', '  cv.style.opacity = "0";');
+  swap('  let ready = false, dest = null, done = false;', '  let ready = false, dest = null, done = false, firstPaint = false;');
+  swap('    if (phase === "ratchet" && t >= T.ratchet)', '    if (!firstPaint) { firstPaint = true; post("paint"); }\n    if (phase === "ratchet" && t >= T.ratchet)');
+  swap('    if (type === "phase") tellPhase(data);', '    if (type === "paint") { cv.style.opacity = "1"; root.classList.add("sage-cv"); }\n    else if (type === "phase") tellPhase(data);');
+  swap('    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");\n    if (cv.parentNode) cv.parentNode.removeChild(cv);',
+    '    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");\n    if (cv.parentNode && !root.classList.contains("proposal-waiting")) cv.parentNode.removeChild(cv);');
   swap("&& (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);",
     "&& (!atStore || (!!storeData && !storeMismatch && !storeLoadFailed));");
   swap("let arrivalReady = false;", "let arrivalReady = false;\nlet proposalDataReady = false;\ndocument.addEventListener('sage-proposal-screen-ready', () => tellArrivalReady(proposalDataReady));");
@@ -88,17 +136,25 @@ export function installScenario(scenario, reduce) {
 
 export const arrivalCSS = commonMotionCSS + destinationMotionCSS + `
 .proposal-wait { position:fixed; inset:0; z-index:9400; display:grid; place-items:center; padding:28px;
-  background:radial-gradient(ellipse at 50% 60%,#dce9d9 0,#eef2ee 68%); color:#263d30; }
+  background:radial-gradient(ellipse at center,rgba(11,23,18,.97) 0,rgba(11,23,18,.90) 25%,rgba(11,23,18,.22) 80%); color:#e5efdf;
+  animation:proposalWaitIn .42s ease-out both; }
 .proposal-wait[hidden] { display:none; }
 .proposal-wait article { width:min(440px,100%); text-align:center; }
 .proposal-wait img { width:66px; height:66px; object-fit:contain; margin-bottom:20px; }
-.proposal-wait h1 { font-size:clamp(23px,4vw,32px); line-height:1.16; letter-spacing:-1px; margin:0 0 12px; }
-.proposal-wait p { font-size:15px; line-height:1.5; color:#52675a; margin:0 auto 24px; max-width:340px; }
+.proposal-wait h1 { font-size:clamp(23px,4vw,32px); line-height:1.16; letter-spacing:-1px; margin:0 0 12px; outline:none; }
+.proposal-wait p { font-size:15px; line-height:1.5; color:#c0d3c6; margin:0 auto 24px; max-width:340px; }
 .proposal-wait button { font:inherit; border:1px solid #b5c7b8; border-radius:12px; background:#fff; color:#284333; padding:12px 18px; cursor:pointer; }
 .proposal-wait button:focus-visible { outline:3px solid #a96b13; outline-offset:3px; }
-.proposal-wait button.primary { background:#284b38; color:#fff; margin-right:8px; }
-.proposal-wait .eyebrow { font-size:11px; letter-spacing:2px; margin-bottom:14px; }
-.proposal-waiting .sage-jump-canvas { visibility:hidden; }
+.proposal-wait button.primary { background:#d9ebbd; border-color:#d9ebbd; color:#162b1d; margin-right:8px; }
+.proposal-wait .eyebrow { font-size:11px; letter-spacing:2px; margin-bottom:18px; color:#c5deb2; }
+.proposal-wait article { animation:proposalWaitText .6s cubic-bezier(.16,1,.3,1) both; }
+.proposal-waiting .sage-jump-canvas { visibility:visible; }
+.proposal-reduce .proposal-wait { background:#152b22; animation:none; }
+.proposal-wait.no-flight { background:#152b22; }
+.proposal-reduce .proposal-wait article { animation:none; }
+@keyframes proposalWaitIn { from{opacity:0} to{opacity:1} }
+@keyframes proposalWaitText { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+@media(prefers-reduced-motion:reduce){.proposal-wait{background:#152b22;animation:none}.proposal-wait article{animation:none}}
 .proposal-reduce .comparison-scan { display:none; }
 .proposal-reduce .sage-assemble .lpc, .proposal-reduce .sage-assemble .lpc * { animation:none !important; }
 `;
@@ -110,7 +166,7 @@ export function installArrivalPreview(css) {
   const style = document.createElement("style"); style.textContent = css;
   const scan = document.createElement("div"); scan.className = "comparison-scan"; scan.setAttribute("aria-hidden","true"); document.body.append(scan);
   const panel = document.createElement("section"); panel.className = "proposal-wait"; panel.hidden = true;
-  panel.innerHTML = '<article><div class="eyebrow">SAGE</div><h1 tabindex="-1">Preparing your dashboard</h1><p>Your store is taking a little longer to arrive.</p><button class="primary" hidden>Restore connection &amp; retry</button><button class="cancel">Cancel preview</button></article>';
+  panel.innerHTML = '<article><div class="eyebrow">SAGE / ARRIVAL PAUSED</div><h1 tabindex="-1">Preparing your dashboard</h1><p>Your store is taking a little longer to arrive.</p><button class="primary" hidden>Restore connection &amp; retry</button><button class="cancel">Cancel preview</button></article>';
   document.body.append(panel);
   const heading = panel.querySelector("h1"), explanation = panel.querySelector("p"), retry = panel.querySelector(".primary");
   const send = (type, detail) => parent.postMessage({type, detail}, location.origin);
@@ -127,6 +183,7 @@ export function installArrivalPreview(css) {
   const showWait = (error = false) => {
     if (finished) return;
     waiting = true; panel.hidden = false; root.classList.add("proposal-waiting");
+    panel.classList.toggle("no-flight",!document.querySelector(".sage-jump-canvas"));
     heading.textContent = error ? "Connection interrupted" : "Preparing your dashboard";
     explanation.textContent = error ? "Your dashboard has not opened. Restore the demo connection to try again." : "Your store is taking a little longer to arrive. We'll open it when it's ready.";
     retry.hidden = !error;

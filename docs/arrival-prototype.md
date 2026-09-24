@@ -1,5 +1,41 @@
 # One continuous arrival
 
+## Revision 2: a stronger flight, same destination
+
+Jorge selected Adjust for launch/landing, Adjust for recovery and Approve for
+the CRT scan. His follow-up clarified that recovery felt too plain and detached
+from lightspeed. Those selections were read from his open preview, not inferred.
+
+This revision keeps the scan and the final dashboard. Changes remain inside the
+isolated proposal build:
+
+- The actual logo stays visible until the canvas reports its first painted frame.
+  Previously the real logo and ground dots were hidden during the 320 ms hurry
+  lead, before their canvas replacements existed.
+- The sideways dot kick and bowed downward gathering path are gone. A shorter
+  anticipation leads into a 720 ms straight pull toward the smaller launch mark.
+- The form starts receding at the opening beat instead of waiting for the gather.
+- The existing field fades into Sage's deep green as its own dots brighten.
+  Streak length follows distance, with the inner quarter kept clear instead of
+  every streak turning into a spoke through the centre. Particle count, canvas
+  count and pixel density have not increased. The new gradient is cached once.
+- Recovery fades over the actual stopped flight. Its final canvas frame remains
+  even when the application unmounts its failed login. Retry and Cancel unload
+  that iframe and its retained frame. Reduced Motion uses a solid quiet ground.
+
+Visual QA caught two issues in the first refinement: burst trails converged into
+long spokes, and the app's failed-login cleanup removed the recovery backdrop.
+Both were corrected before handoff. Final Interrupted capture had one retained
+canvas, no landing timestamp, no underlying error-page bleed, and legible controls.
+678 tests and the proposal and normal builds pass. The existing device-performance
+and physical-iPhone gaps below still apply. More contrast is a visual choice for
+Jorge to judge, not a measured frame-rate improvement.
+
+Final Slow check: waiting at 5012 ms, prepared at 5318 ms, landing at 5705 ms,
+completed at 7210 ms. Body width stayed at 763.2 px; no unlocked landing frames.
+
+---
+
 Proposal only. Open http://127.0.0.1:49211/ on Jorge's computer while the
 local preview and fictional-data server are running. Nothing has been deployed.
 

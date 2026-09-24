@@ -30,14 +30,14 @@ test("proposal readiness needs both good data and a prepared screen", () => {
   vm.runInContext("tellArrivalReady(false)",context); assert.equal(ready(),false);
 });
 
-function engine() {
+function engine(lead = 0) {
   const start = transformed.indexOf("function arrivalEngineCore(");
   const end = transformed.indexOf("/* A pair of frames",start);
   const events = [], context = {Math}; vm.createContext(context);
   const make = vm.runInContext("(" + transformed.slice(start,end).trim() + ")",context);
   let draws = 0;
-  const ctx = new Proxy({}, {get:(_,key) => key === "clearRect" ? () => draws++ : () => {}});
-  const instance = make(ctx,{W:100,H:100,dpr:1,T:{ratchet:10,reform:10,streaks:10,cruiseMin:10,cruiseCap:30,burst:10},FP:.5,mk:[],field:[],tunnel:[],font:"sans-serif"},(type,data) => events.push([type,data]));
+  const ctx = new Proxy({}, {get:(_,key) => key === "clearRect" ? () => draws++ : key === "createRadialGradient" ? () => ({addColorStop(){}}) : () => {}});
+  const instance = make(ctx,{W:100,H:100,dpr:1,lead,T:{ratchet:10,reform:10,streaks:10,cruiseMin:10,cruiseCap:30,burst:10},FP:.5,mk:[],field:[],tunnel:[],font:"sans-serif"},(type,data) => events.push([type,data]));
   return {instance,events,draws:() => draws};
 }
 
@@ -58,6 +58,18 @@ test("a ready destination takes the burst path once", () => {
   assert.ok(events.some(e => e[1] === "burst"));
   assert.ok(!events.some(e => e[1] === "waiting"));
   assert.equal(events.filter(e => e[0] === "flash").length,1);
+});
+
+test("logo exchange waits for the first painted frame, and the opening has no sideways kick", () => {
+  const {instance,events} = engine(100);
+  instance.tick(1); instance.tick(51);
+  assert.equal(events.filter(e => e[0] === "paint").length,0);
+  instance.tick(101); instance.tick(111); instance.tick(121);
+  assert.equal(events.filter(e => e[0] === "paint").length,1);
+  assert.match(transformed,/if \(type === "paint"\) \{ cv.style.opacity = "1"; root.classList.add\("sage-cv"\); \}/);
+  assert.doesNotMatch(transformed,/d.hx \+ k \* 2.5/);
+  assert.doesNotMatch(transformed,/Math.max\(d.hy, d.sy\) \+ 90/);
+  assert.match(transformed,/cv.parentNode && !root.classList.contains\("proposal-waiting"\)/);
 });
 
 test("fault injection is scoped to local store reads and keeps abort semantics", async () => {

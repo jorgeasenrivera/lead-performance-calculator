@@ -105,6 +105,59 @@ to the page and must be communicated in chat.
   and obtain the phone preview approval before merging.
 
 final result: passed
+# Revision 2: smoother opening and connected recovery
+
+User decisions read from the open page: launch Adjust, recovery Adjust, scan
+Approve. Recovery direction clarified in chat: too plain and disconnected.
+Source target remains the actual Sage login, logo, field and manager dashboard.
+Motion and waiting states are intentionally revised; settled layout is unchanged.
+
+Captured in the connected browser at 778 x 696 CSS px. Current flight,
+cover, dashboard and interrupted states are inline in this task. The recovery
+capture was repeated after cleanup was corrected. No disk paths were generated.
+
+Findings and fixes:
+
+- [P2, fixed] Original mark was hidden before the canvas's first drawing during
+  its hurry lead. Keep the original until the engine posts its first paint.
+  Added a test proving no paint notification during the lead and only one after.
+- [P2, fixed] Longer burst trails became centre-crossing spokes. Trail length
+  now preserves the inner quarter of each particle's radius.
+- [P2, fixed] Failed-login cleanup removed the stopped canvas, exposing the app
+  error page beneath translucent recovery. Retain that single frame during
+  recovery. Post-fix screenshot shows streaks, no error-page bleed, and readable
+  heading and controls. Retry/Cancel own its lifetime through the iframe.
+- [P3, fixed] Strong recovery heading outline removed from this noninteractive
+  programmatic focus target. Interactive buttons retain focus-visible outlines.
+
+Typography and copy: actual dashboard unchanged; recovery headline and supporting
+copy legible. Layout and spacing: unchanged settled app, centred recovery controls.
+Colors: deliberate in-flight move to Sage's deep green with brighter original dots;
+not an app-wide palette change. Assets: original mark geometry and dot field, no
+replacement logo or raster artwork. No new particles, canvas or animation library.
+CRT scan preserved as approved. Test and build results: 678 green, both builds pass.
+
+Final settled comparison: the previously open first-revision preview and the new
+revision were resized to the same 778 x 696 CSS viewport, both with compact
+toolbars and equal 643.2 px iframe height. Full screenshots, 778 x 696 pixels,
+were emitted together in one comparison input. Logo, title, dot numerals, hero,
+navigation and channel typography align. No focused enlargement was needed:
+those surfaces are readable at this size. The data-age label differs because
+the source preview was opened earlier. Animated ground position differs as
+expected. The viewport override was reset afterward.
+
+Final Interrupted: 4707 ms to recovery, no ready data or landing timestamp, one
+retained stopped canvas. Retry landed on the actual dashboard at 4069 ms and
+completed at 5626 ms, with constant 763.2 px body width and zero unlocked landing
+frames. Timing is a single observation, not a speed comparison.
+
+Device and performance gaps from the original report remain. These captures are
+not a physical iPhone or sustained frame-rate verification.
+
+final result: passed
+
+---
+
 # Full arrival proposal, 23 September local time
 
 Source visual truth: existing C preview at http://127.0.0.1:49210/.
