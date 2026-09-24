@@ -1,0 +1,7 @@
+#!/bin/bash
+# Files are kept 30 days and then deleted (C96): long enough to be read once
+# Sage can read them, short enough that a vendor's export does not sit here
+# for good. What Sage recorded about each one stays in Sage.
+set -uo pipefail
+find /srv/sftp/*/incoming -maxdepth 1 -type f -mtime +30 -print -delete | logger -t sage-prune
+find /var/lib/sage-sftp/notified -type f -mtime +90 -delete

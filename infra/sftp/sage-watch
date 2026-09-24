@@ -1,0 +1,9 @@
+#!/bin/bash
+# Waits for an upload to finish anywhere under /srv/sftp, then runs
+# sage-notify. Several files closing together make one pass, not several.
+set -uo pipefail
+while true; do
+  inotifywait -qq -r -e close_write -e moved_to /srv/sftp || sleep 5
+  sleep 2
+  /usr/local/sbin/sage-notify
+done
