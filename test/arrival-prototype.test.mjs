@@ -135,6 +135,30 @@ function studyEngine() {
   return {instance,events,geometry};
 }
 
+test("logo rays leave the viewport before recycling, including dots close to the centre",()=>{
+  for(const step of [8,16,33])for(const offset of [1,4,12,24]){
+    let recycled=false,maxRadius=0,tail,segments=0;
+    const ctx=new Proxy({}, {get:(_,key)=>{
+      if(key==='createRadialGradient')return ()=>({addColorStop(){}});
+      if(key==='moveTo')return (x,y)=>{tail=[x,y];};
+      if(key==='lineTo')return (x,y)=>{
+        if(recycled)return;
+        assert.ok(Number.isFinite(x)&&Number.isFinite(y));
+        assert.ok(Math.abs((tail[0]-400)*(y-300)-(tail[1]-300)*(x-400))<1e-7);
+        maxRadius=Math.max(maxRadius,Math.hypot(x-400,y-300));segments++;
+      };
+      return ()=>{};
+    }});
+    const engine=lightspeedStudyEngine(ctx,{W:800,H:600,dpr:1,field:[],
+      mk:[{hx:130,hy:90,hr:2,sx:400+offset,sy:300+offset,sr:1,fill:'#294B3B'}],
+      random:()=>{recycled=true;return .5;}},()=>{});
+    for(let t=0;t<4000&&!recycled;t+=step)engine.tick(t);
+    assert.ok(recycled,'logo must eventually rejoin the fixed particle pool');
+    assert.ok(segments>0);
+    assert.ok(maxRadius>500,`step=${step}, offset=${offset}: logo reset at radius ${maxRadius}`);
+  }
+});
+
 test("study freezes after the wait cap and never reveals without readiness",()=>{
   const {instance,events,geometry}=studyEngine();
   for(let t=0;t<=5000;t+=16)instance.tick(t);
@@ -167,8 +191,11 @@ test("store name holds a readable cruise beat and repeated messages do not resta
   }
   assert.deepEqual(events.filter(e=>e[0]==='destination'),[['destination','Driver’s Mart Winter Park']]);
   assert.ok(!events.some(e=>e[1]==='burst'));
-  for(let t=2816;t<=3700;t+=16)instance.tick(t);
+  for(let t=2816;t<=4700;t+=16)instance.tick(t);
   assert.equal(events.filter(e=>e[0]==='flash').length,1);
+  const metrics=events.find(e=>e[0]==='metrics')[1];
+  assert.equal(metrics.logoDots,1);assert.equal(metrics.logoDeparted,1);
+  assert.match(lightspeedStudyEngine.toString(),/logoRemaining===0 && destination/);
   assert.match(installArrivalPreview.toString(),/destination.firstChild.textContent=e.detail/);
   assert.match(studyCSS,/proposal-waiting \.proposal-destination/);
   assert.match(studyCSS,/prefers-reduced-motion:reduce\)\{\.proposal-destination\{display:none/);

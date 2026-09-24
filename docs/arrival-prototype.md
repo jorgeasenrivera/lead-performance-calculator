@@ -1,5 +1,36 @@
 # One continuous arrival
 
+## 24 September follow-up: let the logo finish its streaks
+
+Jorge saw the logo stop participating in the flight. There were two problems:
+the study reused the field's fixed near-depth recycle threshold for the much
+smaller central logo, and the new store-name backing covered that logo during
+its departure. The preceding scrollbar commit did not change the recycle rule.
+The earlier geometry tests checked radial alignment, not completion of a logo
+ray. A new test failed before the repair: a dot near the axis recycled at only
+22.7 px from centre in an 800 x 600 viewport.
+
+Logo rays now keep travelling until the tail is offscreen, with the head clipped
+to a finite offscreen radius. Only then does the same object rejoin the random
+field. The pool, palette and canvas count are unchanged. The store name waits
+for all logo rays to depart, then receives its existing reading beat. This adds
+roughly one second to this fast sample versus the overlapping version; it is
+intentional sequencing, not a loading-speed improvement. The existing waiting
+cap remains. GSAP timing and performance guidance informed sequencing inside
+the same engine rather than extra timelines, timers or visual layers.
+
+689 tests and both builds pass. The new regression covers central offsets and
+8, 16 and 33 ms frame intervals, checking finite radial geometry and offscreen
+travel before reuse. Browser Fast captured the unobscured S becoming rays and
+the settled dashboard. Runtime counts confirmed 73 logo dots, 73 departed.
+Store title at 3196 ms, landing at 5383 ms, completed at 6868 ms. Body width held
+at 762.4000244140625 px through unlock, with zero unlocked landing frames.
+Drawing averaged 1.30 ms with one interval above 25 ms. Not an FPS guarantee.
+
+The feel preflight still fails on the manager-only mock configuration. Physical
+iPhone, WebKit, older-PC and production integration checks remain open. Saved
+draft, production source and deployed app remain unchanged.
+
 ## 24 September follow-up: remove the scrollbar rail
 
 Jorge was right: my earlier zero-unlocked-frame check missed the visible strip.
