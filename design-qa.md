@@ -1,5 +1,41 @@
 # Lightspeed comparison QA
 
+## 24 September: isolated lightspeed study
+
+Local proposal QA passes for review, not production approval. The saved draft is
+http://127.0.0.1:49211/ and the study is http://127.0.0.1:49211/study. Product
+Design's screenshot comparison was used to keep the destination faithful while
+allowing a deliberately different approach. No production source was edited.
+
+Source and study settled dashboards were captured together at 778 x 696 CSS px
+and matching screenshot pixels, same mock store, theme and wrapper height.
+Header, hero metrics, dotted glyphs, rails, navigation, fonts and geometry match.
+Live background phase and time labels can differ. Both use actual application
+assets, not substitute artwork or rasterized dashboard imitations. Full-size
+captures were readable without an additional crop. No screenshot files were
+persisted; evidence was displayed directly in the task.
+
+Motion differences are intentional: outward login departure, perspective-driven
+streaks from the existing dots, and a stronger shared radial dashboard approach.
+The extra recovery label was removed as requested. No new UI pattern is applied
+to the settled dashboard. The original draft's motion is preserved separately.
+
+P2 found: narrow recovery buttons touched when they wrapped. Added 5 px vertical
+margins in the study only. Restarted the server and recaptured Interrupted at
+390 x 844; controls are now visibly separated, legible and unobscured over the
+retained flight. Failed data never revealed a dashboard. Retry, Slow, Fast,
+Reduced Motion and Cancel were exercised; the viewport override was reset.
+Reduced Motion had no scan or spatial flight. Body width stayed stable and the
+sampled landing frames remained scroll-locked.
+
+Full tests and both builds passed. The dedicated feel harness did not run past
+its salesperson-fixture preflight, so its performance bars are not claimed.
+Desktop drawing samples still include intervals above 25 ms. Browser screenshots
+and draw-submission timings cannot establish sustained frame rate. Physical
+iPhone, WebKit, office-PC measurements, production readiness/cleanup integration,
+and Jorge's visual approval are required before shipping. Full scenario numbers
+and research references are in docs/arrival-prototype.md.
+
 Date: 23 September 2026. Scope: local proposal, not production approval.
 
 ## Creative follow-up, C

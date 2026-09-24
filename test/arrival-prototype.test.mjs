@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
-import { transformArrival, replaceOnce, arrivalPage, installScenario, serveArrivalPrototype } from "../scripts/arrival-prototype.mjs";
+import { transformArrival, replaceOnce, arrivalPage, installScenario, serveArrivalPrototype, lightspeedStudyEngine, installArrivalPreview, studyCSS } from "../scripts/arrival-prototype.mjs";
 
 const source = await fs.readFile(new URL("../src/LeadPerformanceCalculator.jsx",import.meta.url),"utf8");
 const transformed = transformArrival(source);
@@ -96,6 +96,52 @@ test("proposal page has a single live viewport, recovery controls and per-item d
   assert.match(html,/frame.src='about:blank'/);
   assert.match(html,/e.source!==frame.contentWindow/);
   assert.match(html,/your device preference is always respected/);
+});
+
+test("saved draft stays separate and neither recovery view has the extra label", () => {
+  assert.match(arrivalPage(),/Saved arrival draft/);
+  assert.match(arrivalPage(),/study=0/);
+  assert.match(arrivalPage(true),/Lightspeed study/);
+  assert.match(arrivalPage(true),/study=1/);
+  assert.doesNotMatch(installArrivalPreview.toString(),/SAGE \/ ARRIVAL PAUSED/);
+  assert.match(transformed,/if \(world.study\) return/);
+  assert.match(transformed,/window.__sageProposalStudy \? 1.5 : 2/);
+  assert.match(studyCSS,/prefers-reduced-motion:reduce/);
+});
+
+function studyEngine() {
+  const events=[],geometry=[];
+  const ctx=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):(...args)=>{
+    if(['arc','moveTo','lineTo'].includes(key))geometry.push(args);
+  }});
+  const instance=lightspeedStudyEngine(ctx,{W:400,H:300,dpr:1,lead:0,
+    mk:[{hx:130,hy:90,hr:2,sx:197,sy:153,sr:1,jit:.4,fill:'#294B3B'}],
+    field:[{x:40,y:40,size:2,tint:'rgba(100,140,110,0.5)'},{x:-20,y:40,size:2,tint:'#123456'}]},(type,data)=>events.push([type,data]));
+  return {instance,events,geometry};
+}
+
+test("study freezes after the wait cap and never reveals without readiness",()=>{
+  const {instance,events,geometry}=studyEngine();
+  for(let t=0;t<=5000;t+=16)instance.tick(t);
+  assert.ok(events.some(e=>e[1]==='waiting'));
+  assert.ok(!events.some(e=>e[0]==='flash'));
+  const before=geometry.length;instance.tick(6000);assert.equal(geometry.length,before);
+  instance.msg({type:'ready',ready:true});
+  for(let t=6016;t<=6800;t+=16)instance.tick(t);
+  assert.equal(events.filter(e=>e[0]==='flash').length,1);
+  assert.equal(events.find(e=>e[0]==='metrics')[1].particles,2);
+  assert.ok(geometry.flat().every(Number.isFinite));
+});
+
+test("study handles early readiness and cancellation without a second completion",()=>{
+  const {instance,events}=studyEngine();instance.msg({type:'ready',ready:true});
+  for(let t=0;t<3600;t+=8)instance.tick(t);
+  assert.equal(events.filter(e=>e[0]==='paint').length,1);
+  assert.equal(events.filter(e=>e[0]==='flash').length,1);
+  assert.ok(!events.some(e=>e[1]==='waiting'));
+  const stopped=studyEngine();stopped.instance.tick(0);stopped.instance.msg({type:'stop'});
+  stopped.instance.msg({type:'ready',ready:true});stopped.instance.tick(10000);
+  assert.ok(!stopped.events.some(e=>e[0]==='flash'));
 });
 
 test("server refuses production bundles and blocks writes, traversal and service workers", async t => {

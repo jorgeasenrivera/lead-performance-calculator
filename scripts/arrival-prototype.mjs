@@ -11,6 +11,107 @@ export function replaceOnce(source, before, after) {
   return source.replace(before, after);
 }
 
+/** A second, disposable study. Every point starts in the real logo or ground.
+ * Perspective, not extra particles, supplies acceleration. Self-contained so
+ * the exact same function runs in the existing worker and its fallback. */
+export function lightspeedStudyEngine(ctx, world, post) {
+  const { W, H, dpr, mk, field } = world;
+  const cx = W / 2, cy = H / 2, far = Math.hypot(W,H) * .7;
+  const clamp = p => Math.max(0,Math.min(1,p));
+  const smooth = p => { p=clamp(p); return p*p*(3-2*p); };
+  const ease = p => 1-Math.pow(1-clamp(p),3);
+  ctx.scale(dpr,dpr);
+  const ground = ctx.createRadialGradient(cx,cy,0,cx,cy,far);
+  ground.addColorStop(0,'#294B3B'); ground.addColorStop(.4,'#152B22'); ground.addColorStop(1,'#0B1712');
+  const palette = ['#d4ebd6','#92bfa6','#eef5dd','#739e86'];
+  const points = field.filter(d => d.x>0 && d.x<W && d.y>0 && d.y<H).map((d,i) => ({
+    x:d.x-cx,y:d.y-cy,r:d.size/2,color:d.tint,light:palette[i%4],z:1,
+    depth:.72+(i%7)*.13,seed:((i*73)%997)/997,mark:false,
+  }));
+  for (const d of mk) points.push({x:d.hx-cx,y:d.hy-cy,r:d.hr,color:d.fill,
+    sx:d.sx-cx,sy:d.sy-cy,sr:d.sr,light:palette[2],z:1,depth:1.15,seed:d.jit,mark:true});
+  // Build exposure colors once, not a new color string for every star/frame.
+  const ramps=new Map();
+  for(const p of points){
+    const key=p.color+p.light;
+    if(!ramps.has(key)){
+      const parse=c=>c.startsWith('#')?[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16),1]:c.match(/[\d.]+/g).map(Number);
+      const from=parse(p.color),to=parse(p.light);
+      ramps.set(key,Array.from({length:33},(_,i)=>'rgba('+from.map((n,j)=>n+(to[j]-n)*i/32).join(',')+')'));
+    }
+    p.ramp=ramps.get(key);
+  }
+  let start=null,last=null,phase='ratchet',ready=false,done=false,painted=false,cruiseStart=0,exitStart=0;
+  let frames=0,drawTotal=0,drawMax=0,previousDraw=null,gaps=0;
+  const setPhase = next => { if(phase!==next){phase=next;post('phase',next);} };
+  const finish = () => { if(done)return; done=true; post('metrics',{particles:points.length,frames,drawAverageMs:frames?drawTotal/frames:0,drawMaxMs:drawMax,frameGapsOver25Ms:gaps}); post('flash'); };
+  const tick = now => {
+    if(done)return;
+    if(phase==='waiting'){if(ready){exitStart=now;last=now;setPhase('burst');}else return;}
+    if(start===null){start=now+(world.lead||0);last=now;}
+    const elapsed=now-start,dt=Math.min(.035,Math.max(0,(now-last)/1000)); last=now;
+    if(elapsed<0)return;
+    const stamp=typeof performance!=='undefined'?performance.now():now;
+    if(previousDraw!==null && now-previousDraw>25)gaps++;
+    previousDraw=now;
+    // A short anticipation is followed by a fast departure, not three separate
+    // eased animations restarting from zero speed.
+    if(elapsed>=140 && phase==='ratchet')setPhase('reform');
+    if(elapsed>=880 && phase==='reform')setPhase('streaks');
+    if(elapsed>=1600 && phase==='streaks'){cruiseStart=now;setPhase('cruise');}
+    if(phase==='cruise' && ready && now-cruiseStart>=360){exitStart=now;setPhase('burst');}
+    if(phase==='cruise' && now-cruiseStart>=2600){setPhase('waiting');return;}
+    const gather=smooth((elapsed-140)/740), launch=clamp((elapsed-880)/720);
+    const exit=phase==='burst'?clamp((now-exitStart)/520):0;
+    const exposure=smooth((elapsed-300)/780);
+    const velocity=(.06+Math.pow(launch,2.6)*1.45)*(1+exit*3.4);
+    ctx.clearRect(0,0,W,H);
+    ctx.globalAlpha=exposure;ctx.fillStyle=ground;ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha=1;
+    for(const p of points){
+      let x=p.x,y=p.y,r=p.r;
+      if(p.mark){x+=(p.sx-x)*gather;y+=(p.sy-y)*gather;r+=(p.sr-r)*gather;}
+      else {x*=1-gather*.14;y*=1-gather*.14;}
+      if(launch>0){
+        p.z-=dt*velocity*p.depth;
+        // Recycle the same point on its original ray. No random direction
+        // changes, spokes through the centre, or particle allocations in flight.
+        if(p.z<.08){p.z=2.3+p.seed*.2;}
+      }
+      const zoom=1/Math.max(.08,p.z),distance=Math.hypot(x,y)||1;
+      const head=distance*zoom;
+      if(head>far*1.65)continue;
+      const shutter=(.006+launch*.095)*(1+exit*.6);
+      const tail=distance/Math.max(.08,p.z+velocity*p.depth*shutter);
+      const ux=x/distance,uy=y/distance;
+      const alpha=clamp((2.3-p.z)/1.3)*(p.mark?1:.4+.6*exposure);
+      const width=Math.min(4.5,Math.max(.65,r*(.5+zoom*.25)));
+      ctx.globalAlpha=alpha;
+      ctx.strokeStyle=p.ramp[Math.round(exposure*32)];
+      ctx.fillStyle=ctx.strokeStyle;
+      if(head-tail<2){ctx.beginPath();ctx.arc(cx+x*zoom,cy+y*zoom,Math.max(.6,r*Math.min(1.4,zoom)),0,7);ctx.fill();}
+      else {
+        // Two nested line segments are a tapered exposure, without blur,
+        // shadow filters, extra canvases or hundreds of DOM layers.
+        ctx.lineCap='round';
+        for(let layer=0;layer<2;layer++){
+          const a=tail+(head-tail)*layer*.32;
+          ctx.globalAlpha=alpha*(layer===0?.25:.94);
+          ctx.lineWidth=width*(1-layer*.55);
+          ctx.beginPath();ctx.moveTo(cx+ux*a,cy+uy*a);ctx.lineTo(cx+ux*head,cy+uy*head);ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha=1;
+    if(!painted){painted=true;post('paint');}
+    frames++;
+    const cost=(typeof performance!=='undefined'?performance.now():now)-stamp;
+    drawTotal+=cost;drawMax=Math.max(drawMax,cost);
+    if(exit>=1)finish();
+  };
+  return {tick,msg:m=>{if(m.type==='ready')ready=!!m.ready;if(m.type==='stop')done=true;}};
+}
+
 export function transformArrival(source) {
   let out = source.replace(/\r\n/g, "\n");
   const swap = (a, b) => { out = replaceOnce(out, a, b); };
@@ -84,6 +185,14 @@ export function transformArrival(source) {
     return () => { stopped = true; clearInterval(t); jumpOwnsEntrance = false; tellPhase("off"); };`);
   // A preview toggle only strengthens the device setting. It cannot disable it.
   swap('  jumpShort = arrivalShort();', '  jumpShort = arrivalShort() || window.__sageProposalReduce === true;');
+  // The saved draft keeps its engine and timings. The study is opt-in per
+  // iframe and cannot enter a production build.
+  swap('function arrivalEngineCore(ctx, world, post) {',
+    'function arrivalEngineCore(ctx, world, post) {\n  if (world.study) return (' + lightspeedStudyEngine.toString() + ')(ctx, world, post);');
+  swap('const world = { W, H, dpr, T: JUMP_T,', 'const world = { study:window.__sageProposalStudy === true, W, H, dpr, T: JUMP_T,');
+  swap('cv.className = "sage-jump-canvas";\n  const dpr = Math.min(2, window.devicePixelRatio || 1);', 'cv.className = "sage-jump-canvas";\n  const dpr = Math.min(window.__sageProposalStudy ? 1.5 : 2, window.devicePixelRatio || 1);');
+  swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "flash") toFlash();');
+  swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "scale(" + (1 + Math.pow(k,3) * 1.7) + ") translateY(" + (k*k*90) + "px)" : "scale(" + (1 - k * 0.08) + ")";');
   return out;
 }
 
@@ -100,9 +209,10 @@ export async function buildArrivalPrototype() {
 }
 
 /** Runs before the app. Only this proposal origin's fictional caches are reset. */
-export function installScenario(scenario, reduce) {
+export function installScenario(scenario, reduce, study = false) {
   if (location.hostname !== "127.0.0.1" || parent === window) return;
   window.__sageProposalReduce = reduce;
+  window.__sageProposalStudy = study;
   localStorage.removeItem("lpc-auth");
   for (const key of Object.keys(localStorage)) if (key.startsWith("lpc:cache:")) localStorage.removeItem(key);
   const d = new Date();
@@ -146,7 +256,6 @@ export const arrivalCSS = commonMotionCSS + destinationMotionCSS + `
 .proposal-wait button { font:inherit; border:1px solid #b5c7b8; border-radius:12px; background:#fff; color:#284333; padding:12px 18px; cursor:pointer; }
 .proposal-wait button:focus-visible { outline:3px solid #a96b13; outline-offset:3px; }
 .proposal-wait button.primary { background:#d9ebbd; border-color:#d9ebbd; color:#162b1d; margin-right:8px; }
-.proposal-wait .eyebrow { font-size:11px; letter-spacing:2px; margin-bottom:18px; color:#c5deb2; }
 .proposal-wait article { animation:proposalWaitText .6s cubic-bezier(.16,1,.3,1) both; }
 .proposal-waiting .sage-jump-canvas { visibility:visible; }
 .proposal-reduce .proposal-wait { background:#152b22; animation:none; }
@@ -159,14 +268,29 @@ export const arrivalCSS = commonMotionCSS + destinationMotionCSS + `
 .proposal-reduce .sage-assemble .lpc, .proposal-reduce .sage-assemble .lpc * { animation:none !important; }
 `;
 
+export const studyCSS = `
+/* Same settled dashboard, a stronger common perspective on the way in. */
+@keyframes saRadial {
+  0% { opacity:0; transform:translate3d(calc(var(--rx,0px) * .46),calc(var(--ry,0px) * .46),0) scale(.54); animation-timing-function:cubic-bezier(.12,.76,.19,1); }
+  20% { opacity:1; }
+  78% { opacity:1; transform:translate3d(calc(var(--rx,0px) * -.012),calc(var(--ry,0px) * -.012),0) scale(1.012); animation-timing-function:cubic-bezier(.3,0,.4,1); }
+  100% { opacity:1; transform:none; }
+}
+.sage-assemble .sa-radial { --rd:0ms !important; }
+.proposal-study .login-card { transform-origin:50% 0%; }
+.proposal-study .proposal-wait button { margin-top:5px; margin-bottom:5px; }
+@media(prefers-reduced-motion:reduce){@keyframes saRadial {from{opacity:0;transform:none}to{opacity:1;transform:none}}}
+`;
+
 export function installArrivalPreview(css) {
   if (location.hostname !== "127.0.0.1" || parent === window) return;
   const root = document.documentElement;
+  if (window.__sageProposalStudy) root.classList.add("proposal-study");
   if (window.__sageProposalReduce) root.classList.add("proposal-reduce");
   const style = document.createElement("style"); style.textContent = css;
   const scan = document.createElement("div"); scan.className = "comparison-scan"; scan.setAttribute("aria-hidden","true"); document.body.append(scan);
   const panel = document.createElement("section"); panel.className = "proposal-wait"; panel.hidden = true;
-  panel.innerHTML = '<article><div class="eyebrow">SAGE / ARRIVAL PAUSED</div><h1 tabindex="-1">Preparing your dashboard</h1><p>Your store is taking a little longer to arrive.</p><button class="primary" hidden>Restore connection &amp; retry</button><button class="cancel">Cancel preview</button></article>';
+  panel.innerHTML = '<article><h1 tabindex="-1">Preparing your dashboard</h1><p>Your store is taking a little longer to arrive.</p><button class="primary" hidden>Restore connection &amp; retry</button><button class="cancel">Cancel preview</button></article>';
   document.body.append(panel);
   const heading = panel.querySelector("h1"), explanation = panel.querySelector("p"), retry = panel.querySelector(".primary");
   const send = (type, detail) => parent.postMessage({type, detail}, location.origin);
@@ -175,6 +299,7 @@ export function installArrivalPreview(css) {
   let started = 0, raf = 0, signed = false, preparing = false, prepared = false, landed = false, finished = false, failed = false, waiting = false;
   let lastStatus = "", timer = 0, auto = 0, safety = 0;
   const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
+  document.addEventListener("sage-study-metrics",e=>{sample.drawing=e.detail;});
   const status = (text) => {
     if (text === lastStatus) return;
     lastStatus = text; sample.phases.push({text, ms:Math.round(performance.now() - (started || performance.now()))});
@@ -261,13 +386,14 @@ export function installArrivalPreview(css) {
   status("Loading the actual Sage sign-in");
 }
 
-export function arrivalPage() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sage | One continuous arrival</title><style>
+export function arrivalPage(study = false) {
+  const title = study ? "Lightspeed study" : "Saved arrival draft";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sage | ${title}</title><style>
 *{box-sizing:border-box}body{margin:0;background:#edf1ed;color:#213c2c;font:14px system-ui,sans-serif}main{height:100dvh;display:flex;flex-direction:column}header{padding:12px 18px;background:#f7faf6;border-bottom:1px solid #c5d2c7}h1{font-size:18px;margin:0 0 4px;letter-spacing:-.4px}p{font-size:12px;color:#54675a;line-height:1.5;margin:4px 0}.controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:10px}button,select{font:inherit;padding:9px 12px;border:1px solid #b6c8ba;background:white;border-radius:9px;color:#284333;cursor:pointer}button[aria-pressed=true]{background:#284b38;color:white}button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #a96b13;outline-offset:2px}#status{font-size:12px;margin-left:auto}iframe{width:100%;min-height:0;flex:1;border:0;background:#eef2ee}details{font-size:12px;margin-top:9px}summary{cursor:pointer;width:fit-content}details label{display:flex;gap:12px;align-items:center;margin-top:8px}select{font-size:12px;padding:6px}pre{white-space:pre-wrap;max-height:180px;overflow:auto;font-size:11px}.compact h1,.compact .intro,.compact details{display:none}.compact header{padding:7px 12px}.compact .controls{margin:0}#empty{margin:auto;text-align:center;padding:30px}#empty strong{font-size:22px;display:block;margin-bottom:10px}[hidden]{display:none!important}@media(max-width:540px){header{padding:10px}#status{margin-left:0;flex-basis:100%}button{padding:8px 10px}h1{font-size:16px}}
-</style></head><body><main><header><h1>One continuous arrival</h1><p class="intro">Sage's own dots. A prepared destination. An honest recovery. Proposal only, with fictional store data.</p><div class="controls"><button data-mode="fast" aria-pressed="false">Fast</button><button data-mode="slow" aria-pressed="false">Slow</button><button data-mode="interrupted" aria-pressed="false">Interrupted</button><button id="replay">Replay</button><button id="cancel">Cancel</button><button id="compact">More room</button><span id="status" role="status">Choose Fast to begin</span></div>
+</style></head><body><main><header><h1>${title}</h1><p class="intro">${study ? "The login becomes the flight. Your dashboard is the destination." : "Preserved draft, with the extra recovery label removed."} Fictional data only. <a href="${study ? "/" : "/study"}">${study ? "Open saved draft" : "Open lightspeed study"}</a></p><div class="controls"><button data-mode="fast" aria-pressed="false">Fast</button><button data-mode="slow" aria-pressed="false">Slow</button><button data-mode="interrupted" aria-pressed="false">Interrupted</button><button id="replay">Replay</button><button id="cancel">Cancel</button><button id="compact">More room</button><span id="status" role="status">Choose Fast to begin</span></div>
 <details><summary>What to look for, and your decisions</summary><p>Fast: the actual dashboard prepares during the jump. Slow: its store request takes four extra seconds. Interrupted: that request fails. No fixed timer can reveal an unfinished dashboard.</p><label><input id="reduce" type="checkbox"> Preview reduced motion (your device preference is always respected)</label><label>1. Shorter launch and unified landing <select><option>Not decided</option><option>Approve</option><option>Adjust</option></select></label><label>2. Waiting and connection recovery <select><option>Not decided</option><option>Approve</option><option>Adjust</option></select></label><label>3. One soft CRT scan on arrival <select><option>Not decided</option><option>Approve</option><option>Remove the scan</option></select></label><p>Choices stay here. Tell me in chat before anything goes into the live app. Retry restores the simulated connection and starts a new preview. This does not measure an older computer or guarantee a frame rate. A real iPhone check is still needed.</p><pre id="evidence"></pre></details></header><div id="empty"><strong>Your store is the destination.</strong><p>Choose a connection above to see the full sign-in.</p></div><iframe id="preview" hidden title="Sage arrival proposal with fictional data"></iframe></main><script>
 const frame=document.querySelector('#preview'),status=document.querySelector('#status'),empty=document.querySelector('#empty');let scenario='fast',run=0;
-function play(next){scenario=next;for(const b of document.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));empty.hidden=true;frame.hidden=false;status.textContent='Opening '+next;document.querySelector('#evidence').textContent='';frame.src='/app?scenario='+next+'&reduce='+Number(document.querySelector('#reduce').checked)+'&run='+(++run)}
+function play(next){scenario=next;for(const b of document.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));empty.hidden=true;frame.hidden=false;status.textContent='Opening '+next;document.querySelector('#evidence').textContent='';frame.src='/app?study=${Number(study)}&scenario='+next+'&reduce='+Number(document.querySelector('#reduce').checked)+'&run='+(++run)}
 function cancel(){frame.src='about:blank';frame.hidden=true;empty.hidden=false;status.textContent='Preview stopped. Nothing changed.'}
 for(const b of document.querySelectorAll('[data-mode]'))b.onclick=()=>play(b.dataset.mode);
 document.querySelector('#replay').onclick=()=>play(scenario);document.querySelector('#cancel').onclick=cancel;document.querySelector('#compact').onclick=()=>{const c=document.body.classList.toggle('compact');document.querySelector('#compact').textContent=c?'Show notes':'More room'};
@@ -287,11 +413,12 @@ export async function serveArrivalPrototype(root, port) {
     if (!["GET","HEAD"].includes(req.method)) { res.writeHead(405).end(); return; }
     try {
       const url = new URL(req.url,"http://127.0.0.1"); let body, type = "text/html";
-      if (url.pathname === "/") body = arrivalPage();
+      if (url.pathname === "/" || url.pathname === "/study") body = arrivalPage(url.pathname === "/study");
       else if (url.pathname === "/app") {
         const scenario = ["slow","interrupted"].includes(url.searchParams.get("scenario")) ? url.searchParams.get("scenario") : "fast";
-        body = html.replace("<head>",`<head><script>(${installScenario.toString()})(${JSON.stringify(scenario)},${url.searchParams.get("reduce") === "1"});</script>`)
-          .replace("</body>",`<script>(${installArrivalPreview.toString()})(${JSON.stringify(arrivalCSS)});</script></body>`);
+        const study = url.searchParams.get("study") === "1";
+        body = html.replace("<head>",`<head><script>(${installScenario.toString()})(${JSON.stringify(scenario)},${url.searchParams.get("reduce") === "1"}${study ? ",true" : ""});</script>`)
+          .replace("</body>",`<script>(${installArrivalPreview.toString()})(${JSON.stringify(arrivalCSS + (study ? studyCSS : ""))});</script></body>`);
       } else {
         if (url.pathname === "/sw.js" || url.pathname.startsWith("/_vercel/")) { res.writeHead(204).end(); return; }
         const file = assetPath(root,req.url); if (!file) { res.writeHead(403).end(); return; }
