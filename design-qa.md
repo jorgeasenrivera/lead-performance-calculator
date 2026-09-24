@@ -1,5 +1,16 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: later scan
+
+Study-only delay shifts the unchanged 860 ms sweep from 120 to 520 ms after
+landing starts. White cover clears first; the scan finishes before the existing
+hold releases. Browser events: landing 5295, scan start 5865, scan end 6714,
+unlock 6745 ms. Stable body width and 73/73 logo departures retained. Captured
+the settled dashboard, not an isolated scan frame; the transient-label browser
+wait timed out, but actual animation events confirmed completion. 690 tests and
+both builds pass. Reduced-motion CSS exclusion and preparation pause remain.
+Still draft-only, with the prior feel and device-verification gaps.
+
 ## 24 September follow-up: visible logo departure
 
 The fixed near-depth cutoff recycled small central logo dots before their rays

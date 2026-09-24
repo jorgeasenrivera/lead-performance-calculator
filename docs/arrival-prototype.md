@@ -1,5 +1,24 @@
 # One continuous arrival
 
+## 24 September follow-up: later finishing scan
+
+Jorge asked for the scan to start and finish later. The shared sweep started
+120 ms into landing, during the white cover's 500 ms fade. The study overrides
+only its delay to 520 ms, shifting both ends 400 ms later. Duration stays 860 ms,
+with the same path, easing and opacity. Preparation still pauses it; Reduce
+Motion still hides it. No new timer, input delay or longer landing hold. This
+follows the timeline skill's shared-clock sequencing guidance. Saved draft and
+production are unchanged.
+
+690 tests and both builds pass. A timing regression covers the post-cover start,
+completion within the hold, pause rule and reduced-motion exclusion. Actual
+animation events in browser Fast: landing 5295 ms, scan start 5865 ms, scan end
+6714 ms, unlock 6745 ms. The sweep completed before unlock. Body width stayed
+762.4 px and all 73 logo dots departed. A browser wait targeting the short-lived
+landing label timed out even though diagnostics showed it present; the event
+timestamps and final dashboard were retrieved afterward. No mid-scan screenshot
+is claimed. The existing feel mock-preflight and physical-device gaps remain.
+
 ## 24 September follow-up: let the logo finish its streaks
 
 Jorge saw the logo stop participating in the flight. There were two problems:
