@@ -1,5 +1,38 @@
 # One continuous arrival
 
+## 24 September follow-up: the store is the destination
+
+Jorge requested the store name in the middle of the flight. The study now
+consumes the existing `dest` message from the actual login/config flow. It
+does not hard-code a store or infer one from stale local storage. Space Grotesk
+text settles at the shared centre with a small scale change and opacity fade.
+A static soft green backing keeps streaks from competing with the letters.
+The name holds for at least 1400 ms from its cruise announcement before the
+burst can start, then fades forward. This is an intentional extra reading beat
+on a fast load, not a performance improvement. Data readiness still gates exit.
+
+The timeline and performance skills informed one clock and one DOM text layer,
+using transform and opacity, rather than canvas text measurement or animated
+blur. Repeated destination messages do not restart the beat. Missing names do
+not block sign-in. Recovery hides the name, and Reduced Motion bypasses it and
+its delay. Text is inserted with textContent, never interpreted as HTML.
+The original saved draft and production source remain unchanged.
+
+686 tests and both builds pass. Desktop Slow showed Sage Demo Motors at 2410 ms,
+prepared at 4914 ms, landed at 5750 ms and finished at 7227 ms. Narrow Fast at
+390 x 844 showed the name at 2267 ms, burst at 3667 ms, landing at 4385 ms and
+finished at 5830 ms. Captured both name reveals. Width stayed constant and no
+landing frame unlocked scrolling. Interrupted reported no reveal and computed
+the destination layer as display:none. Reduced Motion finished at 1249 ms with
+no destination event; a subsequent computed-style probe timed out, so no value
+from that probe is claimed. The preview toggle and viewport override were reset.
+
+Desktop Slow drawing averaged 2.07 ms with 25 intervals above 25 ms; narrow Fast
+averaged 1.28 ms with none. These runs used different viewport sizes and cannot
+establish a comparative improvement. Existing feel and real-device gaps remain.
+The source log entries inspected after Slow belonged to the previous bundle's
+intentional interrupted requests, not a new successful-run error.
+
 ## 24 September follow-up: continuous recycling and offscreen dots
 
 Jorge correctly identified waves after the opening pass and missing dots during
