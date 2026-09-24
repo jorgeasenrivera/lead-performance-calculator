@@ -1,5 +1,23 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: remove recycled cohorts
+
+The preceding radial fix was incomplete: reset depths were still narrowly
+grouped. Jorge saw the waves that the geometric check did not measure. The
+study now randomizes each expired point's next lifetime and fixed radial ray,
+fading it in without sideways travel. An aligned offscreen grid continues past
+the crop and supplies dots during the inward pull. The original opening and
+saved draft are retained. New deterministic checks cover recycle distribution
+and an offscreen point entering the visible field.
+
+Captured the opening and later Interrupted frame at the existing 1075 x 910
+viewport. The later frame is scattered across the view rather than bounded by
+the earlier rectangular cohort. Recovery copy, controls, green palette and
+centred perspective remain. Slow reached the prepared dashboard with stable
+width. 684 tests and both builds pass. Drawing averaged 1.78 ms with three
+intervals over 25 ms; no sustained frame-rate or real-phone claim is made.
+This is still a proposal for Jorge to judge in motion, not a production approval.
+
 ## 24 September follow-up: radial correction
 
 User-directed refinement of the existing study, not a new design. Browser

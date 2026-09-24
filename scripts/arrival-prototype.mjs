@@ -23,11 +23,29 @@ export function lightspeedStudyEngine(ctx, world, post) {
   const ground = ctx.createRadialGradient(cx,cy,0,cx,cy,far);
   ground.addColorStop(0,'#294B3B'); ground.addColorStop(.4,'#152B22'); ground.addColorStop(1,'#0B1712');
   const palette = ['#d4ebd6','#92bfa6','#eef5dd','#739e86'];
+  const random = world.random || Math.random;
   // Depth is spatial, not a repeating left-to-right velocity sequence. A
   // shared camera advances every point equally; near points expand faster
   // because of perspective. Mirrored positions receive the same depth.
   const seedAt = (x,y) => { const n=Math.sin(Math.abs(x)*12.9898+Math.abs(y)*78.233)*43758.5453; return n-Math.floor(n); };
-  const points = field.filter(d => d.x>0 && d.x<W && d.y>0 && d.y<H).map((d,i) => {
+  const visible = field.filter(d => d.x>0 && d.x<W && d.y>0 && d.y<H);
+  // Continue the actual grid beyond the crop. The 14% inward pull reveals
+  // this border; the old viewport filter left a rectangular empty edge.
+  const extended = visible.slice(), first = visible[0];
+  const neighbour = first && visible.find(d=>d.y===first.y && d.x>first.x);
+  if(neighbour){
+    const pitch=neighbour.x-first.x,cols=Math.ceil((W-first.x)/pitch);
+    const padX=W*.5*(1/.86-1)+pitch,padY=H*.5*(1/.86-1)+pitch;
+    for(let iy=Math.floor((-padY-first.y)/pitch);first.y+iy*pitch<H+padY;iy++){
+      for(let ix=Math.floor((-padX-first.x)/pitch);first.x+ix*pitch<W+padX;ix++){
+        const x=first.x+ix*pitch,y=first.y+iy*pitch;
+        if(x>0 && x<W && y>0 && y<H)continue;
+        const source=visible[((iy*cols+ix)%visible.length+visible.length)%visible.length];
+        extended.push({x,y,size:source.size,tint:source.tint});
+      }
+    }
+  }
+  const points = extended.map((d,i) => {
     const seed=seedAt(d.x-cx,d.y-cy),depth=.8+seed*.8;
     return {x:d.x-cx,y:d.y-cy,r:d.size/2,color:d.tint,light:palette[i%4],z:depth,depth,seed,mark:false};
   });
@@ -80,9 +98,17 @@ export function lightspeedStudyEngine(ctx, world, post) {
       else {x*=1-gather*.14;y*=1-gather*.14;}
       if(launch>0){
         p.z-=dt*velocity;
-        // Recycle the same point on its original ray. No random direction
-        // changes, spokes through the centre, or particle allocations in flight.
-        if(p.z<.08){p.z=2.3+p.seed*.2;}
+        // The narrow 2.3..2.5 reset depth synchronised the second pass into
+        // waves. Each expired point now gets a fresh independent lifetime,
+        // bearing and depth. Its new ray fades in, never slides sideways.
+        // Reuse the same object; the pool does not grow while travelling.
+        if(p.z<.08){
+          const angle=random()*Math.PI*2,radius=far*(.15+random()*.7);
+          p.depth=1;p.z=.6+random()*4.2;p.birthZ=p.z;
+          p.x=Math.cos(angle)*radius/.86;p.y=Math.sin(angle)*radius/.86;
+          p.mark=false;p.r=.8+random()*1.2;
+          x=p.x*.86;y=p.y*.86;r=p.r;
+        }
       }
       const zoom=p.depth/Math.max(.08,p.z),distance=Math.hypot(x,y)||1;
       const head=distance*zoom;
@@ -90,7 +116,7 @@ export function lightspeedStudyEngine(ctx, world, post) {
       const shutter=(.006+launch*.095)*(1+exit*.6);
       const tail=distance*p.depth/Math.max(.08,p.z+velocity*shutter);
       const ux=x/distance,uy=y/distance;
-      const alpha=clamp((2.3-p.z)/.7)*(p.mark?1:.4+.6*exposure);
+      const alpha=(p.birthZ===undefined?1:smooth((p.birthZ-p.z)/.22))*(p.mark?1:.4+.6*exposure);
       const width=Math.min(4.5,Math.max(.65,r*(.5+zoom*.25)));
       ctx.globalAlpha=alpha;
       ctx.strokeStyle=p.ramp[Math.round(exposure*32)];
