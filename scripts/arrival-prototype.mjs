@@ -1,0 +1,253 @@
+/** Isolated proposal. Source transforms live only inside this build, never in src/. */
+import http from "node:http";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { assetPath } from "./manager-performance.mjs";
+import { commonMotionCSS, destinationMotionCSS } from "./motion-compare.mjs";
+
+export function replaceOnce(source, before, after) {
+  if (source.split(before).length !== 2) throw new Error("Arrival proposal source changed: " + before.slice(0, 90));
+  return source.replace(before, after);
+}
+
+export function transformArrival(source) {
+  let out = source.replace(/\r\n/g, "\n");
+  const swap = (a, b) => { out = replaceOnce(out, a, b); };
+  swap("const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };",
+    "const JUMP_T = { ratchet: 340, reform: 520, streaks: 580, cruiseMin: 360, cruiseCap: 2600, burst: 360 };");
+  swap("&& (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);",
+    "&& (!atStore || (!!storeData && !storeMismatch && !storeLoadFailed));");
+  swap("let arrivalReady = false;", "let arrivalReady = false;\nlet proposalDataReady = false;\ndocument.addEventListener('sage-proposal-screen-ready', () => tellArrivalReady(proposalDataReady));");
+  swap("  arrivalReady = !!ready;", "  proposalDataReady = !!ready;\n  arrivalReady = !!ready && window.__sageProposalScreenReady === true;");
+  swap("    if (done) return;\n    if (!t0)", "    if (done) return;\n    if (phase === 'waiting') { if (ready) { done = true; post('flash'); } return; }\n    if (!t0)");
+  swap("      if ((ready && tc >= T.cruiseMin) || tc >= T.cruiseCap) {\n        phase = \"burst\"; t0 = now; burstT0 = now; post(\"phase\", \"burst\");\n      }",
+    "      if (ready && tc >= T.cruiseMin) {\n        phase = 'burst'; t0 = now; burstT0 = now; post('phase', 'burst');\n      } else if (tc >= T.cruiseCap) { phase = 'waiting'; post('phase', 'waiting'); }");
+  swap("0.82 + 0.18 * ease(Math.min(1, (now - cruiseT0) / 1600)) + 0.012 * Math.sin(now / 420)",
+    "0.94 + 0.06 * ease(Math.min(1, (now - cruiseT0) / 600))");
+  swap('    const t = setTimeout(() => { onFlash(); onDone(); }, 180);\n    return () => { clearTimeout(t); jumpOwnsEntrance = false; tellPhase("off"); };',
+    `    let stopped = false;
+    const started = performance.now();
+    const t = setInterval(() => {
+      if (stopped) return;
+      if (arrivalReady) { stopped = true; clearInterval(t); onFlash(); onDone(); }
+      else if (performance.now() - started > 500) tellPhase("waiting");
+    }, 60);
+    return () => { stopped = true; clearInterval(t); jumpOwnsEntrance = false; tellPhase("off"); };`);
+  // A preview toggle only strengthens the device setting. It cannot disable it.
+  swap('  jumpShort = arrivalShort();', '  jumpShort = arrivalShort() || window.__sageProposalReduce === true;');
+  return out;
+}
+
+export async function buildArrivalPrototype() {
+  process.env.VITE_SUPABASE_URL = "http://127.0.0.1:5433";
+  process.env.VITE_SUPABASE_ANON_KEY = "mock-anon-key";
+  const { build } = await import("vite");
+  return build({ build:{ outDir:"dist-harness/arrival-prototype" }, plugins:[{
+    name:"sage-isolated-arrival-proposal", enforce:"pre",
+    transform(source, id) {
+      if (id.replace(/\\/g,"/").endsWith("/src/LeadPerformanceCalculator.jsx")) return transformArrival(source);
+    },
+  }] });
+}
+
+/** Runs before the app. Only this proposal origin's fictional caches are reset. */
+export function installScenario(scenario, reduce) {
+  if (location.hostname !== "127.0.0.1" || parent === window) return;
+  window.__sageProposalReduce = reduce;
+  localStorage.removeItem("lpc-auth");
+  for (const key of Object.keys(localStorage)) if (key.startsWith("lpc:cache:")) localStorage.removeItem(key);
+  const d = new Date();
+  localStorage.setItem("lpc:roundup:sage-demo:" + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"), "1");
+  const original = window.fetch.bind(window);
+  let slowUntil = 0;
+  const announce = (state) => document.dispatchEvent(new CustomEvent("sage-proposal-request", { detail:state }));
+  window.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, location.href);
+    const method = (init.method || input.method || "GET").toUpperCase();
+    if (url.origin !== "http://127.0.0.1:5433" || method !== "GET" || !url.pathname.endsWith("/app_data") || !url.searchParams.get("key")?.includes("lpc:store:")) return original(input, init);
+    const signal = init.signal || input.signal;
+    announce("requested");
+    // Delay the initial connection window, not every sequential follow-up read.
+    if (scenario === "slow" && !slowUntil) slowUntil = Date.now() + 4000;
+    const delay = scenario === "slow" ? Math.max(0, slowUntil - Date.now()) : scenario === "interrupted" ? 2200 : 0;
+    if (delay) await new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason || new DOMException("Aborted", "AbortError")); return; }
+      const abort = () => { clearTimeout(timer); reject(signal.reason || new DOMException("Aborted", "AbortError")); };
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, delay);
+      signal?.addEventListener("abort", abort, { once:true });
+    });
+    if (scenario === "interrupted") {
+      announce("interrupted");
+      return new Response(JSON.stringify({ message:"Preview: simulated interrupted connection" }), { status:503, headers:{"Content-Type":"application/json"} });
+    }
+    try { const response = await original(input, init); announce(response.ok ? "received" : "failed"); return response; }
+    catch (error) { announce("failed"); throw error; }
+  };
+}
+
+export const arrivalCSS = commonMotionCSS + destinationMotionCSS + `
+.proposal-wait { position:fixed; inset:0; z-index:9400; display:grid; place-items:center; padding:28px;
+  background:radial-gradient(ellipse at 50% 60%,#dce9d9 0,#eef2ee 68%); color:#263d30; }
+.proposal-wait[hidden] { display:none; }
+.proposal-wait article { width:min(440px,100%); text-align:center; }
+.proposal-wait img { width:66px; height:66px; object-fit:contain; margin-bottom:20px; }
+.proposal-wait h1 { font-size:clamp(23px,4vw,32px); line-height:1.16; letter-spacing:-1px; margin:0 0 12px; }
+.proposal-wait p { font-size:15px; line-height:1.5; color:#52675a; margin:0 auto 24px; max-width:340px; }
+.proposal-wait button { font:inherit; border:1px solid #b5c7b8; border-radius:12px; background:#fff; color:#284333; padding:12px 18px; cursor:pointer; }
+.proposal-wait button:focus-visible { outline:3px solid #a96b13; outline-offset:3px; }
+.proposal-wait button.primary { background:#284b38; color:#fff; margin-right:8px; }
+.proposal-wait .eyebrow { font-size:11px; letter-spacing:2px; margin-bottom:14px; }
+.proposal-waiting .sage-jump-canvas { visibility:hidden; }
+.proposal-reduce .comparison-scan { display:none; }
+.proposal-reduce .sage-assemble .lpc, .proposal-reduce .sage-assemble .lpc * { animation:none !important; }
+`;
+
+export function installArrivalPreview(css) {
+  if (location.hostname !== "127.0.0.1" || parent === window) return;
+  const root = document.documentElement;
+  if (window.__sageProposalReduce) root.classList.add("proposal-reduce");
+  const style = document.createElement("style"); style.textContent = css;
+  const scan = document.createElement("div"); scan.className = "comparison-scan"; scan.setAttribute("aria-hidden","true"); document.body.append(scan);
+  const panel = document.createElement("section"); panel.className = "proposal-wait"; panel.hidden = true;
+  panel.innerHTML = '<article><div class="eyebrow">SAGE</div><h1 tabindex="-1">Preparing your dashboard</h1><p>Your store is taking a little longer to arrive.</p><button class="primary" hidden>Restore connection &amp; retry</button><button class="cancel">Cancel preview</button></article>';
+  document.body.append(panel);
+  const heading = panel.querySelector("h1"), explanation = panel.querySelector("p"), retry = panel.querySelector(".primary");
+  const send = (type, detail) => parent.postMessage({type, detail}, location.origin);
+  retry.onclick = () => send("sage-arrival-retry");
+  panel.querySelector(".cancel").onclick = () => send("sage-arrival-cancel");
+  let started = 0, raf = 0, signed = false, preparing = false, prepared = false, landed = false, finished = false, failed = false, waiting = false;
+  let lastStatus = "", timer = 0, auto = 0, safety = 0;
+  const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
+  const status = (text) => {
+    if (text === lastStatus) return;
+    lastStatus = text; sample.phases.push({text, ms:Math.round(performance.now() - (started || performance.now()))});
+    send("sage-arrival-status", {text, sample});
+  };
+  const showWait = (error = false) => {
+    if (finished) return;
+    waiting = true; panel.hidden = false; root.classList.add("proposal-waiting");
+    heading.textContent = error ? "Connection interrupted" : "Preparing your dashboard";
+    explanation.textContent = error ? "Your dashboard has not opened. Restore the demo connection to try again." : "Your store is taking a little longer to arrive. We'll open it when it's ready.";
+    retry.hidden = !error;
+    if (!panel.dataset.focused) { heading.focus({preventScroll:true}); panel.dataset.focused = "true"; }
+    status(error ? "Interrupted safely. No dashboard revealed." : "Waiting for the dashboard. No blank reveal.");
+  };
+  const ensureStyle = () => { if (document.body.lastElementChild !== style) document.body.append(style); };
+  const prepare = async () => {
+    const hero = document.querySelector(".s2-hero,.bp-hero");
+    if (!hero || preparing || prepared || failed || finished) return;
+    preparing = true;
+    // Wait for essential text and visible header imagery, never all page images.
+    await document.fonts.ready;
+    const images = [...document.querySelectorAll(".s2-hero img,.bp-hero img,.topbar img")];
+    await Promise.all(images.map(img => img.decode?.().catch(() => {}) ));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    preparing = false;
+    if (!hero.isConnected || !hero.getBoundingClientRect().height || failed || finished) return;
+    prepared = true; sample.preparedAt = Math.round(performance.now() - started);
+    window.__sageProposalScreenReady = true;
+    document.dispatchEvent(new Event("sage-proposal-screen-ready"));
+  };
+  document.addEventListener("sage-proposal-request", e => {
+    if (e.detail === "requested") sample.storeRequests++;
+    if (e.detail === "received") sample.dataReceived = true;
+    if (["interrupted","failed"].includes(e.detail)) { failed = true; if (waiting) showWait(true); }
+  });
+  document.addEventListener("sage-jump-phase", e => {
+    const labels = {ratchet:"Logo dots gather",reform:"Logo becomes the launch point",streaks:"Background dots become lightspeed",cruise:"Preparing the destination",burst:"Dashboard ready. Arriving"};
+    if (e.detail === "waiting") showWait(failed);
+    else if (labels[e.detail]) status(labels[e.detail]);
+  });
+  const tick = () => {
+    if (finished) return;
+    const width = document.body.getBoundingClientRect().width;
+    sample.widthMin = Math.min(sample.widthMin ?? width, width); sample.widthMax = Math.max(sample.widthMax,width);
+    const c = root.classList;
+    if (c.contains("sage-cover-active") && prepared) { panel.hidden = true; root.classList.remove("proposal-waiting"); }
+    if (c.contains("sage-assemble")) {
+      if (!landed) { landed = true; sample.landingAt = Math.round(performance.now() - started); status("Landing on the prepared dashboard"); }
+      if (getComputedStyle(root).overflowY !== "hidden") sample.unlockedLandingFrames++;
+    }
+    const reducedDone = sample.reduced && prepared && !document.querySelector(".signin-over") && !c.contains("jump-under");
+    if ((landed && !c.contains("sage-assemble") && !c.contains("sage-preparing")) || reducedDone) {
+      finished = true; clearTimeout(safety); panel.hidden = true;
+      root.classList.remove("comparison-lock","proposal-waiting");
+      sample.totalMs = Math.round(performance.now() - started);
+      status("Ready. Try another connection."); observer.disconnect(); return;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  const fill = () => {
+    if (signed) return;
+    const email = document.querySelector('.login-card input[placeholder="you@company.com"]');
+    const password = document.querySelector('.login-card input[placeholder="Your password"]');
+    const button = document.querySelector(".login-card .lf-go");
+    if (!email || !password || !button || button.disabled) return;
+    signed = true;
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;
+    set.call(email,"demo@sageonline.app"); email.dispatchEvent(new Event("input",{bubbles:true}));
+    set.call(password,"demo"); password.dispatchEvent(new Event("input",{bubbles:true}));
+    auto = setTimeout(() => {
+      started = performance.now(); root.classList.add("comparison-lock","comparison-hover-hold");
+      status("Signing in"); button.click(); raf = requestAnimationFrame(tick);
+      safety = setTimeout(() => { if (!finished) { failed = true; showWait(true); } },12000);
+    },650);
+  };
+  const observer = new MutationObserver(() => { ensureStyle(); fill(); prepare(); });
+  observer.observe(document.body,{childList:true,subtree:true}); ensureStyle(); fill();
+  const hover = () => { if (finished) root.classList.remove("comparison-hover-hold"); };
+  for (const name of ["pointermove","pointerdown","keydown"]) window.addEventListener(name,hover,{passive:true});
+  // A module or mock that never opens still leaves a visible exit.
+  timer = setTimeout(() => { if (!signed) { failed = true; showWait(true); } },12000);
+  window.addEventListener("pagehide",() => { observer.disconnect(); cancelAnimationFrame(raf); clearTimeout(timer); clearTimeout(auto); clearTimeout(safety); },{once:true});
+  status("Loading the actual Sage sign-in");
+}
+
+export function arrivalPage() {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sage | One continuous arrival</title><style>
+*{box-sizing:border-box}body{margin:0;background:#edf1ed;color:#213c2c;font:14px system-ui,sans-serif}main{height:100dvh;display:flex;flex-direction:column}header{padding:12px 18px;background:#f7faf6;border-bottom:1px solid #c5d2c7}h1{font-size:18px;margin:0 0 4px;letter-spacing:-.4px}p{font-size:12px;color:#54675a;line-height:1.5;margin:4px 0}.controls{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:10px}button,select{font:inherit;padding:9px 12px;border:1px solid #b6c8ba;background:white;border-radius:9px;color:#284333;cursor:pointer}button[aria-pressed=true]{background:#284b38;color:white}button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #a96b13;outline-offset:2px}#status{font-size:12px;margin-left:auto}iframe{width:100%;min-height:0;flex:1;border:0;background:#eef2ee}details{font-size:12px;margin-top:9px}summary{cursor:pointer;width:fit-content}details label{display:flex;gap:12px;align-items:center;margin-top:8px}select{font-size:12px;padding:6px}pre{white-space:pre-wrap;max-height:180px;overflow:auto;font-size:11px}.compact h1,.compact .intro,.compact details{display:none}.compact header{padding:7px 12px}.compact .controls{margin:0}#empty{margin:auto;text-align:center;padding:30px}#empty strong{font-size:22px;display:block;margin-bottom:10px}[hidden]{display:none!important}@media(max-width:540px){header{padding:10px}#status{margin-left:0;flex-basis:100%}button{padding:8px 10px}h1{font-size:16px}}
+</style></head><body><main><header><h1>One continuous arrival</h1><p class="intro">Sage's own dots. A prepared destination. An honest recovery. Proposal only, with fictional store data.</p><div class="controls"><button data-mode="fast" aria-pressed="false">Fast</button><button data-mode="slow" aria-pressed="false">Slow</button><button data-mode="interrupted" aria-pressed="false">Interrupted</button><button id="replay">Replay</button><button id="cancel">Cancel</button><button id="compact">More room</button><span id="status" role="status">Choose Fast to begin</span></div>
+<details><summary>What to look for, and your decisions</summary><p>Fast: the actual dashboard prepares during the jump. Slow: its store request takes four extra seconds. Interrupted: that request fails. No fixed timer can reveal an unfinished dashboard.</p><label><input id="reduce" type="checkbox"> Preview reduced motion (your device preference is always respected)</label><label>1. Shorter launch and unified landing <select><option>Not decided</option><option>Approve</option><option>Adjust</option></select></label><label>2. Waiting and connection recovery <select><option>Not decided</option><option>Approve</option><option>Adjust</option></select></label><label>3. One soft CRT scan on arrival <select><option>Not decided</option><option>Approve</option><option>Remove the scan</option></select></label><p>Choices stay here. Tell me in chat before anything goes into the live app. Retry restores the simulated connection and starts a new preview. This does not measure an older computer or guarantee a frame rate. A real iPhone check is still needed.</p><pre id="evidence"></pre></details></header><div id="empty"><strong>Your store is the destination.</strong><p>Choose a connection above to see the full sign-in.</p></div><iframe id="preview" hidden title="Sage arrival proposal with fictional data"></iframe></main><script>
+const frame=document.querySelector('#preview'),status=document.querySelector('#status'),empty=document.querySelector('#empty');let scenario='fast',run=0;
+function play(next){scenario=next;for(const b of document.querySelectorAll('[data-mode]'))b.setAttribute('aria-pressed',String(b.dataset.mode===next));empty.hidden=true;frame.hidden=false;status.textContent='Opening '+next;document.querySelector('#evidence').textContent='';frame.src='/app?scenario='+next+'&reduce='+Number(document.querySelector('#reduce').checked)+'&run='+(++run)}
+function cancel(){frame.src='about:blank';frame.hidden=true;empty.hidden=false;status.textContent='Preview stopped. Nothing changed.'}
+for(const b of document.querySelectorAll('[data-mode]'))b.onclick=()=>play(b.dataset.mode);
+document.querySelector('#replay').onclick=()=>play(scenario);document.querySelector('#cancel').onclick=cancel;document.querySelector('#compact').onclick=()=>{const c=document.body.classList.toggle('compact');document.querySelector('#compact').textContent=c?'Show notes':'More room'};
+window.addEventListener('message',e=>{if(e.origin!==location.origin||e.source!==frame.contentWindow)return;if(e.data?.type==='sage-arrival-status'){status.textContent=e.data.detail.text;document.querySelector('#evidence').textContent=JSON.stringify(e.data.detail.sample,null,2)}if(e.data?.type==='sage-arrival-retry')play('fast');if(e.data?.type==='sage-arrival-cancel')cancel()});
+</script></body></html>`;
+}
+
+export async function serveArrivalPrototype(root, port) {
+  root = path.resolve(root);
+  const html = await fs.readFile(path.join(root,"index.html"),"utf8");
+  const entry = /src="(\/assets\/index-[^"]+\.js)"/.exec(html)?.[1];
+  const bundle = entry ? await fs.readFile(path.join(root,entry.slice(1)),"utf8") : "";
+  if (!bundle.includes("http://127.0.0.1:5433") || !bundle.includes("sage-proposal-screen-ready")) throw new Error("Arrival requires the isolated proposal build against the local mock.");
+  const mime = {".js":"text/javascript",".css":"text/css",".svg":"image/svg+xml",".png":"image/png",".woff2":"font/woff2",".json":"application/json"};
+  const server = http.createServer(async (req,res) => {
+    if (!/^127\.0\.0\.1(?::\d+)?$/.test(req.headers.host || "")) { res.writeHead(403).end(); return; }
+    if (!["GET","HEAD"].includes(req.method)) { res.writeHead(405).end(); return; }
+    try {
+      const url = new URL(req.url,"http://127.0.0.1"); let body, type = "text/html";
+      if (url.pathname === "/") body = arrivalPage();
+      else if (url.pathname === "/app") {
+        const scenario = ["slow","interrupted"].includes(url.searchParams.get("scenario")) ? url.searchParams.get("scenario") : "fast";
+        body = html.replace("<head>",`<head><script>(${installScenario.toString()})(${JSON.stringify(scenario)},${url.searchParams.get("reduce") === "1"});</script>`)
+          .replace("</body>",`<script>(${installArrivalPreview.toString()})(${JSON.stringify(arrivalCSS)});</script></body>`);
+      } else {
+        if (url.pathname === "/sw.js" || url.pathname.startsWith("/_vercel/")) { res.writeHead(204).end(); return; }
+        const file = assetPath(root,req.url); if (!file) { res.writeHead(403).end(); return; }
+        body = await fs.readFile(file); type = mime[path.extname(file)] || "application/octet-stream";
+      }
+      res.writeHead(200,{"Content-Type":type,"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}); res.end(req.method === "HEAD" ? undefined : body);
+    } catch { res.writeHead(404).end(); }
+  });
+  await new Promise((resolve,reject) => { server.once("error",reject); server.listen(port,"127.0.0.1",resolve); });
+  return server;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.includes("--build")) await buildArrivalPrototype();
+  else { await serveArrivalPrototype("dist-harness/arrival-prototype",49211); console.log("Sage arrival proposal: http://127.0.0.1:49211/"); }
+}
