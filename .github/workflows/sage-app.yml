@@ -134,8 +134,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > ../xcode.log 2>&1
           code=$?
           set -e
-          grep -nE "error:|warning: expression took|\*\* BUILD (SUCCEEDED|FAILED)" ../xcode.log | head -80 || true
-          exit $code
+          # Apple's App Intents indexer prints "error:" lines on every build
+          # that succeeds; they are not the app's and would read as failures.
+          grep -nE "error:|warning: expression took|\*\* BUILD (SUCCEEDED|FAILED)" ../xcode.log \
+            | grep -v appintentsnltrainingprocessor | head -80 || true
+          [ "$code" = "0" ] || exit $code
+          # The Live Activity is the target that broke builds 18 and 19. A
+          # success that never compiled it would be a check of the wrong thing.
+          if ! grep -q "QueueActivity.swift" ../xcode.log; then
+            echo "::error::Xcode succeeded without compiling the Live Activity (targets/queue). The check is not covering it."
+            exit 1
+          fi
+          echo "The Live Activity target was compiled."
 
       - name: Keep the Xcode log
         if: always()

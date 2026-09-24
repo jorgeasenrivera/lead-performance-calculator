@@ -19,6 +19,7 @@ test("the check compiles on GitHub's macOS runner and never on Expo", () => {
   assert.match(check, /runs-on: macos-/);
   assert.match(check, /xcodebuild -workspace/);
   assert.match(check, /CODE_SIGNING_ALLOWED=NO/);
+  assert.match(check, /grep -q "QueueActivity\.swift"/, "and it fails if the Live Activity was not compiled");
   assert.ok(!/\beas (build|submit|init)\b/.test(check), "no Expo build or upload in the check");
   assert.ok(!/secrets\./.test(check), "the check needs no secrets");
 });
