@@ -383,9 +383,13 @@ export function installArrivalPreview(css) {
   let lastStatus = "", timer = 0, auto = 0, safety = 0;
   const sample = { phases:[], storeRequests:0, dataReceived:false, preparedAt:null, landingAt:null, widthMin:null, widthMax:0, unlockedLandingFrames:0, lockedGutterMax:0, widthAfterUnlock:null, reduced:window.__sageProposalReduce || matchMedia("(prefers-reduced-motion: reduce)").matches };
   document.addEventListener("sage-study-metrics",e=>{sample.drawing=e.detail;});
-  for (const [event,key] of [["animationstart","scanStartedAt"],["animationend","scanEndedAt"]]) {
+  for (const [event,key] of [["animationstart","scanStartedAt"],["animationend","scanEndedAt"],["animationcancel","scanCancelledAt"]]) {
     scan.addEventListener(event,e=>{
-      if(e.animationName==="comparisonScan") sample[key]=Math.round(performance.now()-started);
+      if(e.animationName!=="comparisonScan")return;
+      sample[key]=Math.round(performance.now()-started);
+      // Cleanup and CSS events can arrive in adjacent frames. Keep the final
+      // report honest instead of losing an end or cancellation after unlock.
+      if(finished) send("sage-arrival-status",{text:lastStatus,sample});
     });
   }
   const status = (text) => {
@@ -452,6 +456,7 @@ export function installArrivalPreview(css) {
       finished = true; clearTimeout(safety); panel.hidden = true;
       root.classList.remove("comparison-lock","proposal-waiting");
       sample.widthAfterUnlock = document.body.getBoundingClientRect().width;
+      sample.viewport = {width:window.innerWidth,height:window.innerHeight,clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,bodyScrollWidth:document.body.scrollWidth};
       sample.totalMs = Math.round(performance.now() - started);
       status("Ready. Try another connection."); observer.disconnect(); return;
     }

@@ -131,7 +131,7 @@ test("study login folds into the viewport centre without outward enlargement",()
   assert.match(studyCSS,/\.proposal-study \.login-card \{ transform-origin:50% 50%; \}/);
 });
 
-test("study scan follows the white cover and completes within the landing hold",()=>{
+test("study scan nominal timing follows the white cover without extending the hold",()=>{
   const delay=Number(/\.proposal-study\.sage-assemble \.comparison-scan::before \{ animation-delay:([.\d]+)s; \}/.exec(studyCSS)[1]);
   const duration=Number(/animation:comparisonScan ([.\d]+)s/.exec(destinationMotionCSS)[1]);
   assert.ok(delay>=.5);
@@ -139,6 +139,14 @@ test("study scan follows the white cover and completes within the landing hold",
   assert.match(destinationMotionCSS,/\.sage-preparing \.comparison-scan::before \{ animation-play-state:paused; \}/);
   assert.match(destinationMotionCSS,/prefers-reduced-motion:reduce[\s\S]*\.comparison-scan \{ display:none; \}/);
   assert.match(destinationMotionCSS,/comparisonScan .86s cubic-bezier\(.22,.5,.32,1\) .12s both/);
+});
+
+test("arrival evidence retains scan cancellation or completion delivered after unlock",()=>{
+  const preview=installArrivalPreview.toString();
+  assert.match(preview,/\["animationcancel","scanCancelledAt"\]/);
+  assert.match(preview,/if\(e.animationName!=="comparisonScan"\)return;/);
+  assert.match(preview,/if\(finished\) send\("sage-arrival-status",\{text:lastStatus,sample\}\);/);
+  assert.match(preview,/sample.viewport = \{width:window.innerWidth,height:window.innerHeight,clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,bodyScrollWidth:document.body.scrollWidth\};/);
 });
 
 function studyEngine() {
