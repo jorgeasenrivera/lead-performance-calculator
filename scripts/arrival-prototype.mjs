@@ -67,9 +67,10 @@ export function lightspeedStudyEngine(ctx, world, post) {
   }
   let start=null,last=null,phase='ratchet',ready=false,done=false,painted=false,cruiseStart=0,exitStart=0;
   let destination='',shownName='',signStarted=null;
+  let logoRemaining=mk.length;
   let frames=0,drawTotal=0,drawMax=0,previousDraw=null,gaps=0;
   const setPhase = next => { if(phase!==next){phase=next;post('phase',next);} };
-  const finish = () => { if(done)return; done=true; post('metrics',{particles:points.length,frames,drawAverageMs:frames?drawTotal/frames:0,drawMaxMs:drawMax,frameGapsOver25Ms:gaps}); post('flash'); };
+  const finish = () => { if(done)return; done=true; post('metrics',{particles:points.length,logoDots:mk.length,logoDeparted:mk.length-logoRemaining,frames,drawAverageMs:frames?drawTotal/frames:0,drawMaxMs:drawMax,frameGapsOver25Ms:gaps}); post('flash'); };
   const tick = now => {
     if(done)return;
     if(phase==='waiting'){if(ready){exitStart=now;last=now;setPhase('burst');}else return;}
@@ -84,12 +85,13 @@ export function lightspeedStudyEngine(ctx, world, post) {
     if(elapsed>=140 && phase==='ratchet')setPhase('reform');
     if(elapsed>=880 && phase==='reform')setPhase('streaks');
     if(elapsed>=1600 && phase==='streaks'){cruiseStart=now;setPhase('cruise');}
-    if(phase==='cruise' && destination && destination!==shownName){
+    // The title's readability backing must not conceal the departing logo.
+    if(phase==='cruise' && logoRemaining===0 && destination && destination!==shownName){
       shownName=destination;signStarted=now;post('destination',destination);
     }
     // Let the manager read the destination. Repeated readiness messages must
     // not restart this beat, and an absent name must not hold sign-in forever.
-    const signRead=signStarted===null || now-signStarted>=1400;
+    const signRead=!destination || (signStarted!==null && now-signStarted>=1400);
     if(phase==='cruise' && ready && now-cruiseStart>=360 && signRead){exitStart=now;setPhase('burst');}
     if(phase==='cruise' && now-cruiseStart>=2600){setPhase('waiting');return;}
     const gather=smooth((elapsed-140)/740), launch=clamp((elapsed-880)/720);
@@ -109,7 +111,9 @@ export function lightspeedStudyEngine(ctx, world, post) {
         // waves. Each expired point now gets a fresh independent lifetime,
         // bearing and depth. Its new ray fades in, never slides sideways.
         // Reuse the same object; the pool does not grow while travelling.
-        if(p.z<.08){
+        // The compact logo is much nearer the axis than the field. Its rays
+        // must pass the camera, not recycle while still inside the small S.
+        if(p.mark ? p.departed : p.z<.08){
           const angle=random()*Math.PI*2,radius=far*(.15+random()*.7);
           p.depth=1;p.z=.6+random()*4.2;p.birthZ=p.z;
           p.x=Math.cos(angle)*radius/.86;p.y=Math.sin(angle)*radius/.86;
@@ -117,11 +121,16 @@ export function lightspeedStudyEngine(ctx, world, post) {
           x=p.x*.86;y=p.y*.86;r=p.r;
         }
       }
-      const zoom=p.depth/Math.max(.08,p.z),distance=Math.hypot(x,y)||1;
-      const head=distance*zoom;
-      if(head>far*1.65)continue;
+      const near=p.mark?.00001:.08;
+      const zoom=p.depth/Math.max(near,p.z),distance=Math.hypot(x,y)||1;
+      const projected=distance*zoom;
       const shutter=(.006+launch*.095)*(1+exit*.6);
-      const tail=distance*p.depth/Math.max(.08,p.z+velocity*shutter);
+      const tail=distance*p.depth/Math.max(near,p.z+velocity*shutter);
+      if(p.mark && tail>far*1.65){p.departed=true;logoRemaining--;continue;}
+      if(!p.mark && projected>far*1.65)continue;
+      // Clip the exposure to a finite offscreen radius, retaining its tail
+      // until that too has left. No giant coordinates or new drawing layers.
+      const head=p.mark?Math.min(projected,far*1.65):projected;
       const ux=x/distance,uy=y/distance;
       const alpha=(p.birthZ===undefined?1:smooth((p.birthZ-p.z)/.22))*(p.mark?1:.4+.6*exposure);
       const width=Math.min(4.5,Math.max(.65,r*(.5+zoom*.25)));

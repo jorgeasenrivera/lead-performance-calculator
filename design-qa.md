@@ -1,5 +1,20 @@
 # Lightspeed comparison QA
 
+## 24 September follow-up: visible logo departure
+
+The fixed near-depth cutoff recycled small central logo dots before their rays
+left the view. The store-name backing also obscured that part of the flight.
+The repair keeps each logo ray until its tail has left, clips its head to finite
+offscreen geometry, and only reveals the store name after the logo has passed.
+No extra canvas, particle pool, blur layer or production source change.
+
+Captured the actual S opening into radial rays without the store title covering
+it. Browser metrics confirm all 73 logo dots departed. Fast landed at 5383 ms
+and finished at 6868 ms, with stable 762.4 px body width and no unlocked landing
+frames. The title now appears later, deliberately, instead of hiding the logo.
+689 tests and both builds pass. Feel remains blocked on its mock preflight.
+This is a local draft for Jorge's review, not physical-device or FPS approval.
+
 ## 24 September follow-up: scrollbar rail
 
 The earlier scroll-lock assertion was insufficient. The visible pale strip was
