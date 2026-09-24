@@ -82,14 +82,22 @@ function rng(seed) {
 }
 
 const dayStr = (d) => d.toISOString().slice(0, 10);
-const monthStr = (d) => d.toISOString().slice(0, 7);
+
+/* The store's day, not UTC's: the app keys every row by the dealership's own
+   date (STORE_TZ in the app file), and from 8 PM to midnight Eastern UTC is
+   already on tomorrow. Seeding by UTC put tomorrow's Phone Line row in the
+   mock, the app looked for today's, said "The line isn't open yet", and every
+   feel run in those four hours failed in both engines (C94). */
+const STORE_TZ = "America/New_York";
+export const storeDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d);
 
 /* The last N days the store was open, newest last. Sundays are skipped because
    a dealership that trades seven days a week reads as a data error to anybody
-   who knows the business. */
-function openDays(n, from = new Date()) {
+   who knows the business. Counted back from noon UTC on the store's date, so a
+   clock change can never land two steps on one day or skip one. */
+export function openDays(n, from = new Date()) {
   const out = [];
-  const d = new Date(from);
+  const d = new Date(storeDay(from) + "T12:00:00Z");
   while (out.length < n) {
     if (d.getUTCDay() !== 0) out.push(dayStr(d));
     d.setUTCDate(d.getUTCDate() - 1);
@@ -234,11 +242,11 @@ function queueHistory(r, roster, days) {
 }
 
 /* ---------------- Putting the store together ---------------- */
-export function buildDemo() {
+export function buildDemo(now = new Date()) {
   const r = rng(20260909);
-  const nowIso = new Date().toISOString();
-  const days = openDays(45);
-  const month = monthStr(new Date());
+  const nowIso = now.toISOString();
+  const days = openDays(45, now);
+  const month = storeDay(now).slice(0, 7);
   const today = days[days.length - 1];
 
   /* label as well as name: the line and the phone read `label`, the board and
@@ -280,8 +288,9 @@ export function buildDemo() {
      bug report. Deriving it means the store is always a little behind pace,
      whatever day the reviewer opens the app, which is also the more useful
      state to show: it is the one where the coaching pages have a job. */
-  const dim = new Date(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 0).getDate();
-  const elapsed = Math.max(1, new Date().getUTCDate() - 1);
+  const [yy, mm, dd] = storeDay(now).split("-").map(Number);
+  const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const elapsed = Math.max(1, dd - 1);
   const GOAL = 96;
   const storeSoFar = Math.max(1, Math.round(GOAL * (elapsed / dim) * 0.92));
   /* The roster sums higher than the store's own count, because a car credits
