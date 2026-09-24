@@ -249,9 +249,13 @@ export function transformArrival(source) {
   // canvas dimensions so the flight paints edge to edge with one true centre.
   swap('cv.className = "sage-jump-canvas";\n  const dpr = Math.min(2, window.devicePixelRatio || 1);', 'cv.className = "sage-jump-canvas";\n  const dpr = Math.min(window.__sageProposalStudy ? 1.5 : 2, window.devicePixelRatio || 1);');
   swap('    else if (type === "flash") toFlash();', '    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-study-metrics",{detail:data}));\n    else if (type === "destination") document.dispatchEvent(new CustomEvent("sage-study-destination",{detail:data}));\n    else if (type === "flash") toFlash();');
-  // Fold towards the lower edge as the form slides down. Never expand it
-  // past its own width: the old enlargement looked like a sideways shove.
-  swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "translate3d(0," + (k*k*96) + "px,0) scale(" + (1-k*k*.04) + "," + (1-k*k*.18) + ")" : "scale(" + (1 - k * 0.08) + ")";');
+  // Measure the actual card once. Collapse towards the same viewport centre
+  // as the logo, even when the form is taller or the viewport is narrow.
+  swap('  const card = document.querySelector(".login-card");\n  const blobs',
+    '  const card = document.querySelector(".login-card");\n  const foldBox = window.__sageProposalStudy && card ? card.getBoundingClientRect() : null;\n  const foldX = foldBox ? cx-foldBox.left-foldBox.width/2 : 0;\n  const foldY = foldBox ? cy-foldBox.top-foldBox.height/2 : 0;\n  const blobs');
+  swap('        card.style.opacity = String(Math.max(0, 1 - k * 1.15));',
+    '        card.style.opacity = String(Math.max(0, window.__sageProposalStudy ? 1-k*k : 1-k*1.15));');
+  swap('        card.style.transform = "scale(" + (1 - k * 0.08) + ")";', '        card.style.transform = window.__sageProposalStudy ? "translate3d(" + (foldX*k*k) + "px," + (foldY*k*k) + "px,0) scale(" + (1-k*k*.9) + "," + (1-k*k*.96) + ")" : "scale(" + (1 - k * 0.08) + ")";');
   return out;
 }
 
@@ -343,7 +347,7 @@ html.proposal-study.comparison-lock body { width:calc(100% - var(--proposal-scro
 /* Let the .5s white cover clear first. The .86s sweep then finishes at 1.38s,
    inside the existing landing hold, without slowing the scan or delaying input. */
 .proposal-study.sage-assemble .comparison-scan::before { animation-delay:.52s; }
-.proposal-study .login-card { transform-origin:50% 100%; }
+.proposal-study .login-card { transform-origin:50% 50%; }
 .proposal-study .proposal-wait button { margin-top:5px; margin-bottom:5px; }
 .proposal-destination { position:fixed; z-index:301; pointer-events:none; left:var(--jx,50%); top:var(--jy,50%); width:min(680px,calc(100% - 48px)); transform:translate(-50%,-50%); opacity:0; visibility:hidden; transition:opacity 350ms ease,visibility 0s 350ms; }
 .proposal-destination::before { content:''; position:absolute; inset:-100px -24px; background:radial-gradient(ellipse,#152b22 0%,rgba(21,43,34,.92) 25%,rgba(21,43,34,0) 70%); }
