@@ -1,5 +1,37 @@
 # One continuous arrival
 
+## 24 September follow-up: continuous recycling and offscreen dots
+
+Jorge correctly identified waves after the opening pass and missing dots during
+the inward pull. My previous correction kept radial geometry but retained a
+reset depth of 2.3 to 2.5, which brought expired points back as another cohort.
+Each expired point now receives an independent random bearing, radius, depth
+and size. It fades onto its new fixed radial ray instead of travelling sideways
+to it. The object pool stays fixed during flight. The first logo/field pass,
+readiness gate, palette, landing and saved draft remain intact.
+
+The study also discarded all offscreen grid points. It now continues the actual
+44 px grid beyond the crop, with padding calculated from the 14% inward pull
+plus a grid cell. This is an aligned continuation, not the older offset padded
+grid. Those points exist from the start and enter naturally as the field pulls
+inward. This increases the bounded pool, not the number of canvas layers.
+
+The GSAP performance and timeline guidance informed shared timing and reusing
+objects rather than allocating effects each frame. No new runtime dependency.
+684 tests and both builds pass. Added guards cover an offscreen dot entering the
+viewport and independent recycling over the later cruise. The prior mirrored
+guard now applies to the first pass only; later randomness is intentional.
+Its initial failure was a fixture mistake: offscreen dots became streaks before
+the original four, so the test now identifies those original rays explicitly.
+
+Connected-browser Slow: prepared 4677 ms, landing 5488 ms, complete 6947 ms.
+Body width stayed 1060 px, with zero unlocked landing frames. At this viewport
+the pool grew from 481 to 786 points; drawing averaged 1.78 ms, maximum 5.1 ms,
+with three intervals above 25 ms. Not a hardware frame-rate guarantee. The log
+entries inspected after Slow were from the prior bundle's simulated failures.
+Interrupted retained a scattered radial field, readable controls and no blank
+dashboard reveal. Existing feel and physical-device gaps remain open.
+
 ## 24 September follow-up: one fixed centre
 
 Jorge liked the study's look but saw sideways movement. Installed the requested

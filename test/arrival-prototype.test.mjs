@@ -144,7 +144,7 @@ test("study handles early readiness and cancellation without a second completion
   assert.ok(!stopped.events.some(e=>e[0]==='flash'));
 });
 
-test("study keeps mirrored stars balanced and every exposure radial to one fixed centre",()=>{
+test("study keeps the first pass balanced and every exposure radial to one fixed centre",()=>{
   const arcs=[],segments=[];let tail;
   const ctx=new Proxy({}, {get:(_,key)=>{
     if(key==='createRadialGradient')return ()=>({addColorStop(){}});
@@ -164,19 +164,53 @@ test("study keeps mirrored stars balanced and every exposure radial to one fixed
   for(let t=16;t<=2400;t+=16){
     segments.length=0;engine.tick(t);
     if(!segments.length)continue;
-    assert.equal(segments.length,8);
     for(const {tail:[tx,ty],head:[hx,hy]} of segments){
       assert.ok(Math.abs((tx-200)*(hy-150)-(ty-150)*(hx-200))<1e-7);
       assert.ok(Math.hypot(hx-200,hy-150)>Math.hypot(tx-200,ty-150));
     }
-    for(const [a,b] of [[0,2],[4,6]]){
-      assert.ok(Math.abs(segments[a].head[0]+segments[b].head[0]-400)<1e-8);
-      assert.ok(Math.abs(segments[a].head[1]+segments[b].head[1]-300)<1e-8);
+    // After the first pass, independent respawns intentionally stop mirroring.
+    // The extended border can draw streaks before these four original dots.
+    const original=segments.filter(({head:[x,y]})=>Math.abs(Math.abs(x-200)*70-Math.abs(y-150)*130)<1e-7);
+    if(t<1700 && original.length)for(const [a,b] of [[0,2],[4,6]]){
+      assert.equal(original.length,8);
+      assert.ok(Math.abs(original[a].head[0]+original[b].head[0]-400)<1e-8);
+      assert.ok(Math.abs(original[a].head[1]+original[b].head[1]-300)<1e-8);
     }
     checked++;
   }
   assert.ok(checked>20);
   assert.match(transformed,/window.__sageProposalStudy \? document.body.getBoundingClientRect\(\).width : window.innerWidth/);
+});
+
+test("the pull reveals existing offscreen grid dots rather than an empty border",()=>{
+  const arcs=[];
+  const ctx=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='arc'?(x,y)=>arcs.push([x,y]):()=>{}});
+  const field=[];
+  for(let y=22;y<300;y+=44)for(let x=22;x<400;x+=44)field.push({x,y,size:2,tint:'#294b3b'});
+  const engine=lightspeedStudyEngine(ctx,{W:400,H:300,dpr:1,mk:[],field},()=>{});
+  engine.tick(0);
+  assert.ok(arcs.some(([x,y])=>x===418 && y===22));
+  arcs.length=0;engine.tick(880);
+  assert.ok(arcs.some(([x,y])=>Math.abs(x-387.48)<1e-7 && Math.abs(y-39.92)<1e-7));
+});
+
+test("recycled streaks draw fresh random lifetimes without growing their pool",()=>{
+  let seed=123,draws=0;const events=[];
+  const random=()=>{draws++;seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  const ctx=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):()=>{}});
+  const field=[];
+  for(let y=22;y<600;y+=44)for(let x=22;x<800;x+=44)field.push({x,y,size:2,tint:'#294b3b'});
+  const engine=lightspeedStudyEngine(ctx,{W:800,H:600,dpr:1,mk:[],field,random},(type,data)=>events.push([type,data]));
+  const births=[];let previous=0;
+  for(let t=0;t<=4100;t+=16){engine.tick(t);if(t>=2600){births.push((draws-previous)/4);}previous=draws;}
+  assert.ok(draws>field.length*4);
+  // A cohort must not disappear for a long beat and then all return together.
+  const bins=[];for(let i=0;i<births.length;i+=12)bins.push(births.slice(i,i+12).reduce((a,b)=>a+b,0));
+  assert.ok(bins.every(n=>n>0),JSON.stringify(bins));
+  assert.ok(Math.max(...bins)/Math.min(...bins)<4,JSON.stringify(bins));
+  engine.msg({type:'ready',ready:true});for(let t=4112;t<4900;t+=16)engine.tick(t);
+  const metrics=events.find(e=>e[0]==='metrics')[1];
+  assert.ok(metrics.particles>field.length && metrics.particles<field.length*2);
 });
 
 test("server refuses production bundles and blocks writes, traversal and service workers", async t => {
