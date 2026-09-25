@@ -11,7 +11,7 @@ import { assetPath } from "./manager-performance.mjs";
 
 /** Explicit test cases on the fictional-data recorder only, never app code. */
 export function installLoginFaults() {
-  if (location.hostname !== "127.0.0.1") return;
+  if (!["127.0.0.1", "localhost"].includes(location.hostname)) return;
   const mode = new URLSearchParams(location.search).get("arrivalCase");
   if (mode === "reduce") {
     const media = window.matchMedia.bind(window);
@@ -22,13 +22,19 @@ export function installLoginFaults() {
     };
   }
   if (mode === "fallback") window.Worker = undefined;
-  if (!["slow", "interrupted", "auth-failed"].includes(mode)) return;
   const original = window.fetch.bind(window);
   let until = 0;
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, location.href);
     if (url.origin !== "http://127.0.0.1:5433") return original(input, init);
     const method = (init.method || input.method || "GET").toUpperCase();
+    if (method === "GET" && url.pathname.endsWith("/app_data")) {
+      const key = url.searchParams.get("key") || "";
+      const kind = key.includes("lpc:store:")
+        ? url.searchParams.get("select") === "updated_at" ? "stamp" : key.includes(":act:") ? "activity" : key.endsWith(":v1") ? "legacy" : "store"
+        : key.includes("lpc:config:") ? "config" : "other";
+      document.dispatchEvent(new CustomEvent("sage-arrival-read", { detail: kind }));
+    }
     if (mode === "auth-failed" && method === "POST" && url.pathname === "/auth/v1/token")
       return new Response(JSON.stringify({ error: "invalid_grant", error_description: "Local test: sign-in was refused." }), { status: 400, headers: { "Content-Type": "application/json" } });
     if (method !== "GET" || !url.pathname.endsWith("/app_data") || !url.searchParams.get("key")?.includes("lpc:store:")) return original(input, init);
@@ -146,6 +152,11 @@ export function installLoginProbe(summarize) {
     if (!sample || sample.status !== "recording") return;
     phase = String(e.detail); event("phase", { phase });
   });
+  document.addEventListener("sage-arrival-read", e => {
+    if (sample?.status !== "recording") return;
+    sample.reads[e.detail] = (sample.reads[e.detail] || 0) + 1;
+    event("read", { kind: e.detail });
+  });
   document.addEventListener("sage-arrival-metrics", e => { if (sample?.status === "recording") sample.drawing = e.detail; });
   // Reading layout on every sampled frame was itself forcing layout. Observe
   // changes instead, and retain that instrumentation cost in old trace notes.
@@ -197,7 +208,7 @@ export function installLoginProbe(summarize) {
     canvas = false; hero = false; revealed = false; roundup = false; loginExposed = false; landingStarted = false; waiting = false;
     launchSeen = false; canvasPainted = false;
     sample = { status: "recording", hidden: document.hidden, viewport: [innerWidth, innerHeight],
-      events: [], frames: [], longTasks: [], longFrames: [],
+      events: [], frames: [], longTasks: [], longFrames: [], reads: { config: 0, store: 0, legacy: 0, stamp: 0, activity: 0, other: 0 },
       supportedTiming: PerformanceObserver.supportedEntryTypes || [] };
     sample.widthMin = sample.widthMax = document.body.getBoundingClientRect().width;
     event("sign-in-pressed"); publish();
