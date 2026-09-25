@@ -2,14 +2,14 @@
 # exports here, the files stay in New York, and Sage records that each one
 # arrived. Run by hand: Actions → SFTP server → Run workflow.
 #
-#   create     make the server, with backups, a fixed address and a firewall,
+#   create     make the server, with backups and a firewall,
 #              then prove it works from outside (infra/sftp/check.sh)
 #   firewall   let in exactly the addresses in infra/sftp/allowed-ips.txt
 #   status     what exists, and the outside checks that need no key
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   DIGITALOCEAN_TOKEN   a DigitalOcean key limited to droplets, firewalls,
-#                        reserved IPs, SSH keys, regions and sizes
+#                        tags, regions and sizes (infra/sftp/README.md)
 #   SFTP_NOTIFY_SECRET   the same value as in Vercel; the server sends it
 #                        with every notice to /api/sftp-arrival
 #
@@ -67,7 +67,7 @@ jobs:
           id=$(doctl compute droplet list --tag-name "$NAME" --format ID --no-header | head -1)
           fw=$(doctl compute firewall list --format ID,Name --no-header | awk -v n="$NAME" '$2==n{print $1}' | head -1)
           ip=""
-          if [ -n "$id" ]; then ip=$(doctl compute reserved-ip list --format IP,DropletID --no-header | awk -v d="$id" '$2==d{print $1}' | head -1); fi
+          if [ -n "$id" ]; then ip=$(doctl compute droplet get "$id" --format PublicIPv4 --no-header); fi
           echo "droplet=$id" >> "$GITHUB_OUTPUT"; echo "firewall=$fw" >> "$GITHUB_OUTPUT"; echo "ip=$ip" >> "$GITHUB_OUTPUT"
           echo "server: ${id:-none}  firewall: ${fw:-none}  address: ${ip:-none}"
           # The region, before anything is made in it.
@@ -132,7 +132,10 @@ jobs:
                  --user-data-file "$RUNNER_TEMP/user-data" --wait --format ID --no-header)
           rm -f "$RUNNER_TEMP/user-data"
           echo "droplet=$id" >> "$GITHUB_OUTPUT"
-          ip=$(doctl compute reserved-ip create --droplet-id "$id" --format IP --no-header)
+          # The server's own address, which it keeps for as long as it exists.
+          # A reserved address was refused for this token (403, 25 September)
+          # and gains nothing while there is one server that is never replaced.
+          ip=$(doctl compute droplet get "$id" --format PublicIPv4 --no-header)
           echo "ip=$ip" >> "$GITHUB_OUTPUT"
           echo "server $id at $ip"
 

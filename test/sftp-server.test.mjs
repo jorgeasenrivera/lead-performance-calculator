@@ -79,3 +79,11 @@ test("the tag exists before the firewall that follows it, and a half-made run ca
   assert.match(wf, /A \$NAME server already exists/, "only an existing server stops a create");
   assert.match(wf, /if \[ -n "\$fw" \]; then\n\s*doctl compute firewall update/, "an existing firewall is reused, not duplicated");
 });
+
+test("the address is the server's own; nothing asks for a reserved one", () => {
+  // DigitalOcean refused the reserved address for this token (403, the third
+  // run), after the server already existed. The server's own address holds
+  // for its lifetime, and the token needs no more power over servers.
+  assert.ok(!/reserved-ip/.test(wf));
+  assert.match(wf, /doctl compute droplet get "\$id" --format PublicIPv4 --no-header/);
+});
