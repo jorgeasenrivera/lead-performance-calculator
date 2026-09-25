@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { followDetail } from "../scripts/feel-read.mjs";
+import { followAssessment, followDetail, sustainedFollowSpread } from "../scripts/feel-read.mjs";
 
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
-/* C86. The swipe follow row went red four times on CI at exactly 10 px, one
-   thumb step, and never said where. These pin the sentence that will say it,
-   because the rule is not changed until a failure has actually been read. */
+/* C86. The swipe follow row went red at exactly one 10 px thumb step. A blank
+   native scroller did too. Keep the raw sentence, but only a sustained gap
+   can fail the row as an app regression. */
 
 test("a one-reading blip is told apart from a lag that stays, by the reading after the widest", () => {
   const blip = followDetail([[10, 20, 5, 16.7], [13, 30, 15, 16.7], [16, 40, 15, 33.3], [19, 50, 35, 16.7]]);
@@ -26,10 +26,58 @@ test("the widest gap on the final reading says so rather than inventing a readin
   assert.match(followDetail([[10, 20, 5, 16.7], [13, 30, 5, 16.7]]), /25 px behind, 17 ms\), the last reading;/);
 });
 
-test("the harness prints it, and the rule is unchanged until a failure has been read", () => {
-  assert.ok(/import \{ followDetail \} from "\.\/feel-read\.mjs";/.test(feel));
+test("a one-reading compositor gap recovers without hiding the raw reading", () => {
+  const at = [[10, 20, 5, 16.7], [13, 30, 15, 16.7], [16, 40, 15, 16.7], [19, 50, 35, 16.7], [22, 60, 45, 16.7]];
+  assert.equal(sustainedFollowSpread(at), 0);
+  assert.match(followDetail(at), /25 px behind.*then 15 px behind/);
+});
+
+const readings = (gaps) => gaps.map((gap, i) => [i, i * 10, i * 10 - gap, 16.7]);
+
+test("one enormous reading is not excused as compositor bookkeeping", () => {
+  const result = followAssessment(readings([15, 15, 215, 15, 15]));
+  assert.ok(result.spread > 2);
+  assert.match(result.reason, /exceeds one thumb step/);
+});
+
+test("repeated one-step hitches in a swipe fail with their count", () => {
+  const result = followAssessment(readings([15, 15, 25, 15, 25, 15, 25, 15, 15]));
+  assert.ok(result.spread > 2);
+  assert.match(result.reason, /3 one-reading gaps/);
+});
+
+test("an offset gained on reading two and then held is a hitch, not a recovered blip", () => {
+  const result = followAssessment(readings([15, 25, 25, 25]));
+  assert.ok(result.spread > 2);
+  assert.match(result.reason, /offset gained/);
+});
+
+test("the final solitary sample belongs to snap and frame checks", () => {
+  assert.equal(sustainedFollowSpread(readings([15, 15, 15, 25])), 0);
+});
+
+test("two consecutive readings behind still fail the unchanged two-pixel bar", () => {
+  const at = [[10, 20, 5, 16.7], [13, 30, 15, 16.7], [16, 40, 15, 16.7], [19, 50, 25, 16.7], [22, 60, 35, 16.7], [25, 70, 55, 16.7]];
+  assert.equal(sustainedFollowSpread(at), 10);
+  assert.ok(sustainedFollowSpread(at) > 2);
+});
+
+test("gradual persistent drift is not smoothed away", () => {
+  const at = [15, 16, 17, 18, 19, 20].map((gap, i) => [i, i * 10, i * 10 - gap, 16.7]);
+  assert.equal(sustainedFollowSpread(at), 5);
+});
+
+test("no sustained readings fails closed", () => {
+  assert.equal(sustainedFollowSpread([]), 999);
+  assert.equal(sustainedFollowSpread([[1, 10, 5, 16.7]]), 999);
+  assert.equal(sustainedFollowSpread([[1, 10, 5, 16.7], [2, 20, 5, 16.7]]), 999);
+});
+
+test("the harness measures sustained follow without changing its bar and prints raw evidence", () => {
+  assert.ok(/import \{ followAssessment, followDetail \} from "\.\/feel-read\.mjs";/.test(feel));
   assert.ok(/const detail = followDetail\(at\);\n\s*if \(detail\) console\.log\("       " \+ detail\);/.test(feel));
-  assert.ok(/const follow = gaps\.length \? Math\.max\(\.\.\.gaps\) - Math\.min\(\.\.\.gaps\) : 999;/.test(feel),
-    "the spread itself is still max minus min: nothing is being ignored on a guess");
-  assert.ok(/16 of 17 were not/.test(feel), "the experiment that ruled the easy fix out is written down beside it");
+  assert.ok(/const assessment = followAssessment\(at\);/.test(feel));
+  assert.ok(/const follow = assessment\.spread;/.test(feel));
+  assert.ok(/follow: 2,/.test(feel), "the two-pixel bar is unchanged");
+  assert.ok(/raw one-sample spread/.test(feel), "one-frame compositor gaps remain observable");
 });
