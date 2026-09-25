@@ -30,7 +30,7 @@ export function openArrivalSurface(reduced) {
   retry.onclick = () => window.location.reload();
   document.body.append(scan, destination, panel);
   let disposed = false, scanDone = reduced, scanStarted = false, assemblyDone = false, complete = null;
-  let assemblyTimer = 0, scanTimer = 0, recovery = false;
+  let assemblyTimer = 0, scanTimer = 0, waitTimer = 0, recovery = false, waitExceeded = false;
   const finish = () => {
     if (disposed || !assemblyDone || !scanDone || !complete) return;
     const fn = complete; complete = null; fn();
@@ -54,10 +54,14 @@ export function openArrivalSurface(reduced) {
       name.textContent = typeof value === "string" ? value : "";
       destination.dataset.state = name.textContent ? "show" : "hidden";
     },
-    recovery(failed) { recovery = !!failed; if (recovery) surface.wait(true); },
+    recovery(failed) { recovery = !!failed || waitExceeded; if (recovery) surface.wait(true); },
     wait(failed) {
       if (disposed) return;
       failed = failed || recovery;
+      if (failed) { clearTimeout(waitTimer); waitTimer = 0; }
+      else if (!waitTimer) waitTimer = setTimeout(() => {
+        waitTimer = 0; waitExceeded = true; surface.wait(true);
+      }, 15000);
       panel.hidden = false; retry.hidden = !failed;
       root.classList.add("sage-arrival-waiting");
       panel.classList.toggle("no-flight", reduced || !document.querySelector(".sage-jump-canvas"));
@@ -65,7 +69,7 @@ export function openArrivalSurface(reduced) {
       explanation.textContent = failed ? "Your dashboard has not opened. Check your connection, then try again." : "Your store is taking a little longer to arrive. We'll open it when it's ready.";
       if (failed) heading.focus({ preventScroll: true });
     },
-    covered() { panel.hidden = true; root.classList.remove("sage-arrival-waiting"); },
+    covered() { clearTimeout(waitTimer); waitTimer = 0; panel.hidden = true; root.classList.remove("sage-arrival-waiting"); },
     startScan() {
       if (disposed || reduced || scanStarted) return;
       scanStarted = true; root.classList.add("sage-flight-scan");
@@ -75,13 +79,14 @@ export function openArrivalSurface(reduced) {
       }, 2800);
     },
     afterLanding(fn, delay) {
+      clearTimeout(assemblyTimer);
       complete = fn;
       assemblyTimer = setTimeout(() => { assemblyDone = true; finish(); }, delay);
     },
     dispose() {
       if (disposed) return;
       disposed = true; complete = null;
-      clearTimeout(assemblyTimer); clearTimeout(scanTimer);
+      clearTimeout(assemblyTimer); clearTimeout(scanTimer); clearTimeout(waitTimer);
       scan.removeEventListener("animationend", scanEnd); scan.removeEventListener("animationcancel", scanEnd);
       root.classList.remove("sage-flight-owned", "sage-flight-reduce", "sage-flight-lock", "sage-flight-scan", "sage-arrival-waiting");
       if (app) app.inert = wasInert;

@@ -1794,6 +1794,7 @@ export default function LeadPerformanceCalculator() {
   // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
   // "All Stores", and the activity guard then bounced you to the first store.
   const viewPicked = useRef(false);
+  const viewPickInFlight = useRef(false);
   // The initial "admin" value is a placeholder, not a committed destination.
   const [initialViewReady, setInitialViewReady] = useState(false);
   // which slice of the board is showing. Driven by the hero tiles.
@@ -1886,14 +1887,20 @@ export default function LeadPerformanceCalculator() {
      again the moment a session exists; the cruise absorbs the re-read the same
      way it absorbs everything else. */
   const cfgProvisional = useRef(true);
+  const cfgReadInFlight = useRef(false);
+  const cfgAuthReadPending = useRef(false);
   const [cfgWave, setCfgWave] = useState(0);
   const sessionRef = useRef(null);
   sessionRef.current = session;
   useEffect(() => {
     if (!session || !cfgProvisional.current) return;
+    if (cfgReadInFlight.current) { cfgAuthReadPending.current = true; return; }
+    cfgReadInFlight.current = true;
     setCfgWave((w) => w + 1);
   }, [session]);
   useEffect(() => {
+    cfgReadInFlight.current = true;
+    const authenticatedAtStart = !!sessionRef.current;
     (async () => {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
       // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
@@ -1905,7 +1912,7 @@ export default function LeadPerformanceCalculator() {
            stands in, unchanged and unsaved, until a read gets through; with
            nothing remembered the boot says so and offers to try again. */
         const c = cacheGet("shared:" + CONFIG_KEY);
-        if (c && c.value) { cfgProvisional.current = !sessionRef.current; netSet(true, c.at); setConfig(c.value); return; }
+        if (c && c.value) { cfgProvisional.current = !authenticatedAtStart; netSet(true, c.at); setConfig(c.value); return; }
         setBootStall(true); return;
       }
       netSet(false);
@@ -1948,11 +1955,11 @@ export default function LeadPerformanceCalculator() {
         }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
-        cfgProvisional.current = !sessionRef.current;
+        cfgProvisional.current = !authenticatedAtStart;
         setConfig(cfg);
         /* Signed in, so this is allowed: keep the public slice current even for
            a config that was saved before the slice existed. */
-        if (sessionRef.current) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
+        if (authenticatedAtStart) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
         return;
       }
 
@@ -1973,7 +1980,7 @@ export default function LeadPerformanceCalculator() {
           for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
         }
       }
-      if (sessionRef.current) {
+      if (authenticatedAtStart) {
         /* Genuinely new install, confirmed by an authenticated read: create it. */
         await saveShared(CONFIG_KEY, cfg);
         cfgProvisional.current = false;
@@ -1993,11 +2000,22 @@ export default function LeadPerformanceCalculator() {
         } catch (e) { /* the defaults stand */ }
       }
       setConfig(cfg);
-    })().catch(() => setLoadErr(true));
+    })().catch(() => setLoadErr(true)).finally(() => {
+      cfgReadInFlight.current = false;
+      const pending = cfgAuthReadPending.current;
+      cfgAuthReadPending.current = false;
+      if (pending && sessionRef.current && cfgProvisional.current) {
+        cfgReadInFlight.current = true;
+        setCfgWave((w) => w + 1);
+      }
+    });
   }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
     if (!config || !session || cfgProvisional.current) return;
+    if (!viewPicked.current && viewPickInFlight.current) return;
+    const firstPick = !viewPicked.current;
+    if (firstPick) viewPickInFlight.current = true;
     (async () => {
       const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
       if (!viewPicked.current) {
@@ -2018,7 +2036,8 @@ export default function LeadPerformanceCalculator() {
             else { setLoadErr(true); return; }
           } else if (d) cachePut("store:" + s.id, d);
           if (!d) {
-            const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
+            const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`));
+            const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
           }
@@ -2072,7 +2091,7 @@ export default function LeadPerformanceCalculator() {
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
-        if (!d) { const legacy = await loadStrict(`lpc:store:${s.id}:v1`); d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        if (!d) { const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`)); const legacy = legacyRead.value || { ok: false }; d = (legacy.ok && legacy.value) || emptyStoreData(); }
         if (d.__storeId && d.__storeId !== s.id) {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
@@ -2081,7 +2100,10 @@ export default function LeadPerformanceCalculator() {
         add[s.id] = d;
       }
       if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
-    })();
+    })().catch((error) => {
+      if (firstPick) setLoadErr(true);
+      else console.error("store refresh failed", error);
+    }).finally(() => { if (firstPick) viewPickInFlight.current = false; });
   }, [config, session]);
 
   useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
@@ -2169,7 +2191,7 @@ export default function LeadPerformanceCalculator() {
     activeEngineSend?.({ type: "recovery", failed: arrivalFailed });
   }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave, arrivalDestinationReady, wantsFloor, loadErr, bootStall]);
   useEffect(() => {
-    if (!config || view === "admin" || view === "combined" || !session) return;
+    if (!config || view === "admin" || view === "combined" || !session || !initialViewReady) return;
     /* A load takes two round trips now (the document, then the split day rows), so
        switching stores mid-flight used to let the SLOWER, older store answer last and
        overwrite the newer one. The screen then showed one store's roster while the
@@ -2243,7 +2265,7 @@ export default function LeadPerformanceCalculator() {
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready]); // eslint-disable-line
+  }, [view, ready, initialViewReady]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -5915,7 +5937,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const world = { W, H, dpr, mk, field, lead };
 
   let flashing = false, stopped = false, raf = 0, domRaf = 0;
-  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false;
+  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false, renderer = "main";
 
   const toFlash = () => {
     if (flashing || stopped) return;
@@ -5938,7 +5960,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const onPost = (type, data) => {
     if (stopped) return;
     if (type === "paint") { cv.style.opacity = "1"; root.classList.add("sage-cv"); }
-    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: data }));
+    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: { ...data, renderer } }));
     else if (type === "destination") arrivalView.destination(data);
     else if (type === "phase") { arrivalView.phase(data); tellPhase(data); }
     else if (type === "flash") toFlash();
@@ -5953,8 +5975,9 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     if (arrivalReady && arrivalSurfaceReady && !arrivalFailed) toFlash();
   };
   const fallback = () => {
-    if (stopped || flashing) return;
+    if (stopped || flashing || scheduler) return;
     if (worker) { worker.terminate(); worker = null; }
+    renderer = "main";
     // An OffscreenCanvas cannot be reclaimed. Replace just that canvas once.
     const fresh = cv.cloneNode(false); cv.replaceWith(fresh); cv = fresh;
     try {
@@ -5978,7 +6001,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
         "scheduler=schedule(eng,requestAnimationFrame,cancelAnimationFrame,function(){self.postMessage({type:'renderer-error'});});scheduler.start();" +
         "}else if(scheduler){if(m.type==='stop')scheduler.stop();else scheduler.send(m);}};";
       const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
-      try { worker = new Worker(url); } finally { URL.revokeObjectURL(url); }
+      try { worker = new Worker(url); renderer = "worker"; } finally { URL.revokeObjectURL(url); }
       worker.onmessage = e => { if(e.data.type==="renderer-error")fallback(); else onPost(e.data.type,e.data.data); };
       worker.onerror = () => { console.warn("[Sage arrival] Worker unavailable; using the main-thread renderer."); fallback(); };
       worker.postMessage({ type: "init", canvas: off, world }, [off]);

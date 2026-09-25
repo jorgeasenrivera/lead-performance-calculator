@@ -72,6 +72,26 @@ test("a later waiting phase cannot hide a known connection failure", () => {
   assert.equal(panel.querySelector("button").hidden, false); surface.dispose();
 });
 
+test("an unreported stall offers retry after a bounded wait", () => {
+  const h = harness(), surface = h.context.openArrivalSurface(false);
+  surface.phase("waiting");
+  const panel = h.nodes.find(n => n.className === "sage-arrival-wait");
+  assert.equal(panel.querySelector("button").hidden, true);
+  h.timer(15000);
+  assert.equal(panel.querySelector("h1").textContent, "Connection interrupted");
+  assert.equal(panel.querySelector("button").hidden, false);
+  surface.recovery(false);
+  assert.equal(panel.querySelector("button").hidden, false);
+  surface.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test("a ready destination cancels the waiting ceiling", () => {
+  const h = harness(), surface = h.context.openArrivalSurface(false);
+  surface.phase("waiting"); surface.covered();
+  assert.ok(![...h.timers.values()].some(t => t.ms === 15000));
+  surface.dispose();
+});
+
 test("committed surface preparation waits two frames and is cancellable", async () => {
   const h = harness(); let ready = 0;
   const cancel = h.context.prepareArrivalSurface(() => ready++);

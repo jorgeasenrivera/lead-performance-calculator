@@ -17,18 +17,28 @@ test("cold-download recorder bounds its delay and excludes the service worker", 
 
 test("local arrival fault cases cannot intercept production or unrelated requests", async () => {
   const calls = [];
+  const reads = [];
   const original = async (...args) => { calls.push(args); return new Response("ok"); };
   const context = { location: { hostname: "127.0.0.1", href: "http://127.0.0.1:49213/", search: "?arrivalCase=interrupted" },
-    window: { fetch: original }, URL, URLSearchParams, Response, JSON };
+    window: { fetch: original }, document: { dispatchEvent: e => reads.push(e.detail) },
+    CustomEvent: class { constructor(_name, options) { this.detail = options.detail; } },
+    URL, URLSearchParams, Response, JSON };
   vm.runInNewContext("(" + installLoginFaults.toString() + ")()", context);
   assert.equal((await context.window.fetch("http://127.0.0.1:5433/rest/v1/app_data?key=eq.lpc:store:sage-demo")).status, 503);
   assert.equal((await context.window.fetch("https://example.com/rest/v1/app_data?key=eq.lpc:store:example")).status, 200);
   assert.equal((await context.window.fetch("http://127.0.0.1:5433/rest/v1/profiles")).status, 200);
   assert.equal((await context.window.fetch("http://127.0.0.1:5433/rest/v1/app_data?key=eq.lpc:store:sage-demo", { method: "POST" })).status, 200);
   assert.equal(calls.length, 3);
+  assert.deepEqual(reads, ["store"]);
   context.location.hostname = "example.com"; context.window.fetch = original;
   vm.runInNewContext("(" + installLoginFaults.toString() + ")()", context);
   assert.equal(context.window.fetch, original);
+});
+
+test("the local recorder counts config and store reads without retaining keys", () => {
+  assert.match(installLoginFaults.toString(), /sage-arrival-read/);
+  assert.match(installLoginProbe.toString(), /sample\.reads\[e\.detail\]/);
+  assert.doesNotMatch(installLoginProbe.toString(), /sample\.reads\[.*key/);
 });
 
 test("the login recorder distinguishes an unmeasured landing from zero blocking", () => {
@@ -88,6 +98,18 @@ test("arrival cannot accept the provisional overview or unmount on a boot failur
   assert.match(core, /if \(loadErr \|\| bootStall\) return wrap\(<Shell><BootStall/);
   assert.match(core, /ready=\{arrivalDestinationReady && !loadErr && !bootStall/);
   assert.match(core, /viewPicked\.current = false;\s*setInitialViewReady\(false\)/);
+});
+
+test("first manager store pass is coalesced and a failed legacy read cannot wait forever", () => {
+  assert.match(core, /if \(!viewPicked\.current && viewPickInFlight\.current\) return;/);
+  assert.match(core, /if \(firstPick\) viewPickInFlight\.current = true;/);
+  assert.match(core, /withTimeout\(loadStrict\(`lpc:store:\$\{s\.id\}:v1`\)\)/);
+  assert.match(core, /\}\)\(\)\.catch\(\(error\) => \{\s*if \(firstPick\) setLoadErr\(true\);\s*else console\.error\("store refresh failed", error\);/);
+  assert.match(core, /if \(cfgReadInFlight\.current\) \{ cfgAuthReadPending\.current = true; return; \}/);
+  assert.match(core, /const authenticatedAtStart = !!sessionRef\.current;/);
+  assert.match(core, /view === "combined" \|\| !session \|\| !initialViewReady\) return;/);
+  assert.match(core, /if \(stopped \|\| flashing \|\| scheduler\) return;/);
+  assert.match(core, /detail: \{ \.\.\.data, renderer \}/);
 });
 test("associate readiness does not wait for unrelated manager store documents", () => {
   assert.match(core, /arrivalDestinationReady = wantsFloor \? floorLinks !== undefined : initialViewReady/);
