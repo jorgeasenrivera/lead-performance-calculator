@@ -33,8 +33,10 @@ Port 22 is shut to everybody unless an address is in `allowed-ips.txt`.
    Name `sage-github`, expiry 90 days, **Custom Scopes**, and tick only:
    account read; actions read; droplet create and read; firewall create,
    read and update; image read; regions read; reserved_ip create and read;
-   sizes read; tag create and read. If a run stops on a missing scope, its
-   error names the one to add.
+   sizes read; tag create and read. DigitalOcean then asks to add three it
+   needs for those (snapshot, vpc and project, read only): accept. That is
+   17 in all. If a run stops on a missing scope, its error names the one
+   to add.
 3. **Two GitHub secrets** (repository Settings → Secrets and variables →
    Actions → New repository secret):
    - `DIGITALOCEAN_TOKEN`: the key from step 2.

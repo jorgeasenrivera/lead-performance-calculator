@@ -64,3 +64,10 @@ test("the workflow puts the server behind its firewall from the first second, an
   const allowed = read("infra/sftp/allowed-ips.txt").split("\n").map((l) => l.replace(/#.*/, "").trim()).filter(Boolean);
   assert.deepEqual(allowed, [], "nobody from outside until PromptPath's addresses are known");
 });
+
+test("an empty allowed list does not leave a trailing space in the firewall's rules", () => {
+  // doctl reads "rule " as a rule followed by an empty one and refuses the
+  // whole create (the first real run, 25 September). Nothing was made.
+  assert.ok(!/address:\$\{\{ steps\.allow\.outputs\.runner \}\}\/32 \$\{\{/.test(wf), "the runner's rule and the list are never joined unconditionally");
+  assert.match(wf, /\[ -z "\$allowed" \] \|\| inbound="\$inbound \$allowed"/);
+});

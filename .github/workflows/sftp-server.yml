@@ -107,8 +107,13 @@ jobs:
           CHECK_PUBKEY=$(cat "$RUNNER_TEMP/check.pub") node infra/sftp/render.mjs > "$RUNNER_TEMP/user-data"
           # The firewall first: it follows the tag, so the server is behind it
           # from its first second rather than open while it boots.
+          # Joined only when the list has entries: a trailing space is an
+          # empty rule to doctl, which refuses the whole command.
+          inbound="protocol:tcp,ports:22,address:${{ steps.allow.outputs.runner }}/32"
+          allowed="${{ steps.allow.outputs.rules }}"
+          [ -z "$allowed" ] || inbound="$inbound $allowed"
           fw=$(doctl compute firewall create --name "$NAME" --tag-names "$NAME" \
-                 --inbound-rules "protocol:tcp,ports:22,address:${{ steps.allow.outputs.runner }}/32 ${{ steps.allow.outputs.rules }}" \
+                 --inbound-rules "$inbound" \
                  --outbound-rules "protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0" \
                  --format ID --no-header)
           echo "firewall=$fw" >> "$GITHUB_OUTPUT"
