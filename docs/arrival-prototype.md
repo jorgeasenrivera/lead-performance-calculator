@@ -1,5 +1,41 @@
 # One continuous arrival
 
+## 25 September: first-load report and cold-download checks
+
+Jorge reported no flight followed by a white page on the deployed `ca49349`
+preview, then said the dashboard eventually loaded. He had pressed Sign in,
+not restored a remembered session. A supervised repeat started the canvas and
+reached an unlocked dashboard; Jorge confirmed it looked smooth. Sampling missed
+the middle of that live run. The captured console had earlier floor-poll timeouts,
+not a confirmed cause of the initial failure. Do not label the report fixed.
+
+The local recorder now accepts a fourth CLI argument, the manager chunk delay
+in milliseconds, bounded to 30000. It still refuses non-mock bundles and binds
+only to localhost. It refuses `/sw.js` so a fresh test origin cannot cache an
+old recorder or evade a deliberate download delay. Existing origins with an
+installed worker are not cleared by this change; use a fresh port. Waiting panel
+appearance and disappearance are recorded alongside the flight phases.
+
+Two fresh-origin desktop samples used an 8000 ms Manager download delay together
+with `?arrivalCase=slow`, the existing 4500 ms local store-read delay. Both drew
+the flight, reached the themed waiting panel and eventually reached the dashboard
+with the cover, login and scroll lock gone. The visible waiting screen was checked.
+The second sample mounted the hero at 11266 ms and resumed cruise at 12345 ms.
+
+These are lifecycle evidence, **not a passing smoothness or handoff test**. The
+hidden first tab delivered main-thread frames near once per second. A second,
+explicitly visible tab still had periods of that cadence. Both exceeded the
+recorder's 15-second observation window before reveal; neither proves a permanent
+hang. Both logged the cover timeout, and the second logged the finishing-scan
+timeout. `document.hidden` remained false, so the recorder's foreground flag
+alone does not establish unthrottled rendering. The second worker's drawing cost
+was 1.88 ms average, 6.1 ms maximum, but that does not measure displayed FPS.
+
+No production source changed. 727 tests and the mock-configured production build
+pass. Known PDF eval and chunk-size warnings remain. Do not retry this browser
+condition blindly or merge on these results. A controlled foreground cold-load
+capture through unlock, current review and the physical iPhone check remain open.
+
 ## 24 September: X10 integrated, release verification still open
 
 CI on `1204a50` passed test/build and WebKit screenshots but failed both feel
