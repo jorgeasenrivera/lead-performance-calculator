@@ -228,6 +228,20 @@ test("study handles early readiness and cancellation without a second completion
   assert.ok(!stopped.events.some(e=>e[0]==='flash'));
 });
 
+test("a store first identified after waiting still gets a readable destination",()=>{
+  const {instance,events}=studyEngine();
+  for(let t=0;t<=5000;t+=16)instance.tick(t);
+  assert.ok(instance.sleeping());
+  instance.msg({type:'dest',dest:{name:'Late Store'}});
+  instance.msg({type:'ready',ready:true});
+  for(let t=6000;t<7400;t+=16)instance.tick(t);
+  assert.deepEqual(events.filter(e=>e[0]==='destination'),[['destination','Late Store']]);
+  assert.ok(!events.some(e=>e[1]==='burst'));
+  for(let t=7400;t<=8000;t+=16)instance.tick(t);
+  assert.equal(events.filter(e=>e[0]==='flash').length,1);
+  assert.ok(instance.sleeping());
+});
+
 test("store name holds a readable cruise beat and repeated messages do not restart it",()=>{
   const {instance,events}=studyEngine();
   instance.msg({type:'ready',ready:true});

@@ -2,13 +2,34 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import { summarizeLoginTrace, installLoginProbe } from "../scripts/login-performance.mjs";
+import { summarizeLoginTrace, installLoginProbe, installLoginFaults } from "../scripts/login-performance.mjs";
+
+test("local arrival fault cases cannot intercept production or unrelated requests", async () => {
+  const calls = [];
+  const original = async (...args) => { calls.push(args); return new Response("ok"); };
+  const context = { location: { hostname: "127.0.0.1", href: "http://127.0.0.1:49213/", search: "?arrivalCase=interrupted" },
+    window: { fetch: original }, URL, URLSearchParams, Response, JSON };
+  vm.runInNewContext("(" + installLoginFaults.toString() + ")()", context);
+  assert.equal((await context.window.fetch("http://127.0.0.1:5433/rest/v1/app_data?key=eq.lpc:store:sage-demo")).status, 503);
+  assert.equal((await context.window.fetch("https://example.com/rest/v1/app_data?key=eq.lpc:store:example")).status, 200);
+  assert.equal((await context.window.fetch("http://127.0.0.1:5433/rest/v1/profiles")).status, 200);
+  assert.equal((await context.window.fetch("http://127.0.0.1:5433/rest/v1/app_data?key=eq.lpc:store:sage-demo", { method: "POST" })).status, 200);
+  assert.equal(calls.length, 3);
+  context.location.hostname = "example.com"; context.window.fetch = original;
+  vm.runInNewContext("(" + installLoginFaults.toString() + ")()", context);
+  assert.equal(context.window.fetch, original);
+});
 
 test("the login recorder distinguishes an unmeasured landing from zero blocking", () => {
   const result = summarizeLoginTrace({ hidden: false, events: [], frames: [], longTasks: [] });
   assert.equal(result.revealedAtMs, null);
   assert.equal(result.landingTaskMaxMs, null);
   assert.equal(result.frameMedianMs, null);
+});
+
+test("the sign-in recorder recognises both desktop and mobile manager heroes", () => {
+  assert.match(installLoginProbe.toString(), /querySelector\("\.s2-hero,\.bp-hero"\)/);
+  assert.doesNotMatch(installLoginProbe.toString(), /querySelector\("\.s2-tube"\)/);
 });
 
 test("the landing summary excludes work before the reveal", () => {
@@ -45,6 +66,18 @@ test("the injected recorder and summary remain serializable browser functions", 
 });
 
 const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
+test("arrival cannot accept the provisional overview or unmount on a boot failure", () => {
+  assert.match(core, /const \[initialViewReady, setInitialViewReady\] = useState\(false\)/);
+  assert.match(core, /if \(!config \|\| !session \|\| cfgProvisional\.current\) return;/);
+  const initial = core.slice(core.indexOf("if (!viewPicked.current)"), core.indexOf("// Later runs happen"));
+  assert.ok(initial.indexOf("setInitialViewReady(true)") > initial.indexOf("setView(first)"));
+  const readiness = core.slice(core.indexOf("const landable ="), core.indexOf("useEffect(() => {", core.indexOf("const landable =")));
+  assert.match(readiness, /initialViewReady && !cfgProvisional\.current/);
+  assert.match(readiness, /arrivalFailed = loadErr \|\| bootStall/);
+  assert.match(core, /if \(loadErr \|\| bootStall\) return wrap\(<Shell><BootStall/);
+  assert.match(core, /ready=\{initialViewReady && !loadErr && !bootStall/);
+  assert.match(core, /viewPicked\.current = false;\s*setInitialViewReady\(false\)/);
+});
 test("radial landing preserves a page child's cardIn instead of restarting it at cleanup", () => {
   const children = ":where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *)";
   assert.ok(core.includes(children + " { animation: cardIn var(--t-settle) var(--ease) both; }"));
@@ -155,6 +188,7 @@ function landingHarness({ short = false, cover = true } = {}) {
       contains: (c) => classes.has(c), add: (...cs) => cs.forEach((c) => classes.add(c)),
       remove: (...cs) => cs.forEach((c) => classes.delete(c)),
     } } }, jumpShort: short, jumpLanded: false,
+    startArrivalScan: () => assert.ok(!classes.has("sage-preparing"), "scan starts only after covered preparation"),
     radialAssemble: () => { radial++; return () => cleaned++; },
     requestAnimationFrame: (fn) => { frames.set(++id, fn); return id; }, cancelAnimationFrame: (n) => frames.delete(n),
   });
@@ -198,12 +232,14 @@ test("login visibility belongs to the React commit and preparation stays fully c
   assert.match(core, /\.sage-preparing \.lpc, \.sage-preparing \.lpc \* \{ animation-play-state:paused !important; \}/);
 });
 
-test("repeat short login resets the previous landing and owns its entrance until cleanup", () => {
-  const timers = new Map(), phases = []; let flashes = 0, done = 0;
+test("repeat short login waits for the committed destination and owns its entrance until cleanup", () => {
+  const timers = new Map(), phases = []; let flashes = 0, done = 0, timerId = 0, disposed = 0;
   const context = vm.createContext({
     document: { documentElement: {} }, jumpLanded: true, jumpOwnsEntrance: false,
     arrivalShort: () => true, tellPhase: (p) => phases.push(p),
-    setTimeout: (f) => { timers.set(1, f); return 1; }, clearTimeout: (id) => timers.delete(id),
+    arrivalReady: true, arrivalSurfaceReady: false, arrivalFailed: false, activeEngineSend: null,
+    openArrivalSurface: () => ({ covered() {}, wait() {}, dispose() { disposed++; } }),
+    setTimeout: (f) => { timers.set(++timerId, f); return timerId; }, clearTimeout: (id) => timers.delete(id),
   });
   vm.runInContext(core.slice(core.indexOf("function runJump("), core.indexOf("\n/* True from the press")), context);
   const undo = context.runJump({ onFlash: () => flashes++, onDone: () => done++ });
@@ -211,9 +247,13 @@ test("repeat short login resets the previous landing and owns its entrance until
   assert.equal(context.jumpOwnsEntrance, true);
   assert.deepEqual(phases, ["cruise"]);
   timers.get(1)();
+  assert.equal(flashes, 0); assert.equal(done, 0);
+  context.arrivalSurfaceReady = true;
+  context.activeEngineSend({ type: "ready", ready: true });
   assert.equal(flashes, 1); assert.equal(done, 1);
   undo();
   assert.equal(context.jumpOwnsEntrance, false);
   assert.equal(timers.size, 0);
+  assert.equal(disposed, 1);
   assert.deepEqual(phases, ["cruise", "off"]);
 });
