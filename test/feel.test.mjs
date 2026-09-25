@@ -62,8 +62,9 @@ test("waiting screens show soon and leave the moment the wait is over", () => {
   assert.ok(Number(m[1]) <= 500, "shown within half a second"); assert.ok(Number(m[2]) <= 300, "held no longer than 300 ms");
 });
 
-test("the jump is once a day; a return the same day lands short", () => {
-  assert.ok(/jumpShort = arrivalShort\(\);/.test(core) && /arrivalTaken\(\);/.test(core), "decided at the press");
+test("every sign-in gets the arrival; only reduced motion lands short", () => {
+  assert.ok(/jumpShort = arrivalShort\(\);/.test(core), "decided at the press");
+  assert.ok(!/JUMP_DAY_KEY|arrivalTaken/.test(core), "no daily read or write suppresses a repeat");
   assert.ok(/reduce \? 320 : ARRIVAL\.assemble/.test(core) && /const reduce = jumpShort;/.test(core), "the landing reads the same decision");
 });
 
@@ -1166,6 +1167,13 @@ test("a timed row prints its three samples, so a miss can be read instead of gue
   for (const name of ["tap Lunch to shown", "tap Here to shown", "Floor to Phone tab", "Phone to Floor tab"]) {
     assert.ok(feel.includes(`row3("${name}", `), `${name} is a row of three`);
   }
+});
+
+test("sign-in timing includes the interaction lock without relaxing the speed bar", () => {
+  const signIn = feel.slice(feel.indexOf("const signIn = async"), feel.indexOf("const first = await signIn()"));
+  assert.ok(signIn.indexOf('classList.contains("sage-flight-lock")') < signIn.indexOf("const elapsed = ms(t0)"));
+  assert.match(signIn, /!document\.getElementById\("root"\)\?\.inert/);
+  assert.match(feel, /returnSignIn: 900 \+ 3 \* LAG/);
 });
 
 test("the FlyBy row waits for the page's own writes before it changes the status under them", () => {

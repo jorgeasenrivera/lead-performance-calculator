@@ -2,6 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
+import { createArrivalScheduler } from "./arrival-scheduler.mjs";
+import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
 /* The CSV reader is a manager's tool: it runs when somebody drops a report on
    the Import page. A salesperson on the floor never touches it, so it is fetched
    on the first parse rather than carried in everyone's first load. */
@@ -224,12 +227,6 @@ const STORE_TZ = "America/New_York";
 const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
 const today = () => dayIn();
 
-/* The arrival plays only on the first sign-in of each calendar day, per person:
-   keyed by dealership day plus user, so it resets at midnight and is independent
-   per account on a shared machine. The key is `lpc:arrival` rather than the old
-   `lpc:intro-played`, which means everybody sees the new arrival once even if
-   they had already seen the old cinematic today — which is the right way round,
-   since it is the thing they have not seen. */
 const ym = () => today().slice(0, 7);
 
 const dayOfMonth = () => Number(today().slice(8, 10));
@@ -885,7 +882,7 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         // Keep people signed in across reloads and across days. The cinematic
-        // loading sequence is gated separately (once per calendar day); the login
+        // loading sequence belongs to explicit sign-in; the login
         // itself persists so The Board and their session survive between visits.
         persistSession: true,
         autoRefreshToken: true,
@@ -1671,15 +1668,17 @@ export default function LeadPerformanceCalculator() {
        change must not hide it again. See the latch's comment. */
     const under = !session || (jumpHold && !jumpLanded);
     document.documentElement.classList.toggle("jump-under", under);
+    // Release only after React has removed the old form, never in the timer
+    // that merely schedules its removal. A busy commit can leave a visible gap.
+    if (!jumpHold) document.documentElement.classList.remove("signin-gone");
     return () => document.documentElement.classList.remove("jump-under");
   }, [session, jumpHold]);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
-  // means the next sign-in plays it as well, which is what makes it possible to
-  // review the whole handover end to end.
+  // Replay the dashboard landing from the account menu. The complete tunnel
+  // still begins at explicit sign-in, where the login mark is available.
   /* Kept for the account menu, which has always had it, though with the arrival
      playing every time there is far less for it to do. */
   const replayIntro = () => {
@@ -1743,7 +1742,7 @@ export default function LeadPerformanceCalculator() {
     wait();
     return () => { cancelAnimationFrame(raf); clearTimeout(doneT); undo(); clear(); };
   }, [session]);
-  // The cinematic intro plays once per calendar day per user. null = not decided yet.
+  // Tracks whether the current arrival has completed.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
   /* Opens on the store this browser last worked in; see rememberView. Starting
@@ -1795,6 +1794,9 @@ export default function LeadPerformanceCalculator() {
   // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
   // "All Stores", and the activity guard then bounced you to the first store.
   const viewPicked = useRef(false);
+  const viewPickInFlight = useRef(false);
+  // The initial "admin" value is a placeholder, not a committed destination.
+  const [initialViewReady, setInitialViewReady] = useState(false);
   // which slice of the board is showing. Driven by the hero tiles.
   const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
   const [assocQuery, setAssocQuery] = useState("");
@@ -1884,16 +1886,21 @@ export default function LeadPerformanceCalculator() {
      own. So a config adopted while signed out is marked provisional and fetched
      again the moment a session exists; the cruise absorbs the re-read the same
      way it absorbs everything else. */
-  const cfgProvisional = useRef(false);
+  const cfgProvisional = useRef(true);
+  const cfgReadInFlight = useRef(false);
+  const cfgAuthReadPending = useRef(false);
   const [cfgWave, setCfgWave] = useState(0);
   const sessionRef = useRef(null);
   sessionRef.current = session;
   useEffect(() => {
     if (!session || !cfgProvisional.current) return;
-    cfgProvisional.current = false;
+    if (cfgReadInFlight.current) { cfgAuthReadPending.current = true; return; }
+    cfgReadInFlight.current = true;
     setCfgWave((w) => w + 1);
   }, [session]);
   useEffect(() => {
+    cfgReadInFlight.current = true;
+    const authenticatedAtStart = !!sessionRef.current;
     (async () => {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
       // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
@@ -1905,7 +1912,7 @@ export default function LeadPerformanceCalculator() {
            stands in, unchanged and unsaved, until a read gets through; with
            nothing remembered the boot says so and offers to try again. */
         const c = cacheGet("shared:" + CONFIG_KEY);
-        if (c && c.value) { netSet(true, c.at); setConfig(c.value); return; }
+        if (c && c.value) { cfgProvisional.current = !authenticatedAtStart; netSet(true, c.at); setConfig(c.value); return; }
         setBootStall(true); return;
       }
       netSet(false);
@@ -1948,10 +1955,11 @@ export default function LeadPerformanceCalculator() {
         }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
+        cfgProvisional.current = !authenticatedAtStart;
         setConfig(cfg);
         /* Signed in, so this is allowed: keep the public slice current even for
            a config that was saved before the slice existed. */
-        if (sessionRef.current) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
+        if (authenticatedAtStart) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
         return;
       }
 
@@ -1972,9 +1980,10 @@ export default function LeadPerformanceCalculator() {
           for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
         }
       }
-      if (sessionRef.current) {
+      if (authenticatedAtStart) {
         /* Genuinely new install, confirmed by an authenticated read: create it. */
         await saveShared(CONFIG_KEY, cfg);
+        cfgProvisional.current = false;
       } else {
         /* Signed out, row invisible: run the login on defaults, write nothing,
            and re-read the moment a session exists. The group's own stores,
@@ -1991,11 +2000,22 @@ export default function LeadPerformanceCalculator() {
         } catch (e) { /* the defaults stand */ }
       }
       setConfig(cfg);
-    })().catch(() => setLoadErr(true));
+    })().catch(() => setLoadErr(true)).finally(() => {
+      cfgReadInFlight.current = false;
+      const pending = cfgAuthReadPending.current;
+      cfgAuthReadPending.current = false;
+      if (pending && sessionRef.current && cfgProvisional.current) {
+        cfgReadInFlight.current = true;
+        setCfgWave((w) => w + 1);
+      }
+    });
   }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
-    if (!config || !session) return;
+    if (!config || !session || cfgProvisional.current) return;
+    if (!viewPicked.current && viewPickInFlight.current) return;
+    const firstPick = !viewPicked.current;
+    if (firstPick) viewPickInFlight.current = true;
     (async () => {
       const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
       if (!viewPicked.current) {
@@ -2016,7 +2036,8 @@ export default function LeadPerformanceCalculator() {
             else { setLoadErr(true); return; }
           } else if (d) cachePut("store:" + s.id, d);
           if (!d) {
-            const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
+            const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`));
+            const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
           }
@@ -2055,6 +2076,7 @@ export default function LeadPerformanceCalculator() {
           if (first) { setView(first); setStoreData(all[first]); }
           else if (session.role === "admin") setView("admin");
         }
+        setInitialViewReady(true);
         return;
       }
       // Later runs happen when the config or (more often) the auth session reference
@@ -2069,7 +2091,7 @@ export default function LeadPerformanceCalculator() {
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
-        if (!d) { const legacy = await loadStrict(`lpc:store:${s.id}:v1`); d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        if (!d) { const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`)); const legacy = legacyRead.value || { ok: false }; d = (legacy.ok && legacy.value) || emptyStoreData(); }
         if (d.__storeId && d.__storeId !== s.id) {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
@@ -2078,7 +2100,10 @@ export default function LeadPerformanceCalculator() {
         add[s.id] = d;
       }
       if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
-    })();
+    })().catch((error) => {
+      if (firstPick) setLoadErr(true);
+      else console.error("store refresh failed", error);
+    }).finally(() => { if (firstPick) viewPickInFlight.current = false; });
   }, [config, session]);
 
   useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
@@ -2120,15 +2145,17 @@ export default function LeadPerformanceCalculator() {
   }, [storeData, view, ready]);
   /* ---- what the arrival is waiting for ----
      The jump's cruise holds until the screen it will land on is actually
-     standing. "Standing" includes the failure screens on purpose: a store that
-     answered with a mismatch or a failed load still has something honest to
-     land on, and holding the tunnel for data that is never coming would just be
-     a spinner with better art. The destination sign is the store's own name and
-     brand colour, from config. */
+     standing. A store mismatch has an honest warning to land on. A failed read
+     stays in the arrival's connection panel with a retry, never a successful
+     landing on the temporary All Stores view. The first destination must have
+     been selected from the authenticated config and its completed store reads. */
   const [iconWave, setIconWave] = useState(0);
   const iconCache = useRef({});
+  // The associate's destination reads its own floor rows. Making it wait for
+  // the manager's full store documents adds round trips it does not consume.
+  const arrivalDestinationReady = wantsFloor ? floorLinks !== undefined : initialViewReady;
   useEffect(() => {
-    if (!jumpHold) { tellArrivalReady(false, null); return; }
+    if (!jumpHold) { arrivalSurfaceReady = false; arrivalFailed = false; tellArrivalReady(false, null); return; }
     const atStore = view !== "admin" && view !== "combined";
     const store = atStore ? (config?.stores || []).find((x) => x.id === view) : null;
     /* The landing has to arrive COMPLETE: a store icon that pops in a beat
@@ -2155,14 +2182,16 @@ export default function LeadPerformanceCalculator() {
         }
       }
     }
-    const landable = !!session && !!config && iconReady
-      && (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    const landable = !!session && !!config && arrivalDestinationReady && !cfgProvisional.current && iconReady
+      && (wantsFloor || !atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    arrivalFailed = loadErr || bootStall || (!!storeLoadFailed && !storeMismatch);
     tellArrivalReady(landable, store
       ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
       : null);
-  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave]);
+    activeEngineSend?.({ type: "recovery", failed: arrivalFailed });
+  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave, arrivalDestinationReady, wantsFloor, loadErr, bootStall]);
   useEffect(() => {
-    if (!config || view === "admin" || view === "combined" || !session) return;
+    if (!config || view === "admin" || view === "combined" || !session || !initialViewReady) return;
     /* A load takes two round trips now (the document, then the split day rows), so
        switching stores mid-flight used to let the SLOWER, older store answer last and
        overwrite the newer one. The screen then showed one store's roster while the
@@ -2236,7 +2265,7 @@ export default function LeadPerformanceCalculator() {
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready]); // eslint-disable-line
+  }, [view, ready, initialViewReady]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -2961,7 +2990,6 @@ export default function LeadPerformanceCalculator() {
     return <Shell ground={false}><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
   }
   const retryBoot = () => { setBootStall(false); setLoadErr(false); netSet(false); setCfgWave((w) => w + 1); setLinksWave((w) => w + 1); refreshProfile(); };
-  if (loadErr || bootStall) return <Shell><BootStall onRetry={retryBoot} /><Style /></Shell>;
   /* ---- the sign-in screen is a LAYER, not a branch ----
      It used to be one of this component's early returns, which meant the app
      underneath it did not exist until the jump handed over — so the dashboard
@@ -2990,20 +3018,24 @@ export default function LeadPerformanceCalculator() {
       <Login config={config}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
-          const undo = landDashboard();
-          /* And the tidying, once the landing is over and a render is free. */
-          setTimeout(() => {
-            undo();
-            jumpOwnsEntrance = false;
-            setJumpHold(false);
-            setHoldMount(false);   // belt and braces: the gate must never outlive the jump
-            setIntroDone(true);
-          }, jumpShort ? 360 : ARRIVAL.assemble);
+          const undo = landDashboard(() => {
+            /* Settle React state after the landing, not during its first paint. */
+            finishArrivalLanding(() => {
+              undo();
+              jumpOwnsEntrance = false;
+              setJumpHold(false);
+              setHoldMount(false);   // belt and braces: the gate must never outlive the jump
+              setIntroDone(true);
+            }, jumpShort ? 360 : ARRIVAL.assemble);
+          });
         }}
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
   ) : null;
-  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}</RoomBoundary>{signInLayer}</React.Suspense>;
+  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}{jumpHold && !holdMount && session && <ArrivalPrepared ready={arrivalDestinationReady && !loadErr && !bootStall && (wantsFloor || view === "admin" || view === "combined" || !!storeData || !!storeMismatch)} identity={wantsFloor ? floorLinks : storeData} />}</RoomBoundary>{signInLayer}</React.Suspense>;
+
+  // Keep the login owner mounted so a failed boot can stop in themed recovery.
+  if (loadErr || bootStall) return wrap(<Shell><BootStall onRetry={retryBoot} /><Style /></Shell>);
 
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
@@ -3011,6 +3043,7 @@ export default function LeadPerformanceCalculator() {
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
+    setInitialViewReady(false);
     setSession(null); setEntered(false); setAppModule("perf");
   };
 
@@ -3074,7 +3107,7 @@ export default function LeadPerformanceCalculator() {
 
   // The Tools chooser is gone. Signing in drops the person straight into the
   // Performance dashboard; the cinematic intro (below) covers the transition on the
-  // first sign-in of the day. chooseModule stays for the in-app "Tools" button.
+  // explicit sign-in. chooseModule stays for the in-app "Tools" button.
   const chooseModule = (mod) => {
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
@@ -5201,7 +5234,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       {/* The field belongs to this screen and lives as long as it does: held for
           the whole jump, gone with it at the handover, underneath the white. */}
       <SageField />
-      <div className={"login-card " + (busy ? "login-busy" : "")}>
+      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" ? " login-launch" : "") : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         {/* No spinner here any more. Signing in used to swap the wordmark for a
             loading indicator, which is a different object appearing in the place
@@ -5420,6 +5453,24 @@ function rememberView(v) {
 function settleViewport({ floor = 200, cap = 520 } = {}) {
   return new Promise((resolve) => {
     if (typeof window === "undefined") return resolve();
+    // A known non-touch desktop has no software keyboard to dismiss. Give
+    // the pressed state one frame, not the phone's 240 ms quiet-window wait.
+    // Missing capability information, touch laptops and zoom stay conservative.
+    let desktop = false;
+    try {
+      const vv = window.visualViewport;
+      desktop = navigator.maxTouchPoints === 0
+        && window.matchMedia("(pointer: fine)").matches
+        && !window.matchMedia("(any-pointer: coarse)").matches
+        && (!vv || (vv.scale === 1 && Math.abs(vv.height - window.innerHeight) < 2));
+    } catch (e) {}
+    if (desktop) {
+      let frame = 0, done = false;
+      const finish = () => { if (done) return; done = true; clearTimeout(limit); cancelAnimationFrame(frame); resolve(); };
+      const limit = setTimeout(finish, cap);
+      frame = requestAnimationFrame(finish);
+      return;
+    }
     /* A floor, not just a quiet check. The keyboard does not begin leaving the
        instant it is told to — iOS animates it out over about a quarter of a
        second — so polling for "the height stopped changing" answers yes before
@@ -5461,23 +5512,21 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    not. */
 const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };
 
-/* The jump is for the first sign-in of the day on this phone. Signing in again
-   the same day (a switch, a sign-out and back) lands the short way, the quick
-   fade reduced motion gets: the tunnel is an arrival, not a toll on every
-   return. Decided once, at the press, and read by every beat after it. */
-const JUMP_DAY_KEY = "lpc:jump:day";
+/* Every explicit sign-in gets the existing arrival. Only Reduce Motion takes
+   the short path. Old daily marks are ignored, including on shared computers. */
 let jumpShort = false;
 function arrivalShort() {
   try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true; } catch (e) {}
-  try { return localStorage.getItem(JUMP_DAY_KEY) === today(); } catch (e) { return false; }
+  return false;
 }
-function arrivalTaken() { try { localStorage.setItem(JUMP_DAY_KEY, today()); } catch (e) {} }
 
 /* ---- what the jump is waiting for, and where it is going ----
    Told by the root, read by the engine each frame of the cruise. Module state
    for the same reason lastJumpOrigin is: the engine lives outside React so the
    handover cannot tear it down mid-flight. */
 let arrivalReady = false;
+let arrivalSurfaceReady = false;
+let arrivalFailed = false;
 let arrivalDest = null;   // { name, color } for the travel sign, or null
 /* The engine announces its beats so the root can schedule the expensive work
    into the right one: the dashboard mounts during the CRUISE, which is the
@@ -5492,9 +5541,22 @@ function tellArrivalReady(ready, dest) {
   arrivalReady = !!ready;
   if (dest !== undefined) arrivalDest = dest;
   if (activeEngineSend) {
-    activeEngineSend({ type: "ready", ready: arrivalReady });
     activeEngineSend({ type: "dest", dest: arrivalDest });
+    activeEngineSend({ type: "ready", ready: arrivalReady });
   }
+}
+function ArrivalPrepared({ ready, identity }) {
+  useLayoutEffect(() => {
+    arrivalSurfaceReady = false;
+    activeEngineSend?.({ type: "ready", ready: false });
+    if (!ready) return;
+    const cancel = prepareArrivalSurface(() => {
+      arrivalSurfaceReady = true;
+      activeEngineSend?.({ type: "ready", ready: arrivalReady });
+    });
+    return () => { cancel(); arrivalSurfaceReady = false; activeEngineSend?.({ type: "ready", ready: false }); };
+  }, [ready, identity]);
+  return null;
 }
 /* ---- every time, not once a day ----
    The handoff asked for the first sign-in of the day, like the morning round-up,
@@ -5739,6 +5801,33 @@ function arrivalEngineCore(ctx, world, post) {
   };
 }
 
+/* A pair of frames is not a duration: at 120 Hz it ends before the cover is
+   opaque. Keep the last tunnel frame until opacity reaches one, then allow a
+   paint before swapping. A missing cover must report, not strand sign-in. */
+function waitForArrivalCover(onCovered) {
+  const cover = document.querySelector(".sage-flash");
+  let stopped = false, raf = 0;
+  const finish = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(limit); cancelAnimationFrame(raf);
+    onCovered();
+  };
+  const limit = setTimeout(() => {
+    console.warn("[Sage arrival] Cover did not become opaque; continuing sign-in.");
+    finish();
+  }, 1000);
+  const check = () => {
+    if (stopped) return;
+    const style = cover && getComputedStyle(cover);
+    if (style && style.position === "fixed" && Number(style.opacity) >= 0.999) {
+      raf = requestAnimationFrame(finish);
+    } else raf = requestAnimationFrame(check);
+  };
+  raf = requestAnimationFrame(check);
+  return () => { stopped = true; clearTimeout(limit); cancelAnimationFrame(raf); };
+}
+
 function runJump({ onFlash, onDone, lead = 0 }) {
   /* The driver. Measures the world at the press, hands the drawing to
      arrivalEngineCore — inside a Worker with an OffscreenCanvas wherever the
@@ -5748,15 +5837,24 @@ function runJump({ onFlash, onDone, lead = 0 }) {
      and the flash handover. */
   const root = typeof document === "undefined" ? null : document.documentElement;
   if (!root) { onFlash(); onDone(); return () => {}; }
-  jumpShort = arrivalShort();
-  if (jumpShort) {
-    tellPhase("cruise");
-    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
-    return () => clearTimeout(t);
-  }
-  arrivalTaken();
+  // A repeat or reduced-motion sign-in owns a new handoff too. Never inherit
+  // the previous session's landed latch and expose the app before this one ends.
   jumpOwnsEntrance = true;
   jumpLanded = false;
+  jumpShort = arrivalShort();
+  const arrivalView = openArrivalSurface(jumpShort);
+  if (jumpShort) {
+    tellPhase("cruise");
+    let elapsed = false, complete = false;
+    const finish = () => {
+      if (complete || !elapsed || !arrivalReady || !arrivalSurfaceReady || arrivalFailed) return;
+      complete = true; activeEngineSend = null; arrivalView.covered(); onFlash(); onDone();
+    };
+    activeEngineSend = m => { if (m.type === "recovery" && m.failed) arrivalView.wait(true); finish(); };
+    const t = setTimeout(() => { elapsed = true; finish(); }, 180);
+    const waiting = setTimeout(() => { if (!complete) arrivalView.wait(arrivalFailed); }, 500);
+    return () => { complete = true; clearTimeout(t); clearTimeout(waiting); activeEngineSend = null; arrivalView.dispose(); jumpOwnsEntrance = false; tellPhase("off"); };
+  }
 
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H / 2;
@@ -5773,7 +5871,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     const ox = mr.left + (mr.width - gWord.w * scale) / 2;
     const oy = mr.top + (mr.height - gWord.h * scale) / 2;
     const gS = sageDots({ word: false });
-    const seatScale = scale * 0.62;
+    const seatScale = scale * 0.46;
     const seats = gS.dots.map((d) => ({
       x: cx + (d.x - gS.w / 2) * seatScale,
       y: cy + (d.y - gS.h / 2) * seatScale,
@@ -5810,34 +5908,17 @@ function runJump({ onFlash, onDone, lead = 0 }) {
       }
   }
 
-  /* ---- the tunnel: seeded mid-life so the sky starts in steady state ---- */
-  const maxR = Math.hypot(W, H) / 2 + 160;
-  const tunnel = [];
-  {
-    const n = Math.round((W * H) / 7800);
-    for (let i = 0; i < n; i++) {
-      const waiting = Math.random() < 0.18;
-      const r = waiting ? 2 : Math.pow(Math.random(), 1.7) * maxR;
-      tunnel.push({
-        ang: Math.random() * Math.PI * 2, r,
-        t: Math.max(0, r - (200 + Math.random() * 160)),
-        wait: waiting ? Math.random() * 0.9 : 0,
-        v: 0.55 + Math.random() * 0.9,
-        size: 1.4 + Math.random() * 2.2,
-        tint: GROUND_TINTS[Math.floor(Math.random() * GROUND_TINTS.length)],
-      });
-    }
-  }
-
-  const cv = document.createElement("canvas");
+  let cv = document.createElement("canvas");
   cv.className = "sage-jump-canvas";
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px";
   document.body.appendChild(cv);
-  root.classList.add("sage-cv");
+  cv.style.opacity = "0";
 
   const card = document.querySelector(".login-card");
+  const fold = card?.getBoundingClientRect();
+  const foldX = fold ? cx-fold.left-fold.width/2 : 0, foldY = fold ? cy-fold.top-fold.height/2 : 0;
   const blobs = Array.from(document.querySelectorAll(".sg-blob")).map((el) => {
     const r = el.getBoundingClientRect();
     const bx = r.left + r.width / 2, by = r.top + r.height / 2;
@@ -5853,70 +5934,89 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     catch (e) { return "sans-serif"; }
   })();
 
-  const world = { W, H, dpr, T: JUMP_T, FP: 0.5, mk, field, tunnel, font: bodyFont, lead };
+  const world = { W, H, dpr, mk, field, lead };
 
   let flashing = false, stopped = false, raf = 0, domRaf = 0;
-  let worker = null, engine = null;
+  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false, renderer = "main";
 
   const toFlash = () => {
     if (flashing || stopped) return;
     flashing = true;
+    arrivalView.covered();
+    scheduler?.stop();
     activeEngineSend = null;
-    restoreDom();
-    root.classList.add("sage-beat-flash");
-    root.classList.remove("sage-cv");
+    root.classList.add("sage-beat-flash", "sage-cover-active");
     if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
-    if (cv.parentNode) cv.parentNode.removeChild(cv);
     onFlash();
-    let frames = 0;
-    const painted = () => {
+    cancelCover = waitForArrivalCover(() => {
       if (stopped) return;
-      if (++frames < 2) { requestAnimationFrame(painted); return; }
-      setTimeout(() => { if (!stopped) onDone(); }, 20);
-    };
-    requestAnimationFrame(painted);
+      restoreDom();
+      root.classList.remove("sage-cv");
+      if (cv.parentNode) cv.parentNode.removeChild(cv);
+      onDone();
+    });
   };
 
   const onPost = (type, data) => {
     if (stopped) return;
-    if (type === "phase") tellPhase(data);
+    if (type === "paint") { cv.style.opacity = "1"; root.classList.add("sage-cv"); }
+    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: { ...data, renderer } }));
+    else if (type === "destination") arrivalView.destination(data);
+    else if (type === "phase") { arrivalView.phase(data); tellPhase(data); }
     else if (type === "flash") toFlash();
   };
 
   /* Worker where the browser has one; the same core on the main thread where
      it does not. Either way the maths exists once. */
-  let usingWorker = false;
+  const drawingError = () => {
+    drawingFailed = true;
+    console.warn("[Sage arrival] Canvas unavailable; using the covered handoff.");
+    arrivalView.wait(arrivalFailed);
+    if (arrivalReady && arrivalSurfaceReady && !arrivalFailed) toFlash();
+  };
+  const fallback = () => {
+    if (stopped || flashing || scheduler) return;
+    if (worker) { worker.terminate(); worker = null; }
+    renderer = "main";
+    // An OffscreenCanvas cannot be reclaimed. Replace just that canvas once.
+    const fresh = cv.cloneNode(false); cv.replaceWith(fresh); cv = fresh;
+    try {
+      const ctx = cv.getContext("2d");
+      if (!ctx) { drawingError(); return; }
+      engine = productionArrivalEngine(ctx, world, onPost);
+      scheduler = createArrivalScheduler(engine, requestAnimationFrame, cancelAnimationFrame, drawingError);
+      scheduler.send({ type: "dest", dest: arrivalDest });
+      scheduler.send({ type: "ready", ready: arrivalReady && arrivalSurfaceReady && !arrivalFailed });
+      scheduler.start();
+    } catch (error) { drawingError(); }
+  };
   try {
     if (typeof OffscreenCanvas !== "undefined" && cv.transferControlToOffscreen && typeof Worker !== "undefined") {
       const off = cv.transferControlToOffscreen();
-      const src = "let eng=null;self.onmessage=function(e){var m=e.data;" +
-        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');" +
-        "var core=(" + arrivalEngineCore.toString() + ");" +
-        "eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
-        "var loop=function(now){if(!eng)return;eng.tick(now);requestAnimationFrame(loop);};" +
-        "requestAnimationFrame(loop);}else if(eng){eng.msg(m);}};";
-      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
-      worker.onmessage = (e) => onPost(e.data.type, e.data.data);
+      const src = "let scheduler=null;self.onmessage=function(e){var m=e.data;" +
+        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');if(!ctx)throw Error('Canvas unavailable');" +
+        "var core=(" + productionArrivalEngine.toString() + ");" +
+        "var schedule=(" + createArrivalScheduler.toString() + ");" +
+        "var eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
+        "scheduler=schedule(eng,requestAnimationFrame,cancelAnimationFrame,function(){self.postMessage({type:'renderer-error'});});scheduler.start();" +
+        "}else if(scheduler){if(m.type==='stop')scheduler.stop();else scheduler.send(m);}};";
+      const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      try { worker = new Worker(url); renderer = "worker"; } finally { URL.revokeObjectURL(url); }
+      worker.onmessage = e => { if(e.data.type==="renderer-error")fallback(); else onPost(e.data.type,e.data.data); };
+      worker.onerror = () => { console.warn("[Sage arrival] Worker unavailable; using the main-thread renderer."); fallback(); };
       worker.postMessage({ type: "init", canvas: off, world }, [off]);
-      usingWorker = true;
-    }
-  } catch (e) { try { if (worker) worker.terminate(); } catch (e2) {} worker = null; usingWorker = false; }
-  if (!usingWorker) {
-    const ctx = cv.getContext("2d");
-    engine = arrivalEngineCore(ctx, world, onPost);
-    const loop = (now) => {
-      if (stopped || flashing) return;
-      engine.tick(now);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-  }
-  activeEngineSend = (m) => {
+    } else fallback();
+  } catch (error) { fallback(); }
+  activeEngineSend = m => {
+    if (stopped || flashing) return;
+    if (m.type === "recovery") { arrivalView.recovery(m.failed); return; }
+    if (m.type === "ready") m = { ...m, ready: !!m.ready && arrivalSurfaceReady && !arrivalFailed };
+    if (drawingFailed && m.type === "ready" && m.ready) { toFlash(); return; }
     if (worker) worker.postMessage(m);
-    else if (engine) engine.msg(m);
+    else scheduler?.send(m);
   };
-  activeEngineSend({ type: "ready", ready: arrivalReady });
   activeEngineSend({ type: "dest", dest: arrivalDest });
+  activeEngineSend({ type: "ready", ready: arrivalReady });
 
   /* ---- the DOM's own choreography, on a matching clock ----
      The card's fade and the clouds' pull and blow-out are DOM work, which a
@@ -5926,15 +6026,15 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const ease3 = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
   const pw = (p, k) => Math.pow(Math.min(1, Math.max(0, p)), k);
   const domT0 = performance.now() + lead;
-  const R = JUMP_T.ratchet, F = JUMP_T.reform, S = JUMP_T.streaks;
+  const R = 120, F = 720, S = 620;
   const domLoop = (now) => {
     if (stopped || flashing) return;
     const t = now - domT0;
-    if (t >= R && t < R + F) {
-      const k = ease3((t - R) / F);
+    if (t >= 0 && t < R + F) {
+      const k = ease3(t / (R + F));
       if (card) {
-        card.style.opacity = String(Math.max(0, 1 - k * 1.15));
-        card.style.transform = "scale(" + (1 - k * 0.08) + ")";
+        card.style.opacity = String(Math.max(0, 1-k*k));
+        card.style.transform = "translate3d(" + (foldX*k*k) + "px," + (foldY*k*k) + "px,0) scale(" + (1-k*k*.9) + "," + (1-k*k*.96) + ")";
       }
       for (const b of blobs) {
         b.el.style.transform = "translate(" + (-b.ux * k * 150) + "px," + (-b.uy * k * 150) + "px) scale(" + (1 - k * 0.1) + ")";
@@ -5958,14 +6058,16 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   domRaf = requestAnimationFrame(domLoop);
 
   return () => {
-    if (flashing) return;
     stopped = true;
+    cancelCover();
+    scheduler?.stop();
+    arrivalView.dispose();
     activeEngineSend = null;
     cancelAnimationFrame(raf); cancelAnimationFrame(domRaf);
     if (worker) { try { worker.postMessage({ type: "stop" }); worker.terminate(); } catch (e) {} worker = null; }
     if (engine) engine.msg({ type: "stop" });
     restoreDom();
-    root.classList.remove("sage-cv", "sage-beat-flash");
+    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");
     if (cv.parentNode) cv.parentNode.removeChild(cv);
     jumpOwnsEntrance = false;
     tellPhase("off");   // release the mount gate: this jump is not landing
@@ -6115,7 +6217,7 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
-   and a transform on a handful of blocks — and the dashboard itself has been
+   and a transform on a handful of blocks, and the dashboard itself has been
    mounted and laid out since the hold. So the handover is done here, imperatively,
    rather than by setting state.
 
@@ -6123,21 +6225,36 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
    flash: changing anything on the root re-renders the whole app tree, and this
    tree is very large. The mount had already been moved under the streaks by then,
    so what was left was React reconciling a dashboard that was not changing. Now
-   the frame that reveals it touches four class names and reads the geometry of six
-   blocks, and the state is settled a second and a half later when a re-render
-   costs nothing anyone can see. */
-function landDashboard() {
-  if (typeof document === "undefined") return () => {};
+   the handoff changes classes and reads block geometry under the cover. The first
+   landing pose gets a covered paint before motion starts. React state settles
+   after that motion; it can still cost a frame and must be measured separately. */
+function landDashboard(onStarted = () => {}) {
+  if (typeof document === "undefined") { onStarted(); return () => {}; }
   jumpLanded = true;
   const root = document.documentElement;
+  const prepare = !jumpShort && root.classList.contains("sage-cover-active");
+  if (prepare) root.classList.add("sage-preparing");
   /* One style change: the app comes out of hiding, the sign-in layer goes, and the
      landing rules come on together. */
   root.classList.remove("jump-under", "sage-beat-flash");
   root.classList.add("sage-assemble", "sage-beat-assemble", "signin-gone");
   const undo = jumpShort ? () => {} : radialAssemble();
+  let frame = 0;
+  if (prepare) {
+    // Paint the first landing pose under opaque white before its clock starts.
+    // A second frame puts the release after that paint, not in the mount frame.
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        root.classList.remove("sage-preparing");
+        startArrivalScan();
+        onStarted();
+      });
+    });
+  } else { startArrivalScan(); onStarted(); }
   return () => {
+    cancelAnimationFrame(frame);
     undo();
-    root.classList.remove("sage-assemble", "sage-beat-assemble", "signin-gone");
+    root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-preparing");
   };
 }
 function radialAssemble() {
@@ -12619,6 +12736,8 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
          fades into --bg at its own edges anyway, so the bands now continue it.
          The theme-color meta in index.html does the same for Safari's own bar. */
 html, body { margin:0; padding:0; background:var(--bg); }
+html { scrollbar-gutter:stable; }
+html.sage-flight-hover-hold :is(.bloopwin,.fbc-hover,.tr-tip,[role="tooltip"]) { visibility:hidden !important; }
 /* The three grounds, named once. The rooms are genuinely different places and
    the colour is how a person knows which one they are standing in. */
 :root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }
@@ -14099,6 +14218,10 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          the engine moves them directly. */
 .sage-jump-canvas { position:fixed; inset:0; z-index:300; pointer-events:none; }
 .sage-cv .sg-field, .sage-cv .login-logo svg { visibility:hidden; }
+/* This element lives in index.html, not JSX. Its rules are part of the
+   handoff even though a search through React markup finds no className. */
+.sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
+        pointer-events:none; z-index:9500; }
 /* ---- the white lasts as long as what it is covering ----
          It used to be a fixed 420ms from the flash beat, and the thing it exists
          to hide is not fixed at all: mounting the dashboard took 680ms, so the
@@ -14110,7 +14233,13 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          actually there — .sage-assemble is added on the frame it mounts. Both
          rules fill forwards and the out starts from full, so the handover
          between them cannot show a seam however long the mount takes. */
+.sage-cover-active.sage-beat-flash .sage-flash, .sage-cover-active.sage-flash-hold .sage-flash {
+        animation: saFlashUp .34s ease-out both; }
 @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+/* Refresh and the short sign-in use assemble too, but did not raise a cover. */
+.sage-assemble.sage-cover-active .sage-flash { animation: saFlashOut .5s ease-in both; }
+.sage-preparing.sage-cover-active .sage-flash { animation:none; opacity:1; }
+.sage-preparing .lpc, .sage-preparing .lpc * { animation-play-state:paused !important; }
 @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
 /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
          Written as animations, with the field's own 28s drift kept first in every
@@ -14264,6 +14393,13 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         opacity:0;
         animation: saRadial .68s cubic-bezier(.16,0,.3,1) both;
         animation-delay: var(--rd, 0ms); }
+/* Keep a page child's mount animation alive underneath the radial landing.
+         Replacing it restarted cardIn at cleanup: the already-landed hero
+         disappeared and faded in again. Only these children have cardIn;
+         putting it on the header would invent another entrance there. */
+.sage-assemble :where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *).sa-radial {
+        animation: cardIn var(--t-settle) var(--ease) both, saRadial .68s cubic-bezier(.16,0,.3,1) both;
+        animation-delay: 0ms, var(--rd, 0ms); }
 /* No shadow while a block is in flight - a scaled shadow re-rasterising at
          the end is the "click" - and a soft bloom the moment it lands. */
 .sage-assemble .sa-radial:not(.sa-shadowin) { box-shadow:none !important; }
@@ -14342,6 +14478,7 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
         .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
         .sage-assemble .sa-radial  { animation-duration:.18s !important; animation-timing-function:linear !important; }
+        .sage-flash { animation:none !important; }
 
       }
 /* ---- the sign-in layer ----
@@ -14435,6 +14572,11 @@ html.signin-gone .signin-over { display:none; }
 .login-busy .login-logo circle {
         animation: markWork 1.15s cubic-bezier(.4,0,.3,1) infinite;
         animation-delay: calc(var(--i) * 11ms); }
+/* Keep the current breath pose until the canvas takes these same dots. The
+   old busy rise and wave were a second start before the approved flight. */
+.login-card.login-launch .login-logo {
+        animation: markBreathe 5.4s ease-in-out infinite; animation-play-state:paused; }
+.login-card.login-launch .login-logo circle { animation:none; }
 @keyframes markWork {
         0%, 62%, 100% { transform: scale(1); }
         24%           { transform: scale(1.34); }

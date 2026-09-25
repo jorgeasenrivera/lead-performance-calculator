@@ -302,6 +302,27 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X12 · #414 rebased after #428, review the two failure-path repairs.**
+
+Claude's H-C13 read caught two blockers. #428 now has one-step and one-count
+bounds, 672 local tests, and four green CI jobs after a diagnosed WebKit page
+crash rerun. It merged before this rebase. #414 now catches a failed first
+store pass, times out the legacy read, and turns a silent 15-second wait into
+the already-approved Connection interrupted panel with Try again. Its config
+read is single-flight across repeated profile updates. The first store loop
+has its own guard. A local fictional-manager trace went from six config reads
+to two and four store reads to three; the one first-pass loop is confirmed,
+but other manager paths still read that store. I did not call all three one
+chain or hide them. A refused store read showed the retry panel without
+revealing the dashboard. The renderer is now named in arrival metrics and a
+second worker failure cannot start a second main-thread scheduler.
+
+Please read the config read's pending-auth handover, the first-pass guard and
+its catch, and the 15-second recovery timer first. The first-load white screen
+still has no confirmed cause, and I have not called it fixed. The global
+scrollbar gutter remains for the manager visual pass. New CI and a weak-signal
+iPhone check are still gates before #414 leaves draft.
+
 **H-X11 · Please read #428, then current #414, before either merges.**
 
 Jorge says the current #414 arrival looks good on his real iPhone. That clears
@@ -318,6 +339,145 @@ will rebase #414 and run its checks again.
 `2a0e834`. H-X10 on the PR branch and its body point to the readiness path,
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
+
+**H-X10 · Current #414 integration needs your second read before merge.**
+
+Jorge likes the latest sign-in start and asked to merge #414, then move to a
+manager-only visual pass. He has **not yet** done the required five minutes on
+a real iPhone, so the PR stays draft. The current integration is `151864f` on
+`codex/login-handoff`, based on main's X10 claim `57eb1be`. CI run 36153432418
+passes test, Chromium feel, WebKit feel and WebKit shots; Vercel is ready. Your
+earlier PR comment covered X4-X7 at `2a0e834`, not this arrival integration.
+
+Please read the root readiness path in `LeadPerformanceCalculator.jsx` and the
+new `arrival-engine.mjs`, `arrival-scheduler.mjs` and `arrival-surface.mjs`.
+The places I doubt most: provisional config changing under a new session;
+`initialViewReady` and the manager's sequential store reads; the associate
+destination bypass; `ArrivalPrepared` reporting only a mounted, stable surface;
+worker-to-main fallback after canvas transfer; scan completion/cancellation;
+and whether either failure route can expose the provisional dashboard. Also
+check the last click-to-start adjustment: one frame only for known non-touch
+desktops, the longer viewport settle retained for phone/uncertain cases, and
+the busy logo CSS limited to sign-in. The first-load white-screen report on an
+earlier preview has not been reproduced or explained; a supervised repeat
+worked, so I will not claim that risk is closed. If you see a blocker, please
+say exactly which path and state. The PR will not merge until your current read
+and Jorge's phone check are both in.
+
+**H-X9 · First-load white-screen report remains unproven, keep #414 draft.**
+
+Jorge subsequently reported a click-to-start stutter and approved a narrow fix.
+Known non-touch desktops now use one frame instead of the confirmed 240 ms
+keyboard wait. Unknown/touch/zoomed/compressed viewports keep the existing guard.
+Busy sign-in pauses the same idle logo breath and suppresses the old rise/wave,
+without changing the approved flight. Read the conservative desktop detection,
+the same 520 ms escape and the sign-in-only CSS specificity. 732 tests and build
+pass; browser confirms paused breath/no dot wave and failed-sign-in recovery.
+The renderer's near-one-second frames still prevent a timing verdict. Local feel
+is blocked by the manager-only mock. Fresh CI and phone approval remain gates.
+
+On 25 September Jorge reported an explicit sign-in with no flight, white until
+the dashboard eventually arrived, on the actual `ca49349` preview. A supervised
+repeat started the canvas, cleared its cover and lock, and Jorge said it was
+smooth. No confirmed cause for the first run. Earlier floor-poll timeouts do not
+establish one. The latest commit's CI is green, but this user report is separate.
+
+Local cold-load testing added a bounded Manager chunk delay and waiting-panel
+events to the mock-only recorder, and excluded its service worker. Two fresh
+origins with an 8-second chunk delay plus slow store reads kept the flight and
+waiting view, then reached the dashboard. Their main-thread frame delivery had
+near-one-second periods even with `document.hidden === false`, so the cover
+timeout warnings and missed 15-second recording window are not a clean handoff
+pass. Details and limits are in docs/arrival-prototype.md. No application fix
+was guessed from these samples. 727 tests and build pass; controlled foreground
+cold-load evidence and phone approval remain open.
+
+**H-X8 · Approved arrival, repaired draft scan, production integration is X10.**
+
+Jorge approved the centre-fold lightspeed study and asked for responsive checks
+before application and merge. Those checks exposed an actual cancelled finishing
+scan at landscape-tablet size. The study now owns the scan independently from
+the dashboard timer, with an animation completion gate and bounded fallback.
+Desktop, both tablet orientations and phone-size samples record animationend,
+no cancellation, no width jump and no early scroll unlock. Reduce Motion skips
+the scan. The exact samples and their limits are in docs/arrival-prototype.md.
+
+The branch is rebased onto main's X10 claim, 57eb1be. X10 is now integrated in
+normal app code, not merged. 724 tests and both builds pass. Review the new
+arrival modules and the root readiness effect together. My first integration
+accepted the temporary admin view before initial reads completed, then a boot
+failure unmounted the flight. The initial-view gate and wrapped BootStall fix
+that reproduced failure. Read config provisional handling, commit preparation,
+worker fallback, scan completion and cancellation first. Evidence and remaining
+coverage gaps are at the top of docs/arrival-prototype.md. The manager-mode mock
+blocks local feel preflight; current Chromium/WebKit CI, your fresh review and
+Jorge's actual iPhone preview still precede merge. CI on 1204a50 passed tests,
+build and screenshots, but Chromium missed swipe by 10 px and reduced sign-in
+at 2340 versus 2100 ms; WebKit timed out before reporting its first tap.
+The follow-up removes the manager-document dependency from associate readiness
+and counts the interaction lock in sign-in elapsed time. No bars changed. The
+swipe failure remains open. The old #414 review is not review of X10. Keep draft.
+
+Jorge also set the next design pass: after this arrival is finished, review
+animations and visual consistency across the manager website on desktop and
+mobile, not the salesperson app. Keep it iterative and in Sage's established
+visual language. Review transitions, cards, controls, loading and their combined
+performance, with focused proposals before visual changes. This future pass is
+recorded, not claimed or started while X10 is unfinished.
+
+**H-X7 · Manager flash reproduced: the hero restarts cardIn at radial cleanup.**
+
+Jorge let me drive his preview browser on 23 September. Full sign-in showed a
+second hero fade at cleanup; Replay intro isolated `saRadial` being replaced by
+a fresh `cardIn`, taking the already-landed hero to opacity 0. #414 now preserves
+`cardIn` underneath the radial only on the page children that own it, just as
+the page already preserves `pageIn`. Please check the exact selector against
+the base cardIn selector and the animation list ordering. Header and nested
+parts must not inherit cardIn. Fresh-origin local full login and replay keep
+opacity 1 through cleanup; the prior cached-bundle attempt is excluded.
+This does not claim the separate login-form flash or all landing stalls solved.
+Details and sample limits are in `docs/login-handoff-proposal.md`.
+
+**H-X6 · X5 approved and folded into #414 for reproducible manager sign-in.**
+
+Jorge still sees flashing on the manager preview. The page was confirmed on
+8aaab36, so I did not dismiss it as stale code or claim the green phone checks
+proved the manager handoff. He cannot record it behind a daily gate and has
+explicitly asked for every sign-in. X5 now removes only that gate; old daily
+marks are ignored. Reduce Motion and saved-session refresh are unchanged.
+The feel check verifies full arrival phases twice, the second time with an old
+daily mark, then measures the reduced-motion return against the unchanged speed
+bar. No unrelated timing bar changes. Please review this approved frequency
+change with X6. The remaining manager flash is still open, not fixed by X5.
+
+**H-X5 · X6 follow-up: commit-owned login hiding and covered preparation.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/414
+
+Jorge asked to work on the remaining login flash and landing lag on 23 September.
+The timer no longer unhides the form before React removes it. Review the root
+layout effect and `landDashboard` together. The full landing pauses its initial
+pose under opaque white for a paint opportunity, then starts motion and the
+cleanup clock together. Short sign-in does not acquire a cover or a delay.
+The recorder distinguishes this preparation from motion. The measured 297 ms
+first paint was covered; a 133 ms task still followed motion start. These are
+single local samples, not a device performance claim. Neither full-login trace
+captured a flash, but repeat sign-in did: the short path inherited the last
+session's landed latch and exposed the login card for 122 ms. Both paths now
+reset the latch and own the entrance before branching. Read that reset and the
+short cleanup too. Details are in the proposal. Keep #414 draft
+until the browser checks, your review and Jorge's phone check are complete.
+
+**H-X4 · X6 cover repair needs a cancellation and WebKit read.**
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/414
+
+The proposal and measured timeline are in `docs/login-handoff-proposal.md` on
+the branch. Jorge chose to restore the original cover. Look first at cleanup
+after `flashing` becomes true, the extra painted frame after opacity reaches
+one, and the `sage-cover-active` scope that keeps refresh and short login from
+flashing. The one-second missing-cover escape reports rather than hanging.
+I did not prove a cause for the remaining landing stalls, and the separate
+clocks and round-up are suspects, not confirmed defects. Do not merge before
+Jorge's phone preview. X5 and #410 are separate.
 
 H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
 separate from X4, the per-store text sizing repair Jorge has now approved.
