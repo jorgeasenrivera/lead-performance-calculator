@@ -2,7 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import { summarizeLoginTrace, installLoginProbe, installLoginFaults } from "../scripts/login-performance.mjs";
+import { summarizeLoginTrace, installLoginProbe, installLoginFaults, serveLoginProbe } from "../scripts/login-performance.mjs";
+
+test("cold-download recorder bounds its delay and excludes the service worker", async () => {
+  for (const managerDelayMs of [-1, NaN, Infinity, 30001])
+    await assert.rejects(serveLoginProbe("unused", 0, { managerDelayMs }), /Manager delay/);
+  const source = serveLoginProbe.toString();
+  assert.match(source, /pathname === "\/sw\.js"/);
+  assert.match(source, /res\.writeHead\(404\)\.end\(\); return;/);
+  assert.match(source, /Build against the local mock/);
+  assert.match(source, /server\.listen\(port, "127\.0\.0\.1"/);
+  assert.match(installLoginProbe.toString(), /waiting-shown/);
+});
 
 test("local arrival fault cases cannot intercept production or unrelated requests", async () => {
   const calls = [];

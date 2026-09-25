@@ -73,7 +73,8 @@ export function installLoginProbe(summarize) {
   out.hidden = true;
   document.body.appendChild(out);
   let sample = null, start = 0, raf = 0, timeout = 0, last = 0;
-  let phase = "press", classes = "", canvas = false, hero = false, revealed = false, roundup = false, loginExposed = false, landingStarted = false;
+  let phase = "press", classes = "", canvas = false, hero = false, revealed = false, roundup = false, loginExposed = false, landingStarted = false, waiting = false;
+  let launchSeen = false, canvasPainted = false;
   const observers = [];
   const round = (n) => Math.round(n * 10) / 10;
   const event = (name, detail) => {
@@ -104,6 +105,18 @@ export function installLoginProbe(summarize) {
       event("scroll-unlocked");
     }
     if (c !== classes) { classes = c; event("root-classes", { classes: c }); }
+    if (!launchSeen && document.querySelector(".login-launch .login-logo")) {
+      launchSeen = true;
+      const logo = document.querySelector(".login-launch .login-logo"), style = getComputedStyle(logo);
+      event("logo-held-for-flight", { animation: style.animationName, playState: style.animationPlayState,
+        dotAnimation: getComputedStyle(logo.querySelector("circle")).animationName });
+    }
+    if (!canvasPainted && document.documentElement.classList.contains("sage-cv")) {
+      canvasPainted = true; event("first-canvas-paint");
+    }
+    const waitPanel = document.querySelector(".sage-arrival-wait");
+    const waitVisible = !!waitPanel && !waitPanel.hidden;
+    if (waitVisible !== waiting) { waiting = waitVisible; event(waiting ? "waiting-shown" : "waiting-hidden"); }
     const hasCanvas = !!document.querySelector(".sage-jump-canvas");
     if (hasCanvas !== canvas) {
       canvas = hasCanvas;
@@ -181,7 +194,8 @@ export function installLoginProbe(summarize) {
     // A new attempt gets its own record, including retries after a failed login.
     cancelAnimationFrame(raf); clearTimeout(timeout);
     start = performance.now(); last = 0; phase = "press"; classes = "";
-    canvas = false; hero = false; revealed = false; roundup = false; loginExposed = false; landingStarted = false;
+    canvas = false; hero = false; revealed = false; roundup = false; loginExposed = false; landingStarted = false; waiting = false;
+    launchSeen = false; canvasPainted = false;
     sample = { status: "recording", hidden: document.hidden, viewport: [innerWidth, innerHeight],
       events: [], frames: [], longTasks: [], longFrames: [],
       supportedTiming: PerformanceObserver.supportedEntryTypes || [] };
@@ -196,7 +210,9 @@ export function installLoginProbe(summarize) {
   publish();
 }
 
-export async function serveLoginProbe(root, port) {
+export async function serveLoginProbe(root, port, { managerDelayMs = 0 } = {}) {
+  if (!Number.isFinite(managerDelayMs) || managerDelayMs < 0 || managerDelayMs > 30000)
+    throw new Error("Manager delay must be between 0 and 30000 milliseconds.");
   root = path.resolve(root);
   const html = await fs.readFile(path.join(root, "index.html"), "utf8");
   const entry = /src="(\/assets\/index-[^"]+\.js)"/.exec(html)?.[1];
@@ -207,8 +223,16 @@ export async function serveLoginProbe(root, port) {
   const server = http.createServer(async (req, res) => {
     if (!["GET", "HEAD"].includes(req.method)) { res.writeHead(405).end(); return; }
     try {
+      // A recorder must never cache an older injection or bypass an intended
+      // cold download. Use a fresh origin when testing an existing worker.
+      if (new URL(req.url, "http://localhost").pathname === "/sw.js") { res.writeHead(404).end(); return; }
       const file = assetPath(root, req.url);
       if (!file) { res.writeHead(403).end(); return; }
+      if (managerDelayMs && /^Manager-[^/]+\.js$/.test(path.basename(file))) {
+        console.log(`[arrival probe] Manager download held for ${managerDelayMs} ms`);
+        await new Promise(resolve => setTimeout(resolve, managerDelayMs));
+        console.log("[arrival probe] Manager download released");
+      }
       let bytes = await fs.readFile(file);
       if (file === path.join(root, "index.html")) bytes = Buffer.from(bytes.toString().replace("</body>", inject + "</body>"));
       res.writeHead(200, { "Content-Type": mime[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
@@ -221,7 +245,7 @@ export async function serveLoginProbe(root, port) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   for (const port of String(process.argv[3] || "49178").split(",").map(Number)) {
-    await serveLoginProbe(process.argv[2] || "dist", port);
+    await serveLoginProbe(process.argv[2] || "dist", port, { managerDelayMs: Number(process.argv[4] || 0) });
     console.log(`Local sign-in recorder: http://127.0.0.1:${port}/`);
   }
 }

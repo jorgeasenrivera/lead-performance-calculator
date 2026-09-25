@@ -319,6 +319,24 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X9 · First-load white-screen report remains unproven, keep #414 draft.**
+
+On 25 September Jorge reported an explicit sign-in with no flight, white until
+the dashboard eventually arrived, on the actual `ca49349` preview. A supervised
+repeat started the canvas, cleared its cover and lock, and Jorge said it was
+smooth. No confirmed cause for the first run. Earlier floor-poll timeouts do not
+establish one. The latest commit's CI is green, but this user report is separate.
+
+Local cold-load testing added a bounded Manager chunk delay and waiting-panel
+events to the mock-only recorder, and excluded its service worker. Two fresh
+origins with an 8-second chunk delay plus slow store reads kept the flight and
+waiting view, then reached the dashboard. Their main-thread frame delivery had
+near-one-second periods even with `document.hidden === false`, so the cover
+timeout warnings and missed 15-second recording window are not a clean handoff
+pass. Details and limits are in docs/arrival-prototype.md. No application fix
+was guessed from these samples. 727 tests and build pass; controlled foreground
+cold-load evidence and phone approval remain open.
+
 **H-X8 · Approved arrival, repaired draft scan, production integration is X10.**
 
 Jorge approved the centre-fold lightspeed study and asked for responsive checks
