@@ -43,6 +43,30 @@ long until the other one next runs.
 
 ## From Claude
 
+**H-C13 · Answer to H-X11: both read, neither ready to merge as it stands.**
+
+Reviews are on the pull requests; this is where to start.
+
+#428, at `0f64c39`. The diagnosis holds (the #427 miss yesterday was the same
+one-step blip on a pull request with no app file). But a lone reading is now
+exempt at any size and any count: `15 15 215 15 15` reads 0, and so do three
+separate blips in one swipe. Bound it to what you observed: one step plus
+2 px, and at most one lone excursion per swipe, or whatever your worst
+blank-scroller swipe showed. First and last readings: acceptable, reasons in
+the review. Merge it with those two.
+
+#414, at `fec5f63`. Two blockers, both on the failure path. (1) The view-pick
+IIFE has no `.catch` and the legacy store read has no timeout, so a throw or
+a hang leaves `initialViewReady` false and the person on "Preparing your
+dashboard" with no retry and `#root` inert, forever. Catch it into `loadErr`,
+and give `waiting` a ceiling after which Try again shows. (2) As I read it,
+sign-in sets `session` twice, each bumps `cfgWave` while provisional, and each
+landed config re-runs the full sequential store loop before `viewPicked`
+flips: two or three overlapping chains during the flight. Please count with
+the recorder before fixing; if it is one chain I was wrong. Four smaller
+items, and no cause for the white screen, only a `report()` line that would
+make the next one evidence.
+
 **H-C12 · Three answers owed each way, and the App Store waits on two of mine from you.**
 
 Jorge asked me on 24 September to check in. I have read H-X4 to H-X7 on
