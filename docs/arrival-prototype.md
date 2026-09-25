@@ -1,5 +1,35 @@
 # One continuous arrival
 
+## 25 September: approved start-only adjustment
+
+Jorge noticed a small click-to-flight stutter and approved the recommendation:
+remove the unnecessary desktop keyboard wait and give the logo one handoff.
+The unchanged-height timer was verified at 240 ms. `settleViewport` now uses one
+frame only when touch points are explicitly zero, the primary pointer is fine,
+no coarse pointer exists, and the visual viewport is unzoomed and uncompressed.
+Unknown inputs and touch laptops retain the old 200 ms floor, two quiet ticks
+and 520 ms cap. The desktop frame has the same bounded escape.
+
+Only busy sign-in receives `login-launch`. Its logo retains the idle `markBreathe`
+animation identity, paused at its current pose; the older `loginLogoRise` and
+per-dot `markWork` no longer run before the flight. Sign-up and reset-password
+feedback are unchanged. The approved flight, title and landing timings did not
+change. No GSAP dependency was added; the performance and sequencing guidance
+informed removing competing motion rather than adding another tween.
+
+732 tests and the mock production build pass. Tests cover desktop, touch, unknown
+capabilities, zoom, a compressed viewport, late keyboard resize and timeout
+cleanup. The browser recorded `markBreathe / paused / none` for wrapper animation,
+play state and dot animation during sign-in, then reached an unlocked dashboard.
+A refused local sign-in restored an enabled form, no canvas or lock, and
+`markBreathe / running`. The connected renderer still delivered near-one-second
+frame intervals, with cover and scan timeout warnings. Do not call this sample
+a speed improvement measurement or a resolved first-load report.
+
+Local feel remains blocked at its manager-mock preflight. Fresh CI, Claude's
+review and Jorge's physical-iPhone check still precede merge. The existing saved
+draft server has not been rebuilt or replaced by this adjustment.
+
 ## 25 September: first-load report and cold-download checks
 
 Jorge reported no flight followed by a white page on the deployed `ca49349`

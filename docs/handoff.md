@@ -321,6 +321,16 @@ report was not reproduced or explained, and I have not called it fixed.
 
 **H-X9 · First-load white-screen report remains unproven, keep #414 draft.**
 
+Jorge subsequently reported a click-to-start stutter and approved a narrow fix.
+Known non-touch desktops now use one frame instead of the confirmed 240 ms
+keyboard wait. Unknown/touch/zoomed/compressed viewports keep the existing guard.
+Busy sign-in pauses the same idle logo breath and suppresses the old rise/wave,
+without changing the approved flight. Read the conservative desktop detection,
+the same 520 ms escape and the sign-in-only CSS specificity. 732 tests and build
+pass; browser confirms paused breath/no dot wave and failed-sign-in recovery.
+The renderer's near-one-second frames still prevent a timing verdict. Local feel
+is blocked by the manager-only mock. Fresh CI and phone approval remain gates.
+
 On 25 September Jorge reported an explicit sign-in with no flight, white until
 the dashboard eventually arrived, on the actual `ca49349` preview. A supervised
 repeat started the canvas, cleared its cover and lock, and Jorge said it was

@@ -5212,7 +5212,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       {/* The field belongs to this screen and lives as long as it does: held for
           the whole jump, gone with it at the handover, underneath the white. */}
       <SageField />
-      <div className={"login-card " + (busy ? "login-busy" : "")}>
+      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" ? " login-launch" : "") : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         {/* No spinner here any more. Signing in used to swap the wordmark for a
             loading indicator, which is a different object appearing in the place
@@ -5431,6 +5431,24 @@ function rememberView(v) {
 function settleViewport({ floor = 200, cap = 520 } = {}) {
   return new Promise((resolve) => {
     if (typeof window === "undefined") return resolve();
+    // A known non-touch desktop has no software keyboard to dismiss. Give
+    // the pressed state one frame, not the phone's 240 ms quiet-window wait.
+    // Missing capability information, touch laptops and zoom stay conservative.
+    let desktop = false;
+    try {
+      const vv = window.visualViewport;
+      desktop = navigator.maxTouchPoints === 0
+        && window.matchMedia("(pointer: fine)").matches
+        && !window.matchMedia("(any-pointer: coarse)").matches
+        && (!vv || (vv.scale === 1 && Math.abs(vv.height - window.innerHeight) < 2));
+    } catch (e) {}
+    if (desktop) {
+      let frame = 0, done = false;
+      const finish = () => { if (done) return; done = true; clearTimeout(limit); cancelAnimationFrame(frame); resolve(); };
+      const limit = setTimeout(finish, cap);
+      frame = requestAnimationFrame(finish);
+      return;
+    }
     /* A floor, not just a quiet check. The keyboard does not begin leaving the
        instant it is told to — iOS animates it out over about a quarter of a
        second — so polling for "the height stopped changing" answers yes before
@@ -14531,6 +14549,11 @@ html.signin-gone .signin-over { display:none; }
 .login-busy .login-logo circle {
         animation: markWork 1.15s cubic-bezier(.4,0,.3,1) infinite;
         animation-delay: calc(var(--i) * 11ms); }
+/* Keep the current breath pose until the canvas takes these same dots. The
+   old busy rise and wave were a second start before the approved flight. */
+.login-card.login-launch .login-logo {
+        animation: markBreathe 5.4s ease-in-out infinite; animation-play-state:paused; }
+.login-card.login-launch .login-logo circle { animation:none; }
 @keyframes markWork {
         0%, 62%, 100% { transform: scale(1); }
         24%           { transform: scale(1.34); }
