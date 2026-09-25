@@ -338,8 +338,12 @@ that reproduced failure. Read config provisional handling, commit preparation,
 worker fallback, scan completion and cancellation first. Evidence and remaining
 coverage gaps are at the top of docs/arrival-prototype.md. The manager-mode mock
 blocks local feel preflight; current Chromium/WebKit CI, your fresh review and
-Jorge's actual iPhone preview still precede merge. The old #414 review is not
-review of X10. Keep the PR draft.
+Jorge's actual iPhone preview still precede merge. CI on 1204a50 passed tests,
+build and screenshots, but Chromium missed swipe by 10 px and reduced sign-in
+at 2340 versus 2100 ms; WebKit timed out before reporting its first tap.
+The follow-up removes the manager-document dependency from associate readiness
+and counts the interaction lock in sign-in elapsed time. No bars changed. The
+swipe failure remains open. The old #414 review is not review of X10. Keep draft.
 
 Jorge also set the next design pass: after this arrival is finished, review
 animations and visual consistency across the manager website on desktop and

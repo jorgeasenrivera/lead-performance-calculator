@@ -2129,6 +2129,9 @@ export default function LeadPerformanceCalculator() {
      been selected from the authenticated config and its completed store reads. */
   const [iconWave, setIconWave] = useState(0);
   const iconCache = useRef({});
+  // The associate's destination reads its own floor rows. Making it wait for
+  // the manager's full store documents adds round trips it does not consume.
+  const arrivalDestinationReady = wantsFloor ? floorLinks !== undefined : initialViewReady;
   useEffect(() => {
     if (!jumpHold) { arrivalSurfaceReady = false; arrivalFailed = false; tellArrivalReady(false, null); return; }
     const atStore = view !== "admin" && view !== "combined";
@@ -2157,14 +2160,14 @@ export default function LeadPerformanceCalculator() {
         }
       }
     }
-    const landable = !!session && !!config && initialViewReady && !cfgProvisional.current && iconReady
-      && (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    const landable = !!session && !!config && arrivalDestinationReady && !cfgProvisional.current && iconReady
+      && (wantsFloor || !atStore || !!storeData || !!storeMismatch || storeLoadFailed);
     arrivalFailed = loadErr || bootStall || (!!storeLoadFailed && !storeMismatch);
     tellArrivalReady(landable, store
       ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
       : null);
     activeEngineSend?.({ type: "recovery", failed: arrivalFailed });
-  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave, initialViewReady, loadErr, bootStall]);
+  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave, arrivalDestinationReady, wantsFloor, loadErr, bootStall]);
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     /* A load takes two round trips now (the document, then the split day rows), so
@@ -3007,7 +3010,7 @@ export default function LeadPerformanceCalculator() {
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
   ) : null;
-  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}{jumpHold && !holdMount && session && <ArrivalPrepared ready={initialViewReady && !loadErr && !bootStall && (view === "admin" || view === "combined" || !!storeData || !!storeMismatch)} identity={storeData} />}</RoomBoundary>{signInLayer}</React.Suspense>;
+  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}{jumpHold && !holdMount && session && <ArrivalPrepared ready={arrivalDestinationReady && !loadErr && !bootStall && (wantsFloor || view === "admin" || view === "combined" || !!storeData || !!storeMismatch)} identity={wantsFloor ? floorLinks : storeData} />}</RoomBoundary>{signInLayer}</React.Suspense>;
 
   // Keep the login owner mounted so a failed boot can stop in themed recovery.
   if (loadErr || bootStall) return wrap(<Shell><BootStall onRetry={retryBoot} /><Style /></Shell>);

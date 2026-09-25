@@ -75,7 +75,7 @@ export function transformArrival(source) {
   swap('    if (type === "phase") tellPhase(data);', '    if (type === "paint") { cv.style.opacity = "1"; root.classList.add("sage-cv"); }\n    else if (type === "phase") tellPhase(data);');
   swap('    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");\n    if (cv.parentNode) cv.parentNode.removeChild(cv);',
     '    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");\n    if (cv.parentNode && !root.classList.contains("proposal-waiting")) cv.parentNode.removeChild(cv);');
-  swap("&& (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);",
+  swap("&& (wantsFloor || !atStore || !!storeData || !!storeMismatch || storeLoadFailed);",
     "&& (!atStore || (!!storeData && !storeMismatch && !storeLoadFailed));");
   swap("let arrivalReady = false;", "let arrivalReady = false;\nlet proposalDataReady = false;\ndocument.addEventListener('sage-proposal-screen-ready', () => tellArrivalReady(proposalDataReady));");
   swap("  arrivalReady = !!ready;", "  proposalDataReady = !!ready;\n  arrivalReady = !!ready && window.__sageProposalScreenReady === true;");
