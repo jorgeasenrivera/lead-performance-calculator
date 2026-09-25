@@ -1169,6 +1169,13 @@ test("a timed row prints its three samples, so a miss can be read instead of gue
   }
 });
 
+test("sign-in timing includes the interaction lock without relaxing the speed bar", () => {
+  const signIn = feel.slice(feel.indexOf("const signIn = async"), feel.indexOf("const first = await signIn()"));
+  assert.ok(signIn.indexOf('classList.contains("sage-flight-lock")') < signIn.indexOf("const elapsed = ms(t0)"));
+  assert.match(signIn, /!document\.getElementById\("root"\)\?\.inert/);
+  assert.match(feel, /returnSignIn: 900 \+ 3 \* LAG/);
+});
+
 test("the FlyBy row waits for the page's own writes before it changes the status under them", () => {
   /* C87. The harness wrote "waiting" with no lag while the page's send and
      cancel were still read-then-writes in flight; landing between one read and

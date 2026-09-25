@@ -2,6 +2,20 @@
 
 ## 24 September: X10 integrated, release verification still open
 
+CI on `1204a50` passed test/build and WebKit screenshots but failed both feel
+jobs. Chromium measured a 10 px swipe spread and a 2340 ms reduced-motion
+return against 2100 ms. WebKit timed out in the first interaction section.
+Neither job lost its browser; no job was blindly rerun and no bar changed.
+The follow-up separates associate readiness from manager document reads and
+uses the floor-link destination instead. Sign-in timing now includes the real
+interaction lock before taking its elapsed time, so a visible but locked page
+cannot pass as ready. That tightens the measurement. The swipe remains an open
+failure, not waved away as runner noise. 726 tests and both builds pass after
+this follow-up; fresh CI determines its browser outcome.
+
+A local rejected-auth check on the first integration returned the readable
+error and enabled Sign in again with no canvas or remaining flight lock.
+
 The approved study now drives explicit sign-in in normal application code.
 The saved draft remains at `/` and the approved study at `/study` on the local
 proposal server. `arrival-legacy.mjs` preserves the original proposal driver;

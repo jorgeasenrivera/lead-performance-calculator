@@ -265,6 +265,10 @@ async function run(b) {
     await p.fill('input[type="password"]', "x");
     const t0 = Date.now(); await p.click('button:has-text("Sign in")');
     await p.waitForSelector(".ar-bar", { timeout: 40000 });
+    // Visible is not interactive while the finishing scan owns the screen.
+    // Include that wait in the same speed bar, never tap through an inert root.
+    await p.waitForFunction(() => !document.getElementById("root")?.inert
+      && !document.documentElement.classList.contains("sage-flight-lock"), null, { timeout: 10000 });
     const elapsed = ms(t0);
     const phases = await p.evaluate(() => {
       document.removeEventListener("sage-jump-phase", window.__loginPhaseListener);

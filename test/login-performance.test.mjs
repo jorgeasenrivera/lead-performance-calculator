@@ -72,11 +72,15 @@ test("arrival cannot accept the provisional overview or unmount on a boot failur
   const initial = core.slice(core.indexOf("if (!viewPicked.current)"), core.indexOf("// Later runs happen"));
   assert.ok(initial.indexOf("setInitialViewReady(true)") > initial.indexOf("setView(first)"));
   const readiness = core.slice(core.indexOf("const landable ="), core.indexOf("useEffect(() => {", core.indexOf("const landable =")));
-  assert.match(readiness, /initialViewReady && !cfgProvisional\.current/);
+  assert.match(readiness, /arrivalDestinationReady && !cfgProvisional\.current/);
   assert.match(readiness, /arrivalFailed = loadErr \|\| bootStall/);
   assert.match(core, /if \(loadErr \|\| bootStall\) return wrap\(<Shell><BootStall/);
-  assert.match(core, /ready=\{initialViewReady && !loadErr && !bootStall/);
+  assert.match(core, /ready=\{arrivalDestinationReady && !loadErr && !bootStall/);
   assert.match(core, /viewPicked\.current = false;\s*setInitialViewReady\(false\)/);
+});
+test("associate readiness does not wait for unrelated manager store documents", () => {
+  assert.match(core, /arrivalDestinationReady = wantsFloor \? floorLinks !== undefined : initialViewReady/);
+  assert.match(core, /identity=\{wantsFloor \? floorLinks : storeData\}/);
 });
 test("radial landing preserves a page child's cardIn instead of restarting it at cleanup", () => {
   const children = ":where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *)";
