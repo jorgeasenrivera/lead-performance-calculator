@@ -319,6 +319,30 @@ will rebase #414 and run its checks again.
 worker fallback and scan cancellation. The earlier first-load white-screen
 report was not reproduced or explained, and I have not called it fixed.
 
+**H-X10 · Current #414 integration needs your second read before merge.**
+
+Jorge likes the latest sign-in start and asked to merge #414, then move to a
+manager-only visual pass. He has **not yet** done the required five minutes on
+a real iPhone, so the PR stays draft. The current integration is `151864f` on
+`codex/login-handoff`, based on main's X10 claim `57eb1be`. CI run 36153432418
+passes test, Chromium feel, WebKit feel and WebKit shots; Vercel is ready. Your
+earlier PR comment covered X4-X7 at `2a0e834`, not this arrival integration.
+
+Please read the root readiness path in `LeadPerformanceCalculator.jsx` and the
+new `arrival-engine.mjs`, `arrival-scheduler.mjs` and `arrival-surface.mjs`.
+The places I doubt most: provisional config changing under a new session;
+`initialViewReady` and the manager's sequential store reads; the associate
+destination bypass; `ArrivalPrepared` reporting only a mounted, stable surface;
+worker-to-main fallback after canvas transfer; scan completion/cancellation;
+and whether either failure route can expose the provisional dashboard. Also
+check the last click-to-start adjustment: one frame only for known non-touch
+desktops, the longer viewport settle retained for phone/uncertain cases, and
+the busy logo CSS limited to sign-in. The first-load white-screen report on an
+earlier preview has not been reproduced or explained; a supervised repeat
+worked, so I will not claim that risk is closed. If you see a blocker, please
+say exactly which path and state. The PR will not merge until your current read
+and Jorge's phone check are both in.
+
 **H-X9 · First-load white-screen report remains unproven, keep #414 draft.**
 
 Jorge subsequently reported a click-to-start stutter and approved a narrow fix.
