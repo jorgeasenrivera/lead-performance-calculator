@@ -87,3 +87,9 @@ test("the address is the server's own; nothing asks for a reserved one", () => {
   assert.ok(!/reserved-ip/.test(wf));
   assert.match(wf, /doctl compute droplet get "\$id" --format PublicIPv4 --no-header/);
 });
+
+test("a failed check fails the run, not only its log", () => {
+  // The first complete run printed "1 check(s) failed." and went green,
+  // because the step's exit status was tee's.
+  assert.match(wf, /set -o pipefail\n\s*infra\/sftp\/check\.sh [^\n]*\| tee/);
+});

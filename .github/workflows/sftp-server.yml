@@ -168,6 +168,9 @@ jobs:
           # The server has just rebooted into its first-boot setup; give the
           # watcher a moment to be listening.
           sleep 20
+          # pipefail, or tee's success hides a failed check: the first real
+          # run went green with "Sage never recorded the file" in its log.
+          set -o pipefail
           infra/sftp/check.sh "${{ steps.create.outputs.ip }}" 22 "$RUNNER_TEMP/check" "$SAGE_URL" | tee "$RUNNER_TEMP/check.txt"
 
       - name: Outside checks without a key
