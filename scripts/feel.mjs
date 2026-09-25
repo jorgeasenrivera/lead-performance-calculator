@@ -31,7 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
-import { followDetail } from "./feel-read.mjs";
+import { followDetail, sustainedFollowSpread } from "./feel-read.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -369,7 +369,8 @@ async function run(b) {
      frame before each step of the thumb, because the step itself reaches the
      browser a frame after this script wrote it down, and reading mid-step
      charged that lag to the page: a first draft of this row said 10 for a
-     scroller that was following exactly. The row is the spread of that gap. */
+     scroller that was following exactly. The row is the spread of sustained
+     gaps, not a single compositor sample. */
   let cdp = null;
   try { cdp = await ctx.newCDPSession(p); } catch (e) { cdp = null; }
   if (cdp) {
@@ -391,21 +392,18 @@ async function run(b) {
     const gaps = [], at = [];
     let first = -1, lastMove = -1;
     for (let i = 1; i < sw.track.length; i++) { const [t0, s0] = sw.track[i - 1], [t1, s1] = sw.track[i]; if (first < 0 && s0 > 0) first = i - 1; if (t1 !== t0) { lastMove = i; if (first >= 0) { gaps.push(t0 - s0); at.push([i - 1, t0, s0, sw.frames[i - 1] || 0]); } } }
-    const follow = gaps.length ? Math.max(...gaps) - Math.min(...gaps) : 999;
+    const rawFollow = gaps.length ? Math.max(...gaps) - Math.min(...gaps) : 999;
+    const follow = sustainedFollowSpread(at);
     row("swipe: the page under the thumb, px off between frames", Math.round(follow), BAR.follow);
-    /* C86. Four times on CI this row read exactly 10, one thumb step, and
-       nothing on the page said where. The obvious reading is a touch that
-       reached the browser a frame late on a starved runner, and the obvious
-       fix is to ignore a one-reading blip that recovers. Neither has been
-       seen: throttling the page six times over does not move this row (the
-       scroll is off the main thread), and a touch handler planted to block
-       the scroll does not either, because once a scroll has started the
-       browser stops letting touchmove delay it, so 16 of 17 were not even
-       cancelable. With no picture of the real failure, changing the rule
-       would be a guess. So the row now shows the readings behind its spread,
-       and the rule changes only once a failure has been read. */
+    /* C86. The next CI miss was a single 25 px gap that returned to 15 px on
+       the following reading. A blank native scroller, without this app, then
+       produced the same 10 px raw spread in seven of twelve identical CDP
+       swipes. So a solitary scrollLeft sample is not evidence that Sage fell
+       behind. The 2 px bar still applies to gaps held for two readings. Raw
+       misses remain visible here for later comparison, not silently erased. */
     const detail = followDetail(at);
     if (detail) console.log("       " + detail);
+    if (rawFollow > follow) console.log(`       raw one-sample spread ${Math.round(rawFollow)} px; sustained ${Math.round(follow)} px`);
     say("follow readings [frame, thumb, page, ms]: " + JSON.stringify(at));
     /* Where it ended: 260 less the slop is past the middle of 393, so the
        snap lands on the floor. Any other answer is the scroller not
