@@ -32,10 +32,11 @@ Port 22 is shut to everybody unless an address is in `allowed-ips.txt`.
 2. **An API key, limited.** DigitalOcean → API → Tokens → Generate New Token.
    Name `sage-github`, expiry 90 days, **Custom Scopes**, and tick only:
    account read; actions read; droplet create and read; firewall create,
-   read and update; image read; regions read; reserved_ip create and read;
-   sizes read; tag create and read. DigitalOcean then asks to add three it
-   needs for those (snapshot, vpc and project, read only): accept. That is
-   17 in all. If a run stops on a missing scope, its error names the one
+   read and update; image read; regions read; sizes read; tag create and
+   read. DigitalOcean then asks to add three it needs for those (snapshot,
+   vpc and project, read only): accept. That is 15 in all. (The first key
+   also had reserved_ip create and read, which nothing uses now; it does
+   no harm.) If a run stops on a missing scope, its error names the one
    to add.
 3. **Two GitHub secrets** (repository Settings → Secrets and variables →
    Actions → New repository secret):
@@ -67,4 +68,5 @@ Their first real upload shows in `sftp_arrivals` within seconds.
 ## Cost
 
 About $7.20 a month: the $6 server and weekly backups (20%). The firewall is
-free, and the fixed address is free while it is attached.
+free. The address is the server's own, which it keeps for as long as it
+exists; the DNS record changes only if the server is ever replaced.
