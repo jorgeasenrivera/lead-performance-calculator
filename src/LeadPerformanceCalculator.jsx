@@ -2,6 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
+import { createArrivalScheduler } from "./arrival-scheduler.mjs";
+import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
 /* The CSV reader is a manager's tool: it runs when somebody drops a report on
    the Import page. A salesperson on the floor never touches it, so it is fetched
    on the first parse rather than carried in everyone's first load. */
@@ -1791,6 +1794,8 @@ export default function LeadPerformanceCalculator() {
   // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
   // "All Stores", and the activity guard then bounced you to the first store.
   const viewPicked = useRef(false);
+  // The initial "admin" value is a placeholder, not a committed destination.
+  const [initialViewReady, setInitialViewReady] = useState(false);
   // which slice of the board is showing. Driven by the hero tiles.
   const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
   const [assocQuery, setAssocQuery] = useState("");
@@ -1880,13 +1885,12 @@ export default function LeadPerformanceCalculator() {
      own. So a config adopted while signed out is marked provisional and fetched
      again the moment a session exists; the cruise absorbs the re-read the same
      way it absorbs everything else. */
-  const cfgProvisional = useRef(false);
+  const cfgProvisional = useRef(true);
   const [cfgWave, setCfgWave] = useState(0);
   const sessionRef = useRef(null);
   sessionRef.current = session;
   useEffect(() => {
     if (!session || !cfgProvisional.current) return;
-    cfgProvisional.current = false;
     setCfgWave((w) => w + 1);
   }, [session]);
   useEffect(() => {
@@ -1901,7 +1905,7 @@ export default function LeadPerformanceCalculator() {
            stands in, unchanged and unsaved, until a read gets through; with
            nothing remembered the boot says so and offers to try again. */
         const c = cacheGet("shared:" + CONFIG_KEY);
-        if (c && c.value) { netSet(true, c.at); setConfig(c.value); return; }
+        if (c && c.value) { cfgProvisional.current = !sessionRef.current; netSet(true, c.at); setConfig(c.value); return; }
         setBootStall(true); return;
       }
       netSet(false);
@@ -1944,6 +1948,7 @@ export default function LeadPerformanceCalculator() {
         }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
+        cfgProvisional.current = !sessionRef.current;
         setConfig(cfg);
         /* Signed in, so this is allowed: keep the public slice current even for
            a config that was saved before the slice existed. */
@@ -1971,6 +1976,7 @@ export default function LeadPerformanceCalculator() {
       if (sessionRef.current) {
         /* Genuinely new install, confirmed by an authenticated read: create it. */
         await saveShared(CONFIG_KEY, cfg);
+        cfgProvisional.current = false;
       } else {
         /* Signed out, row invisible: run the login on defaults, write nothing,
            and re-read the moment a session exists. The group's own stores,
@@ -1991,7 +1997,7 @@ export default function LeadPerformanceCalculator() {
   }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
-    if (!config || !session) return;
+    if (!config || !session || cfgProvisional.current) return;
     (async () => {
       const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
       if (!viewPicked.current) {
@@ -2051,6 +2057,7 @@ export default function LeadPerformanceCalculator() {
           if (first) { setView(first); setStoreData(all[first]); }
           else if (session.role === "admin") setView("admin");
         }
+        setInitialViewReady(true);
         return;
       }
       // Later runs happen when the config or (more often) the auth session reference
@@ -2116,15 +2123,14 @@ export default function LeadPerformanceCalculator() {
   }, [storeData, view, ready]);
   /* ---- what the arrival is waiting for ----
      The jump's cruise holds until the screen it will land on is actually
-     standing. "Standing" includes the failure screens on purpose: a store that
-     answered with a mismatch or a failed load still has something honest to
-     land on, and holding the tunnel for data that is never coming would just be
-     a spinner with better art. The destination sign is the store's own name and
-     brand colour, from config. */
+     standing. A store mismatch has an honest warning to land on. A failed read
+     stays in the arrival's connection panel with a retry, never a successful
+     landing on the temporary All Stores view. The first destination must have
+     been selected from the authenticated config and its completed store reads. */
   const [iconWave, setIconWave] = useState(0);
   const iconCache = useRef({});
   useEffect(() => {
-    if (!jumpHold) { tellArrivalReady(false, null); return; }
+    if (!jumpHold) { arrivalSurfaceReady = false; arrivalFailed = false; tellArrivalReady(false, null); return; }
     const atStore = view !== "admin" && view !== "combined";
     const store = atStore ? (config?.stores || []).find((x) => x.id === view) : null;
     /* The landing has to arrive COMPLETE: a store icon that pops in a beat
@@ -2151,12 +2157,14 @@ export default function LeadPerformanceCalculator() {
         }
       }
     }
-    const landable = !!session && !!config && iconReady
+    const landable = !!session && !!config && initialViewReady && !cfgProvisional.current && iconReady
       && (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    arrivalFailed = loadErr || bootStall || (!!storeLoadFailed && !storeMismatch);
     tellArrivalReady(landable, store
       ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
       : null);
-  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave]);
+    activeEngineSend?.({ type: "recovery", failed: arrivalFailed });
+  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave, initialViewReady, loadErr, bootStall]);
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     /* A load takes two round trips now (the document, then the split day rows), so
@@ -2957,7 +2965,6 @@ export default function LeadPerformanceCalculator() {
     return <Shell ground={false}><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
   }
   const retryBoot = () => { setBootStall(false); setLoadErr(false); netSet(false); setCfgWave((w) => w + 1); setLinksWave((w) => w + 1); refreshProfile(); };
-  if (loadErr || bootStall) return <Shell><BootStall onRetry={retryBoot} /><Style /></Shell>;
   /* ---- the sign-in screen is a LAYER, not a branch ----
      It used to be one of this component's early returns, which meant the app
      underneath it did not exist until the jump handed over — so the dashboard
@@ -2988,7 +2995,7 @@ export default function LeadPerformanceCalculator() {
         onHandover={() => {
           const undo = landDashboard(() => {
             /* Settle React state after the landing, not during its first paint. */
-            setTimeout(() => {
+            finishArrivalLanding(() => {
               undo();
               jumpOwnsEntrance = false;
               setJumpHold(false);
@@ -3000,7 +3007,10 @@ export default function LeadPerformanceCalculator() {
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
   ) : null;
-  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}</RoomBoundary>{signInLayer}</React.Suspense>;
+  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}{jumpHold && !holdMount && session && <ArrivalPrepared ready={initialViewReady && !loadErr && !bootStall && (view === "admin" || view === "combined" || !!storeData || !!storeMismatch)} identity={storeData} />}</RoomBoundary>{signInLayer}</React.Suspense>;
+
+  // Keep the login owner mounted so a failed boot can stop in themed recovery.
+  if (loadErr || bootStall) return wrap(<Shell><BootStall onRetry={retryBoot} /><Style /></Shell>);
 
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
@@ -3008,6 +3018,7 @@ export default function LeadPerformanceCalculator() {
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
+    setInitialViewReady(false);
     setSession(null); setEntered(false); setAppModule("perf");
   };
 
@@ -5471,6 +5482,8 @@ function arrivalShort() {
    for the same reason lastJumpOrigin is: the engine lives outside React so the
    handover cannot tear it down mid-flight. */
 let arrivalReady = false;
+let arrivalSurfaceReady = false;
+let arrivalFailed = false;
 let arrivalDest = null;   // { name, color } for the travel sign, or null
 /* The engine announces its beats so the root can schedule the expensive work
    into the right one: the dashboard mounts during the CRUISE, which is the
@@ -5485,9 +5498,22 @@ function tellArrivalReady(ready, dest) {
   arrivalReady = !!ready;
   if (dest !== undefined) arrivalDest = dest;
   if (activeEngineSend) {
-    activeEngineSend({ type: "ready", ready: arrivalReady });
     activeEngineSend({ type: "dest", dest: arrivalDest });
+    activeEngineSend({ type: "ready", ready: arrivalReady });
   }
+}
+function ArrivalPrepared({ ready, identity }) {
+  useLayoutEffect(() => {
+    arrivalSurfaceReady = false;
+    activeEngineSend?.({ type: "ready", ready: false });
+    if (!ready) return;
+    const cancel = prepareArrivalSurface(() => {
+      arrivalSurfaceReady = true;
+      activeEngineSend?.({ type: "ready", ready: arrivalReady });
+    });
+    return () => { cancel(); arrivalSurfaceReady = false; activeEngineSend?.({ type: "ready", ready: false }); };
+  }, [ready, identity]);
+  return null;
 }
 /* ---- every time, not once a day ----
    The handoff asked for the first sign-in of the day, like the morning round-up,
@@ -5773,10 +5799,18 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   jumpOwnsEntrance = true;
   jumpLanded = false;
   jumpShort = arrivalShort();
+  const arrivalView = openArrivalSurface(jumpShort);
   if (jumpShort) {
     tellPhase("cruise");
-    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
-    return () => { clearTimeout(t); jumpOwnsEntrance = false; tellPhase("off"); };
+    let elapsed = false, complete = false;
+    const finish = () => {
+      if (complete || !elapsed || !arrivalReady || !arrivalSurfaceReady || arrivalFailed) return;
+      complete = true; activeEngineSend = null; arrivalView.covered(); onFlash(); onDone();
+    };
+    activeEngineSend = m => { if (m.type === "recovery" && m.failed) arrivalView.wait(true); finish(); };
+    const t = setTimeout(() => { elapsed = true; finish(); }, 180);
+    const waiting = setTimeout(() => { if (!complete) arrivalView.wait(arrivalFailed); }, 500);
+    return () => { complete = true; clearTimeout(t); clearTimeout(waiting); activeEngineSend = null; arrivalView.dispose(); jumpOwnsEntrance = false; tellPhase("off"); };
   }
 
   const W = window.innerWidth, H = window.innerHeight;
@@ -5794,7 +5828,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     const ox = mr.left + (mr.width - gWord.w * scale) / 2;
     const oy = mr.top + (mr.height - gWord.h * scale) / 2;
     const gS = sageDots({ word: false });
-    const seatScale = scale * 0.62;
+    const seatScale = scale * 0.46;
     const seats = gS.dots.map((d) => ({
       x: cx + (d.x - gS.w / 2) * seatScale,
       y: cy + (d.y - gS.h / 2) * seatScale,
@@ -5831,34 +5865,17 @@ function runJump({ onFlash, onDone, lead = 0 }) {
       }
   }
 
-  /* ---- the tunnel: seeded mid-life so the sky starts in steady state ---- */
-  const maxR = Math.hypot(W, H) / 2 + 160;
-  const tunnel = [];
-  {
-    const n = Math.round((W * H) / 7800);
-    for (let i = 0; i < n; i++) {
-      const waiting = Math.random() < 0.18;
-      const r = waiting ? 2 : Math.pow(Math.random(), 1.7) * maxR;
-      tunnel.push({
-        ang: Math.random() * Math.PI * 2, r,
-        t: Math.max(0, r - (200 + Math.random() * 160)),
-        wait: waiting ? Math.random() * 0.9 : 0,
-        v: 0.55 + Math.random() * 0.9,
-        size: 1.4 + Math.random() * 2.2,
-        tint: GROUND_TINTS[Math.floor(Math.random() * GROUND_TINTS.length)],
-      });
-    }
-  }
-
-  const cv = document.createElement("canvas");
+  let cv = document.createElement("canvas");
   cv.className = "sage-jump-canvas";
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px";
   document.body.appendChild(cv);
-  root.classList.add("sage-cv");
+  cv.style.opacity = "0";
 
   const card = document.querySelector(".login-card");
+  const fold = card?.getBoundingClientRect();
+  const foldX = fold ? cx-fold.left-fold.width/2 : 0, foldY = fold ? cy-fold.top-fold.height/2 : 0;
   const blobs = Array.from(document.querySelectorAll(".sg-blob")).map((el) => {
     const r = el.getBoundingClientRect();
     const bx = r.left + r.width / 2, by = r.top + r.height / 2;
@@ -5874,14 +5891,16 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     catch (e) { return "sans-serif"; }
   })();
 
-  const world = { W, H, dpr, T: JUMP_T, FP: 0.5, mk, field, tunnel, font: bodyFont, lead };
+  const world = { W, H, dpr, mk, field, lead };
 
   let flashing = false, stopped = false, raf = 0, domRaf = 0;
-  let worker = null, engine = null, cancelCover = () => {};
+  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false;
 
   const toFlash = () => {
     if (flashing || stopped) return;
     flashing = true;
+    arrivalView.covered();
+    scheduler?.stop();
     activeEngineSend = null;
     root.classList.add("sage-beat-flash", "sage-cover-active");
     if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
@@ -5897,44 +5916,63 @@ function runJump({ onFlash, onDone, lead = 0 }) {
 
   const onPost = (type, data) => {
     if (stopped) return;
-    if (type === "phase") tellPhase(data);
+    if (type === "paint") { cv.style.opacity = "1"; root.classList.add("sage-cv"); }
+    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: data }));
+    else if (type === "destination") arrivalView.destination(data);
+    else if (type === "phase") { arrivalView.phase(data); tellPhase(data); }
     else if (type === "flash") toFlash();
   };
 
   /* Worker where the browser has one; the same core on the main thread where
      it does not. Either way the maths exists once. */
-  let usingWorker = false;
+  const drawingError = () => {
+    drawingFailed = true;
+    console.warn("[Sage arrival] Canvas unavailable; using the covered handoff.");
+    arrivalView.wait(arrivalFailed);
+    if (arrivalReady && arrivalSurfaceReady && !arrivalFailed) toFlash();
+  };
+  const fallback = () => {
+    if (stopped || flashing) return;
+    if (worker) { worker.terminate(); worker = null; }
+    // An OffscreenCanvas cannot be reclaimed. Replace just that canvas once.
+    const fresh = cv.cloneNode(false); cv.replaceWith(fresh); cv = fresh;
+    try {
+      const ctx = cv.getContext("2d");
+      if (!ctx) { drawingError(); return; }
+      engine = productionArrivalEngine(ctx, world, onPost);
+      scheduler = createArrivalScheduler(engine, requestAnimationFrame, cancelAnimationFrame, drawingError);
+      scheduler.send({ type: "dest", dest: arrivalDest });
+      scheduler.send({ type: "ready", ready: arrivalReady && arrivalSurfaceReady && !arrivalFailed });
+      scheduler.start();
+    } catch (error) { drawingError(); }
+  };
   try {
     if (typeof OffscreenCanvas !== "undefined" && cv.transferControlToOffscreen && typeof Worker !== "undefined") {
       const off = cv.transferControlToOffscreen();
-      const src = "let eng=null;self.onmessage=function(e){var m=e.data;" +
-        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');" +
-        "var core=(" + arrivalEngineCore.toString() + ");" +
-        "eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
-        "var loop=function(now){if(!eng)return;eng.tick(now);requestAnimationFrame(loop);};" +
-        "requestAnimationFrame(loop);}else if(eng){eng.msg(m);}};";
-      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
-      worker.onmessage = (e) => onPost(e.data.type, e.data.data);
+      const src = "let scheduler=null;self.onmessage=function(e){var m=e.data;" +
+        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');if(!ctx)throw Error('Canvas unavailable');" +
+        "var core=(" + productionArrivalEngine.toString() + ");" +
+        "var schedule=(" + createArrivalScheduler.toString() + ");" +
+        "var eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
+        "scheduler=schedule(eng,requestAnimationFrame,cancelAnimationFrame,function(){self.postMessage({type:'renderer-error'});});scheduler.start();" +
+        "}else if(scheduler){if(m.type==='stop')scheduler.stop();else scheduler.send(m);}};";
+      const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      try { worker = new Worker(url); } finally { URL.revokeObjectURL(url); }
+      worker.onmessage = e => { if(e.data.type==="renderer-error")fallback(); else onPost(e.data.type,e.data.data); };
+      worker.onerror = () => { console.warn("[Sage arrival] Worker unavailable; using the main-thread renderer."); fallback(); };
       worker.postMessage({ type: "init", canvas: off, world }, [off]);
-      usingWorker = true;
-    }
-  } catch (e) { try { if (worker) worker.terminate(); } catch (e2) {} worker = null; usingWorker = false; }
-  if (!usingWorker) {
-    const ctx = cv.getContext("2d");
-    engine = arrivalEngineCore(ctx, world, onPost);
-    const loop = (now) => {
-      if (stopped || flashing) return;
-      engine.tick(now);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-  }
-  activeEngineSend = (m) => {
+    } else fallback();
+  } catch (error) { fallback(); }
+  activeEngineSend = m => {
+    if (stopped || flashing) return;
+    if (m.type === "recovery") { arrivalView.recovery(m.failed); return; }
+    if (m.type === "ready") m = { ...m, ready: !!m.ready && arrivalSurfaceReady && !arrivalFailed };
+    if (drawingFailed && m.type === "ready" && m.ready) { toFlash(); return; }
     if (worker) worker.postMessage(m);
-    else if (engine) engine.msg(m);
+    else scheduler?.send(m);
   };
-  activeEngineSend({ type: "ready", ready: arrivalReady });
   activeEngineSend({ type: "dest", dest: arrivalDest });
+  activeEngineSend({ type: "ready", ready: arrivalReady });
 
   /* ---- the DOM's own choreography, on a matching clock ----
      The card's fade and the clouds' pull and blow-out are DOM work, which a
@@ -5944,15 +5982,15 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const ease3 = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
   const pw = (p, k) => Math.pow(Math.min(1, Math.max(0, p)), k);
   const domT0 = performance.now() + lead;
-  const R = JUMP_T.ratchet, F = JUMP_T.reform, S = JUMP_T.streaks;
+  const R = 120, F = 720, S = 620;
   const domLoop = (now) => {
     if (stopped || flashing) return;
     const t = now - domT0;
-    if (t >= R && t < R + F) {
-      const k = ease3((t - R) / F);
+    if (t >= 0 && t < R + F) {
+      const k = ease3(t / (R + F));
       if (card) {
-        card.style.opacity = String(Math.max(0, 1 - k * 1.15));
-        card.style.transform = "scale(" + (1 - k * 0.08) + ")";
+        card.style.opacity = String(Math.max(0, 1-k*k));
+        card.style.transform = "translate3d(" + (foldX*k*k) + "px," + (foldY*k*k) + "px,0) scale(" + (1-k*k*.9) + "," + (1-k*k*.96) + ")";
       }
       for (const b of blobs) {
         b.el.style.transform = "translate(" + (-b.ux * k * 150) + "px," + (-b.uy * k * 150) + "px) scale(" + (1 - k * 0.1) + ")";
@@ -5978,6 +6016,8 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   return () => {
     stopped = true;
     cancelCover();
+    scheduler?.stop();
+    arrivalView.dispose();
     activeEngineSend = null;
     cancelAnimationFrame(raf); cancelAnimationFrame(domRaf);
     if (worker) { try { worker.postMessage({ type: "stop" }); worker.terminate(); } catch (e) {} worker = null; }
@@ -6162,10 +6202,11 @@ function landDashboard(onStarted = () => {}) {
     frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
         root.classList.remove("sage-preparing");
+        startArrivalScan();
         onStarted();
       });
     });
-  } else onStarted();
+  } else { startArrivalScan(); onStarted(); }
   return () => {
     cancelAnimationFrame(frame);
     undo();
@@ -12651,6 +12692,8 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
          fades into --bg at its own edges anyway, so the bands now continue it.
          The theme-color meta in index.html does the same for Safari's own bar. */
 html, body { margin:0; padding:0; background:var(--bg); }
+html { scrollbar-gutter:stable; }
+html.sage-flight-hover-hold :is(.bloopwin,.fbc-hover,.tr-tip,[role="tooltip"]) { visibility:hidden !important; }
 /* The three grounds, named once. The rooms are genuinely different places and
    the colour is how a person knows which one they are standing in. */
 :root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }

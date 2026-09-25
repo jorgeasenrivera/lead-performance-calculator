@@ -9,6 +9,45 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assetPath } from "./manager-performance.mjs";
 
+/** Explicit test cases on the fictional-data recorder only, never app code. */
+export function installLoginFaults() {
+  if (location.hostname !== "127.0.0.1") return;
+  const mode = new URLSearchParams(location.search).get("arrivalCase");
+  if (mode === "reduce") {
+    const media = window.matchMedia.bind(window);
+    window.matchMedia = query => {
+      const result = media(query);
+      if (query.includes("prefers-reduced-motion")) Object.defineProperty(result, "matches", { value: true });
+      return result;
+    };
+  }
+  if (mode === "fallback") window.Worker = undefined;
+  if (!["slow", "interrupted", "auth-failed"].includes(mode)) return;
+  const original = window.fetch.bind(window);
+  let until = 0;
+  window.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, location.href);
+    if (url.origin !== "http://127.0.0.1:5433") return original(input, init);
+    const method = (init.method || input.method || "GET").toUpperCase();
+    if (mode === "auth-failed" && method === "POST" && url.pathname === "/auth/v1/token")
+      return new Response(JSON.stringify({ error: "invalid_grant", error_description: "Local test: sign-in was refused." }), { status: 400, headers: { "Content-Type": "application/json" } });
+    if (method !== "GET" || !url.pathname.endsWith("/app_data") || !url.searchParams.get("key")?.includes("lpc:store:")) return original(input, init);
+    if (mode === "interrupted") return new Response(JSON.stringify({ message: "Local test: store connection interrupted" }), { status: 503 });
+    if (mode !== "slow") return original(input, init);
+    // Stay below the real five-second read timeout: this case tests a slow
+    // success. The interrupted case separately tests an honest failure.
+    if (!until) until = Date.now() + 4500;
+    const delay = Math.max(0, until - Date.now()), signal = init.signal || input.signal;
+    if (delay) await new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason || new DOMException("Aborted", "AbortError")); return; }
+      const abort = () => { clearTimeout(timer); reject(signal.reason || new DOMException("Aborted", "AbortError")); };
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, delay);
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+    return original(input, init);
+  };
+}
+
 export function summarizeLoginTrace(sample) {
   const frames = sample.frames.map((f) => f.ms).sort((a, b) => a - b);
   const reveal = sample.events.find((e) => e.name === "dashboard-revealed");
@@ -60,13 +99,17 @@ export function installLoginProbe(summarize) {
     if (last && sample.frames.length < 2400) sample.frames.push({ at: round(now - start), ms: round(now - last), phase });
     last = now;
     const c = document.documentElement.className;
+    if (!document.documentElement.classList.contains("sage-flight-lock") && revealed && sample.widthAfterUnlock === undefined) {
+      sample.widthAfterUnlock = document.body.getBoundingClientRect().width;
+      event("scroll-unlocked");
+    }
     if (c !== classes) { classes = c; event("root-classes", { classes: c }); }
     const hasCanvas = !!document.querySelector(".sage-jump-canvas");
     if (hasCanvas !== canvas) {
       canvas = hasCanvas;
       event(canvas ? "tunnel-mounted" : "tunnel-removed", { cover: cover() });
     }
-    if (!hero && document.querySelector(".s2-tube")) { hero = true; event("hero-mounted"); }
+    if (!hero && document.querySelector(".s2-hero,.bp-hero")) { hero = true; event("hero-mounted"); }
     if (!revealed && hero && !document.documentElement.classList.contains("jump-under")
       && !document.documentElement.classList.contains("refresh-hold")) {
       revealed = true; phase = "landing"; event("dashboard-revealed", { cover: cover() });
@@ -77,7 +120,7 @@ export function installLoginProbe(summarize) {
       }
       const layer = document.querySelector(".signin-over"), card = layer?.querySelector(".login-card");
       const exposed = !!(layer && card && getComputedStyle(layer).display !== "none"
-        && Number(getComputedStyle(card).opacity) > 0.01 && Number(cover().opacity) < 0.999);
+        && Number(getComputedStyle(card).opacity) > 0.01 && Number(getComputedStyle(document.querySelector(".sage-flash")).opacity) < 0.999);
       if (exposed !== loginExposed) { loginExposed = exposed; event(exposed ? "login-exposed-after-reveal" : "login-hidden-after-reveal"); }
     }
     if (!roundup && document.querySelector('[role="dialog"][aria-label="Your round-up"]')) {
@@ -90,6 +133,24 @@ export function installLoginProbe(summarize) {
     if (!sample || sample.status !== "recording") return;
     phase = String(e.detail); event("phase", { phase });
   });
+  document.addEventListener("sage-arrival-metrics", e => { if (sample?.status === "recording") sample.drawing = e.detail; });
+  // Reading layout on every sampled frame was itself forcing layout. Observe
+  // changes instead, and retain that instrumentation cost in old trace notes.
+  if (typeof ResizeObserver !== "undefined") {
+    const widths = new ResizeObserver(entries => {
+      if (sample?.status !== "recording") return;
+      const width = entries[0]?.borderBoxSize?.[0]?.inlineSize;
+      if (typeof width !== "number") return;
+      sample.widthMin = Math.min(sample.widthMin ?? width, width);
+      sample.widthMax = Math.max(sample.widthMax ?? width, width);
+    });
+    widths.observe(document.body); observers.push(widths);
+  }
+  for (const type of ["animationstart", "animationend", "animationcancel"]) {
+    document.addEventListener(type, e => {
+      if (e.animationName === "sageArrivalScan") event(type, { animation: e.animationName });
+    });
+  }
   document.addEventListener("visibilitychange", () => {
     if (sample?.status === "recording" && document.hidden) sample.hidden = true;
   });
@@ -124,6 +185,7 @@ export function installLoginProbe(summarize) {
     sample = { status: "recording", hidden: document.hidden, viewport: [innerWidth, innerHeight],
       events: [], frames: [], longTasks: [], longFrames: [],
       supportedTiming: PerformanceObserver.supportedEntryTypes || [] };
+    sample.widthMin = sample.widthMax = document.body.getBoundingClientRect().width;
     event("sign-in-pressed"); publish();
     raf = requestAnimationFrame(tick);
     timeout = setTimeout(() => finish(revealed ? "complete" : "no dashboard within 15 seconds"), 15000);
@@ -140,7 +202,7 @@ export async function serveLoginProbe(root, port) {
   const entry = /src="(\/assets\/index-[^"]+\.js)"/.exec(html)?.[1];
   const bundle = entry ? await fs.readFile(path.join(root, entry.slice(1)), "utf8") : "";
   if (!bundle.includes("http://127.0.0.1:5433")) throw new Error("Build against the local mock before running this recorder.");
-  const inject = `<script>(${installLoginProbe.toString()})(${summarizeLoginTrace.toString()});</script>`;
+  const inject = `<script>(${installLoginFaults.toString()})();(${installLoginProbe.toString()})(${summarizeLoginTrace.toString()});</script>`;
   const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
   const server = http.createServer(async (req, res) => {
     if (!["GET", "HEAD"].includes(req.method)) { res.writeHead(405).end(); return; }
@@ -158,7 +220,8 @@ export async function serveLoginProbe(root, port) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const port = Number(process.argv[3] || 49178);
-  await serveLoginProbe(process.argv[2] || "dist", port);
-  console.log(`Local sign-in recorder: http://127.0.0.1:${port}/`);
+  for (const port of String(process.argv[3] || "49178").split(",").map(Number)) {
+    await serveLoginProbe(process.argv[2] || "dist", port);
+    console.log(`Local sign-in recorder: http://127.0.0.1:${port}/`);
+  }
 }

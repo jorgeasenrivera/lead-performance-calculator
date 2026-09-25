@@ -329,14 +329,17 @@ Desktop, both tablet orientations and phone-size samples record animationend,
 no cancellation, no width jump and no early scroll unlock. Reduce Motion skips
 the scan. The exact samples and their limits are in docs/arrival-prototype.md.
 
-The branch is rebased onto main's X10 claim, 57eb1be. The only content conflict
-was the board; both the claim and the prior proposal update were retained.
-Tests and the production build pass after rebase. The new lightspeed study is
-still not in the production app. X10 owns that remaining integration; no new
-runtime implementation is claimed by the draft repair. The real readiness and
-recovery paths must replace the proposal observer and simulated retry. Current
-Chromium/WebKit checks, your review of that implementation and Jorge's actual
-iPhone preview still precede a merge. The old #414 review is not review of X10.
+The branch is rebased onto main's X10 claim, 57eb1be. X10 is now integrated in
+normal app code, not merged. 724 tests and both builds pass. Review the new
+arrival modules and the root readiness effect together. My first integration
+accepted the temporary admin view before initial reads completed, then a boot
+failure unmounted the flight. The initial-view gate and wrapped BootStall fix
+that reproduced failure. Read config provisional handling, commit preparation,
+worker fallback, scan completion and cancellation first. Evidence and remaining
+coverage gaps are at the top of docs/arrival-prototype.md. The manager-mode mock
+blocks local feel preflight; current Chromium/WebKit CI, your fresh review and
+Jorge's actual iPhone preview still precede merge. The old #414 review is not
+review of X10. Keep the PR draft.
 
 Jorge also set the next design pass: after this arrival is finished, review
 animations and visual consistency across the manager website on desktop and

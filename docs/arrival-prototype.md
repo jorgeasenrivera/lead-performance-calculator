@@ -1,5 +1,61 @@
 # One continuous arrival
 
+## 24 September: X10 integrated, release verification still open
+
+The approved study now drives explicit sign-in in normal application code.
+The saved draft remains at `/` and the approved study at `/study` on the local
+proposal server. `arrival-legacy.mjs` preserves the original proposal driver;
+the study and production share `arrival-engine.mjs`. No new runtime dependency.
+
+React owns destination readiness. Font/image preparation is bounded and waits
+for a committed surface. The scheduler stops requesting frames while waiting
+and after completion. Worker failure falls back to the same drawing core on
+the main thread. The scroll lock finishes after both assembly and the actual
+scan completion. Reduce Motion has neither flight, white flash nor scan.
+
+Verification found a real integration defect: the temporary All Stores view
+could be accepted before initial store reads finished. A failed read then
+replaced a successful arrival with BootStall. The gate now requires initial
+destination selection from non-provisional config, and boot errors preserve
+the login owner and its themed connection panel. Cached data still follows
+the existing offline rules. No database, save or authorization policy changed.
+
+724 tests pass. Normal and isolated proposal builds pass. Existing PDF eval
+and large-chunk warnings remain. The required local feel preflight stops:
+`the mock is not in SALESPERSON=1 mode, or has no demo store`. The active mock
+serves the manager study. This is not a passed feel run; current Chromium and
+WebKit CI remain release gates. The installed runtime does contain Playwright,
+correcting the older blanket statement below that no package was available.
+
+Normal app build `index-hfLFBzOG.js`, connected Chromium, fictional data:
+
+| Viewport and case | Reveal / unlock | Scan end | Drawing average / max |
+| --- | --- | --- | --- |
+| 390 x 844, normal | 5222 / 6661 ms | 6621 ms | 0.75 / 3.2 ms |
+| 768 x 1024, delayed read with cached fallback | 6283 / 7845 ms | 7720 ms | 1.28 / 3.7 ms |
+| 1440 x 900, main-thread renderer fallback | 5258 / 6748 ms | 6674 ms | 1.33 / 4.5 ms |
+| 1180 x 820, Reduce Motion | 663 / 1007 ms | none | no canvas |
+| 1280 x 720, fresh interrupted store read | no reveal | none | parked recovery |
+
+All three full arrivals recorded 73/73 logo departures, no login exposure,
+no scan cancellation, and scroll unlock after scan end. Body width changes
+were below 0.02 CSS px, rounding rather than a scrollbar jump. The interrupted
+case stayed at Connection interrupted with Try again, not a false landing.
+Retry reloads the real page, not the proposal's simulated connection reset.
+
+These are single host-browser samples, not iPhone or sustained-FPS proof.
+The phone-size run had no sampled main-thread gaps over 50 ms; tablet had six
+and the fallback desktop two. Tablet still had a 61 ms post-landing task.
+Reduce Motion had a 66 ms task. The initial desktop recorder forced layout
+each frame and is excluded; width measurement now uses ResizeObserver. A
+stale page instance and a desktop-only hero selector also produced invalid
+records, which are excluded. The delayed tablet read used the older eight-
+second fault and correctly fell back to cached data at the app's timeout.
+The local slow-success case is now 4500 ms, below that timeout, and needs a
+fresh run. No claim that every cold, failed-auth, worker-loss, slow-success or
+asset failure is covered yet. Actual iPhone approval and Claude's fresh read
+are still required. This is integrated on the draft branch, not merged.
+
 ## 24 September: scan completion repair verified in the draft
 
 The earlier scan cancellation is fixed in the study. Its animation now has its
