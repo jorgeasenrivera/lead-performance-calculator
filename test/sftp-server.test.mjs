@@ -71,3 +71,11 @@ test("an empty allowed list does not leave a trailing space in the firewall's ru
   assert.ok(!/address:\$\{\{ steps\.allow\.outputs\.runner \}\}\/32 \$\{\{/.test(wf), "the runner's rule and the list are never joined unconditionally");
   assert.match(wf, /\[ -z "\$allowed" \] \|\| inbound="\$inbound \$allowed"/);
 });
+
+test("the tag exists before the firewall that follows it, and a half-made run can be picked up", () => {
+  // DigitalOcean refuses a firewall for a tag that does not exist yet (422,
+  // the second real run). Servers make their own tags; firewalls do not.
+  assert.ok(wf.indexOf("doctl compute tag create") > 0 && wf.indexOf("doctl compute tag create") < wf.indexOf("doctl compute firewall create"));
+  assert.match(wf, /A \$NAME server already exists/, "only an existing server stops a create");
+  assert.match(wf, /if \[ -n "\$fw" \]; then\n\s*doctl compute firewall update/, "an existing firewall is reused, not duplicated");
+});

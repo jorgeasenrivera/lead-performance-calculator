@@ -97,8 +97,8 @@ jobs:
         env:
           NOTIFY_SECRET: ${{ secrets.SFTP_NOTIFY_SECRET }}
         run: |
-          if [ -n "${{ steps.state.outputs.droplet }}" ] || [ -n "${{ steps.state.outputs.firewall }}" ]; then
-            echo "::error::A $NAME server or firewall already exists. Nothing was changed."; exit 1
+          if [ -n "${{ steps.state.outputs.droplet }}" ]; then
+            echo "::error::A $NAME server already exists. Nothing was changed."; exit 1
           fi
           # The check account's key lives for this run only; its public half
           # goes into the server's first boot, and the account removes itself
@@ -106,16 +106,26 @@ jobs:
           ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/check" -C sage-check
           CHECK_PUBKEY=$(cat "$RUNNER_TEMP/check.pub") node infra/sftp/render.mjs > "$RUNNER_TEMP/user-data"
           # The firewall first: it follows the tag, so the server is behind it
-          # from its first second rather than open while it boots.
+          # from its first second rather than open while it boots. A firewall
+          # can only follow a tag that already exists (a server makes its own
+          # tags; a firewall does not), so the tag comes before both.
+          doctl compute tag get "$NAME" >/dev/null 2>&1 || doctl compute tag create "$NAME" >/dev/null
           # Joined only when the list has entries: a trailing space is an
           # empty rule to doctl, which refuses the whole command.
           inbound="protocol:tcp,ports:22,address:${{ steps.allow.outputs.runner }}/32"
           allowed="${{ steps.allow.outputs.rules }}"
           [ -z "$allowed" ] || inbound="$inbound $allowed"
-          fw=$(doctl compute firewall create --name "$NAME" --tag-names "$NAME" \
-                 --inbound-rules "$inbound" \
-                 --outbound-rules "protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0" \
-                 --format ID --no-header)
+          outbound="protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0"
+          # A run that stopped after the firewall but before the server is
+          # picked up again: the firewall is set to this run's rules and reused.
+          fw="${{ steps.state.outputs.firewall }}"
+          if [ -n "$fw" ]; then
+            doctl compute firewall update "$fw" --name "$NAME" --tag-names "$NAME" \
+              --inbound-rules "$inbound" --outbound-rules "$outbound" >/dev/null
+          else
+            fw=$(doctl compute firewall create --name "$NAME" --tag-names "$NAME" \
+                   --inbound-rules "$inbound" --outbound-rules "$outbound" --format ID --no-header)
+          fi
           echo "firewall=$fw" >> "$GITHUB_OUTPUT"
           id=$(doctl compute droplet create "$NAME" --region "$REGION" --size "$SIZE" --image "$IMAGE" \
                  --enable-backups --enable-monitoring --tag-names "$NAME" \
