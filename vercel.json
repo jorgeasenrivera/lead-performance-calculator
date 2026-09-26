@@ -4,6 +4,16 @@
       "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js"
     }
   },
+  "rewrites": [
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/support.html"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",

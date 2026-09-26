@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy at Sage</title>
+<meta name="description" content="What Sage keeps about you, who can see it, and how to have it removed.">
+<meta name="theme-color" content="#F5F5F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15211B" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<!-- The policy Apple links to from the listing and the app links to from the
+     sign-in screen (C90, decided by Jorge on 23 September). A plain page on
+     purpose: no script, no sign-in, nothing to load but the app's own type,
+     so it opens anywhere, including a phone with no signal and a reviewer's
+     browser. The words are the ones Jorge approved; change them only through
+     him, and move the date when they change. -->
+<style>
+  @font-face { font-family: 'Geist'; font-style: normal; font-weight: 300 700; font-display: swap; src: url(/fonts/geist-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: 'Geist'; font-style: normal; font-weight: 300 700; font-display: swap; src: url(/fonts/geist-latin-ext.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+  @font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 400 700; font-display: swap; src: url(/fonts/geist-mono-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap; src: url(/fonts/space-grotesk-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+  :root{
+    --ground:#F5F5F7; --ink:#131A12; --ink-2:#4A574B; --ink-3:#6E7A6C; --rule:#DCE2D8;
+    --accent:#2F6B4F; --mark:#E7EFE9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ground:#15211B; --ink:#EDF2EA; --ink-2:#B4C0B5; --ink-3:#8C9A8E; --rule:#2B3B31;
+      --accent:#8FD8AF; --mark:#1C2B23;
+    }
+  }
+  *{ box-sizing:border-box; }
+  html{ background:var(--ground); -webkit-text-size-adjust:100%; }
+  body{ margin:0; background:var(--ground); color:var(--ink);
+        font-family:'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:17px; line-height:1.55;
+        padding-block:max(28px, env(safe-area-inset-top)) max(64px, env(safe-area-inset-bottom));
+        padding-inline:max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
+  main{ max-width:640px; margin:0 auto; display:flex; flex-direction:column; gap:30px; }
+  header{ display:flex; flex-direction:column; gap:14px; padding-bottom:22px; border-bottom:1px solid var(--rule); }
+  .brand{ display:flex; align-items:center; gap:10px; color:var(--ink); text-decoration:none;
+          font-family:'Space Grotesk', system-ui, sans-serif; font-weight:700; font-size:19px; letter-spacing:-.01em; }
+  .brand img{ width:30px; height:30px; }
+  h1{ font-family:'Space Grotesk', system-ui, sans-serif; font-size:clamp(30px, 8vw, 40px); line-height:1.1; letter-spacing:-.025em; margin:0; }
+  .stamp{ font-family:'Geist Mono', ui-monospace, monospace; font-size:12.5px; letter-spacing:.06em; color:var(--ink-3); text-transform:uppercase; }
+  .lede{ color:var(--ink-2); margin:0; }
+  section{ display:flex; flex-direction:column; gap:12px; }
+  h2{ font-family:'Space Grotesk', system-ui, sans-serif; font-size:21px; letter-spacing:-.01em; margin:0; text-wrap:balance; }
+  p{ margin:0; max-width:64ch; color:var(--ink-2); }
+  ul{ margin:0; padding-left:20px; display:flex; flex-direction:column; gap:10px; }
+  li{ color:var(--ink-2); max-width:62ch; }
+  li::marker{ color:var(--accent); }
+  b{ color:var(--ink); font-weight:600; }
+  .never{ background:var(--mark); border-radius:4px; padding:0 4px; }
+  a{ color:var(--accent); text-underline-offset:3px; }
+  a:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+  footer{ border-top:1px solid var(--rule); padding-top:18px; font-size:14px; color:var(--ink-3); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="brand" href="/"><img src="/sage-mark.svg" alt="" width="30" height="30">Sage</a>
+    <h1>Privacy at Sage</h1>
+    <div class="stamp">Last updated 23 September 2026</div>
+    <p class="lede">Sage is run by Jorge Rivera. Write to <a href="mailto:jorge.rivera@hollerford.com">jorge.rivera@hollerford.com</a> with any question about this.</p>
+    <p class="lede">Sage is a work tool for car dealerships: the floor rotation, the phone line, and how each salesperson's month is going. You use it because your store does. This page says what it keeps about you, who can see it, and how to have it removed.</p>
+  </header>
+
+  <section>
+    <h2>What Sage keeps</h2>
+    <ul>
+      <li><b>Your account.</b> Your name, email address, whether you are a salesperson or a manager, and which stores you belong to. Your password is handled by our sign-in provider and is never stored in a form anyone can read.</li>
+      <li><b>Your day on the floor and the phone line.</b> When you joined the line, your status (waiting, with a customer, at lunch), your table, the FlyBys and T.O.s you send and any note you add, and the day's moves.</li>
+      <li><b>Your numbers.</b> Your store sends Sage the reports its CRM already emails. Sage reads your name and your counts (leads, calls, appointments, shows, sales) and keeps those. The email itself is not kept. Customer names, emails and phone numbers in deal alerts are removed before anything is saved.</li>
+      <li><b>Whether you were on the lot.</b> Only if your store has drawn its lot and you allow location. Your phone checks its position against the lot and sends one answer: on the lot, off it, or no answer. <b class="never">Where you are is never sent or stored.</b> If you allow location "Always", your iPhone watches the edge of the lot, and when you leave, the phone itself asks whether you are done for the day. Sage learns nothing unless you answer.</li>
+      <li><b>Not the camera.</b> The floor's QR code is read by your phone's own Camera app, which then opens Sage. Sage never turns the camera on.</li>
+      <li><b>Notifications.</b> If you allow them, your phone's notification address from Apple or Google, a random ID for the device, and which store and person it belongs to, so Sage can tell you when you are up.</li>
+      <li><b>When something goes wrong, and how fast it was.</b> The error, the screen it happened on, the app version, your store, your person ID, a random device ID, and your phone's model and screen size. Speed readings carry the same, without the error.</li>
+      <li><b>On your phone only.</b> Your name for the sign-in screen, your store, your text size, and a copy of the app so it opens without signal. None of it leaves the phone.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Who can see it</h2>
+    <ul>
+      <li><b>Your store's managers</b> see your numbers, your status and the day's history.</li>
+      <li><b>Everyone at your store</b> sees the floor and the phone line: names, who is up, who is with a customer.</li>
+      <li><b>The store's TV board</b> shows names and this month's numbers, and can be opened without signing in.</li>
+      <li><b>Nobody outside your store</b> can read or change the floor or the phone line.</li>
+      <li><b>If your store sets it up,</b> a report that one of your numbers is wrong goes to the store's Slack or Teams channel, with your name, the number and your note.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Who handles it for us</h2>
+    <p>Supabase holds the database and signs you in. Vercel runs the site and records how fast its pages load. Cloudflare receives the store's report emails and hands them to Sage. Apple and Google deliver notifications. The manager's screens and the TV board load fonts from Google Fonts. The screen for drawing the lot loads map pictures from OpenStreetMap, and the spreadsheet export loads its code from SheetJS; each of those sees your device's address when it does. None of them may use your data for anything else.</p>
+  </section>
+
+  <section>
+    <h2>What Sage does not do</h2>
+    <p>No advertising. Nothing sold or shared for marketing. No tracking you across other apps or websites. No analytics beyond the error and speed readings above.</p>
+  </section>
+
+  <section>
+    <h2>How long it is kept</h2>
+    <ul>
+      <li><b>Error reports:</b> 90 days.</li>
+      <li><b>Speed readings:</b> 30 days.</li>
+      <li><b>A device's notification details:</b> 90 days after the device last used Sage.</li>
+      <li><b>Your account, your floor days and your numbers:</b> for as long as your store uses Sage, because they are the store's history. They are deleted when you ask.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Your choices</h2>
+    <ul>
+      <li>Turn location or notifications off at any time in your phone's Settings. Sage still works; it asks instead of noticing.</li>
+      <li>Ask to see, correct or delete what Sage holds about you by writing to <a href="mailto:jorge.rivera@hollerford.com">jorge.rivera@hollerford.com</a>. Your store's managers can also correct your numbers and remove you.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Children</h2>
+    <p>Sage is for people at work. It is not meant for children and does not knowingly keep anything about them.</p>
+  </section>
+
+  <section>
+    <h2>Changes</h2>
+    <p>If this changes, the date at the top changes with it, and anything that matters is said in the app first.</p>
+  </section>
+
+  <footer>Sage · <a href="https://www.sageonline.io">www.sageonline.io</a></footer>
+</main>
+</body>
+</html>
