@@ -27,6 +27,6 @@ test("the app drops an old link before anything reads it", () => {
 test("the TV is never under the sign-in's curtain: nobody is ever signed in on it", () => {
   const app = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
   assert.match(app, /const WALL_SCREEN = \(\(\) => \{ try \{ return new URLSearchParams\(window\.location\.search\)\.has\("qboard"\);/);
-  assert.match(app, /const under = !WALL_SCREEN && \(!session \|\| \(jumpHold && !jumpLanded\)\);/,
+  assert.match(app, /const under = !WALL_SCREEN && \(!session \|\| (recovering \|\| )?\(jumpHold && !jumpLanded\)\);/,
     "jump-under hid the whole board from 11 September, the same way it hid the QR pages");
 });
