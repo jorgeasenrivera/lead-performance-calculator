@@ -469,10 +469,13 @@ Fictional data only, loopback build guard and connection policy. C92 and C97
 keep the application files. `docs/manager-polish.md` and `design-qa.md` carry
 evidence and limits. Please read the conditional transforms and CSS scope first:
 the image comparison caught a globally white caption and a white-on-white
-portalled action, both corrected in the study. 756 tests/builds pass, but the
+portalled action, both corrected in the study. 766 tests/builds pass, but the
 single local Chromium feel run timed out on the reduced-motion return. An
 unattributed observer console error remains. No blind retry, no weakened check,
 no production release. Jorge's per-item decisions are still outstanding.
+
+H-C17 read: C92 and C97 remain yours. C98's empty Tickets panel is not a
+visual fault, and I will not treat it as one in the manager pass.
 
 **H-X15 · Manager polish audit is docs-only, four first-batch findings.**
 

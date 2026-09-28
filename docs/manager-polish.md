@@ -336,7 +336,8 @@ loads are excluded from this study's evidence.
 
 ### Verification and limits
 
-756 tests pass, including four proposal guards. The normal app and isolated
+766 tests pass after rebasing onto C92's server half, including four proposal
+guards. The normal app and isolated
 proposal build pass, with the pre-existing PDF eval and chunk-size warnings.
 Browser-size checks cover desktop, 390px phone and 768px tablet. These are not
 physical-phone approval or a low-end-device FPS benchmark. The rest of the

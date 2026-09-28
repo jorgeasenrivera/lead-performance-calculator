@@ -31,7 +31,7 @@ ten threshold inputs at 44px; History header 354 / 354 with five text labels;
 tablet document 753 / 753 clientWidth / scrollWidth. Reduced-motion replay reports
 no travel. No FPS or low-end performance claim follows from those measurements.
 
-756 functional tests, normal build and isolated build pass. The Chromium feel
+766 functional tests after the latest rebase, normal build and isolated build pass. The Chromium feel
 run passed its intermediate rows but timed out on reduced-motion return sign-in
 waiting for `.ar-bar` after 40000ms, exit 1. It was not retried or weakened.
 An unattributed browser-console observer error remains, and the in-page error
