@@ -1,5 +1,50 @@
 # Lightspeed comparison QA
 
+## 28 September: manager navigation cleanup repair
+
+Findings: [P1] Current Summary resumes pageIn and nested cardIn at opacity 0
+after tab-enter clears. [P1] The first Proposed slide animated the outgoing
+page before the actual swap. [P2] Current/Proposed reloaded the visible iframe
+through blank first paint and its refresh arrival. Fixes are confined to the
+study: real-phase foreground motion, persistent nested mount suppression and
+a readiness-gated comparison frame. Production source is untouched.
+
+Source visual truth: `shots/manager-proposal-20260928/phone-targets-proposed.png`,
+the previously approved Proposed Targets screen. Implementation screenshot:
+`shots/manager-proposal-20260928/phone-targets-navigation-repaired.png`.
+Combined comparison: `shots/manager-proposal-20260928/targets-navigation-comparison.png`.
+Source pixels 1425x1089, implementation pixels 1425x1050. Both contain the
+390px-wide, 844px-high phone frame. The wrapper height/copy differ intentionally.
+The comparison takes the same 390x844 crop at (512,128) from both, with no
+resampling, then places them together. The outer browser override was
+1440x1100; these screenshot streams are not proof of native device density.
+Full-view comparison inspected both phone captures together; the combined phone
+crop makes Targets and the fixed dock readable without surrounding study chrome.
+
+Required fidelity surfaces: typography families/weights and hierarchy retained,
+with ten rendered threshold inputs at 44px and Geist Mono; section spacing,
+hero proportions and dock position retained; green hero and semantic metric
+colours retained; actual Sage logo and dot icons retained, no replacement art;
+approved monthly-grace copy and named controls retained. The older stream is
+blurred, so exact antialiasing and small glyph fidelity cannot be judged from it.
+No claim that this change improved font rendering. No new actionable static
+layout drift found in this focused comparison, not a full dashboard re-audit.
+
+Post-fix connected traces: desktop Summary/Daily Activity, phone Summary and
+tablet Summary stay at opacity 1, animation none after cleanup. Phone/tablet
+client and scroll widths match (375 and 753). Page-reduce shows animation none
+during mobile tool exit. A quick History-to-Targets sequence settles on Targets.
+Current/Proposed holds one visible and one hidden frame until ready; reversal
+keeps the original. Subsequent full desktop sign-in reaches the store and
+clears flight classes. Traces do not capture every visual frame or establish FPS.
+
+772 tests and both builds pass. Console inspection still has the earlier
+unattributed observer error; it has not been dismissed or proven fixed. The
+earlier reduced-motion feel timeout remains undiagnosed, not blindly retried.
+Source integration, motion checks and latest physical-iPhone check are missing.
+Final result: blocked. Keep the study draft; the technical fixes are ready for
+Jorge to try locally, not a production-release approval.
+
 ## 28 September: five approvals, connected-arrival investigation
 
 Jorge approved items 1 through 5 in the published manager study. He also reports

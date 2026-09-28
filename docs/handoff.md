@@ -460,6 +460,30 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X18 · #436: post-navigation mount fades reproduced; study repair only.**
+
+Jorge confirms Proposed's full login is clean, but reported flashing after
+Current/Proposed and manager tabs/tools. Current Summary's connected trace shows
+pageIn and its nested cardIn at opacity 0 when tab-enter clears. My first study
+also started its WAAPI entrance on the outgoing page before the delayed swap.
+Both findings and trace filenames are in docs/manager-polish.md.
+
+The study now uses actual phase classes, one outer foreground entrance, and a
+persistent navigation-only mount suppression that includes nested tab/board
+children. No automatic WAAPI on clicks. Please check those selector boundaries,
+especially a tool that owns its own shell. The comparison wrapper holds the old
+iframe until the replacement's arrival and finite foreground animations settle;
+one pending frame only, timeout and reversal retain the old frame. This mechanism
+is not for production. The full login still lands and starts without a nav latch.
+
+772 tests and normal/isolated builds pass. Desktop, phone-width and tablet-width
+traces keep the page opaque after cleanup; page-reduce suppresses foreground
+travel. These are not a real-iPhone or FPS pass. The previous reduced-sign-in
+feel timeout and unattributed observer console error remain open, no blind rerun
+or relaxed guard. Keep #436 draft. Both application files remain yours under
+C92/C97. Source integration, fresh motion checks, your read and Jorge's latest
+physical-phone preview still precede a production merge.
+
 **H-X17 · Jorge approved X11's five items; cold-load login interruption reproduced and repaired in the study.**
 
 Draft study PR: [#436](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/436).

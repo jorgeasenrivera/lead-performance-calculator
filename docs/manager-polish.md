@@ -5,6 +5,56 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 28 September: flashing after tool and section transitions
+
+Jorge now confirms the full proposed sign-in has no flashing. He reports a flash
+after Current/Proposed and after ordinary manager navigation. Those paths are
+separate, and this pass remains an isolated study, not a live repair.
+
+The connected Current Summary recording found a cleanup restart: at 831ms,
+after `tab-enter` cleared, the new page was on `pageIn` at opacity 0 and its
+Summary block was on `cardIn` at opacity 0. The nested block had been on
+`tabIn`. That is a confirmed return to the mount fade, not a slow data read.
+The first proposed trace exposed my own error too: its WAAPI slide started on
+the outgoing board before the actual 210ms tab swap. The new page arrived
+without that effect. The old override also missed nested `.tab-page` children.
+
+Proposed now follows the app's real tool/tab phase classes. It does not infer
+navigation from button names or start another entrance after two RAFs. One
+outer foreground container exits and lands; nested sections stay still.
+Mount effects remain disabled after the first navigation, including nested
+board/tab children, so cleanup cannot reinstate them. This is not a rule on
+every descendant: charts and other functional content retain their own effects.
+The full login document has no navigation latch until a tool/tab move occurs.
+Login artwork, clocks, cover and destination boundary repair stay unchanged.
+The existing background/streak switch still belongs to Sage. This pass does
+not claim it removes every visual interruption under a slow destination load.
+
+Desktop Summary and Daily Activity, 390px phone Summary and 768px tablet Summary
+recordings keep the destination page at opacity 1 with animation `none` after
+cleanup. No second mount fade appears in those samples. Phone and tablet settled
+document widths are 375/375 and 753/753 client/scroll pixels. The 15px gutters
+are included in those measurements. Reduced page motion keeps the foreground
+animation `none` during a tool switch. A subsequent full desktop sign-in reaches
+the populated store and clears its flight classes without a navigation latch.
+These are bounded DOM diagnostics, not a frame-rate or real-iPhone verdict.
+
+Current/Proposed previously replaced the visible iframe immediately, exposing
+its blank first paint and restored-session arrival. The comparison now keeps
+the painted frame while one hidden, inert replacement prepares. It swaps only
+after that app reports a destination, no arrival phase/cover, no running finite
+foreground animation, and two quiet RAF opportunities. Current's actual app
+animations remain unchanged. A reversal discards the pending frame; a 30-second
+timeout retains the usable frame and says the comparison did not load. This
+temporarily costs two demo documents, bounded to one pending replacement. It
+is a study-only comparison mechanism, not proposed production navigation.
+
+Regression tests cover readiness message origin/source, stale messages, reversal
+and timeout. Local trace JSON and the before/after Targets comparison are under
+ignored `shots/manager-proposal-20260928/`. 772 tests and both builds pass.
+The earlier feel failure and unattributed observer console error remain open.
+Do not retry the failed feel run blindly, waive its bar or merge this draft.
+
 ## Jorge's decisions and the connected arrival
 
 28 September: 1 Approve, 2 Approve, 3 Approve, 4 Approve, 5 Approve.

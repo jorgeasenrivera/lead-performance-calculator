@@ -71,13 +71,24 @@ export const polishCSS = `
 .sage-polish .hs-head { grid-template-columns:minmax(72px,1fr) repeat(5,minmax(0,1fr)); column-gap:5px; }
 .sage-polish .hs-head > span:not(:first-child) { font:700 10px/1.25 var(--font-ui); text-align:center; overflow-wrap:anywhere; color:#15211B !important; }
 .sage-polish .hs-row { grid-template-columns:minmax(72px,1fr) repeat(5,minmax(0,1fr)); column-gap:5px; }
-/* One foreground entrance replaces independently bouncing page pieces. It does
-   not apply during the already-approved login arrival. */
-.sage-polish.sage-polish-switch:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold) .page,
-.sage-polish.sage-polish-switch:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold) .page > *,
-.sage-polish.sage-polish-switch:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold) .page .hero,
-.sage-polish.sage-polish-switch:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold) .page .co-gon,
-.sage-polish.sage-polish-switch:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold) .page .s2-hero { animation:none !important; }
+/* The app owns exit, swap and entry. Hold mount effects off for this page's
+   whole life, including nested sections, so cleanup cannot start them again.
+   Login keeps its own approved choreography. */
+.sage-polish.sage-polish-switch:where(:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold)) :is(.page,.board-page,.tab-page),
+.sage-polish.sage-polish-switch:where(:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold)) :is(.page,.board-page,.tab-page) > *,
+.sage-polish.sage-polish-switch:where(:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold)) .page :is(.hero,.co-gon,.s2-hero) { animation:none !important; }
+/* Move only the outer foreground, never both it and its nested sections.
+   Direction and the swap still come from Sage's actual tool/tab state. */
+@media(prefers-reduced-motion:no-preference) {
+.sage-polish.sage-polish-switch:not(.sage-study-reduce):is(.tool-exit,.tab-exit) :is(.page,.board-page:not(.page .board-page),.tab-page:not(.page .tab-page)) {
+  animation:sagePolishOut .14s cubic-bezier(.4,0,.9,.3) both !important;
+}
+.sage-polish.sage-polish-switch:not(.sage-study-reduce):is(.tool-enter,.tab-enter) :is(.page,.board-page:not(.page .board-page),.tab-page:not(.page .tab-page)) {
+  animation:sagePolishIn .34s cubic-bezier(.16,.78,.24,1) both !important;
+}
+}
+@keyframes sagePolishOut { from {opacity:1;transform:none} to {opacity:0;transform:translateX(var(--tabx-out,var(--tx-out,0px)))} }
+@keyframes sagePolishIn { from {opacity:1;transform:translateX(var(--tabx-in,var(--tx-in,0px)))} to {opacity:1;transform:none} }
 @media(max-width:600px) {
   .sage-polish .s2-store { font-size:22px; }
   .sage-polish .s2-right { padding-left:0; border-left:0; }
@@ -91,6 +102,10 @@ export const polishCSS = `
 }
 .sage-polish.sage-study-reduce .page button { transition:none; }
 .sage-polish.sage-study-reduce .page button:active { transform:none; }
+.sage-polish.sage-study-reduce.sage-polish-switch :is(.page,.board-page,.tab-page) { animation:none !important; }
+@media(prefers-reduced-motion:reduce) {
+  .sage-polish.sage-polish-switch :is(.page,.board-page,.tab-page) { animation:none !important; }
+}
 `;
 
 export function installProposal(proposed, css) {
@@ -100,19 +115,21 @@ export function installProposal(proposed, css) {
     return;
   }
   window.__SAGE_POLISH = proposed;
-  if (new URLSearchParams(location.search).get("trace") === "1") installArrivalProbe();
+  let probeInstalled = false;
+  const enableProbe = () => { if (!probeInstalled) { probeInstalled = true; installArrivalProbe(); } };
+  if (new URLSearchParams(location.search).get("trace") === "1") enableProbe();
   const root = document.documentElement;
   const style = document.createElement("style");
   style.textContent = proposed ? css : "";
   if (proposed) root.classList.add("sage-polish");
-  let signInTimer, loginAttempted = false, frame = 0, animations = [], manualReduce = false;
+  let signInTimer, loginAttempted = false, animations = [], manualReduce = false;
   const media = matchMedia("(prefers-reduced-motion: reduce)");
   const report = (status) => parent.postMessage({type:"sage-polish-status", status}, location.origin);
-  const stop = () => { cancelAnimationFrame(frame); animations.forEach(a => a.cancel()); animations = []; };
+  const stop = () => { animations.forEach(a => a.cancel()); animations = []; };
   const travel = (direction = 0) => {
     stop();
     if (!proposed || manualReduce || media.matches || document.hidden) return;
-    if (root.matches(".jump-under,.sage-assemble,.sage-preparing,.refresh-hold")) return;
+    if (root.matches(".jump-under,.sage-assemble,.sage-preparing,.refresh-hold,.tool-move,.tab-move")) return;
     const page = document.querySelector(".page");
     if (!page) return;
     root.classList.add("sage-polish-switch");
@@ -145,25 +162,40 @@ export function installProposal(proposed, css) {
   const observer = new MutationObserver(() => { ensureStyle(); fillDemo(); });
   observer.observe(document.body, {childList:true, subtree:true});
   ensureStyle(); fillDemo();
-  const nav = ["Dashboard","Summary","History","Targets","People","Import","Daily activity","Coaching","License plates"];
-  let lastIndex = 0;
-  document.addEventListener("click", event => {
-    const b = event.target.closest?.("button");
-    const index = b ? nav.indexOf(b.textContent.trim()) : -1;
-    if (index < 0 || index === lastIndex) return;
-    const direction = index > lastIndex ? 1 : -1; lastIndex = index;
-    if (proposed) root.classList.add("sage-polish-switch");
-    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => travel(direction)); });
-  }, true);
+  // Observe the real transition state, not button names or guessed RAF delays.
+  // The microtask runs before paint, including navigation from a card shortcut.
+  const phases = new MutationObserver(() => {
+    if (!root.matches(".tool-move,.tab-move")) return;
+    stop();
+    if (proposed && !root.classList.contains("sage-polish-switch")) root.classList.add("sage-polish-switch");
+  });
+  phases.observe(root, {attributes:true, attributeFilter:["class"]});
   const reduce = () => { stop(); root.classList.toggle("sage-study-reduce", manualReduce || media.matches); };
   media.addEventListener("change", reduce);
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
   window.addEventListener("message", event => {
     if (event.origin !== location.origin || event.source !== parent) return;
     if (event.data?.type === "sage-polish-replay") travel();
+    if (event.data?.type === "sage-polish-trace" && event.data.value) enableProbe();
     if (event.data?.type === "sage-polish-reduce") { manualReduce = !!event.data.value; reduce(); report(manualReduce || media.matches ? "Reduced motion: no travel" : "Motion enabled"); }
   });
-  window.addEventListener("pagehide", () => { stop(); clearTimeout(signInTimer); observer.disconnect(); media.removeEventListener("change", reduce); }, {once:true});
+  let readyFrame = 0;
+  if (new URLSearchParams(location.search).get("compare") === "1") {
+    const deadline = performance.now() + 30000;
+    let quiet = 0;
+    const ready = () => {
+      const page = document.querySelector(".page,.board-page,.tab-page");
+      if (page &&
+          !root.matches(".jump-under,.sage-assemble,.sage-preparing,.refresh-hold,.tool-move,.tab-move") &&
+          !document.querySelector(".signin-over,.refresh-flash") &&
+          !page.getAnimations({subtree:true}).some(a => a.playState === "running" && a.effect?.getTiming().iterations !== Infinity)) {
+        if (++quiet >= 2) { parent.postMessage({type:"sage-polish-ready"},location.origin); return; }
+      } else quiet = 0;
+      if (performance.now() < deadline) readyFrame = requestAnimationFrame(ready);
+    };
+    readyFrame = requestAnimationFrame(ready);
+  }
+  window.addEventListener("pagehide", () => { stop(); cancelAnimationFrame(readyFrame); clearTimeout(signInTimer); observer.disconnect(); phases.disconnect(); media.removeEventListener("change", reduce); }, {once:true});
   report(proposed ? "Proposed polish, fictional store" : "Current design, same fictional store");
 }
 
@@ -173,14 +205,16 @@ export function installArrivalProbe() {
   const output = document.createElement("pre");
   output.hidden = true; output.id = "sage-arrival-trace";
   document.body.appendChild(output);
-  let frame = 0, started = 0, last = 0, previous = "", rows = [], events = [];
-  const selectors = [".sage-flash", ".signin-over", ".lpc", ".page", ".hero", ".s2-hero", ".bp-hero", ".topbar"];
+  let frame = 0, started = 0, last = 0, previous = "", rows = [], events = [], enabled = true;
+  const selectors = [".sage-flash", ".refresh-flash", ".signin-over", ".lpc", ".page", ".page > :first-child", ".board-page > :first-child", ".tab-page > :first-child", ".hero", ".s2-hero", ".bp-hero", ".topbar"];
+  const ids = new WeakMap(); let nextId = 0;
   const sample = () => {
     const parts = selectors.map(selector => {
       const el = document.querySelector(selector);
       if (!el) return {selector, missing:true};
+      if (!ids.has(el)) ids.set(el, ++nextId);
       const s = getComputedStyle(el);
-      return {selector, width:Math.round(el.getBoundingClientRect().width), classes:el.className,
+      return {selector, id:ids.get(el), width:Math.round(el.getBoundingClientRect().width), classes:el.className,
         opacity:Number(Number(s.opacity).toFixed(2)), visibility:s.visibility, display:s.display,
         hiddenAncestor:!!el.closest('[style*="display: none"]'),
         animation:s.animationName, play:s.animationPlayState, radial:el.classList.contains("sa-radial"),
@@ -191,6 +225,7 @@ export function installArrivalProbe() {
     if (key !== previous && rows.length < 300) {
       rows.push({ms:Math.round(performance.now()-started), ...state}); previous = key;
     }
+    output.textContent=JSON.stringify({rows, events});
   };
   const tick = time => {
     if (time-last >= 80) { sample(); last=time; }
@@ -203,7 +238,7 @@ export function installArrivalProbe() {
     observer.observe(root, {attributes:true, attributeFilter:["class"]});
   };
   document.addEventListener("click", event => {
-    if (event.target.closest?.(".login-card .lf-go")) begin();
+    if (enabled && event.target.closest?.(".login-card .lf-go,.topbar button,nav button,.seg button,.sect-strip button")) begin();
   }, true);
   for (const type of ["animationstart", "animationend", "animationcancel"]) {
     document.addEventListener(type, event => {
@@ -218,7 +253,55 @@ export function installArrivalProbe() {
     started=0;
   };
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
+  window.addEventListener("message", event => {
+    if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "sage-polish-trace") return;
+    enabled = !!event.data.value; if (!enabled) stop();
+  });
   window.addEventListener("pagehide", () => {stop(); observer.disconnect();}, {once:true});
+}
+
+// Switching the comparison is a document replacement, not a Sage navigation.
+// Retain the painted frame until the replacement reports its actual readiness.
+export function installComparison() {
+  let active = document.querySelector("#app"), pending = null, timeout = 0;
+  let mode = "proposed";
+  const status = document.querySelector("#status");
+  const trace = document.querySelector("#trace");
+  const reduce = document.querySelector("#reduce");
+  const send = (frame, type, value) => frame?.contentWindow.postMessage({type,value},location.origin);
+  const discard = () => { clearTimeout(timeout); pending?.remove(); pending=null; };
+  const press = () => document.querySelectorAll("header button[aria-pressed]").forEach(b => b.setAttribute("aria-pressed",String(b.id===mode)));
+  for (const id of ["current","proposed"]) document.getElementById(id).onclick = () => {
+    discard();
+    if (mode === id) { status.textContent="Ready"; return; }
+    const frame = document.createElement("iframe");
+    frame.title=active.title; frame.style.gridArea="1/1"; frame.style.visibility="hidden"; frame.inert=true;
+    pending=frame; status.textContent="Preparing "+id+", keeping this view visible";
+    frame.onload=() => send(frame,"sage-polish-reduce",reduce.checked);
+    frame.src="/app?mode="+id+"&compare=1"+(trace.checked ? "&trace=1" : "");
+    active.parentElement.appendChild(frame);
+    timeout=setTimeout(() => { discard(); status.textContent="Comparison did not load. Your previous view is still here."; },30000);
+  };
+  document.querySelector("#replay").onclick=() => send(active,"sage-polish-replay");
+  document.querySelector("#signin").onclick=() => {
+    discard();
+    active.src="/app?mode="+mode+"&signin=1"+(new URLSearchParams(location.search).get("slow")==="1" ? "&slow=1" : "")+(trace.checked ? "&trace=1" : "");
+    status.textContent="Full demo sign-in, then store landing";
+  };
+  reduce.onchange=() => {send(active,"sage-polish-reduce",reduce.checked);send(pending,"sage-polish-reduce",reduce.checked);};
+  trace.onchange=() => {send(active,"sage-polish-trace",trace.checked);send(pending,"sage-polish-trace",trace.checked);};
+  active.onload=() => send(active,"sage-polish-reduce",reduce.checked);
+  window.addEventListener("message",event => {
+    if (event.origin!==location.origin) return;
+    if (pending && event.source===pending.contentWindow && event.data?.type==="sage-polish-ready") {
+      clearTimeout(timeout);
+      const old=active; active=pending; pending=null;
+      mode=new URL(active.src).searchParams.get("mode");
+      old.remove(); active.id="app"; active.style.visibility=""; active.inert=false;
+      press(); status.textContent=mode==="proposed" ? "Proposed polish, fictional store" : "Current design, same fictional store";
+    } else if (event.source===active.contentWindow && event.data?.type==="sage-polish-status") status.textContent=event.data.status;
+  });
+  window.addEventListener("pagehide",discard,{once:true});
 }
 
 export function proposalPage() {
@@ -226,7 +309,7 @@ export function proposalPage() {
 <style>@font-face{font-family:Space;src:url('/fonts/space-grotesk-latin.woff2')}*{box-sizing:border-box}body{margin:0;background:#EDEFE9;color:#152B20;font:14px Space,system-ui}header{padding:16px 22px;background:#152B20;color:white;display:flex;align-items:center;flex-wrap:wrap;gap:12px}header b{font-size:20px;margin-right:auto}button,select{font:inherit;border:1px solid #BCD0BF;border-radius:9px;padding:9px 13px;cursor:pointer}button[aria-pressed=true]{background:#E4C98D;color:#152B20;border-color:#E4C98D}label{display:flex;align-items:center;gap:6px}button:focus-visible,select:focus-visible{outline:3px solid #DBA63F;outline-offset:3px}.note{padding:10px 22px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:#fff;border-bottom:1px solid #CAD4C9}.note span{margin-right:auto}main{padding:18px;overflow:auto}iframe{display:block;border:0;width:100%;height:900px;background:white;margin:auto;box-shadow:0 8px 28px #152B2020;border-radius:12px}body[data-device=phone] iframe{width:390px;height:844px}body[data-device=tablet] iframe{width:768px;height:1024px}details{max-width:1440px;margin:20px auto;background:white;padding:18px;border-radius:14px}summary{font-weight:700;cursor:pointer}.decision{padding:16px 0;border-bottom:1px solid #E0E6DD;display:flex;align-items:center;gap:14px}.decision p{flex:1;margin:0}.decision strong{display:block;margin-bottom:5px}#export{white-space:pre-wrap}small{opacity:.8} @media(max-width:600px){header{padding:12px}main{padding:6px}body[data-device=phone] iframe{width:min(390px,100%)}.decision{flex-wrap:wrap}}</style></head><body data-device="desktop">
 <header><b>SAGE / Manager polish</b><button id="current" aria-pressed="false">Current</button><button id="proposed" aria-pressed="true">Proposed</button><select id="device" aria-label="Preview size"><option value="desktop">Desktop</option><option value="phone">Phone, 390 px</option><option value="tablet">Tablet, 768 px</option></select><button id="replay">Replay page motion</button><button id="signin">Replay full sign-in</button><label><input id="reduce" type="checkbox">Reduce page motion</label></header>
 <div class="note"><span>Approval study only. Fictional people and figures. Lightspeed artwork and timing retained. No production writes.</span><label><input id="trace" type="checkbox">Record transition</label><small id="status" role="status">Loading Sage</small></div>
-<main><iframe id="app" title="Sage manager dashboard proposal" src="/app?mode=proposed"></iframe>
+<main><div class="frame-stack" style="display:grid"><iframe id="app" style="grid-area:1/1" title="Sage manager dashboard proposal" src="/app?mode=proposed"></iframe></div>
 <details open><summary>Five decisions for this pass</summary>
 ${[
   ["1. Dashboard character and flow","Sharper store identity and section contrast, unwarped text, quieter surfaces. One brief directional landing instead of competing entrances. No repeated lightspeed or blinking prompts."],
@@ -236,7 +319,7 @@ ${[
   ["5. History labels","Name the five metrics above the phone's rows, so colour is not the only way to recognise a column."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
 <p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
-<script>const app=document.querySelector('#app');let mode='proposed';const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});for(const id of ['current','proposed'])document.getElementById(id).onclick=()=>{if(mode===id)return;mode=id;document.querySelectorAll('header button[aria-pressed]').forEach(b=>b.setAttribute('aria-pressed',String(b.id===mode)));app.src='/app?mode='+mode};document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#replay').onclick=()=>app.contentWindow.postMessage({type:'sage-polish-replay'},location.origin);document.querySelector('#signin').onclick=()=>{app.src='/app?mode='+mode+'&signin=1'+(document.querySelector('#trace').checked?'&trace=1':'');document.querySelector('#status').textContent='Full demo sign-in, then store landing'};const sendReduce=()=>app.contentWindow.postMessage({type:'sage-polish-reduce',value:document.querySelector('#reduce').checked},location.origin);document.querySelector('#reduce').onchange=sendReduce;app.onload=sendReduce;window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===app.contentWindow&&e.data?.type==='sage-polish-status')document.querySelector('#status').textContent=e.data.status});document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';</script></body></html>`;
+<script>const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';(${installComparison.toString()})();</script></body></html>`;
 }
 
 export async function buildProposal() {
@@ -269,7 +352,6 @@ export async function serveProposal(root = "dist-harness/manager-polish", port =
       if (url.pathname === "/") {
         bytes = proposalPage();
         if (url.searchParams.get("slow") === "1") bytes = bytes
-          .replace("&signin=1", "&signin=1&slow=1")
           .replace("No production writes.", "No production writes. Slow manager download test (3.5 s).");
       }
       else if (url.pathname === "/app") {
