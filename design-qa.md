@@ -16,6 +16,12 @@ the proposal. A compact six-dial strip is still crowded and waits for a later
 visual proposal. Observer error recurs, source remains unattributed. No new
 motion, FPS, physical-iPhone or clean-console claim. See docs/manager-polish.md.
 
+Final rebase includes 7473999, Claude's account/privacy screens. 801 tests,
+20 proposal tests and both builds pass. The first new privacy guard failed on
+this checkout's stale CRLF geofence comment; restoring the declared LF format
+leaves no source diff and passes without changing the assertion. Fresh compact
+History still has 12 aligned headers/rows with no width overflow.
+
 ## 28 September: proposal card-edge repairs
 
 Three CSS-only fixes authorized by Jorge: bounded gauge-area pointer tooltips,

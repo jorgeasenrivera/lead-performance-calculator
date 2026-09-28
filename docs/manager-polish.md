@@ -53,6 +53,17 @@ check finds 12 headers/rows with the same five-column grid and none overflowing.
 The attempted iframe-bound screenshot read timed out; a fresh DOM check showed
 the loaded page and a normal screenshot supplied the accepted final capture.
 
+Main then advanced to 7473999, including Claude's account/privacy screens.
+Rebased again: the first full test run failed privacy-page.test.mjs:41. This
+checkout's api/_geofence.mjs was w/crlf despite i/lf and the existing eol=lf
+attribute. The promised comment is present; its LF literal alone failed, while
+normalising CRLF for comparison passed. Restored that file to the declared LF
+format, with no Git diff and no test change. All 801 tests now pass, including
+20 proposal tests; both builds pass on the newer tree. A fresh compact History
+capture still has 12 headers/rows aligned, none overflowing. A History click
+during responsive remount timed out and did not navigate; the fresh settled
+control supplied the successful check. Neither attempt is counted as a pass.
+
 ## 28 September: three card-edge repairs in Proposed
 
 Jorge approved fixing the audit's three findings in the isolated study. This
