@@ -26,6 +26,11 @@ Read from `main` on 28 September:
 | Anybody filing a ticket | `saveTicket` from `MyDay` and `HelpPanel`, signed in or not | no | insert |
 | The server | `api/queue-action.mjs`, `api/queue-changed.mjs`, `api/open-room.mjs`, with the service key | yes | yes |
 
+The first three rows are gone since C99 (28 September): Jorge retired the QR
+sign-in, so a phone with no account has no way onto the floor at all, and an
+old code, poster or table tag opens the sign-in screen. That leaves the TV as
+the only screen with nobody signed in.
+
 The monthly TV board (`?board=`) reads a separate published row in `app_data`
 and is not part of this.
 
@@ -37,70 +42,67 @@ the account linked to a person on that store's floor (`floor_people`). The live
 project has 29 profiles: 2 admins, 18 approved managers with stores, 1 approved
 manager with none, and 8 pending, 3 of whom are linked to a floor. The link is
 why "pending" does not simply mean "out": those 3 are floor staff today.
-Nothing changes for staff, so their screens need no change at all.
+Nothing changes for staff, so their screens need no change at all. Tickets are
+staff's too: the same rule covers them.
 
-**Everyone without an account goes through `/api/floor-row`**, which holds the
-service key and applies the rules in `api/_floor-access.mjs`:
+**The TV goes through `/api/floor-row`**, which holds the service key and
+applies the rules in `api/_floor-access.mjs`:
 
-- **today's code** (`x-sage-day-token`): today's row at that store, read and
-  write. Not another day's, not another store's, never to open a room, and never
-  to change the code itself.
 - **a TV's key** (`x-sage-wall-key`): today's row for one store, read only. The
   key is an HMAC of the store under `WALL_KEY_SECRET`, so one store's key opens
-  nothing at another and nothing is stored to check it. Staff fetch it with
-  `op: "wallkey"`.
-- **tickets**: a phone with any of today's codes at that store may file one;
-  once each.
+  nothing at another and nothing is stored to check it. Jorge chose a key in
+  each TV's link over a manager signed in on the TV (28 September).
+- **staff** (`Authorization: Bearer`): read their own stores' rows, and ask for
+  a TV's key with `op: "wallkey"`, which is how the manager's "TV link" gets it.
 
-Writes accept `expect`, the `updated_at` the writer read. A row that moved since
-is refused with 409 instead of being overwritten, which is C89 seen from the
-phone's side.
+There is no write through the endpoint. Before C99 it also took the QR's daily
+code and wrote rows and tickets for it; that went with the codes.
 
-**Live updates**, for the screens that can no longer hear `postgres_changes`:
+**Live updates**, for the TV, which can no longer hear `postgres_changes`:
 `01-doorbell.sql` rings a public Realtime broadcast topic, `row:<table>:<id>`,
-on every write, with `{ stamp }` and nothing of the row. The page then reads
-the row through the endpoint, as it already reads only when the stamp moves.
+on every write, with `{ stamp }` and nothing of the row. The TV then reads the
+row through the endpoint, as it already reads only when the stamp moves.
 
 ## C98, found on the way
 
 `queue_public.store` and `qdate` are `NOT NULL` with no default, on the live
-project too. The app's `saveTicket` sends only `id` and `data`. So every ticket
+project too. The app's `saveTicket` sent only `id` and `data`. So every ticket
 has been refused by the table: "Report a problem" and the notes a salesperson
 writes when they miss their standard, which Jorge asked to come to him. There
-are 0 tickets on the live project. The endpoint files tickets with both
-columns. The app's own `saveTicket` needs the same two fields: that is the app
-file, so it is its own item.
+are 0 tickets on the live project. `saveTicket` now fills both columns.
 
 ## The order, so nothing on the floor breaks
 
-1. **This pull request:** the endpoint, its rules and tests, and the two SQL
-   files in `supabase/pending/`, which nothing applies. Nothing live changes.
-2. **`01-doorbell.sql` applied.** Additive: a trigger that rings a topic nobody
-   listens to yet.
-3. **The client switch, in the app file:** the no-account pages and the TV read
-   and write through `/api/floor-row` and listen to the doorbell; the table tag
-   uses the code the phone kept from its sign-in; `saveTicket` fills its columns
-   (C98). Staff code is untouched. Needs `WALL_KEY_SECRET` in Vercel, and each
-   TV opened once with its new link.
-4. **`02-lock.sql` applied**, and the feel run and a phone check on the
-   no-account QR sign-in. Undo is the six baseline policies, written at the
-   foot of the file.
+1. **The server half** (#434, merged): the endpoint, its rules and tests, and
+   the two SQL files in `supabase/pending/`, which nothing applies.
+2. **The client switch** (#435, `claude/c92-client`): the QR sign-in retired
+   (C99), the TV reads with its key and listens to the doorbell, `saveTicket`
+   fills its columns (C98). Needs `WALL_KEY_SECRET` in Vercel (Production, at
+   least 32 characters) before the TV link can carry a key. A visual change, so
+   it merges after Jorge has had it on a phone.
+3. **`01-doorbell.sql` applied.** Additive: a trigger that rings a topic only
+   the TV listens to.
+4. **Each TV opened once with its new link**, from the manager's "TV link".
+   A TV on its old link still reads the table directly, until step 5.
+5. **`02-lock.sql` applied**, then the feel run and a phone check. Undo is the
+   six baseline policies, written at the foot of the file.
 
 ## Checked
 
 - `test/floor-access.test.mjs`: the rules on their own, then the endpoint
-  against rows in memory, 10 tests.
+  against rows in memory.
+- `test/row-access.test.mjs`: the TV's side, and the wiring in the app.
+- `test/old-links.test.mjs`: an old code, poster or tag link is recognised and
+  dropped; the TV's link and every other link are left alone.
 - `scripts/c92-lock-check.sh`: a throwaway Postgres 16 with stand-ins for
   `auth.uid()` and `realtime.send()`, the baseline's own tables and open
-  policies lifted from the file, then both pending files, twice. 28 checks,
-  including C98 as the table behaves today. Against a deliberately broken lock
-  (`true` in place of `can_use_store`, the anon revoke removed) 12 of them fail.
+  policies lifted from the file, then both pending files, twice. It includes
+  C98 as the table behaves today, and a write that lands with Realtime down.
+  Against a deliberately broken lock (`true` in place of `can_use_store`, the
+  anon revoke removed) 12 of the checks fail.
 
 ## Still open
 
-- **How a TV identifies itself** is Jorge's decision: a key in its link (built
-  here, recommended), or signed in as a manager. The second leaves a manager's
-  session on a screen in the showroom.
-- **The table tag** relies on the phone keeping today's code from its QR sign-in.
-  A phone that was added to the line by the desk, and never scanned, cannot use
-  a tag until it does.
+- **Table tags** (C100): the tag setup is kept in the manager, but a tag now
+  opens the sign-in like any old code. Jorge chose to rebuild them later, for
+  salespeople with accounts (C99, A3 b).

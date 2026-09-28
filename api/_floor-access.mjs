@@ -1,36 +1,29 @@
 /**
- * Who may read and write a day's floor and phone-line rows (C92).
+ * Who may read a day's floor and phone-line rows through the server (C92).
  * -------------------------------------------------------------------------
  * `floor_public` and `queue_public` have been open to anybody holding the
  * site's public key, which is in every copy of the page: read, insert and
- * update, any store, any day, and each row carries the day's sign-in token.
- * The QR code on the wall looked like the lock and was not one.
+ * update, any store, any day. supabase/pending/02-lock.sql closes them to
+ * everyone who is not signed in; signed-in staff keep using them directly,
+ * for their own stores.
  *
- * Three kinds of visitor are let in once the tables close, and this file is
- * the whole of the rule for each. The endpoint (floor-row.mjs) only fetches
- * what these need and does what they say.
+ * With the QR sign-in retired (C99, Jorge, 28 September) the one screen left
+ * with nobody signed in is the TV showing the line. This file is the whole of
+ * the rule for the two kinds of visitor the endpoint serves:
  *
- *   staff     signed in, and the store is theirs: an admin, the store on
- *             their profile, or their account linked to a person on that
- *             store's floor. The same three as `can_use_store` in
- *             supabase/pending/02-lock.sql, which is what lets signed-in
- *             phones keep reading and writing the tables directly.
- *   token     no account: holds today's code from the QR on the wall. Today's
- *             row for that store only, and never to make a row or change
- *             the code on it.
- *   wall      a TV showing the line and its QR code. Reads today's row for
- *             one store, with a key made for that store; writes nothing.
+ *   wall      a TV: reads today's row for one store, with a key made for that
+ *             store (an HMAC under WALL_KEY_SECRET). Writes nothing.
+ *   staff     signed in, and the store is theirs: an admin, the store on an
+ *             approved profile, or their account linked to a person on that
+ *             store's floor. The same three as `can_use_store` in the lock.
+ *             Staff ask here for a TV's key, to put in its link.
  *
  * Pure: no database, no clock of its own. Everything it decides on is passed in.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const ROOMS = ["floor", "line", "online"];
-export const TOKEN_HEADER = "x-sage-day-token";
 export const WALL_HEADER = "x-sage-wall-key";
-export const MAX_ROW_BYTES = 256 * 1024;      // the largest live row is 14 KB
-export const MAX_TICKET_BYTES = 16 * 1024;
-export const TICKET_PREFIX = "ticket:";
 
 const STORE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,8 +31,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** The row a room keeps for a store's day, and the table it lives in. */
 export function rowAddress(room, store, date) {
   if (!ROOMS.includes(room) || !STORE_RE.test(String(store || "")) || !DATE_RE.test(String(date || ""))) return null;
-  if (room === "floor") return { table: "floor_public", id: `${store}:${date}`, dateCol: "fdate" };
-  return { table: "queue_public", id: room === "line" ? `${store}:${date}` : `${store}:${date}:online`, dateCol: "qdate" };
+  if (room === "floor") return { table: "floor_public", id: `${store}:${date}` };
+  return { table: "queue_public", id: room === "line" ? `${store}:${date}` : `${store}:${date}:online` };
 }
 
 /** The store's own day, in the store's timezone, not the server's. */
@@ -73,52 +66,29 @@ export function sameSecret(given, expected) {
 const deny = (status, why) => ({ ok: false, status, why });
 
 /**
- * decide({ op, room, store, date, today, via, row, data, expect, stamp })
- *   op    "read" | "write" | "ticket"
- *   via   { kind: "staff", allowed } | { kind: "token", token } | { kind: "wall", ok } | null
- *   row   the row as it stands: { data, updated_at } or null when there is none
- *   data  for a write, the whole new row; for a ticket, the ticket
+ * decide({ op, room, store, date, today, via })
+ *   op    "read" | "wallkey"
+ *   via   { kind: "wall", ok } | { kind: "staff", allowed } | null
  * Returns { ok: true } or { ok: false, status, why }.
  */
-export function decide({ op, room, store, date, today, via, row, data, expect }) {
-  if (!["read", "write", "ticket"].includes(op)) return deny(400, "unknown op");
-  if (op !== "ticket" && !rowAddress(room, store, date)) return deny(400, "which store, which day, which room");
-  if (op === "ticket" && !STORE_RE.test(String(store || ""))) return deny(400, "which store");
-  if (!via) return deny(401, "sign in, or scan today's code");
-
-  if (via.kind === "staff") {
-    if (!via.allowed) return deny(403, "not one of your stores");
-  } else if (via.kind === "wall") {
+export function decide({ op, room, store, date, today, via }) {
+  if (op === "wallkey") {
+    if (!STORE_RE.test(String(store || ""))) return deny(400, "which store");
+    if (!via || via.kind !== "staff") return deny(401, "sign in first");
+    return via.allowed ? { ok: true } : deny(403, "not one of your stores");
+  }
+  if (op !== "read") return deny(400, "unknown op");
+  if (!rowAddress(room, store, date)) return deny(400, "which store, which day, which room");
+  if (!via) return deny(401, "sign in, or use the TV's link");
+  if (via.kind === "staff") return via.allowed ? { ok: true } : deny(403, "not one of your stores");
+  if (via.kind === "wall") {
     if (!via.ok) return deny(403, "that screen's key is not this store's");
-    if (op !== "read") return deny(403, "a wall screen only reads");
     if (date !== today) return deny(403, "a wall screen shows today");
-  } else if (via.kind === "token") {
-    /* A code read off the wall at 9 in the morning opens today's row and
-       nothing else, and stops opening it at midnight. */
-    if (date !== today) return deny(403, "that code was for another day");
-    if (!row || !row.data || !row.data.token) return deny(403, "that code does not open anything");
-    if (!sameSecret(via.token, row.data.token)) return deny(403, "that code is not today's");
-  } else return deny(401, "sign in, or scan today's code");
-
-  if (op === "write") {
-    if (!data || typeof data !== "object" || Array.isArray(data)) return deny(400, "a row is an object");
-    if (Buffer.byteLength(JSON.stringify(data)) > MAX_ROW_BYTES) return deny(413, "too large");
-    if (via.kind === "token") {
-      /* The room is the desk's to open and its code the desk's to set. */
-      if (data.token !== row.data.token) return deny(403, "the code cannot be changed from a phone");
-    }
-    if (expect && row && row.updated_at && expect !== row.updated_at) return deny(409, "the row moved; read it again");
+    return { ok: true };
   }
-  if (op === "ticket") {
-    if (!data || typeof data !== "object" || !data.id || !/^[A-Za-z0-9_-]{4,64}$/.test(String(data.id))) return deny(400, "a ticket needs an id");
-    if (Buffer.byteLength(JSON.stringify(data)) > MAX_TICKET_BYTES) return deny(413, "too large");
-  }
-  return { ok: true };
+  return deny(401, "sign in, or use the TV's link");
 }
 
-/* What a reader gets back. The desk's code travels to those who already
-   hold it or show it on the wall; nothing else is trimmed, because the
-   screens that read the row today read all of it. */
 export function readable(row) {
   return row ? { row: row.data, stamp: row.updated_at || null } : { row: null, stamp: null };
 }

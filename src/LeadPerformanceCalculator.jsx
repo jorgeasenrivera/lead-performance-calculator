@@ -2,6 +2,8 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
+import { isOldCodeLink } from "./old-links.mjs";
 import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
 import { createArrivalScheduler } from "./arrival-scheduler.mjs";
 import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
@@ -68,7 +70,6 @@ import { notesFor, owesNote, makeNote, addNote,
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
-import qrcodeGen from "qrcode-generator";
 
 /* ---- the manager's pages ----
    They live in their own file (Manager.jsx) and their own download, fetched
@@ -874,6 +875,13 @@ function analyzeImport(prior, after, importedChannels) {
 
 
 
+/* The TV showing the line: a page with nobody signed in, ever. */
+const WALL_SCREEN = (() => { try { return new URLSearchParams(window.location.search).has("qboard"); } catch (e) { return false; } })();
+/* An old QR code, a poster or a table tag opens Sage's own sign-in (C99): its
+   address is cleared before anything reads it, so the app starts as if the
+   person had typed the site's name. */
+try { if (isOldCodeLink(window.location.search)) window.history.replaceState(null, "", window.location.pathname + window.location.hash); } catch (e) {}
+
 /* ===== BACKEND BLOCK: Supabase (storage + real auth) ===== */
 // Set in Vercel: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -1666,7 +1674,9 @@ export default function LeadPerformanceCalculator() {
   useLayoutEffect(() => {
     /* jumpLanded: once the landing has revealed the app, a session identity
        change must not hide it again. See the latch's comment. */
-    const under = !session || (jumpHold && !jumpLanded);
+    /* Never on the TV (?qboard=): it has nobody signed in, so this hid the
+       whole board, and the TV showed only the ground from 11 September. */
+    const under = !WALL_SCREEN && (!session || (jumpHold && !jumpLanded));
     document.documentElement.classList.toggle("jump-under", under);
     // Release only after React has removed the old form, never in the timer
     // that merely schedules its removal. A busy commit can leave a visible gap.
@@ -2941,30 +2951,20 @@ export default function LeadPerformanceCalculator() {
   const phoneBoot = usePhoneLayout();
   const [bootRooms] = useState(() => { try { return localStorage.getItem("lpcf:boot") === "rooms"; } catch (e) { return false; } });
 
-  // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
-  const queueParams = (() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      const d = p.get("d"), t = p.get("t");
-      const q = p.get("q"), o = p.get("o");
-      if (q && d && t) return { store: q, date: d, token: t, variant: LEAD_VARIANTS.line };
-      if (o && d && t) return { store: o, date: d, token: t, variant: LEAD_VARIANTS.online };
-      return null;
-    } catch { return null; }
-  })();
-  if (queueParams) {
-    return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} variant={queueParams.variant} /><Style /></Shell>;
-  }
+  /* The QR sign-in pages were here: ?q=, ?o= and ?f= with the day's code, and
+     ?f=&tbl= for a table tag. Retired on 28 September (C99); an old link now
+     opens the sign-in, see isOldCodeLink. */
   // --- casted board: a TV pointed at this URL, no sign-in, read-only ---
   // ?qboard={storeId}&k=line|online|floor
   const qBoardParams = (() => {
     try {
       const p = new URLSearchParams(window.location.search);
       const b = p.get("qboard");
-      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase() } : null;
+      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase(), key: p.get("key") || "" } : null;
     } catch { return null; }
   })();
-  if (qBoardParams) return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>;
+  /* A TV reads the day's row with its store's key, from its link (C92). */
+  if (qBoardParams) { rememberWallKey(qBoardParams.store, qBoardParams.key); return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>; }
 
   const boardParams = (() => {
     try {
@@ -2973,22 +2973,6 @@ export default function LeadPerformanceCalculator() {
     } catch { return null; }
   })();
   if (boardParams) return <BoardBoundary><React.Suspense fallback={<BoardHold />}><BoardScreen storeId={boardParams.store} /></React.Suspense></BoardBoundary>;
-  // --- live floor: public sign-in intercept (before any auth) ---
-  const floorParams = (() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      const f = p.get("f"), d = p.get("d"), t = p.get("t"), tbl = p.get("tbl");
-      if (f && d && t) return { store: f, date: d, token: t, tag: tbl };
-      /* A TABLE TAG: an NFC sticker or QR on the table itself, written once and
-         never rotated. It carries only WHERE -- who you are still comes from
-         today's sign-in code, so a tag read off a table at home does nothing. */
-      if (f && tbl) return { store: f, date: today(), token: null, tag: tbl };
-      return null;
-    } catch { return null; }
-  })();
-  if (floorParams) {
-    return <Shell ground={false}><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
-  }
   const retryBoot = () => { setBootStall(false); setLoadErr(false); netSet(false); setCfgWave((w) => w + 1); setLinksWave((w) => w + 1); refreshProfile(); };
   /* ---- the sign-in screen is a LAYER, not a branch ----
      It used to be one of this component's early returns, which meant the app
@@ -3822,10 +3806,14 @@ function QueueBoard({ storeId, kind }) {
     let channel = null;
     if (supabase) {
       try {
-        channel = supabase.channel(`qb:${table}:${rowId}`)
+        /* With a key, the row's public doorbell (C92); the TV cannot hear
+           postgres_changes once the rows close. */
+        channel = (viaFor(table, rowId)
+          ? supabase.channel(doorbellTopic(table, rowId)).on("broadcast", { event: "changed" }, () => { if (!dead) pull(); })
+          : supabase.channel(`qb:${table}:${rowId}`)
           .on("postgres_changes",
             { event: "*", schema: "public", table, filter: `id=eq.${rowId}` },
-            () => { if (!dead) pull(); })
+            () => { if (!dead) pull(); }))
           .subscribe();
       } catch (e) { /* no realtime: the poll below still carries it */ }
     }
@@ -3876,28 +3864,6 @@ function QueueBoard({ storeId, kind }) {
   const busy = line.filter((p) => p.status !== "waiting" && !isTestId(p.id));
   const next = waiting[0] || null;
 
-  /* The way people actually get in the queue.
-     A printed code goes stale the moment somebody reprints it, and on a wall there
-     is a screen already showing the queue, so the code belongs there. It surfaces
-     on its own every couple of minutes, holds long enough to be scanned from a few
-     feet away, and goes again. Nobody has to be asked to put it up. */
-  const signInUrl = (row && row.token)
-    ? (kind === "floor"
-        ? `${window.location.origin}${window.location.pathname}?f=${encodeURIComponent(storeId)}&d=${today()}&t=${encodeURIComponent(row.token)}`
-        : queueSignInUrl(storeId, today(), row.token, kind === "online" ? "o" : "q"))
-    : "";
-  const [scan, setScan] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  useEffect(() => {
-    if (!signInUrl || pinned) return;
-    let t1 = null, t2 = null;
-    const cycle = () => {
-      setScan(true);
-      t2 = setTimeout(() => setScan(false), 22000);   // long enough to walk over and scan
-    };
-    t1 = setInterval(cycle, 150000);                   // every two and a half minutes
-    return () => { clearInterval(t1); clearTimeout(t2); };
-  }, [signInUrl, pinned]);
   const pod = waiting.slice(1, 4);
   const rest = waiting.slice(4, 9);
 
@@ -3976,25 +3942,6 @@ function QueueBoard({ storeId, kind }) {
             {waiting.length > 9 && <div className="qb-card qb-more">+{waiting.length - 9} more</div>}
           </div>
         </>
-      )}
-
-      {/* Tap or click the screen to hold the code up, tap again to release it. Useful
-          at a shift change, when everybody needs it at once. */}
-      {signInUrl && (
-        <button className="qb-scan-toggle" onClick={() => { setPinned((v) => !v); setScan(!pinned); }}>
-          {pinned ? "Hide the code" : "Show the code"}
-        </button>
-      )}
-
-      {signInUrl && (scan || pinned) && (
-        <div className={"qb-scan" + (pinned ? " qb-scan-pin" : "")}>
-          <div className="qb-scan-card">
-            <div className="qb-scan-cap">{variant.label}</div>
-            <div className="qb-scan-title">Scan to check in</div>
-            <div className="qb-scan-qr"><QueueQR url={signInUrl} cell={9} /></div>
-            <div className="qb-scan-sub">Point a phone camera at the code</div>
-          </div>
-        </div>
       )}
 
       {busy.length > 0 && (
@@ -6615,7 +6562,6 @@ const QUEUE_TABLE = "queue_public";
    without signing in, which matters: the people most likely to hit a problem are
    salespeople on a sign-in page who have no account at all. A ticket nobody can
    file is a ticket nobody sends. */
-const TICKET_PREFIX = "ticket:";
 
 
 
@@ -6646,9 +6592,12 @@ const isTestId = (id) => id === TEST_ID;
 
 async function saveTicket(t) {
   if (!supabase) return false;
+  /* store and qdate are NOT NULL on queue_public, and this used to send
+     neither, so the table refused every ticket ever filed (C98). */
+  const day = today();
   try {
     const { error } = await supabase.from(QUEUE_TABLE)
-      .upsert({ id: TICKET_PREFIX + t.id, data: t }, { onConflict: "id" });
+      .upsert({ id: TICKET_PREFIX + t.id, store: t.store || "", qdate: day, data: t }, { onConflict: "id" });
     if (error) throw error;
     return true;
   } catch (e) { console.error("saveTicket", e); return false; }
@@ -6796,40 +6745,6 @@ function qResolveName(typed, roster) {
   return { kind: "none", suggestions: ranked.slice(0, 4) };
 }
 
-/* ---- QR renderer ----
-   The encoder ships with the app. It used to be fetched from a CDN the first
-   time anybody opened a sign-in code, which is a network call at exactly the
-   wrong moment: a dealership that blocks cdnjs, a phone on a bad connection or
-   a slow morning all turned the code into the words "QR unavailable", and the
-   only way onto the floor is that square. Nothing to fetch now. */
-function loadQRCode() {
-  return Promise.resolve(qrcodeGen);
-}
-function queueSignInUrl(storeId, date, token, param = "q", test = false) {
-  const base = window.location.origin + window.location.pathname;
-  return `${base}?${param}=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`
-    + (test ? "&test=1" : "");
-}
-
-
-
-function QueueQR({ url, cell = 6 }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    let dead = false;
-    loadQRCode().then((qrcode) => {
-      if (dead || !ref.current) return;
-      try {
-        const qr = qrcode(0, "M"); qr.addData(url); qr.make();
-        ref.current.innerHTML = qr.createSvgTag({ cellSize: cell, margin: 2, scalable: true });
-        const svg = ref.current.querySelector("svg");
-        if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; svg.removeAttribute("width"); svg.removeAttribute("height"); }
-      } catch (e) { if (ref.current) ref.current.textContent = "QR error"; }
-    }).catch(() => { if (ref.current) ref.current.textContent = "QR unavailable"; });
-    return () => { dead = true; };
-  }, [url, cell]);
-  return <div ref={ref} className="q-qr" aria-label="Sign-in QR code" />;
-}
 
 
 /* =========================================================================
@@ -9527,7 +9442,16 @@ const rowStamps = new Map();
 async function loadRowIfChanged(table, id, tag) {
   if (!supabase) return undefined;
   const k = tag || (table + "|" + id);
+  const via = viaFor(table, id);
   const read = async () => {
+    /* A TV (C92): the endpoint makes the same bargain, answering "same" for
+       the stamp it was shown, and this writes nothing shared. */
+    if (via) {
+      const out = await readVia(via, rowStamps.get(k));
+      if (out.same) return "same";
+      if (out.row) cachePut("row:" + table + "|" + id, out.row);
+      return { row: out.row || null, stamp: out.row ? (out.stamp || "none") : "missing" };
+    }
     const { data: s, error: e1 } = await supabase.from(table).select("updated_at").eq("id", id).maybeSingle();
     if (e1) throw e1;
     const stamp = s ? (s.updated_at || "none") : "missing";
@@ -9585,11 +9509,18 @@ function useLiveRow(table, id, onChange) {
     if (!supabase || !id) return undefined;
     let ch = null;
     try {
-      ch = supabase.channel(`live:${table}:${id}`)
+      /* A TV cannot hear postgres_changes once the rows close (C92): it
+         listens to the row's public doorbell instead, which carries a time
+         and nothing of the row (supabase/pending/01-doorbell.sql). */
+      ch = viaFor(table, id)
+        ? supabase.channel(doorbellTopic(table, id)).on("broadcast", { event: "changed" }, () => {
+            try { cb.current(); } catch (e) {}
+          })
+        : supabase.channel(`live:${table}:${id}`)
         .on("postgres_changes", { event: "*", schema: "public", table, filter: `id=eq.${id}` }, () => {
           try { cb.current(); } catch (e) {}
-        })
-        .subscribe((status) => setLive(status === "SUBSCRIBED"));
+        });
+      ch = ch.subscribe((status) => setLive(status === "SUBSCRIBED"));
     } catch (e) { ch = null; }
     return () => { setLive(false); if (ch) { try { supabase.removeChannel(ch); } catch (e) {} } };
   }, [table, id]);
@@ -13446,39 +13377,6 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         background:rgba(255,255,255,.05); font-size:clamp(11px,1.06vw,19px); color:rgba(234,242,248,.55); }
 .qb-chip i { font-style:normal; font-size:.78em; color:rgba(234,242,248,.3); }
 .qb-empty { margin:auto; font-size:clamp(18px,2.6vw,46px); color:rgba(234,242,248,.4); text-align:center; }
-/* ---- scan to check in ----
-         Arrives with the same overshoot everything else in the tool uses, sits over a
-         dimmed board rather than replacing it, and leaves the same way. */
-.qb-scan { position:absolute; inset:0; z-index:6; display:flex; align-items:center; justify-content:center;
-        background:rgba(6,12,20,.72); backdrop-filter:blur(6px);
-        animation:qbScanIn .34s cubic-bezier(.34,1.4,.64,1) both; }
-@keyframes qbScanIn { from { opacity:0; } to { opacity:1; } }
-.qb-scan-card { background:#fff; color:#101820; border-radius:2vw; padding:3.4vh 3vw;
-        display:flex; flex-direction:column; align-items:center; gap:1.4vh;
-        box-shadow:0 4vh 10vh -3vh rgba(0,0,0,.7);
-        animation:qbScanPop .46s cubic-bezier(.34,1.5,.64,1) both; }
-@keyframes qbScanPop {
-        0%   { transform:scale(.72) translateY(3vh); opacity:0; }
-        60%  { transform:scale(1.035) translateY(0); opacity:1; }
-        100% { transform:scale(1); }
-      }
-.qb-scan-cap { font-size:clamp(11px,1vw,18px); font-weight:800; letter-spacing:.16em;
-        text-transform:uppercase; color:var(--a); }
-.qb-scan-title { font-family:var(--font-display); font-weight:700; letter-spacing:-.02em;
-        font-size:clamp(22px,2.9vw,52px); }
-.qb-scan-qr { width:26vh; max-width:34vw; }
-.qb-scan-qr svg { display:block; width:100%; height:auto; }
-.qb-scan-sub { font-size:clamp(12px,1.15vw,20px); color:#5A6472; }
-/* held open on purpose: no pulse, nothing asking for attention */
-.qb-scan-pin .qb-scan-card { animation-duration:.3s; }
-.qb-scan-toggle { position:absolute; right:1.6vw; bottom:1.6vh; z-index:7; cursor:pointer;
-        font-family:inherit; font-size:clamp(11px,.95vw,17px); font-weight:700;
-        padding:.9vh 1.2vw; border-radius:999px; border:1px solid rgba(255,255,255,.12);
-        background:rgba(255,255,255,.06); color:rgba(234,242,248,.5); }
-.qb-scan-toggle:hover { background:rgba(255,255,255,.12); color:rgba(234,242,248,.85); }
-@media (prefers-reduced-motion: reduce) {
-        .qb-scan, .qb-scan-card { animation:none !important; }
-      }
 .skill-chip.on { background:var(--blue); border-color:var(--blue); color:#fff; }
 .skill-chip.earned { cursor:help; background:rgba(217,164,37,.16); border-color:rgba(217,164,37,.45);
         color:#8A6314; }
@@ -18842,4 +18740,4 @@ function ensureStyleNamed(id, css) {
 }
 
 /* What the manager's file (Manager.jsx) reads from here. */
-export { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
+export { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };

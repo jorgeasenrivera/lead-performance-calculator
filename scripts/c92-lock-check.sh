@@ -122,6 +122,10 @@ case "$body" in '{"stamp": "'*'"}') ok "the ring carries the time and nothing el
 expect f "$priv" "on a public topic, so a phone with no account can hear it"
 expect 0 "$tickets" "tickets ring nothing"
 
+# A doorbell that breaks must not break the write.
+q -c "create or replace function realtime.send(payload jsonb, event text, topic text, private boolean default true) returns void language plpgsql as \$\$ begin raise exception 'realtime is down'; end \$\$" >/dev/null
+expect UPDATE "$(as authenticated $M "update floor_public set data = jsonb_set(data,'{line}','[2]') where id='dm:2026-09-28' returning 'UPDATE'" | grep -v WARNING)" "with Realtime down, the write still lands"
+
 echo
 if [ "$fails" = 0 ]; then echo "All checks passed."; else echo "$fails check(s) failed."; fi
 exit "$fails"

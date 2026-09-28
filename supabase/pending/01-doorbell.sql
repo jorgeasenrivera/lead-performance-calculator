@@ -20,8 +20,15 @@ create or replace function public.row_doorbell() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   if new.id like 'ticket:%' then return new; end if;
-  perform realtime.send(jsonb_build_object('stamp', new.updated_at), 'changed',
-                        'row:' || tg_table_name || ':' || new.id, false);
+  /* A doorbell that fails must not take the write it announces with it: the
+     pages poll underneath, so a missed ring costs seconds, a failed write
+     costs the floor. */
+  begin
+    perform realtime.send(jsonb_build_object('stamp', new.updated_at), 'changed',
+                          'row:' || tg_table_name || ':' || new.id, false);
+  exception when others then
+    raise warning 'row_doorbell: %', sqlerrm;
+  end;
   return new;
 end $$;
 revoke all on function public.row_doorbell() from public, anon, authenticated;

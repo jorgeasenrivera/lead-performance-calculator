@@ -502,16 +502,19 @@ test("five-second pass, items 6 to 12: plain words, one verdict per row, the emp
   assert.ok(/\[QUEUE_TAB, "Rooms", "door"\]/.test(mgr), "the dock's third slot is Rooms");
   assert.ok(/working today\{offToday\.length/.test(mgr) && !/to hit`|to hit<\/span>|to hit<\/button>/.test(mgr), "7 working today; goal, never to hit");
   assert.ok(/Most penalty points this month/.test(mgr) && !/Biggest Loser · most points/.test(mgr), "penalty points say so");
-  assert.ok(/`\$\{behindCount\} not signed in`/.test(mgr) && /"TV link"/.test(mgr) && /"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
+  assert.ok(/`\$\{behindCount\} not signed in`/.test(mgr) && /"TV link"/.test(mgr) && !/"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
   assert.ok(!/"Never ours"|>Never ours</.test(mgr) && /Not this store's/.test(mgr), "not this store's, everywhere");
   assert.ok(!/if \(!l\) return <span className="(?:fr-st pe-noacct|pp-noacct)">no account<\/span>;/.test(mgr), "no account is a count with an action, not a chip on every row");
   assert.ok(/className="tg-hint">Grace days: how long/.test(mgr), "grace days and lead caps explain themselves");
   assert.ok(/className=\{"bp-verdict bp-" \+ worst\}/.test(mgr) && /grid-template-columns:28px minmax\(0,1fr\) 84px 34px;/.test(mgr) && !/<PixIcon glyph="globe" size=\{13\} \/><PixIcon glyph="phone" size=\{13\} \/>/.test(mgr), "one verdict per phone row, with a glyph");
-  assert.ok(/const empty = !nextName && \(waitingNames \|\| \[\]\)\.length === 0;/.test(mgr) && /Nobody has signed in yet/.test(mgr) && /<PixIcon glyph="clipboard" size=\{12\} \/>Send the sign-in code<\/button>/.test(mgr) && (mgr.match(/onEmpty=\{withoutTest\(line\)\.length === 0 \? \(\) => setShowQR\(true\) : null\}/g) || []).length === 2, "an empty room states itself and offers one action");
+  /* The empty room's one action was "Send the sign-in code". The codes went on
+     28 September (C99), so both rooms pass no action and an empty room shows
+     the ordinary "Nobody available" card. */
+  assert.ok(/const empty = !nextName && \(waitingNames \|\| \[\]\)\.length === 0;/.test(mgr) && (mgr.match(/onEmpty=\{null\} \/>/g) || []).length === 2, "an empty room no longer offers a code (C99)");
   assert.ok(!/<div className="f-warn">/.test(mgr) && /className="f-note"><PixIcon glyph="warn"/.test(mgr), "the dealership note lives in settings, one line");
   assert.ok(/occ\.byHour\.filter\(\(b\) => b\.staffed > 0\)\.length < 3 \?/.test(mgr) && /if \(shown < 3\) return <div className="s2-none s2-notyet">/.test(mgr), "grids and charts wait for three points");
   assert.ok(/\.cap-sent\{ font-family:var\(--font-ui\); font-weight:600; letter-spacing:0; text-transform:none; font-size:12\.5px; \}/.test(mgr) && /\.sd-cap, \.bp-fivehead \.bp-lbl, \.stnd-hh[^{]*\{ font-size:11\.5px; \}/.test(mgr) && /@media \(max-width:760px\)\{\n  \.s2-cap,[^{]*\{ font-size:12\.5px; \}/.test(mgr), "the caption floor is 11.5 on the desk and 12.5 on the phone");
-  assert.ok((mgr.match(/className="btn btn-primary" onClick=\{\(\) => setShowQR\(true\)\}>Sign-in code<\/button>/g) || []).length === 2 && (mgr.match(/<div className="q-setup">/g) || []).length === 2, "sign-in code is the filled daily control; set-up is behind one button on both rooms");
+  assert.ok(!/Sign-in code/.test(mgr) && (mgr.match(/<div className="q-setup">/g) || []).length === 2, "the sign-in code is gone from both rooms (C99); set-up is still behind one button on both");
 });
 
 test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on every figure with a target", () => {
@@ -620,16 +623,11 @@ test("one way to say two names are one person: one sentence, one audit line", ()
   assert.ok(!/confirm = false, onPick/.test(mgr), "the picker no longer carries a question of its own");
 });
 
-test("printing opens one window the same way, and the poster takes the room", () => {
+test("printing opens one window the same way; the sign-in poster went with the codes", () => {
   assert.ok(/function printPage\(\{ name, width = 850, height = 1050, title, head = "", css = "", body, warn, delay = 400 \}\) \{/.test(mgr), "one opener");
   assert.equal(mgr.split("window.open(\"\", ").length - 1, 1, "and only it opens a print window");
-  assert.equal(mgr.split("printPage({").length - 1, 5, "all four printed things go through it");
-  assert.ok(!/printQueueSignIn|printFloorSignIn/.test(mgr), "the two posters are one function now");
-  assert.ok(/const SIGN_IN_POSTER = \{\n\s*line: \{[^}]*\},\n\s*floor: \{/.test(mgr), "the rooms are an argument, not a copy");
-  assert.ok(/async function printSignIn\(\{ store, url, date, by, room = "line" \}\) \{/.test(mgr), "one poster takes the room");
-  assert.equal(mgr.split("printSignIn({").length - 1, 5, "four Print buttons and the one function");
-  assert.equal(mgr.split('room: "line" }').length - 1, 2, "two of them are the phone line");
-  assert.equal(mgr.split('room: "floor" }').length - 1, 2, "and two are the floor");
+  assert.equal(mgr.split("printPage({").length - 1, 4, "the three printed things left go through it");
+  assert.ok(!/printQueueSignIn|printFloorSignIn|printSignIn|SIGN_IN_POSTER/.test(mgr), "the sign-in poster is gone with the QR codes (C99)");
   assert.ok(/function printOnePager\(/.test(mgr) && /function printMonthEndRecap\(/.test(mgr), "the coaching sheet and the recap keep their own bodies");
   assert.ok(!/w\.close\(\); toast\("No associates/.test(mgr), "and an empty batch no longer leaves a blank window open");
 });
