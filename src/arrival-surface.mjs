@@ -30,7 +30,7 @@ export function openArrivalSurface(reduced) {
   retry.onclick = () => window.location.reload();
   document.body.append(scan, destination, panel);
   let disposed = false, scanDone = reduced, scanStarted = false, assemblyDone = false, complete = null;
-  let assemblyTimer = 0, scanTimer = 0, waitTimer = 0, recovery = false, waitExceeded = false;
+  let assemblyTimer = 0, scanTimer = 0, waitTimer = 0, pressTimer = 0, recovery = false, waitExceeded = false;
   const finish = () => {
     if (disposed || !assemblyDone || !scanDone || !complete) return;
     const fn = complete; complete = null; fn();
@@ -55,6 +55,7 @@ export function openArrivalSurface(reduced) {
       destination.dataset.state = name.textContent ? "show" : "hidden";
     },
     recovery(failed) { recovery = !!failed || waitExceeded; if (recovery) surface.wait(true); },
+    ready() { waitExceeded = false; recovery = false; },
     wait(failed) {
       if (disposed) return;
       failed = failed || recovery;
@@ -70,6 +71,7 @@ export function openArrivalSurface(reduced) {
       if (failed) heading.focus({ preventScroll: true });
     },
     covered() { clearTimeout(waitTimer); waitTimer = 0; panel.hidden = true; root.classList.remove("sage-arrival-waiting"); },
+    landing() { clearTimeout(pressTimer); pressTimer = 0; surface.covered(); },
     startScan() {
       if (disposed || reduced || scanStarted) return;
       scanStarted = true; root.classList.add("sage-flight-scan");
@@ -86,7 +88,7 @@ export function openArrivalSurface(reduced) {
     dispose() {
       if (disposed) return;
       disposed = true; complete = null;
-      clearTimeout(assemblyTimer); clearTimeout(scanTimer); clearTimeout(waitTimer);
+      clearTimeout(assemblyTimer); clearTimeout(scanTimer); clearTimeout(waitTimer); clearTimeout(pressTimer);
       scan.removeEventListener("animationend", scanEnd); scan.removeEventListener("animationcancel", scanEnd);
       root.classList.remove("sage-flight-owned", "sage-flight-reduce", "sage-flight-lock", "sage-flight-scan", "sage-arrival-waiting");
       if (app) app.inert = wasInert;
@@ -104,6 +106,9 @@ export function openArrivalSurface(reduced) {
       if (active === surface) active = null;
     },
   };
+  // A renderer can stay silent before its first phase. Cruise alone is not
+  // proof of a landing, so only landing or disposal disarms this ceiling.
+  pressTimer = setTimeout(() => { pressTimer = 0; waitExceeded = true; surface.wait(true); }, 20000);
   active = surface;
   return surface;
 }

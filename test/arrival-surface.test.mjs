@@ -59,7 +59,7 @@ test("a missing scan event is bounded and cancellation clears all timers", () =>
 
 test("reduced motion never waits for a scan that cannot run", () => {
   const h = harness(), surface = h.context.openArrivalSurface(true); let done = 0;
-  surface.startScan(); surface.afterLanding(() => done++, 360); h.timer(360);
+  surface.landing(); surface.startScan(); surface.afterLanding(() => done++, 360); h.timer(360);
   assert.equal(done, 1); assert.equal(h.timers.size, 0);
   assert.ok(!h.root.classList.contains("sage-flight-scan")); surface.dispose();
 });
@@ -90,6 +90,49 @@ test("a ready destination cancels the waiting ceiling", () => {
   surface.phase("waiting"); surface.covered();
   assert.ok(![...h.timers.values()].some(t => t.ms === 15000));
   surface.dispose();
+});
+
+test("a renderer that never posts offers retry 20 seconds from the press", () => {
+  for (const reduced of [false, true]) {
+    const h = harness(), surface = h.context.openArrivalSurface(reduced);
+    const panel = h.nodes.find(n => n.className === "sage-arrival-wait");
+    assert.equal(panel.hidden, true);
+    h.timer(20000);
+    assert.equal(panel.hidden, false);
+    assert.equal(panel.querySelector("h1").textContent, "Connection interrupted");
+    assert.equal(panel.querySelector("button").hidden, false);
+    assert.equal(h.app.inert, true);
+    surface.dispose(); assert.equal(h.timers.size, 0);
+  }
+});
+
+test("cruise cannot disarm the press ceiling, but a landing does", () => {
+  const h = harness(), surface = h.context.openArrivalSurface(false);
+  surface.phase("cruise");
+  assert.ok([...h.timers.values()].some(t => t.ms === 20000));
+  surface.phase("waiting"); surface.landing();
+  assert.equal(h.timers.size, 0);
+  const panel = h.nodes.find(n => n.className === "sage-arrival-wait");
+  assert.equal(panel.hidden, true);
+  surface.dispose();
+});
+
+test("late readiness clears expired recovery only when the renderer resumes", () => {
+  const h = harness(), surface = h.context.openArrivalSurface(false);
+  surface.phase("waiting"); h.timer(15000);
+  const panel = h.nodes.find(n => n.className === "sage-arrival-wait");
+  surface.recovery(false); surface.phase("cruise");
+  assert.equal(panel.hidden, false, "clearing a read error alone is not readiness");
+  surface.ready();
+  assert.equal(panel.hidden, false, "readiness alone is not renderer progress");
+  surface.phase("cruise"); assert.equal(panel.hidden, true);
+  assert.ok([...h.timers.values()].some(t => t.ms === 20000));
+  surface.landing(); surface.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test("disposal cancels the press ceiling before any renderer message", () => {
+  const h = harness(), surface = h.context.openArrivalSurface(false);
+  surface.dispose(); assert.equal(h.timers.size, 0);
 });
 
 test("committed surface preparation waits two frames and is cancellable", async () => {

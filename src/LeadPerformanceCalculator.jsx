@@ -5848,9 +5848,13 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     let elapsed = false, complete = false;
     const finish = () => {
       if (complete || !elapsed || !arrivalReady || !arrivalSurfaceReady || arrivalFailed) return;
-      complete = true; activeEngineSend = null; arrivalView.covered(); onFlash(); onDone();
+      complete = true; activeEngineSend = null; arrivalView.landing(); onFlash(); onDone();
     };
-    activeEngineSend = m => { if (m.type === "recovery" && m.failed) arrivalView.wait(true); finish(); };
+    activeEngineSend = m => {
+      if (m.type === "recovery") arrivalView.recovery(m.failed);
+      if (m.type === "ready" && m.ready && arrivalSurfaceReady && !arrivalFailed) arrivalView.ready();
+      finish();
+    };
     const t = setTimeout(() => { elapsed = true; finish(); }, 180);
     const waiting = setTimeout(() => { if (!complete) arrivalView.wait(arrivalFailed); }, 500);
     return () => { complete = true; clearTimeout(t); clearTimeout(waiting); activeEngineSend = null; arrivalView.dispose(); jumpOwnsEntrance = false; tellPhase("off"); };
@@ -5937,12 +5941,12 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const world = { W, H, dpr, mk, field, lead };
 
   let flashing = false, stopped = false, raf = 0, domRaf = 0;
-  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false, renderer = "main";
+  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false, renderer = "main", painted = false;
 
   const toFlash = () => {
     if (flashing || stopped) return;
     flashing = true;
-    arrivalView.covered();
+    arrivalView.landing();
     scheduler?.stop();
     activeEngineSend = null;
     root.classList.add("sage-beat-flash", "sage-cover-active");
@@ -5959,8 +5963,8 @@ function runJump({ onFlash, onDone, lead = 0 }) {
 
   const onPost = (type, data) => {
     if (stopped) return;
-    if (type === "paint") { cv.style.opacity = "1"; root.classList.add("sage-cv"); }
-    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: { ...data, renderer } }));
+    if (type === "paint") { painted = true; cv.style.opacity = "1"; root.classList.add("sage-cv"); }
+    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: { ...data, renderer, painted } }));
     else if (type === "destination") arrivalView.destination(data);
     else if (type === "phase") { arrivalView.phase(data); tellPhase(data); }
     else if (type === "flash") toFlash();
@@ -6011,6 +6015,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     if (stopped || flashing) return;
     if (m.type === "recovery") { arrivalView.recovery(m.failed); return; }
     if (m.type === "ready") m = { ...m, ready: !!m.ready && arrivalSurfaceReady && !arrivalFailed };
+    if (m.type === "ready" && m.ready) arrivalView.ready();
     if (drawingFailed && m.type === "ready" && m.ready) { toFlash(); return; }
     if (worker) worker.postMessage(m);
     else scheduler?.send(m);

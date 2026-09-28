@@ -109,7 +109,8 @@ test("first manager store pass is coalesced and a failed legacy read cannot wait
   assert.match(core, /const authenticatedAtStart = !!sessionRef\.current;/);
   assert.match(core, /view === "combined" \|\| !session \|\| !initialViewReady\) return;/);
   assert.match(core, /if \(stopped \|\| flashing \|\| scheduler\) return;/);
-  assert.match(core, /detail: \{ \.\.\.data, renderer \}/);
+  assert.match(core, /detail: \{ \.\.\.data, renderer, painted \}/);
+  assert.match(core, /if \(type === "paint"\) \{ painted = true;/);
 });
 test("associate readiness does not wait for unrelated manager store documents", () => {
   assert.match(core, /arrivalDestinationReady = wantsFloor \? floorLinks !== undefined : initialViewReady/);
@@ -211,6 +212,7 @@ test("missing or unstyled cover reports and releases rather than hanging sign-in
 test("tunnel removal and DOM restoration happen inside the covered callback", () => {
   const flash = core.slice(core.indexOf("  const toFlash = () => {"), core.indexOf("  const onPost =", core.indexOf("  const toFlash = () => {")));
   const boundary = flash.indexOf("cancelCover = waitForArrivalCover");
+  assert.ok(flash.indexOf("arrivalView.landing();") < flash.indexOf("onFlash();"), "flash disarms the press ceiling before React takes over");
   for (const operation of ["restoreDom();", 'root.classList.remove("sage-cv")', "removeChild(cv)", "onDone();"])
     assert.ok(flash.indexOf(operation) > boundary, operation + " stays behind the cover");
   const cleanup = core.slice(core.indexOf("  return () => {\n    stopped = true;", core.indexOf("function runJump(")), core.indexOf("let jumpOwnsEntrance"));
@@ -270,12 +272,12 @@ test("login visibility belongs to the React commit and preparation stays fully c
 });
 
 test("repeat short login waits for the committed destination and owns its entrance until cleanup", () => {
-  const timers = new Map(), phases = []; let flashes = 0, done = 0, timerId = 0, disposed = 0;
+  const timers = new Map(), phases = []; let flashes = 0, done = 0, timerId = 0, disposed = 0, landed = 0, ready = 0;
   const context = vm.createContext({
     document: { documentElement: {} }, jumpLanded: true, jumpOwnsEntrance: false,
     arrivalShort: () => true, tellPhase: (p) => phases.push(p),
     arrivalReady: true, arrivalSurfaceReady: false, arrivalFailed: false, activeEngineSend: null,
-    openArrivalSurface: () => ({ covered() {}, wait() {}, dispose() { disposed++; } }),
+    openArrivalSurface: () => ({ landing() { landed++; }, ready() { ready++; }, recovery() {}, wait() {}, dispose() { disposed++; } }),
     setTimeout: (f) => { timers.set(++timerId, f); return timerId; }, clearTimeout: (id) => timers.delete(id),
   });
   vm.runInContext(core.slice(core.indexOf("function runJump("), core.indexOf("\n/* True from the press")), context);
@@ -285,9 +287,13 @@ test("repeat short login waits for the committed destination and owns its entran
   assert.deepEqual(phases, ["cruise"]);
   timers.get(1)();
   assert.equal(flashes, 0); assert.equal(done, 0);
+  assert.equal(landed, 0);
+  context.activeEngineSend({ type: "ready", ready: true });
+  assert.equal(ready, 0, "data alone does not clear recovery before the destination is prepared");
   context.arrivalSurfaceReady = true;
   context.activeEngineSend({ type: "ready", ready: true });
   assert.equal(flashes, 1); assert.equal(done, 1);
+  assert.equal(landed, 1); assert.equal(ready, 1);
   undo();
   assert.equal(context.jumpOwnsEntrance, false);
   assert.equal(timers.size, 0);
