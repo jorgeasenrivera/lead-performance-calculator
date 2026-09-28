@@ -60,3 +60,10 @@ test("the support page: reachable, plain, and naming the app's real controls", (
   assert.ok(support.includes('"Something looks wrong"') && app.includes(">Something looks wrong<"));
   assert.ok(support.includes('href="/privacy"'));
 });
+
+test("the policy says what the app does since 28 September: no QR, and deleting from inside the app", () => {
+  const html = fs.readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
+  assert.ok(!/QR/.test(html), "the QR sign-in is gone (C99)");
+  assert.match(html, /<b>Not the camera\.<\/b> Sage never turns it on\./);
+  assert.match(html, /Delete your account yourself: Your account, then Delete my account\. Your store keeps your name on past days and your numbers\./);
+});
