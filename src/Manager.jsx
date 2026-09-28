@@ -46,8 +46,7 @@ import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
 import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
-import qrcodeGen from "qrcode-generator";
-import { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
+import { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
 
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -2186,8 +2185,6 @@ const QUEUE_FLAGS = {
    automatic ones too, because catching an up on the floor IS the opportunity. */
 const UPS_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
 
-/* The test link. Offered only in the manager view, and deliberately never encoded
-   into the QR code that gets held up in front of the floor. */
 /* The wall address for this queue. Copy it once into a screen and leave it. */
 function QueueBoardLink({ storeId, kind }) {
   const [said, setSaid] = useState(false);
@@ -2211,20 +2208,6 @@ function QueueBoardLink({ storeId, kind }) {
   );
 }
 
-function TestLink({ storeId, date, token, param }) {
-  const [said, setSaid] = useState(false);
-  if (!token) return null;
-  const url = queueSignInUrl(storeId, date, token, param, true);
-  return (
-    <button className="btn-quiet" title="Opens this queue as a test person nobody else can see"
-      onClick={() => {
-        navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
-          () => askCopy("Open this on your phone to test the salesperson view", url));
-      }}>
-      {said ? "Copied" : "Salesperson link"}
-    </button>
-  );
-}
 
 /* ---- printing, in one place --------------------------------------------
    Sage opened a print window five ways: the one-pager, the month-end recap,
@@ -2233,7 +2216,8 @@ function TestLink({ storeId, date, token, param }) {
    head and its own call to print — five copies of the same six lines, and a
    blocked pop-up reported five different ways.
 
-   One opener now, one page writer, and one poster that takes the room.
+   One opener now, one page writer, and one poster that takes the room. (The
+   poster went with the QR codes on 28 September, C99.)
 
    What is NOT merged, against what the audit page proposed: the one-pager and
    the month-end recap. Read side by side they are not one page with a
@@ -2252,59 +2236,6 @@ function printPage({ name, width = 850, height = 1050, title, head = "", css = "
   return w;
 }
 
-/* The sign-in poster. Two rooms, one page: everything below was identical in
-   the phone line's copy and the floor's except the colour, the glyph and three
-   lines of words, which is exactly what an argument is for. */
-const SIGN_IN_POSTER = {
-  line: { win: "lpc_qr_", head: "Phone Line", tint: "#4c8bf5", glyph: "phone", banner: "Phone Opportunities",
-    h1: "Get in Line",
-    sub: "Pick your name to claim your spot for the next phone opportunity. No app, no login. This code only works today." },
-  floor: { win: "lpc_floor_", head: "Live Floor", tint: "#0f9d76", glyph: "door", banner: "Live Floor",
-    h1: "Get on the Floor",
-    sub: "Pick your name to claim your spot for the next walk-up. Your spot updates on its own as customers check in and deals happen. No app, no login. This code only works today." },
-};
-async function printSignIn({ store, url, date, by, room = "line" }) {
-  const r = SIGN_IN_POSTER[room] || SIGN_IN_POSTER.line;
-  let svg = "";
-  try {
-    const qrcode = await loadQRCode();
-    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
-    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
-  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
-  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const foot = by ? `Generated ${when} \u00b7 Printed by ${by}` : `Generated ${when}`;
-  printPage({
-    name: r.win + store.id, width: 800, height: 1040,
-    title: `${r.head} \u00b7 ${store.name}`,
-    warn: "Allow pop-ups for this site to print the sign-in code.",
-    head: `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">`,
-    css: `
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
-    .banner{display:inline-flex;align-items:center;gap:10px;background:${r.tint};color:#fff;font-weight:700;
-      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
-    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
-    .store{font-size:22px;font-weight:700;color:#334;}
-    .date{font-size:16px;color:#667;margin-top:6px;}
-    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid ${r.tint};border-radius:24px;}
-    .qr svg{display:block;width:100%;height:auto;}
-    .how{font-size:20px;font-weight:700;margin-top:10px;}
-    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
-    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
-    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}`,
-    body: `
-    <div class="banner">${pixSvgString(r.glyph, 18)} ${r.banner}</div>
-    <h1>${r.h1}</h1>
-    <div class="store">${store.name}</div>
-    <div class="date">${nice}</div>
-    <div class="qr">${svg}</div>
-    <div class="how">Scan with your phone camera to sign in</div>
-    <div class="sub">${r.sub}</div>
-    <div class="foot">${foot}</div>`,
-  });
-}
 
 /* =========================================================================
    queueCoachingStats — roll a person's line history into coaching numbers
@@ -3326,17 +3257,6 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
     );
   };
 
-  const codePop = () => (
-    <div className="qr-pb">
-      <div className="q-qr-box"><QueueQR url={queueSignInUrl(store.id, date, row && row.token, variant.param)} /></div>
-      <p className="qr-pmuted">Salespeople scan it, pick their name, and they are {variant.count}.</p>
-      <div className="qr-pbtns">
-        <button type="button" className="fr-b" onClick={() => printSignIn({ store, url: queueSignInUrl(store.id, date, row && row.token, variant.param), date, by: userName, room: "line" })}>Print</button>
-        <button type="button" className="fr-b" onClick={regenToken}>New code</button>
-      </div>
-    </div>
-  );
-
   const popBody = () => {
     if (!pop) return null;
     switch (pop.k) {
@@ -3344,13 +3264,12 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
       case "person": return personPop(pop.id);
       case "line": return linePop();
       case "day": return dayPop();
-      case "code": return codePop();
       case "opps": return <OppsTally history={row && row.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />;
       default: return null;
     }
   };
   const popTitle = pop ? ({ seat: `Desk ${pop.n}`, person: "In line", line: variant.label,
-    day: "The day so far", code: "Sign-in code", opps: "Opportunities today" })[pop.k] : "";
+    day: "The day so far", opps: "Opportunities today" })[pop.k] : "";
 
   return (
     <div className="fr-page qr">
@@ -3424,9 +3343,6 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "opps" })}>
             <PixIcon glyph="tap" size={16} />Opportunities<em>{upsToday}</em>
-          </button>
-          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}>
-            <PixIcon glyph="clipboard" size={16} />Sign-in code
           </button>
         </div>
       </div>
@@ -3885,7 +3801,6 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
 
 function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
-  const [showQR, setShowQR] = useState(false);
   const [setup, setSetup] = useState(false);
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -4119,7 +4034,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   }
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
-  const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
   // Counts the floor is judged on leave the test identity out.
   const availCount = withoutTest(line).filter((p) => p.status === "waiting").length;
 
@@ -4127,12 +4041,10 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     <div className={`checkout q-tab mf ${variant.mf}`}>
       <div className="q-topline">
         <div className="q-topline-actions">
-          <button className="btn btn-primary" onClick={() => setShowQR(true)}>Sign-in code</button>
           <button className={"btn" + (setup ? " on" : "")} aria-expanded={setup} onClick={() => setSetup((v) => !v)}>Set up</button>
         </div>
         {setup && (
           <div className="q-setup">
-            <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
             <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
           </div>
         )}
@@ -4163,25 +4075,12 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
             accent={variant.accent} kind={variant.kind} metrics={M}
             assignLabel={variant.kind === "online" ? "Assign the lead" : "Assign the call"}
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy}
-            onEmpty={withoutTest(line).length === 0 ? () => setShowQR(true) : null} />
+            onEmpty={null} />
         );
       })()}
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />
 
-      {showQR && (
-        <ToolSheet title="Sign-in code" wide
-          sub={`Post this at the sales desk. It only works today; a fresh code appears each morning.`}
-          onClose={() => setShowQR(false)}>
-          <div className="q-qr-box"><QueueQR url={url} /></div>
-          <p className="ts-note">Salespeople scan it, pick their name, and they're {variant.count}. No login.</p>
-          <div className="q-qr-btns">
-            <button className="btn" onClick={() => printSignIn({ store, url, date, by: userName, room: "line" })}>Print sign-in code</button>
-            <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
-            <button className="btn" onClick={regenToken}>New code</button>
-          </div>
-        </ToolSheet>
-      )}
 
       <div className="mf-lower">
       <div className="mf-main">
@@ -4718,12 +4617,6 @@ function floorApplyEvents(cur, events, store) {
   return cur;
 }
 
-/* ---- printable sign-in poster (SmartFloor branded) ---- */
-
-function floorSignInUrl(storeId, date, token) {
-  const base = window.location.origin + window.location.pathname;
-  return `${base}?f=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
-}
 
 /* One colour per tag, so a manager can look down the line and go straight to
    the blue one. Languages first, then earned strengths, then skills; a custom
@@ -5073,7 +4966,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
   const inButOff = salesRoster.filter((a) => isOff(data, a.id, date) && inLine.has(a.id));
   const offToday = salesRoster.filter((a) => isOff(data, a.id, date) && !inLine.has(a.id));
   const notInLine = salesRoster.filter((a) => !inLine.has(a.id));
-  const url = floorSignInUrl(store.id, date, row.token);
 
   const statusOf = (p) => {
     if (!p) return null;
@@ -5379,17 +5271,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
     );
   };
 
-  const codePop = () => (
-    <>
-      <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Sign-in code</div></div></div>
-      <div className="fr-qr"><QueueQR url={url} cell={5} /></div>
-      <div className="fr-acts">
-        <button type="button" className="fr-b pri" onClick={() => printSignIn({ store, url, date, by: userName, room: "floor" })}>Print</button>
-        <button type="button" className="fr-b" onClick={() => window.open(url, "_blank")}>Open page</button>
-        <button type="button" className="fr-b warn" onClick={regenToken}>New code</button>
-      </div>
-    </>
-  );
 
   const [rosterTab, setRosterTab] = useState("floor");
   const rosterPop = () => (
@@ -5427,12 +5308,11 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
       case "cov": return covPop();
       case "rec": return recPop();
       case "ups": return upsPop();
-      case "code": return codePop();
       case "roster": return rosterPop();
       default: return null;
     }
   };
-  const popTitle = pop ? ({ person: "Person", table: "Table", ask: "Ask", asks: "Asks", line: "In line", cov: "Coverage today", rec: "Record", ups: "Ups today", code: "Sign-in code", roster: "Roster" })[pop.k] : "";
+  const popTitle = pop ? ({ person: "Person", table: "Table", ask: "Ask", asks: "Asks", line: "In line", cov: "Coverage today", rec: "Record", ups: "Ups today", roster: "Roster" })[pop.k] : "";
   const openAsks = (kind) => {
     const list = kind === "to" ? toAsks : flyAsks;
     if (list.length === 1) setPop({ k: "ask", id: list[0].id });
@@ -5501,7 +5381,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           {hours.length > 0 && <div className="fr-scale"><span>{hourLabel(hours[0].h)}</span><span>{hourLabel(hours[hours.length - 1].h + 1)}</span></div>}
         </button>
         <div className="fr-tools">
-          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}><PixIcon glyph="clipboard" size={16} />Sign-in code</button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "rec" })}><PixIcon glyph="clipboard" size={16} />Record</button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "ups" })}><PixIcon glyph="tap" size={16} />Ups today <em>{upsToday}</em></button>
           <button type="button" className={"fr-tool" + (asking > 0 ? " asking" : "")} onClick={() => setPop({ k: "roster" })}><PixIcon glyph="users" size={16} />Roster{asking > 0 && <em>{asking} asking</em>}</button>
@@ -5515,7 +5394,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
 
 function FloorBoard({ config, store, data, onData, userName }) {
   const [row, setRow] = useState(undefined);
-  const [showQR, setShowQR] = useState(false);
   const [setup, setSetup] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
   const [asking, setAsking] = useState(0);
@@ -5795,7 +5673,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
-  const url = row ? floorSignInUrl(store.id, date, row.token) : "";
   // Counts the floor is judged on leave the test identity out.
   const availCount = withoutTest(line).filter((p) => p.status === "waiting").length;
   const withCust = line.filter((p) => p.status === "customer").length;
@@ -5821,10 +5698,9 @@ function FloorBoard({ config, store, data, onData, userName }) {
     <div className="checkout q-tab f-tab mf mf-floor">
       <div className="q-topline">
         <div className="q-topline-actions">
-          {/* The daily control first and filled; set-up behind one button
-              (five-second pass, item 11). Phones stays out only while
-              somebody is asking. */}
-          <button className="btn btn-primary" onClick={() => setShowQR(true)}>Sign-in code</button>
+          {/* Set-up behind one button (five-second pass, item 11). Phones
+              stays out only while somebody is asking. The sign-in code that
+              led this row went with the QR codes (C99). */}
           {(asking > 0 || showPhones) && <button className={"btn" + (asking > 0 && !showPhones ? " f-asking" : "")} onClick={() => setShowPhones((v) => !v)}>
             {showPhones ? "Hide phones" : `Phones · ${asking} asking`}</button>}
           {/* Only ever shown when there is something in it. A button that reads
@@ -5848,7 +5724,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
         {setup && (
           <div className="q-setup">
             <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
-            <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
             <QueueBoardLink storeId={store.id} kind="floor" />
           </div>
         )}
@@ -5876,7 +5751,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
             accent="#0FB37E" kind="floor" metrics={M}
             assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "the up")}
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy}
-            onEmpty={withoutTest(line).length === 0 ? () => setShowQR(true) : null} />
+            onEmpty={null} />
         );
       })()}
 
@@ -5910,19 +5785,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
       {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} onClaims={setAsking} />}
 
-      {showQR && (
-        <ToolSheet title="Sign-in code" wide
-          sub="Post this on the showroom floor. It only works today; a fresh code appears each morning."
-          onClose={() => setShowQR(false)}>
-          <div className="q-qr-box"><QueueQR url={url} /></div>
-          <p className="ts-note">Salespeople scan it, pick their name, and they're on the floor. Their spot updates on its own as customers check in and deals happen.</p>
-          <div className="q-qr-btns">
-            <button className="btn" onClick={() => printSignIn({ store, url, date, by: userName, room: "floor" })}>Print sign-in code</button>
-            <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
-            <button className="btn" onClick={regenToken}>New code</button>
-          </div>
-        </ToolSheet>
-      )}
 
       <div className="mf-lower">
       <div className="mf-main">
