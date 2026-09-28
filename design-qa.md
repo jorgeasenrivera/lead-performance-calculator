@@ -38,9 +38,12 @@ Current/Proposed holds one visible and one hidden frame until ready; reversal
 keeps the original. Subsequent full desktop sign-in reaches the store and
 clears flight classes. Traces do not capture every visual frame or establish FPS.
 
-772 tests and both builds pass. Console inspection still has the earlier
+779 tests and both builds pass after rebasing onto `c47c931`; a fresh Summary
+trace keeps page and block opaque at cleanup. Console inspection still has the earlier
 unattributed observer error; it has not been dismissed or proven fixed. The
 earlier reduced-motion feel timeout remains undiagnosed, not blindly retried.
+The full desktop replay reached the store with cover-opacity and scan-window
+warnings, so it is not a clean arrival timing pass.
 Source integration, motion checks and latest physical-iPhone check are missing.
 Final result: blocked. Keep the study draft; the technical fixes are ready for
 Jorge to try locally, not a production-release approval.

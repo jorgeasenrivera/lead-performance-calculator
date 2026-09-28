@@ -476,12 +476,15 @@ iframe until the replacement's arrival and finite foreground animations settle;
 one pending frame only, timeout and reversal retain the old frame. This mechanism
 is not for production. The full login still lands and starts without a nav latch.
 
-772 tests and normal/isolated builds pass. Desktop, phone-width and tablet-width
+779 tests and normal/isolated builds pass after rebasing onto #435's `c47c931`.
+The fresh rebased Summary trace stays opaque at cleanup too. Desktop, phone-width and tablet-width
 traces keep the page opaque after cleanup; page-reduce suppresses foreground
 travel. These are not a real-iPhone or FPS pass. The previous reduced-sign-in
 feel timeout and unattributed observer console error remain open, no blind rerun
-or relaxed guard. Keep #436 draft. Both application files remain yours under
-C92/C97. Source integration, fresh motion checks, your read and Jorge's latest
+or relaxed guard. Full desktop sign-in also reached the store with cover/scan
+completion-window warnings; that is not a clean timing pass. Keep #436 draft.
+C92 is now merged; C97 still holds the application-file branch. Source
+integration, fresh motion checks, your read and Jorge's latest
 physical-phone preview still precede a production merge.
 
 **H-X17 · Jorge approved X11's five items; cold-load login interruption reproduced and repaired in the study.**

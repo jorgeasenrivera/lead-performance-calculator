@@ -51,8 +51,13 @@ is a study-only comparison mechanism, not proposed production navigation.
 
 Regression tests cover readiness message origin/source, stale messages, reversal
 and timeout. Local trace JSON and the before/after Targets comparison are under
-ignored `shots/manager-proposal-20260928/`. 772 tests and both builds pass.
+ignored `shots/manager-proposal-20260928/`. Rebased onto `c47c931` after #435:
+779 tests and both builds pass, and a new Summary trace keeps page and block
+opaque at cleanup. C97 still owns an application-file branch; no source edits.
 The earlier feel failure and unattributed observer console error remain open.
+The subsequent full desktop arrival also warned that the cover-opacity and
+finishing-scan windows expired. It reached the store, but that is not a clean
+timing pass or proof of why those windows expired.
 Do not retry the failed feel run blindly, waive its bar or merge this draft.
 
 ## Jorge's decisions and the connected arrival
