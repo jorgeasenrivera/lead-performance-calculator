@@ -55,6 +55,8 @@ This is not an all-tabs completion. Drawers, tooltip placement, chart choreograp
 and remaining controls still need a focused pass. The unattributed observer error
 is still in the connected console. The earlier feel failure remains undiagnosed,
 not blindly retried or waived. Keep #436 draft, with no production source edits.
+Rebased onto `378c689` (#437 doorbell migration): 785 tests and the normal and
+isolated builds pass. Build warnings about chunk size and pdf.js eval remain.
 
 ## 28 September: flashing after tool and section transitions
 

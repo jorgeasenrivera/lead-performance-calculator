@@ -477,6 +477,8 @@ filters update without a whole-page fade in those states. This is not an FPS pas
 Drawers, tooltip placement and chart choreography are not finished. The previous
 feel failure and unattributed observer error remain open. Keep the draft blocked
 for release while those checks, your read and Jorge's phone trial are outstanding.
+After rebasing onto `378c689`, 785 tests and both builds pass. The main doorbell
+change is retained; this pass does not change access, realtime or data writes.
 
 **H-X18 · #436: post-navigation mount fades reproduced; study repair only.**
 

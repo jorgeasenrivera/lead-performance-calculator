@@ -20,6 +20,8 @@ They are not captured animation frames or a real-phone performance result.
 Production integration and motion release checks remain missing, with the earlier
 feel failure undiagnosed and the connected observer error still present. New
 motion decisions and latest physical-iPhone trial also remain outstanding.
+785 tests and both builds pass on the `378c689` rebase, with existing build
+warnings. These checks do not replace the missing motion release evidence.
 Final result: blocked for release. Local study only.
 
 ## 28 September: manager navigation cleanup repair
