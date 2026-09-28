@@ -126,7 +126,7 @@ async function setMine(status, table) {
   const cur = rows.find((r) => r.id === floor.id);
   const d = { ...(cur.data || {}) };
   d.line = (d.line || []).map((x) => (x.id === floor.me.id ? { ...x, status, statusAt: new Date().toISOString(), table } : x));
-  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json" },
+  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
     body: JSON.stringify([{ ...cur, data: d, updated_at: new Date().toISOString() }]) });
 }
 /* My FlyBys on the server, by id, so a wait can tell the one just sent from
@@ -156,7 +156,7 @@ async function prepFloor() {
   const cfg = all.find((r) => r.key === "lpc:config:v2");
   if (cfg && cfg.value && Array.isArray(cfg.value.stores)) {
     cfg.value.stores = cfg.value.stores.map((st) => ({ ...st, rooms: { ...(st.rooms || {}), floor: true, line: true } }));
-    await fetch(MOCK + "/rest/v1/app_data", { method: "POST", headers: { "content-type": "application/json" },
+    await fetch(MOCK + "/rest/v1/app_data", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
       body: JSON.stringify([{ key: cfg.key, value: cfg.value, updated_at: new Date().toISOString() }]) });
   }
   const link = (await j(MOCK + "/rest/v1/floor_people?select=*"))[0];
@@ -174,7 +174,7 @@ async function prepFloor() {
   d.roster = [...R, { id: "__lpc_test__", label: "Test", role: "Test", test: true }];
   d.line = [at(rest[0], 52), at(rest[1], 31), at(me, 18)];
   d.assists = []; d.checkouts = d.checkouts || []; d.history = d.history || [];
-  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json" },
+  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
     body: JSON.stringify([{ ...cur, id, store: STORE, fdate: day(), data: d, updated_at: new Date().toISOString() }]) });
   return { me, id };
 }
