@@ -46,7 +46,7 @@ import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
 import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
-import { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
+import { buzz, MOTION, useNet, AccountSheet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
 
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -1011,13 +1011,6 @@ async function updateProfile(id, patch) {
   return true;
 }
 
-async function deleteProfile(id) {
-  if (!supabase) return false;
-  const { error } = await supabase.from("profiles").delete().eq("id", id);
-  if (error) { console.error("deleteProfile", error); return false; }
-  return true;
-}
-
 // Every store's data row, whether or not the store is still listed in the config.
 // This is what lets the recovery tool find data that was orphaned.
 async function listStoreKeys() {
@@ -1501,6 +1494,7 @@ function BoardScreen({ storeId }) {
    carries the account rather than spending width on a title nobody reads twice. */
 function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onHelp }) {
   const [open, setOpen] = useState(false);
+  const [acct, setAcct] = useState(false);   // Your account, and Delete my account (C91)
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -1534,9 +1528,11 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
           {onReplayIntro && (
             <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
           )}
+          <button className="bm-item" onClick={() => { setOpen(false); setAcct(true); }}>Your account</button>
           <button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
         </div>
       )}
+      {acct && <AccountSheet desk name={session?.name} onClose={() => setAcct(false)} onDeleted={() => { setAcct(false); onSignOut(); }} />}
     </div>
   );
 }
@@ -21810,13 +21806,16 @@ function AccessPanel({ config, session, onChange }) {
   const toggleActive = (u) =>
     patch(u.id, { active: !u.active }, { action: u.active ? "Deactivated account" : "Reactivated account", detail: u.email });
 
+  /* Through the server, which removes the login as well as the profile: the
+     profile alone left logins behind (C91, B1). The same rules as deleting
+     your own, including the last admin. */
   const remove = async (u) => {
     if (!(await askConfirm("Delete " + (u.name || u.email) + " permanently?" + String.fromCharCode(10, 10) +
-      "This removes their profile. It does not delete any store data they imported."))) return;
+      "This removes their login and profile. Their figures and any store data they imported stay with the store."))) return;
     setBusy(true);
-    const ok = await deleteProfile(u.id);
+    const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE", user_id: u.id } });
     setBusy(false);
-    if (!ok) { setMsg("Couldn't delete that profile."); return; }
+    if (!out || out.error) { setMsg((out && out.error) || "Couldn't delete that account."); return; }
     await appendAudit({ user: session.name, action: "Deleted account", detail: u.email });
     reload();
   };

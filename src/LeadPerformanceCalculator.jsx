@@ -4066,6 +4066,75 @@ function Overlay({ children }) {
   return createPortal(children, document.body);
 }
 
+/* ---- Your account, and deleting it (C91) ----------------------------------
+   Apple requires any app with sign-up to let a person delete their account
+   from inside it. Jorge, 23 September: "a little harder to delete, but keep
+   their figures". So it is not a row beside Sign out: "Your account" opens this
+   page, Delete my account sits at its foot, and it asks for DELETE typed.
+   The server checks the word again and decides who may delete what
+   (api/_account-delete.mjs); this only asks. The login goes, the store's
+   records stay, and the sign-in card says it is done (DELETED_KEY). */
+const DELETED_KEY = "lpc:account-deleted";
+function AccountSheet({ name, onClose, onDeleted, desk = false }) {
+  const [email, setEmail] = useState("");
+  const [step, setStep] = useState("page");
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let dead = false;
+    if (supabase) supabase.auth.getSession().then(({ data }) => {
+      if (!dead) setEmail((data && data.session && data.session.user && data.session.user.email) || "");
+    }).catch(() => {});
+    return () => { dead = true; };
+  }, []);
+  const ready = typed.trim() === "DELETE";
+  const remove = async () => {
+    if (!ready || busy) return;
+    setBusy(true); setErr("");
+    const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE" } });
+    if (!out || out.error) { setBusy(false); setErr((out && out.error) || "That did not go through. Try again."); return; }
+    try { sessionStorage.setItem(DELETED_KEY, "1"); } catch (e) {}
+    onDeleted();
+  };
+  const close = () => { if (!busy) onClose(); };
+  return (
+    <Overlay><div className={"mc-ov acct-ov" + (desk ? " acct-desk" : "")} onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="mc-sheet mc-you acct" role="dialog" aria-modal="true" aria-label={step === "page" ? "Your account" : "Delete your account"}>
+        <div className="mc-sheet-head"><b>{step === "page" ? "Your account" : "Delete your account?"}</b>
+          <button type="button" className="mc-x x-close" onClick={close} aria-label="Close"><PixIcon glyph="close" size={15} /></button></div>
+        {step === "page" ? (<>
+          <div className="mc-cap">SIGNED IN AS</div>
+          <div className="mc-card mc-you-card">
+            <div className="mc-set-row">
+              <span className="ic"><PixIcon glyph="user" size={16} /></span>
+              <span>{name || "You"}<span className="hint">{email || " "}</span></span></div>
+          </div>
+          <div className="mc-cap">DELETE</div>
+          <div className="mc-card mc-you-card">
+            <button type="button" className="mc-set-row mc-set-out" onClick={() => { setStep("confirm"); setTyped(""); setErr(""); }}>
+              <span className="ic"><PixIcon glyph="close" size={16} /></span>
+              <span>Delete my account<span className="hint">Your login goes. Your store keeps its figures.</span></span>
+              <span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+          </div>
+        </>) : (<>
+          <div className="acct-say">
+            <p><b>Goes:</b> your login, your email, and Sage's notifications on your phones.</p>
+            <p><b>Stays with your store:</b> your name on past days and your numbers. Ask your manager about those.</p>
+            <p>This can't be undone.</p>
+          </div>
+          <label className="acct-lbl" htmlFor="acct-confirm">Type DELETE to confirm</label>
+          <input id="acct-confirm" className="acct-in" value={typed} autoCapitalize="characters" autoCorrect="off" autoComplete="off" spellCheck={false}
+            onChange={(e) => { setTyped(e.target.value); setErr(""); }} onKeyDown={(e) => e.key === "Enter" && remove()} placeholder="DELETE" />
+          {err && <div className="acct-err">{err}</div>}
+          <button type="button" className="acct-go" disabled={!ready || busy} onClick={remove}>{busy ? "Deleting…" : "Delete my account"}</button>
+          <button type="button" className="acct-keep" disabled={busy} onClick={() => { setStep("page"); setErr(""); }}>Keep it</button>
+        </>)}
+      </div>
+    </div></Overlay>
+  );
+}
+
 /* ---- Floorside helpers ------------------------------------------------- */
 /* Which field on the activity row each of the day's five numbers reads. Named
    here rather than inline so the one-number screen and the bands can never
@@ -4954,7 +5023,8 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [name, setName] = useState("");
   const [claim, setClaim] = useState({ store: "", person: null, name: "" });
   const [err, setErr] = useState("");
-  const [ok, setOk] = useState("");
+  /* After Delete my account (C91): said once, on the card the person lands on. */
+  const [ok, setOk] = useState(() => { try { if (sessionStorage.getItem(DELETED_KEY)) { sessionStorage.removeItem(DELETED_KEY); return "Your account is deleted."; } } catch (e) {} return ""; });
   const [busy, setBusy] = useState(false);
   /* The card's own 760ms deconstruction is gone with the handover it belonged
      to. The arrival takes the screen apart now, from the press, so there is
@@ -5225,6 +5295,10 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
               </span>
             </button>
             <button className="lf-alt" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
+            {/* Apple wants the policy reachable from inside the app (C90). It is
+                our own address, so the app keeps it in view, and the page's
+                Sage mark leads back here. */}
+            <a className="lf-privacy" href="/privacy">Privacy</a>
             {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
           </div>
         )}
@@ -10815,6 +10889,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [mile, setMile] = useState(null);           // the unit count that just landed
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpPanel, setHelpPanel] = useState(false);
+  const [acctOpen, setAcctOpen] = useState(false);
   const [offState, setOffState] = useState(() => { try { return localStorage.getItem(`lpcf:offday:${store}:${date}`) || ""; } catch { return ""; } });
   /* The bars the browser draws around the page take their colour from this
      tag. The phone screens are the garden's dark ink, so the bars are too, and
@@ -12077,9 +12152,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   <span className="ic"><PixIcon glyph="phone" size={16} /></span>
                   <span>Get the Sage app<span className="hint">{appLink ? (isIOS ? "On the App Store" : "On Google Play") : "Coming to your phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               )}
-              <div className="mc-set-row">
+              {/* The QR sign-in went on 28 September (C99), so the hint no longer
+                  offers it; the row opens the account page (C91). */}
+              {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setAcctOpen(true); }}>
                 <span className="ic"><PixIcon glyph="home" size={16} /></span>
-                <span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
+                <span>Your account<span className="hint">{account ? "Linked to your name on this floor" : "Signed in on this phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
             </div>
 
             <div className="mc-cap">THE DAY</div>
@@ -12094,6 +12171,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           </div>
         </div></Overlay>
       )}
+      {acctOpen && <AccountSheet name={meFull || meLabel} onClose={() => setAcctOpen(false)} onDeleted={() => { setAcctOpen(false); onSignOut(); }} />}
       {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`} dark
         figures={mine ? [{ label: "Calls today", value: mine.calls }, { label: "Videos today", value: mine.video }, { label: "Tasks today", value: mine.tasks }, { label: "Units this month", value: myUnits }] : []}
         onClose={() => setHelpPanel(false)} />}
@@ -14544,6 +14622,9 @@ html.signin-gone .signin-over { display:none; }
 .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
         font:inherit; font-size:13px; color:#6E6E76; }
 .lf-alt:hover { color:#2E3A32; }
+/* The policy (C90): quieter than Create New Account, and centred under it. */
+.lf-privacy { display:block; width:max-content; margin:12px auto 0; font-size:12px; color:#8A8A92; text-decoration:none; }
+.lf-privacy:hover { color:#2E3A32; text-decoration:underline; }
 /* Sign-in puts its label left and the five build dots right, which is what
          the space-between is for. Every other mode has only a label, and a label
          pushed to one edge of a full-width pill reads as a mistake. */
@@ -17480,6 +17561,26 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-you .mc-set-row .ic .pix{ color:inherit; }
 .mc-you .mc-set-row > span:not(.ic):not(.on):not(.mc-sw):not(.mc-seg3){ flex:1; min-width:0; }
 .mc-you .mc-set-out .ic{ color:#f08a80; background:rgba(240,138,128,.12); }
+/* Your account (C91): the corner's own sheet, on the desk as on the phone.
+   The confirm step is the one place here with a typed field, so it borrows the
+   sign-in card's underline rather than a boxed input. */
+.acct-say{ font-size:14px; line-height:1.45; color:#EDF2EA; }
+.acct-say p{ margin:0 0 10px; }
+.acct-say b{ color:#e4c98d; }
+.acct-lbl{ display:block; margin:14px 2px 4px; font-family:var(--sfmono); font-size:10px; font-weight:700; letter-spacing:.14em; color:rgba(237,242,234,.6); text-transform:uppercase; }
+/* Scoped under .acct so it outranks the site's input:hover and input:focus,
+   which paint every field white. */
+.acct .acct-in, .acct .acct-in:hover, .acct .acct-in:focus{ width:100%; box-sizing:border-box; background:transparent; box-shadow:none;
+  border:0; border-bottom:1.5px solid rgba(237,242,234,.3); border-radius:0; color:#EDF2EA; outline:none;
+  font-family:var(--sfmono); font-size:18px; letter-spacing:.12em; padding:8px 2px; }
+.acct .acct-in:focus{ border-bottom-color:#f08a80; }
+.acct .acct-in::placeholder{ color:rgba(237,242,234,.22); }
+.acct-err{ margin-top:8px; font-size:13px; color:#f08a80; }
+.acct-go{ display:block; width:100%; margin-top:18px; min-height:48px; border:0; border-radius:999px; background:#e0685c; color:#fff;
+  font-size:15px; font-weight:700; cursor:pointer; transition:opacity .15s ease; }
+.acct-go:disabled{ opacity:.35; cursor:default; }
+.acct-keep{ display:block; width:100%; margin-top:8px; min-height:44px; border:0; background:none; color:rgba(237,242,234,.75);
+  font-size:14px; font-weight:600; cursor:pointer; }
 .mc-seg3{ margin-left:auto; display:inline-flex; gap:2px; padding:3px; border-radius:10px; background:rgba(255,255,255,.07); flex:0 0 auto; }
 .mc-seg3 button{ border:0; background:none; color:rgba(237,242,234,.6); font-family:var(--sfmono); font-size:10.5px; font-weight:700;
   letter-spacing:.06em; padding:0 9px; min-width:36px; height:30px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
@@ -18740,4 +18841,4 @@ function ensureStyleNamed(id, css) {
 }
 
 /* What the manager's file (Manager.jsx) reads from here. */
-export { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
+export { buzz, MOTION, useNet, AccountSheet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
