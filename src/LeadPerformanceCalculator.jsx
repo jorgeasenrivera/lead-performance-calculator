@@ -6736,6 +6736,61 @@ const qMinsSince = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date
 const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`);
 
 /* ---- Supabase access: the per-day line row (queue_public) ---- */
+/* ---- Compare and save, for the day's rows (C89) ----
+   The floor and the line are one JSON document per store per day, and every
+   change is read it, change it, write it back. The page queues its own
+   writes (qChains below), but another phone, the desk, or the server's
+   queue-action landing between this read and this write used to be written
+   over, and nothing noticed. Now the write goes through only if the row still
+   carries the updated_at it was read with, which is the same guard
+   api/queue-action.mjs already keeps; a write that loses the race reads again
+   and reapplies the same change to what is there now. A row that does not
+   exist yet is inserted, never upserted, so two first writers cannot both
+   believe they won. */
+const ROW_TRIES = 5;
+async function readRowStamped(table, id) {
+  const { data, error } = await supabase.from(table).select("data,updated_at").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? { row: data.data, stamp: data.updated_at || null, exists: true } : { row: null, stamp: null, exists: false };
+}
+/* A stamp that always moves: two writes in the same millisecond, or a clock
+   behind the server's, must not leave the row carrying the stamp a racer read. */
+function nextRowStamp(prev) {
+  const p = prev ? Date.parse(prev) : NaN;
+  return new Date(Number.isFinite(p) ? Math.max(Date.now(), p + 1) : Date.now()).toISOString();
+}
+async function mutateRowCAS(table, id, cols, fn, { onWrite, what } = {}) {
+  if (!supabase) throw new Error("No database connection");
+  for (let attempt = 0; attempt < ROW_TRIES; attempt++) {
+    let read;
+    try { read = await readRowStamped(table, id); }
+    catch (e) {
+      await new Promise((z) => setTimeout(z, 400));
+      try { read = await readRowStamped(table, id); }
+      catch (e2) { console.error("read " + table, e2); throw new Error(`The ${what} could not be read just now, so nothing was changed.`); }
+    }
+    const cur = read.row;
+    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+    if (!next) return cur;                       // a change that changes nothing
+    if (onWrite) onWrite(cur, next);
+    const stamp = nextRowStamp(read.stamp);
+    if (read.exists) {
+      let q = supabase.from(table).update({ data: next, updated_at: stamp }).eq("id", id);
+      q = read.stamp ? q.eq("updated_at", read.stamp) : q.is("updated_at", null);
+      const { data: wrote, error } = await q.select("id");
+      if (error) { console.error("write " + table, error); throw new Error(error.message || error.hint || error.code || "write refused"); }
+      if (wrote && wrote.length) return next;
+    } else {
+      const { error } = await supabase.from(table).insert({ id, ...cols, data: next, updated_at: stamp });
+      if (!error) return next;
+      if (String(error.code) !== "23505") { console.error("write " + table, error); throw new Error(error.message || error.hint || error.code || "write refused"); }
+    }
+    /* Somebody else wrote first. Read theirs and do this again on top of it,
+       after a beat with a little spread so two losers do not collide again. */
+    await new Promise((z) => setTimeout(z, 60 * (attempt + 1) + Math.random() * 60));
+  }
+  throw new Error(`The ${what} was busy, so nothing was changed. Try again.`);
+}
 /* A read that FAILED and a row that does not exist are completely different
    things, and treating them the same is what made people vanish from the line:
    one flaky read came back as "nobody is in the queue", the screen emptied, and
@@ -6750,33 +6805,16 @@ async function loadQueueRow(store, date, kind) {
     return data ? data.data : null;
   } catch (e) { console.error("loadQueueRow", e); return undefined; }
 }
-async function saveQueueRow(store, date, data, kind) {
-  if (!supabase) return false;
-  try {
-    const { error } = await supabase.from(QUEUE_TABLE).upsert(
-      { id: queueRowId(store, date, kind), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
-    if (error) throw error;
-    return true;
-  } catch (e) { console.error("saveQueueRow", e); return false; }
-}
-/* Every change to a queue row is read-modify-write against a row with no
-   revision to check, so two writers overlapping means one of them silently
-   loses. That is exactly what made a person added to the line disappear a few
-   seconds later: the roster sync had read the row before the add and wrote its
-   copy back afterwards. Mutations for a given row now queue up behind each
-   other, so each one reads what the one before it wrote. */
+/* Every change to a queue row is read-modify-write, so two writers overlapping
+   used to mean one of them silently lost. That is exactly what made a person
+   added to the line disappear a few seconds later: the roster sync had read the
+   row before the add and wrote its copy back afterwards. Mutations for a given
+   row queue up behind each other in this page, so each one reads what the one
+   before it wrote; mutateRowCAS catches the writers outside this page (C89). */
 const qChains = new Map();
 async function mutateQueueRow(store, date, fn, kind) {
   const key = `${store}|${date}|${kind || "line"}`;
-  const run = async () => {
-    let cur = await loadQueueRow(store, date, kind);
-    if (cur === undefined) { await new Promise((z) => setTimeout(z, 400)); cur = await loadQueueRow(store, date, kind); }
-    if (cur === undefined) throw new Error("The queue could not be read just now, so nothing was changed.");
-    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
-    if (!next) return cur;                       // a mutator that changed nothing
-    if (!(await saveQueueRow(store, date, next, kind))) throw new Error("The change could not be saved just now.");
-    return next;
-  };
+  const run = () => mutateRowCAS(QUEUE_TABLE, queueRowId(store, date, kind), { store, qdate: date }, fn, { what: "queue" });
   const prev = qChains.get(key) || Promise.resolve();
   const p = prev.then(run, run);
   qChains.set(key, p.catch(() => {}));
@@ -9608,34 +9646,13 @@ async function loadFloorRow(store, date) {
     return data ? data.data : null;
   } catch (e) { console.error("loadFloorRow", e); return undefined; }
 }
-/* Same reasoning as the queue write: a refused write that reports success is worse
-   than one that fails loudly, because the screen agrees with you for five seconds
-   and then quietly disagrees. */
-async function saveFloorRow(store, date, data) {
-  if (!supabase) throw new Error("No database connection");
-  const { error } = await supabase.from(FLOOR_TABLE).upsert(
-    { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
-  if (error) {
-    console.error("saveFloorRow", error);
-    throw new Error(error.message || error.hint || error.code || "write refused");
-  }
-  return true;
-}
-/* Serialised for the same reason the queue rows are: overlapping read-modify-
-   writes on a row with no revision lose each other's changes. */
+/* Serialised in this page for the same reason the queue rows are, and guarded
+   against every other writer by mutateRowCAS (C89). */
 async function mutateFloorRow(store, date, fn) {
   const key = `floor|${store}|${date}`;
-  const run = async () => {
-    let cur = await loadFloorRow(store, date);
-    if (cur === undefined) { await new Promise((z) => setTimeout(z, 400)); cur = await loadFloorRow(store, date); }
-    if (cur === undefined) throw new Error("The floor could not be read just now, so nothing was changed.");
-    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
-    if (!next) return cur;
-    // Whoever moved up gets a stamp, so a phone's "last move" means that.
-    stampLineMoves(cur, next, qNowIso());
-    await saveFloorRow(store, date, next);
-    return next;
-  };
+  /* Whoever moved up gets a stamp, so a phone's "last move" means that. */
+  const run = () => mutateRowCAS(FLOOR_TABLE, floorRowId(store, date), { store, fdate: date }, fn,
+    { what: "floor", onWrite: (cur, next) => stampLineMoves(cur, next, qNowIso()) });
   const prev = qChains.get(key) || Promise.resolve();
   const p = prev.then(run, run);
   qChains.set(key, p.catch(() => {}));

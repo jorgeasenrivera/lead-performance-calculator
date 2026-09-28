@@ -35,7 +35,9 @@ export async function ensureMock() {
 }
 
 const j = async (u) => (await fetch(u)).json();
-const post = (table, rows) => fetch(`${MOCK}/rest/v1/${table}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(rows) });
+/* An upsert, which is what these seed writes mean. The mock refuses a plain
+   insert of a row that exists, as the database does (C89). */
+const post = (table, rows) => fetch(`${MOCK}/rest/v1/${table}`, { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" }, body: JSON.stringify(rows) });
 
 /* The floor as a check needs it: both rooms on for the store, three on the
    line, this account third with two ahead. Returns { me, id } where id is
