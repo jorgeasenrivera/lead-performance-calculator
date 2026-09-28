@@ -2,7 +2,7 @@
  * The day's row, for a TV showing the line (C92).
  * -------------------------------------------------------------------------
  * `floor_public` and `queue_public` close to the public key once
- * supabase/pending/02-lock.sql is applied. Signed-in staff keep reading and
+ * the floor lock is applied (supabase/migrations/20260928200830_floor_lock.sql). Signed-in staff keep reading and
  * writing them directly. A TV has nobody signed in, so it reads through
  * /api/floor-row with the key in its link (Jorge chose this on 28 September).
  * With the QR sign-in retired (C99), it is the only screen that does.

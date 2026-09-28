@@ -1,7 +1,7 @@
 #!/bin/bash
 # C92: proves the doorbell (applied 28 September, now in supabase/migrations),
-# supabase/pending/02-lock.sql and its undo on a real Postgres, before the lock reaches
-# the live project. Throwaway cluster, stand-ins
+# the floor lock (applied 28 September, in supabase/migrations) and its undo
+# (supabase/pending) on a real Postgres. Throwaway cluster, stand-ins
 # for Supabase's auth.uid() and realtime.send(), the baseline's tables and
 # its open policies; then the two files, then every kind of visitor.
 #
@@ -13,6 +13,8 @@ BIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 PENDING=${PENDING:-$HERE/supabase/pending}   # point it elsewhere to prove a bad lock fails
 DOORBELL=${DOORBELL:-$HERE/supabase/migrations/20260928180229_row_doorbell.sql}
+LOCK=${LOCK:-$PENDING/02-lock.sql}
+[ -f "$LOCK" ] || LOCK=$HERE/supabase/migrations/20260928200830_floor_lock.sql
 DIR=$(mktemp -d)
 PORT=${PGPORT:-5499}
 trap '"$BIN/pg_ctl" -D "$DIR" -m immediate stop >/dev/null 2>&1 || true; rm -rf "$DIR"' EXIT
@@ -80,11 +82,11 @@ expect abc123 "$(as anon '' "select data->>'token' from floor_public")" "before:
 # and the table refuses it for want of its store. The reason no ticket exists.
 case "$(as anon '' "insert into queue_public (id, data) values ('ticket:t9','{}')")" in *"not-null"*) ok "C98: a ticket as the app sends it today is refused (store is NOT NULL)";; *) fail "C98 did not reproduce";; esac
 
-for f in "$DOORBELL" "$PENDING/02-lock.sql"; do
+for f in "$DOORBELL" "$LOCK"; do
   if ! q -f "$f" >/dev/null 2>"$DIR/err"; then cat "$DIR/err"; fail "$f did not apply"; echo; echo "1 check(s) failed."; exit 1; fi
 done
 ok "the doorbell and the lock apply cleanly"
-if q -f "$DOORBELL" >/dev/null 2>&1 && q -f "$PENDING/02-lock.sql" >/dev/null 2>&1; then ok "and apply again without error (safe to re-run)"; else fail "a second run errors"; fi
+if q -f "$DOORBELL" >/dev/null 2>&1 && q -f "$LOCK" >/dev/null 2>&1; then ok "and apply again without error (safe to re-run)"; else fail "a second run errors"; fi
 
 A=00000000-0000-0000-0000-00000000000a M=00000000-0000-0000-0000-0000000000a1 O=00000000-0000-0000-0000-0000000000a2
 L=00000000-0000-0000-0000-0000000000a3 P=00000000-0000-0000-0000-0000000000a4 I=00000000-0000-0000-0000-0000000000a5
@@ -142,7 +144,7 @@ expect "$LIVE_GRANTS" "$(grants)" "undone: and the public key's four grants, DEL
 expect 1 "$(as anon '' "select count(*) from floor_public")" "undone: the public key reads the floor again (an old TV link works)"
 expect UPDATE "$(as anon '' "update queue_public set data = data where id='dm:2026-09-28' returning 'UPDATE'" | grep -v WARNING)" "undone: and writes it"
 expect 1 "$(as authenticated $M "select count(*) from floor_public where store='dm'")" "undone: staff still read"
-if q -f "$PENDING/02-lock.sql" >/dev/null 2>"$DIR/err" && q -f "$PENDING/02-lock.sql" >/dev/null 2>>"$DIR/err"; then ok "locked again, twice, without error"; else cat "$DIR/err"; fail "the lock did not apply after the undo"; fi
+if q -f "$LOCK" >/dev/null 2>"$DIR/err" && q -f "$LOCK" >/dev/null 2>>"$DIR/err"; then ok "locked again, twice, without error"; else cat "$DIR/err"; fail "the lock did not apply after the undo"; fi
 case "$(as anon '' "select count(*) from floor_public")" in *"permission denied"*) ok "locked again: the public key cannot read the floor";; *) fail "locked again: the public key still reads the floor";; esac
 case "$(as anon '' "update queue_public set data='{}'")" in *"permission denied"*) ok "locked again: nor write";; *) fail "locked again: the public key can still write";; esac
 expect 1 "$(as authenticated $M "select count(*) from floor_public where store='dm'")" "locked again: manager of dm reads dm"

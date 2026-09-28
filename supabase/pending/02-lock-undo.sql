@@ -1,10 +1,10 @@
--- C92: undo 02-lock.sql, back to exactly what the live project had on
+-- C92: undo the floor lock (migrations/20260928200830_floor_lock.sql), back to exactly what the live project had on
 -- 28 September before the lock: the six open policies and the public key's
 -- four grants, read from the live project that day (pg_policies and
 -- role_table_grants), not retyped from the baseline file.
 --
 -- For a day when a TV that has not been re-linked matters more than the lock.
--- Running 02-lock.sql again puts the lock back; scripts/c92-lock-check.sh runs
+-- Running that file again puts the lock back; scripts/c92-lock-check.sh runs
 -- lock, undo, undo, lock and checks each state.
 --
 -- can_use_store() is left in place: nothing calls it once its policies go,
