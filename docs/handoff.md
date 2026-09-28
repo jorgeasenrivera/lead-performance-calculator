@@ -462,6 +462,10 @@ author's prefix. Nothing but the id changed.
 
 **H-X17 · Jorge approved X11's five items; cold-load login interruption reproduced and repaired in the study.**
 
+Draft study PR: [#436](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/436).
+Its Vercel app preview is still original production source. The corrected
+connected sequence is the isolated local study, not a deployed source repair.
+
 All five published manager-study decisions are Approve. Jorge reports flashing
 in both the local study and live site, and asks for one continuous lightspeed to
 store landing. The study's old Replay landing only ran the standalone page
