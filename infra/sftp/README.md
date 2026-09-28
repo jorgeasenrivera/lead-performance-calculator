@@ -49,12 +49,15 @@ Port 22 is shut to everybody unless an address is in `allowed-ips.txt`.
 5. **Tell Claude.** The server is then made and checked from GitHub:
    Actions → SFTP server → Run workflow → `create`.
 6. **One DNS record in Cloudflare**, from the run's summary: an A record,
-   name `sftp`, pointing at the server's address, proxy **off** (grey cloud).
-   SFTP does not pass through Cloudflare's proxy.
+   name `sftp` on `hollercrmreports.com`, pointing at the server's address,
+   proxy **off** (grey cloud). SFTP does not pass through Cloudflare's proxy.
+   Done 25 September: `sftp.hollercrmreports.com` → `164.90.141.32`.
+   (`sftp.sageonline.io` is not this server: `sageonline.io` is on Vercel,
+   whose wildcard answers for every name under it.)
 
 ## When PromptPath replies
 
-Send Chris: host `sftp.sageonline.io`, port 22, user `promptpath`, key
+Send Chris: host `sftp.hollercrmreports.com`, port 22, user `promptpath`, key
 authentication, upload into `incoming/`. Ask for their SSH **public** key
 and the IP addresses they deliver from. Then:
 
