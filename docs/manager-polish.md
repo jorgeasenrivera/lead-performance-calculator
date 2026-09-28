@@ -5,6 +5,57 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 28 September: within-tab motion, first bounded pass
+
+Jorge approves the updated Proposed navigation and asks to refine motion inside
+the manager tabs. Keep that navigation and the approved login choreography.
+Items 1 through 5 remain approved. Two new study decisions, 6 and 7, are pending.
+
+The associate card's original return starts from `transform: none` even if its
+entry is unfinished, and the opening/closing effects and timers have no shared
+owner. Its counter also computes every changed target from zero. These are code
+findings, not a claim that a screenshot measures a hitch.
+
+The in-memory Proposed copy now gives an associate card one motion owner:
+320ms entry, content revealed within 240ms, and 200ms return from its actual
+painted matrix and child opacity. Close requests are idempotent; completed or
+interrupted effects are cancelled, old completions ignored and unmount cleans
+up effects, watchdog, preference observer and listeners. No new layout, art or
+data action. Reduce page motion and system Reduce Motion settle immediately;
+a hidden document settles an opening or finishes a requested close. The first
+test run caught an unhandled cancellation rejection in my helper. Every owned
+effect now handles cancellation, including the children, not just the lead.
+
+Podium and recap counts keep the initial roll-up, capped at 640ms with up to
+160ms delay. Subsequent targets move from the displayed value over up to 320ms,
+including decreases to zero. A class observer waits for the lightspeed cover
+to clear without an 80ms polling interval. Completed counts remove their RAF,
+observer and preference/visibility listeners. No new library or GSAP dependency.
+The performance and timeline skills informed transform/opacity-only card
+movement, batched pose reads and a single cancellation/completion owner.
+
+Connected desktop, 390px phone and 768px tablet checks reach an open card at
+opacity 1 and transform none, and remove it after close. The settled card is
+396px on desktop/tablet and 335.2px on phone; document client/scroll widths match
+at 375px phone and 753px tablet. Phone reduced entry has no travel, and Escape
+closes it. Summary's Calls/90 days controls update populated figures while page
+and nested tab-page stay opaque with animation none. This does not establish
+frame rate, low-end performance, or a physical-iPhone pass. Interrupted pose,
+duplicate close, stale completion, disposal and count retargeting have behavioral
+unit coverage, not continuous browser-frame capture.
+
+Local screenshots: `within-tab-card-before.png`, `within-tab-card-desktop.png`,
+`within-tab-card-phone.png`, `within-tab-card-tablet.png` in the existing ignored
+shots folder. The first phone capture showed the underlying board before the
+overlay appeared and was replaced only after the card's settled state was
+confirmed. The settled phone capture also shows an existing hover tooltip
+clipped at the left edge; tooltip placement is not fixed in this pass.
+
+This is not an all-tabs completion. Drawers, tooltip placement, chart choreography
+and remaining controls still need a focused pass. The unattributed observer error
+is still in the connected console. The earlier feel failure remains undiagnosed,
+not blindly retried or waived. Keep #436 draft, with no production source edits.
+
 ## 28 September: flashing after tool and section transitions
 
 Jorge now confirms the full proposed sign-in has no flashing. He reports a flash

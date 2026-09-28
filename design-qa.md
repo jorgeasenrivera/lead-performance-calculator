@@ -1,5 +1,27 @@
 # Lightspeed comparison QA
 
+## 28 September: within-tab motion study
+
+Focused implementation check only, not a new full visual audit or FPS verdict.
+The approved navigation is retained; pending decisions 6 and 7 cover interrupted
+associate-card motion and count retargeting. Desktop before/after captures retain
+the card layout, content, dot iconography and colours. Screenshot stream softness
+limits small-type and antialiasing comparisons. The phone overlay's settled capture
+shows a clipped hover tooltip, an existing placement problem not repaired here.
+
+Connected checks reach open/transform none/opacity 1 at desktop, phone and tablet
+sizes; button close removes the card in all three. Phone reduced entry is already
+open with no transform, and Escape closes it. Widths fit the visible documents.
+Summary Calls and 90 days update without re-entering the whole page in the checked
+states. Behavioral tests cover partial-pose reversal, duplicate close, unmount,
+preference/visibility changes, no polling under the cover and decreasing counts.
+They are not captured animation frames or a real-phone performance result.
+
+Production integration and motion release checks remain missing, with the earlier
+feel failure undiagnosed and the connected observer error still present. New
+motion decisions and latest physical-iPhone trial also remain outstanding.
+Final result: blocked for release. Local study only.
+
 ## 28 September: manager navigation cleanup repair
 
 Findings: [P1] Current Summary resumes pageIn and nested cardIn at opacity 0

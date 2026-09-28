@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import vm from "node:vm";
-import {proposalTransform, arrivalBoundaryTransform, slowManagerImport, replaceExactlyOnce, proposalPage, polishCSS, installProposal, installArrivalProbe, installComparison} from "../scripts/manager-polish-proposal.mjs";
+import {proposalTransform, arrivalBoundaryTransform, slowManagerImport, replaceExactlyOnce, proposalPage, polishCSS, installProposal, installArrivalProbe, installComparison, withinTabTransform, createStudyCardMotion, createStudyCount} from "../scripts/manager-polish-proposal.mjs";
 
 test("manager approval transform remains anchored to the actual component", async () => {
   const source = await fs.readFile(new URL("../src/Manager.jsx", import.meta.url),"utf8");
@@ -35,13 +35,96 @@ test("the cold-download experiment changes only one manager import, not the shar
   assert.throws(() => slowManagerImport('import("./Manager-one.js");import("./Manager-two.js")'));
 });
 
-test("approval page scripts parse and present all five decisions", () => {
+test("approval page scripts parse and retain five approvals plus two new motion decisions", () => {
   const html = proposalPage();
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]);
-  assert.equal((html.match(/data-decision="/g) || []).length,5);
+  assert.equal((html.match(/data-decision="/g) || []).length,7);
   assert.ok(html.includes("Fictional people and figures"));
   assert.ok(html.includes("Replay full sign-in"));
   assert.ok(html.includes("Replay page motion"));
+});
+
+function motionHarness() {
+  const timers=new Map(), frames=new Map(), observers=[], handlers={};let id=0;
+  const classes=new Set();
+  const root={classList:{contains:k=>classes.has(k)}};
+  const doc={documentElement:root,hidden:false,addEventListener:(k,fn)=>handlers[k]=fn,removeEventListener:k=>delete handlers[k]};
+  const media={matches:false,addEventListener:(k,fn)=>handlers.media=fn,removeEventListener:()=>delete handlers.media};
+  const env={document:doc,matchMedia:()=>media,getComputedStyle:k=>k.painted || {transform:k.style.transform || "none",opacity:k.style.opacity || "1"},
+    setTimeout:fn=>{timers.set(++id,fn);return id;},clearTimeout:id=>timers.delete(id),
+    requestAnimationFrame:fn=>{frames.set(++id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
+    MutationObserver:class {constructor(fn){this.fn=fn;this.active=false;observers.push(this);}observe(){this.active=true;}disconnect(){this.active=false;}}};
+  const element=()=>({ownerDocument:doc,style:{transform:"",opacity:"",animation:"",transformOrigin:""},dataset:{},effects:[],
+    animate(keys,options){let resolve,reject;const finished=new Promise((yes,no)=>{resolve=yes;reject=no;});
+      const a={keys,options,finished,cancelled:false,cancel(){this.cancelled=true;reject();},complete:resolve};this.effects.push(a);return a;},
+    getBoundingClientRect:()=>({left:400,top:100,width:360,height:600}),querySelectorAll:()=>[]});
+  const notify=()=>observers.filter(o=>o.active).forEach(o=>o.fn());
+  const step=t=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn(t));};
+  return {env,doc,root,classes,media,timers,frames,handlers,observers,element,notify,step};
+}
+
+test("within-tab replacements fail closed and leave the Current routines in place", async () => {
+  const source=await fs.readFile(new URL("../src/Manager.jsx",import.meta.url),"utf8");
+  const changed=withinTabTransform(source);
+  assert.ok(changed.includes('if (window.__SAGE_POLISH) { if (studyMotion.current)'));
+  assert.ok(changed.includes('setTimeout(onClose, MOTION.settle)'));
+  assert.ok(changed.includes('setV(Math.round(target * eased * f) / f)'));
+  assert.ok(changed.includes('from:displayed.current'));
+  assert.ok(changed.includes('motion.dispose(); studyMotion.current = null;'));
+  assert.throws(()=>withinTabTransform(source.replace('  const grew = useRef(null);','  const renamed = useRef(null);')));
+});
+
+test("card reverses from painted pose, closes once, and cancels owned effects", async () => {
+  const h=motionHarness(), el=h.element(), child=h.element();el.querySelectorAll=()=>[child];let closes=0;
+  const m=createStudyCardMotion(el,{rect:{left:10,top:20,width:600,height:120}},()=>closes++,h.env);
+  el.painted={transform:"matrix(.7,0,0,.8,-90,-20)",opacity:"1"};child.painted={transform:"none",opacity:".4"};
+  m.close();m.close();
+  assert.equal(el.effects.length,2);assert.equal(child.effects.length,2);
+  assert.equal(el.effects[0].cancelled,true);
+  assert.equal(el.effects[1].keys[0].transform,el.painted.transform);
+  assert.equal(child.effects[1].keys[0].opacity,".4");
+  el.effects[0].complete();await Promise.resolve();assert.equal(closes,0);
+  el.effects[1].complete();await Promise.resolve();assert.equal(closes,1);
+  assert.equal(h.timers.size,0);assert.equal(el.dataset.studyCardMotion,"closed");
+  m.dispose();assert.ok(h.observers.every(o=>!o.active));assert.deepEqual(h.handlers,{});
+  assert.equal(el.style.transform,"");assert.equal(el.style.animation,"");
+});
+
+test("card preferences and hidden pages settle without residual travel", () => {
+  const h=motionHarness(), el=h.element();let closes=0;
+  const m=createStudyCardMotion(el,null,()=>closes++,h.env);
+  h.classes.add("sage-study-reduce");h.notify();
+  assert.equal(el.dataset.studyCardMotion,"open");assert.equal(el.style.transform,"none");
+  assert.ok(el.effects.every(a=>a.cancelled));m.close();assert.equal(closes,1);m.dispose();
+  const h2=motionHarness(), el2=h2.element();let hiddenCloses=0;
+  const m2=createStudyCardMotion(el2,null,()=>hiddenCloses++,h2.env);m2.close();h2.doc.hidden=true;h2.handlers.visibilitychange();
+  assert.equal(hiddenCloses,1);assert.equal(h2.timers.size,0);m2.dispose();
+});
+
+test("unmount cancels a pending close without invoking an old callback", async () => {
+  const h=motionHarness(), el=h.element();let closes=0;
+  const m=createStudyCardMotion(el,null,()=>closes++,h.env);m.close();m.dispose();
+  el.effects[1].complete();await Promise.resolve();assert.equal(closes,0);assert.equal(h.timers.size,0);
+});
+
+test("numbers retarget from displayed value, including descending to zero", () => {
+  const h=motionHarness(), values=[];
+  const dispose=createStudyCount(0,{from:80,ms:320,onValue:v=>values.push(v)},h.env);
+  h.step(0);h.step(160);h.step(320);
+  assert.deepEqual(values,[10,0]);assert.equal(h.frames.size,0);
+  assert.ok(h.observers.every(o=>!o.active));dispose();
+});
+
+test("counts wait without polling, cancel, and finish on Reduce Motion changes", () => {
+  const h=motionHarness(), values=[];h.classes.add("jump-under");
+  const dispose=createStudyCount(79,{from:0,ms:640,onValue:v=>values.push(v)},h.env);
+  assert.equal(h.frames.size,0);assert.equal(h.timers.size,0);
+  h.classes.delete("jump-under");h.notify();h.step(0);h.step(100);
+  h.media.matches=true;h.handlers.media();assert.equal(values.at(-1),79);
+  assert.equal(h.frames.size,0);assert.deepEqual(h.handlers,{});dispose();
+  const h2=motionHarness(), values2=[];
+  const stop=createStudyCount(25,{from:10,onValue:v=>values2.push(v)},h2.env);
+  stop();h2.step(1000);assert.deepEqual(values2,[]);
 });
 
 test("arrival probe is bounded and records the real cover and mount animations", () => {

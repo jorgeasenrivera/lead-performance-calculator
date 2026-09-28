@@ -26,6 +26,104 @@ export function slowManagerImport(source) {
   return replaceExactlyOnce(source, imports[0][0], 'import("'+imports[0][1]+'?study-lag=1")');
 }
 
+// One owner per card. Reversing captures the painted pose before cancelling,
+// rather than snapping to the fully open pose and starting a second animation.
+export function createStudyCardMotion(el, origin, onClose, env = window) {
+  const doc = el.ownerDocument, root = doc.documentElement;
+  const media = env.matchMedia("(prefers-reduced-motion: reduce)");
+  const children = [...el.querySelectorAll(":scope > *")];
+  const originals = new Map([el, ...children].map(k => [k, {transform:k.style.transform, opacity:k.style.opacity, animation:k.style.animation, transformOrigin:k.style.transformOrigin}]));
+  let animations = [], timer = 0, generation = 0, phase = "opening", closed = false, disposed = false;
+  const reduced = () => media.matches || root.classList.contains("sage-study-reduce");
+  const own = a => {animations.push(a);a.finished.catch(()=>{});return a;};
+  const cancel = () => { ++generation; env.clearTimeout(timer); timer = 0; animations.forEach(a => a.cancel()); animations = []; };
+  const pose = () => [el, ...children].map(k => ({k, transform:env.getComputedStyle(k).transform, opacity:env.getComputedStyle(k).opacity}));
+  const pin = rows => rows.forEach(({k,transform,opacity}) => {k.style.transform=transform;k.style.opacity=opacity;});
+  const label = value => {phase=value;el.dataset.studyCardMotion=value;};
+  const rest = () => {el.style.transform="none";el.style.opacity="1";children.forEach(k=>{k.style.transform=originals.get(k).transform;k.style.opacity="1";});};
+  const finish = () => {
+    cancel();
+    if (phase === "closing") {if (!closed) {closed=true;label("closed");onClose();}}
+    else {rest();label("open");}
+  };
+  el.style.animation="none";
+  el.style.transformOrigin="0 0";
+  const r = el.getBoundingClientRect(), a = origin?.rect;
+  const from = a?.width && a?.height && r.width && r.height
+    ? `translate(${(a.left-r.left).toFixed(1)}px, ${(a.top-r.top).toFixed(1)}px) scale(${(a.width/r.width).toFixed(4)}, ${(a.height/r.height).toFixed(4)})`
+    : "translateY(12px) scale(.98)";
+  const play = (frames, duration, easing, onDone) => {
+    const token=generation;
+    const lead=own(el.animate(frames,{duration,easing,fill:"both"}));
+    // The watchdog only bounds a lost completion, it never chooses the normal end.
+    timer=env.setTimeout(()=>{if (!disposed && token===generation) onDone();},duration+120);
+    lead.finished.then(()=>{if (!disposed && token===generation) onDone();},()=>{});
+  };
+  const close = () => {
+    if (disposed || closed || phase === "closing") return;
+    const current=pose(); // all reads, then all writes
+    pin(current);cancel();label("closing");
+    if (reduced() || doc.hidden || typeof el.animate!=="function") {finish();return;}
+    // Shorter departure, still decelerated. A fast close starts at the current
+    // matrix and content opacity, not at an invented fully visible frame.
+    play([{transform:current[0].transform,opacity:current[0].opacity},{transform:from,opacity:0}],200,"cubic-bezier(.4,0,.22,1)",finish);
+    for (const {k,opacity} of current.slice(1)) own(k.animate([{opacity},{opacity:0}],{duration:120,easing:"ease-out",fill:"both"}));
+  };
+  const preference = () => {if (reduced() && (phase==="opening" || phase==="closing")) finish();};
+  const visibility = () => {if (doc.hidden && (phase==="opening" || phase==="closing")) finish();};
+  const observer = new env.MutationObserver(preference);
+  observer.observe(root,{attributes:true,attributeFilter:["class"]});
+  media.addEventListener("change",preference);doc.addEventListener("visibilitychange",visibility);
+  label("opening");
+  if (reduced() || doc.hidden || typeof el.animate!=="function") finish();
+  else {
+    play([{transform:from},{transform:"none"}],320,"cubic-bezier(.16,.78,.24,1)",finish);
+    for (const k of children) own(k.animate([{opacity:0},{opacity:0,offset:.18},{opacity:1}],{duration:240,easing:"ease-out",fill:"both"}));
+  }
+  return {close,dispose() {
+    disposed=true;cancel();observer.disconnect();media.removeEventListener("change",preference);doc.removeEventListener("visibilitychange",visibility);
+    for (const [k,style] of originals) Object.assign(k.style,style);
+    delete el.dataset.studyCardMotion;
+  }};
+}
+
+export function createStudyCount(target, options, env = window) {
+  const {from=0,ms=640,delay=0,decimals=0,onValue} = options;
+  const doc=env.document, root=doc.documentElement, media=env.matchMedia("(prefers-reduced-motion: reduce)");
+  let raf=0, start=null, last=from, done=false;
+  const reduced=()=>media.matches || root.classList.contains("sage-study-reduce");
+  const remove=()=>{env.cancelAnimationFrame(raf);raf=0;observer.disconnect();media.removeEventListener("change",change);doc.removeEventListener("visibilitychange",change);};
+  const finish=()=>{if (done) return;done=true;remove();if (last!==target) {last=target;onValue(target);}};
+  const tick=t=>{
+    raf=0;if (done) return;
+    if (start===null) start=t;
+    const elapsed=t-start-delay;
+    const p=Math.min(1,Math.max(0,elapsed/Math.max(1,ms)));
+    const f=10**decimals, value=Math.round((from+(target-from)*(1-(1-p)**3))*f)/f;
+    if (value!==last) {last=value;onValue(value);}
+    if (p===1) finish();else raf=env.requestAnimationFrame(tick);
+  };
+  const change=()=>{
+    if (done) return;
+    if (reduced() || doc.hidden || from===target) {finish();return;}
+    // No polling loop and no RAF work under the lightspeed cover.
+    if (!root.classList.contains("jump-under") && !raf && start===null) raf=env.requestAnimationFrame(tick);
+  };
+  const observer=new env.MutationObserver(change);
+  observer.observe(root,{attributes:true,attributeFilter:["class"]});
+  media.addEventListener("change",change);doc.addEventListener("visibilitychange",change);change();
+  return ()=>{done=true;remove();};
+}
+
+export function withinTabTransform(source) {
+  const cardStart='function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, actions = null }) {\n';
+  source=replaceExactlyOnce(source,cardStart,createStudyCardMotion.toString()+'\n'+cardStart+'  const studyMotion = useRef(null);\n  const studyClose = useRef(onClose); studyClose.current = onClose;\n');
+  source=replaceExactlyOnce(source,'  const grew = useRef(null);\n  const shut = () => {','  const grew = useRef(null);\n  const shut = () => {\n    if (window.__SAGE_POLISH) { if (studyMotion.current) studyMotion.current.close(); else studyClose.current(); return; }');
+  source=replaceExactlyOnce(source,'    const el = boxRef.current;\n    if (!el || !origin) return;','    const el = boxRef.current;\n    if (window.__SAGE_POLISH && el) {\n      const motion = createStudyCardMotion(el, origin, () => studyClose.current());\n      studyMotion.current = motion;\n      return () => { motion.dispose(); studyMotion.current = null; };\n    }\n    if (!el || !origin) return;');
+  source=replaceExactlyOnce(source,'function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {\n  const [v, setV] = useState(0);\n  useEffect(() => {',createStudyCount.toString()+'\nfunction useCountUp(target, ms = 1000, delay = 150, decimals = 0) {\n  const [v, setV] = useState(0);\n  const displayed = useRef(0), counted = useRef(false);\n  useEffect(() => {\n    if (window.__SAGE_POLISH) {\n      const first = !counted.current; counted.current = true;\n      return createStudyCount(target || 0, {from:displayed.current, ms:Math.min(ms, first ? 640 : 320), delay:first ? Math.min(delay,160) : 0, decimals, onValue:value => {displayed.current=value;setV(value);}});\n    }');
+  return source;
+}
+
 export function proposalTransform(source) {
   const swaps = [
     ['<div className="bp-hero">\n        {updatedAt', '<div className="bp-hero">\n        {window.__SAGE_POLISH && <h2 className="sage-bp-store" title={store.name}>{store.name}</h2>}\n        {updatedAt'],
@@ -37,7 +135,7 @@ export function proposalTransform(source) {
     ['<div className="hs-head"><span />{HIST_FIVE.map((f) => <i key={f.k} style={{ background: f.col }} />)}</div>', '<div className="hs-head"><span />{HIST_FIVE.map((f) => window.__SAGE_POLISH ? <span key={f.k} style={{ color: f.col }}>{shortLabel(f)}</span> : <i key={f.k} style={{ background: f.col }} />)}</div>'],
   ];
   for (const [before, after] of swaps) source = replaceExactlyOnce(source, before, after);
-  return source;
+  return withinTabTransform(source);
 }
 
 export const polishCSS = `
@@ -310,13 +408,15 @@ export function proposalPage() {
 <header><b>SAGE / Manager polish</b><button id="current" aria-pressed="false">Current</button><button id="proposed" aria-pressed="true">Proposed</button><select id="device" aria-label="Preview size"><option value="desktop">Desktop</option><option value="phone">Phone, 390 px</option><option value="tablet">Tablet, 768 px</option></select><button id="replay">Replay page motion</button><button id="signin">Replay full sign-in</button><label><input id="reduce" type="checkbox">Reduce page motion</label></header>
 <div class="note"><span>Approval study only. Fictional people and figures. Lightspeed artwork and timing retained. No production writes.</span><label><input id="trace" type="checkbox">Record transition</label><small id="status" role="status">Loading Sage</small></div>
 <main><div class="frame-stack" style="display:grid"><iframe id="app" style="grid-area:1/1" title="Sage manager dashboard proposal" src="/app?mode=proposed"></iframe></div>
-<details open><summary>Five decisions for this pass</summary>
+<details open><summary>Manager polish decisions</summary>
 ${[
   ["1. Dashboard character and flow","Sharper store identity and section contrast, unwarped text, quieter surfaces. One brief directional landing instead of competing entrances. No repeated lightspeed or blinking prompts."],
   ["2. Associate actions","Give the lead restriction and coaching actions their own full-width layout. Fix the mobile overflow without hiding content."],
   ["3. Targets controls","Larger inputs with metric-specific accessible names. Keep all five metrics and their thresholds visible."],
   ["4. Monthly grace wording","Explain that colours are held during the start of each month, not a new hire's first days."],
-  ["5. History labels","Name the five metrics above the phone's rows, so colour is not the only way to recognise a column."]
+  ["5. History labels","Name the five metrics above the phone's rows, so colour is not the only way to recognise a column."],
+  ["6. Associate card motion","Dashboard: open a person's card, then close it quickly. It returns from its actual position with a short settle, not a jump to fully open first. Repeated closes have one owner. Reduce page motion also stops this travel."],
+  ["7. Number updates","Dashboard podium and month recap: first counts settle sooner. Updated numbers continue from the displayed value instead of restarting at zero. Hidden pages and Reduce Motion show the final number without counting."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
 <p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
 <script>const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';(${installComparison.toString()})();</script></body></html>`;

@@ -460,6 +460,24 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X19 · #436: Proposed navigation approved, within-tab motion stays isolated.**
+
+Jorge approves the latest Proposed navigation. New decisions 6 and 7 show the
+first within-tab pass: associate cards reverse from the painted pose with one
+completion owner, and count updates retarget from the displayed value rather
+than zero. No source-file edits, no new library, no visual approval of 6/7 yet.
+See the newest section in docs/manager-polish.md for checks and limits.
+
+Please read withinTabTransform and the two self-contained helpers in the study
+script. Main review doubts: preserving Current's branches and card baseline
+styles, cleanup when a close races with unmount, and preference changes during
+counting. The helper tests caught my first cancellation rejection and now cover
+child effects too. Connected desktop/phone/tablet cards settle and close; Summary
+filters update without a whole-page fade in those states. This is not an FPS pass.
+Drawers, tooltip placement and chart choreography are not finished. The previous
+feel failure and unattributed observer error remain open. Keep the draft blocked
+for release while those checks, your read and Jorge's phone trial are outstanding.
+
 **H-X18 · #436: post-navigation mount fades reproduced; study repair only.**
 
 Jorge confirms Proposed's full login is clean, but reported flashing after
