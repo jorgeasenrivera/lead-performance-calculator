@@ -180,9 +180,30 @@ export const polishCSS = `
 .sage-polish .grace-label input { min-height:44px; font-size:16px; }
 .sage-polish .tg-row { min-height:64px; }
 .sage-polish .tg-hint { color:rgba(255,255,255,.9); font-size:12px; line-height:1.5; }
-.sage-polish .hs-head { grid-template-columns:minmax(72px,1fr) repeat(5,minmax(0,1fr)); column-gap:5px; }
-.sage-polish .hs-head > span:not(:first-child) { font:700 10px/1.25 var(--font-ui); text-align:center; overflow-wrap:anywhere; color:#15211B !important; }
-.sage-polish .hs-row { grid-template-columns:minmax(72px,1fr) repeat(5,minmax(0,1fr)); column-gap:5px; }
+/* The longest heading gets a real column, shared with its figures. */
+.sage-polish :is(.hs-head,.hs-row) { grid-template-columns:minmax(72px,1fr) minmax(0,1fr) minmax(0,.8fr) minmax(52px,1fr) repeat(2,minmax(0,1fr)); column-gap:5px; }
+.sage-polish .hs-head > span:not(:first-child) { font:700 10px/1.25 var(--font-ui); text-align:center; overflow-wrap:normal; color:#15211B !important; }
+/* Keep scroll containment. Anchor pointer explanations to the whole gauge
+   area, not a narrow dial whose centred popup crosses the card's edge.
+   Touch retains Sage's existing body-level explanation overlay. */
+@media(hover:hover) {
+  .sage-polish .acard .ac-gauges { position:relative; }
+  .sage-polish .acard .ac-gauges :is(.mclust,.bloop-host) { position:static; }
+  .sage-polish .acard .ac-gauges .bloopwin { box-sizing:border-box; width:min(272px,calc(100% - 8px)); left:50%; right:auto; bottom:calc(100% + 9px); transform:translate(-50%,6px) scale(.5); transform-origin:50% calc(100% + 26px); }
+  .sage-polish .acard .ac-gauges .bloop-host:is(:hover,:focus-within) > .bloopwin { transform:translate(-50%,0) scale(1); }
+}
+/* Tablet has room for the figures, not every fixed desktop column in one
+   line. Keep name and points together, then give the actions their own line. */
+@media(min-width:641px) and (max-width:900px) {
+  .sage-polish .da-row { flex-wrap:wrap; row-gap:8px; }
+  .sage-polish .da-row::after { content:""; width:100%; order:2; }
+  .sage-polish .da-name { width:auto; flex:1 1 calc(100% - 110px); order:0; }
+  .sage-polish .da-flex { display:none; }
+  .sage-polish .da-cell { order:3; flex:1 1 70px; }
+  .sage-polish .da-qualcell { order:4; flex:0 0 auto; }
+  .sage-polish .da-markoff { order:5; }
+  .sage-polish .da-ptcell { order:1; flex:0 0 auto; margin-left:auto; }
+}
 /* The app owns exit, swap and entry. Hold mount effects off for this page's
    whole life, including nested sections, so cleanup cannot start them again.
    Login keeps its own approved choreography. */

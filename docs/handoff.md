@@ -460,6 +460,15 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X21 · #436: three card-edge refinements, CSS only.**
+
+Jorge authorized fixing the isolated audit findings. See the newest section of
+`docs/manager-polish.md` for measured bounds and limits. Please scrutinize the
+pointer-only gauge anchor, particularly short-height/scrolled cards, and the
+641-900px Activity row orders. Touch's existing body overlay is unchanged.
+No motion routines or application sources changed. 788 tests and both builds
+pass. Still draft, not a release recommendation or a cleared feel failure.
+
 **H-X20 · #436: Jorge approves 7; my card close-end flash repaired in the study.**
 
 6 Adjust, 7 Approve. My close helper cancelled its invisible fill before onClose,

@@ -1,5 +1,19 @@
 # Lightspeed comparison QA
 
+## 28 September: proposal card-edge repairs
+
+Three CSS-only fixes authorized by Jorge: bounded gauge-area pointer tooltips,
+two-line tablet Activity rows with Points visible, and a shared History grid
+with room for the complete Showroom heading. No motion routine or production
+source changes. Desktop, 768px tablet and 390px phone-width captures and bounds
+confirm the affected layouts. All seven tablet rows fit, including no-data rows.
+The long BH Video explanation fits inside each tested card.
+
+788 tests, including 19 proposal tests, and both builds pass. This is not a real
+iPhone touch, every viewport, continuous-frame or FPS result. The known observer
+error and previous feel failure remain unresolved. Release gates remain open.
+See docs/manager-polish.md for bounds, evidence paths and limitations.
+
 ## 28 September: close-end flash repair
 
 Jorge marks 6 Adjust and 7 Approve. The previous open/removed checks did not test

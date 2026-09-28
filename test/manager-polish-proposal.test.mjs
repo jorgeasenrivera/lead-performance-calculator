@@ -19,6 +19,18 @@ test("proposal replacement refuses missing and ambiguous anchors", () => {
   assert.equal(replaceExactlyOnce("before","before","after"),"after");
 });
 
+test("card edge repairs are scoped to Proposed and preserve touch containment", () => {
+  assert.ok(polishCSS.includes("@media(hover:hover)"));
+  assert.ok(polishCSS.includes(".sage-polish .acard .ac-gauges :is(.mclust,.bloop-host) { position:static; }"));
+  assert.ok(polishCSS.includes("width:min(272px,calc(100% - 8px))"));
+  assert.ok(!polishCSS.includes(".acard { overflow:visible"));
+  assert.ok(polishCSS.includes("@media(min-width:641px) and (max-width:900px)"));
+  assert.ok(polishCSS.includes(".sage-polish .da-ptcell { order:1; flex:0 0 auto; margin-left:auto; }"));
+  assert.ok(polishCSS.includes(".sage-polish :is(.hs-head,.hs-row) { grid-template-columns:"));
+  assert.ok(polishCSS.includes("minmax(52px,1fr)"));
+  assert.ok(!polishCSS.includes("overflow-wrap:anywhere"));
+});
+
 test("only the proposed copy keeps login outside the destination's suspense boundary", async () => {
   const source = await fs.readFile(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
   const changed = arrivalBoundaryTransform(source);

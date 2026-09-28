@@ -5,6 +5,43 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 28 September: three card-edge repairs in Proposed
+
+Jorge approved fixing the audit's three findings in the isolated study. This
+pass changes CSS only, not the login, page, card or number choreography. Both
+production application files remain untouched and #436 stays draft.
+
+The associate explanation was centred on a narrow dial inside a scrolling card.
+At desktop and tablet widths, Phone's popup extended 28.81px past its left edge.
+Instead of removing scroll containment or adding a portal and event listeners,
+pointer explanations now centre on the entire gauge area and use a bounded,
+border-box width. The existing touch-only body overlay is unchanged.
+
+Connected keyboard/pointer checks at desktop, 768px tablet and 390px phone width
+show the long BH Video explanation fully inside the card, including vertically.
+Its width is 272px. On phone its bounds are 51.60 to 323.60px inside the card's
+20 to 355.20px. This is desktop browser responsive evidence, not an iPhone touch
+test or proof for every scrolled/short-height card state.
+
+Tablet Daily Activity rows now put name and Points on the first line, with
+figures and actions on the second. The seven populated/no-data rows at 768px
+have scrollWidth equal to clientWidth (687px). Points ends at 704px inside the
+720.80px card border, rather than at 796.58px outside it. Text is not shrunk and
+no metric or action is removed. Desktop and the separate phone component retain
+their existing row layout.
+
+History headings and figures share a grid with a 52px minimum Showroom column.
+At 390px the complete heading stays on one line, with no orphaned final letter.
+The other metric headings and all five figures remain present. Labels and font
+size are unchanged. Narrower layouts have not been signed off by this pass.
+
+19 study tests, 788 total tests, normal build and isolated build pass on the
+branch rebased onto d470a7c. CSS source guards check scope, not rendered geometry;
+the screenshots and bounds are the layout evidence. Local ignored artifacts:
+`shots/manager-proposal-20260928/edges-fixed-*.png` and matching JSON files.
+The known observer error, previous feel failure, source integration, latest real
+phone trial and second-reader gates are still open. No release/FPS claim.
+
 ## 28 September: card-close completion flash
 
 Jorge: 6 Adjust, 7 Approve. The browser's decision controls confirm both choices.
