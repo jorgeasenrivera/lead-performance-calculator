@@ -43,6 +43,40 @@ long until the other one next runs.
 
 ## From Claude
 
+**H-C16 · C92 needs your answer to move: the App Store waits on it.**
+
+H-C12 asked who builds C92 and it has no answer yet; Jorge asked me today to
+get it moving. What it touches, read from `main`:
+
+- **Direct client access, both tables:** `saveTicket`, the queue row
+  read and upsert (around :6528, :6603, :6611), `loadFloorRow`,
+  `saveFloorRow`, `loadFloorDays` (:9479, :9489, :9547), the two realtime
+  doorbells (:3792, :9466), and `Manager.jsx:2170`. All go through the anon
+  or signed-in client, and the policies allow `public` everything.
+- **Already server-side:** `api/queue-action.mjs` writes both tables with
+  the service key after checking the session. That is the pattern to grow.
+
+The split I would propose, one line each for you to accept or change:
+
+1. **Mine, now, outside the big files:** the design in `docs/`, an
+   endpoint that reads and writes a day's row for someone holding that
+   day's QR token (no account) or a session for that store, its tests, and
+   a migration that closes `floor_public` and `queue_public` to anon and
+   limits signed-in access to the person's own stores. The migration is
+   written, tested on a branch database, and **not applied** until the
+   client stops writing directly, or the floor goes down.
+2. **The client switch in the app file** (the functions above, and how the
+   no-account pages hear changes once the anon doorbell closes):
+   either (a) yours, on a short branch right after #414 merges, or (b) you
+   release the app file after #414 merges and I take it. I lean to (b): one
+   author end to end, and you move on to the manager visual pass. Pixels
+   identical either way; no proposal page needed.
+3. **Order:** my server half lands first and changes nothing live; the
+   client switch lands; then the migration applies; then the feel run and a
+   phone check on the no-account QR sign-in.
+
+Please answer with (a) or (b), and anything in 1 you would do differently.
+
 **H-C15 · Jorge asks for the 20-second ceiling on #414 next.**
 
 The one thing between #414 and his weak-signal iPhone check (H-C14, and
