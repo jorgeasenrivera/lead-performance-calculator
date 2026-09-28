@@ -1,8 +1,74 @@
 # Manager polish: evidence before changes
 
-28 September 2026. X11, Codex. Audit draft, not a visual approval or an
-implementation. The approved login arrival is deliberately outside this pass.
+28 September 2026. X11, Codex. The five-item isolated study is approved for
+implementation, not merged. The login-to-dashboard join is now included in
+the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
+
+## Jorge's decisions and the connected arrival
+
+28 September: 1 Approve, 2 Approve, 3 Approve, 4 Approve, 5 Approve.
+Jorge also said the two animation examples were too similar, and the dashboard
+must continue the initial login arrival rather than look like another entrance.
+This is approval of the five published items, not proof that the flash is fixed.
+
+The original Replay landing button exercised only the page-motion study. That
+was insufficient evidence of the connected sign-in. The controls now distinguish
+Replay page motion from Replay full sign-in. Full replay resets only `lpc-auth`
+on the disposable loopback origin, reloads the mock app, and presses the ordinary
+fictional sign-in. It does not sign anyone out of Sage's real preview or live site.
+The extra page-motion checkbox does not claim to change the arrival's system
+Reduce Motion setting.
+
+Record transition is off by default. When enabled, a bounded 12-second DOM
+probe records root phases, cover/page/hero opacity, widths and animation events.
+It does not drive the arrival. Its geometry/style reads can affect the main
+thread, so these recordings are diagnostic evidence, not FPS benchmarks.
+The probe stops on a hidden page or disposal and records at most 300 states
+and 300 animation events. Local recordings remain in ignored `shots/`.
+
+Two Current full sign-ins were captured. At the desktop frame, the page and
+hero's mount entrances finished while hidden, followed by one radial landing.
+No second `pageIn` or `cardIn` start was recorded at cleanup. The cover was
+recorded rising, holding, then clearing once. This did not reproduce the
+reported repeated flashing. A 15px gutter returned at unlock, but the page and
+settled hero widths stayed 1374px and 1310px on both sides of that release.
+The initial suspicion that the gutter widened the landing was not supported.
+Do not remove compensation or call it a fix on that basis.
+
+The cold-load check confirmed an interruption: the Suspense boundary in `wrap`
+contains both the lazy manager destination and the sign-in layer. With a local
+3.5-second manager download delay, Current's login layer went to `display:none`
+at 3184ms and came back at 6217ms, before the covered handoff. The background
+also cancelled and restarted its drift. This is a confirmed loading-boundary
+interruption, not proof that it explains every flash on Jorge's live device.
+
+Proposed now keeps the same sign-in layer outside the destination's Suspense
+boundary, through a fail-closed in-memory core transform. No actual source file
+is edited. Under the same delay at desktop and 390px phone widths, neither
+recording found a hidden login layer before the legitimate `signin-gone`
+handoff. Both reached the populated store and released the flight classes.
+The destination background still remounts; no claim of solving that or of a
+fully flash-free live site is made. Existing artwork, tunnel, cover, scan and
+arrival timing stay unchanged. No second entrance is added to the login landing.
+
+The first delay experiment was wrong: a query on the entry module caused it to
+evaluate again when Manager imported its shared exports. That run's final state
+is rejected. The corrected experiment retains the canonical entry URL, delays
+only the one Manager import and fails if that import anchor is missing or
+ambiguous. `/?slow=1` labels the test; the normal study has no download delay.
+The corrected Current trace is `arrival-current-canonical-slow-trace.json`, not
+`arrival-current-slow-manager-trace.json`.
+
+C92 and C97 still own both application files. This pass changes only the
+isolated proposal, tests and documentation. Source integration and any connected
+arrival repair wait for the shared file claim to be released or reassigned.
+
+Latest checks: 769 tests, normal build and isolated build pass. Seven study
+guards include source-boundary anchoring and the canonical-entry delay guard.
+The previous feel failure and console attribution gap remain open. The bounded
+trace can end before cleanup on a heavily delayed frame, so final flight release
+was checked separately in the DOM. These are browser checks, not phone approval.
 
 ## Direction
 

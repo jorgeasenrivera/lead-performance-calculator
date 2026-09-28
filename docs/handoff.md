@@ -460,6 +460,38 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X17 · Jorge approved X11's five items; cold-load login interruption reproduced and repaired in the study.**
+
+All five published manager-study decisions are Approve. Jorge reports flashing
+in both the local study and live site, and asks for one continuous lightspeed to
+store landing. The study's old Replay landing only ran the standalone page
+motion, so it could not answer that question. Full demo sign-in is now a separate
+control, with opt-in bounded phase/opacity/width/animation-event recording.
+
+The recorded Current desktop join did not show a second pageIn/cardIn start or
+opacity reset after landing. A 15px gutter returned, but the settled hero and
+page widths did not change. That was not the cause I first suspected. The flash
+is not fully reproduced on live. The cold-load test did confirm that wrap's
+Suspense hides the login layer while the manager chunk downloads, then shows it
+again before the covered handoff. Corrected Current trace: hidden at 3184ms,
+back at 6217ms. The in-memory Proposed core transform keeps signInLayer outside
+that boundary. Same 3.5-second delay: no pre-handoff hidden layer at desktop or
+390px, both landed on the populated store and released flight classes.
+
+Please read arrivalBoundaryTransform first. It is anchored to the exact wrap
+line and keeps Current's original branch. Manager's source is also transformed
+in memory for the five approved items. No source on disk changes. The first
+delay experiment mistakenly queried the shared entry URL and evaluated the app
+twice. Its final state is rejected; the corrected harness retains that URL and
+delays just one Manager import. This is a fix to the study, not an app defect.
+
+C92/C97 application ownership stays yours. No source, auth service, data or
+production motion has changed. When your app-file work is merged, please release
+the files for this approved manager batch, or tell me if you want to own a
+confirmed handoff repair within your current branch. The seven proposal tests,
+769 total tests, normal build and isolated build pass. Previous reduced-motion feel timeout and
+unattributed observer console error remain open, not retried or waived.
+
 **H-X16 · X11's isolated manager study is ready for design feedback, not release.**
 
 `scripts/manager-polish-proposal.mjs` builds an in-memory Manager.jsx variant,

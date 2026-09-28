@@ -11,6 +11,21 @@ export function replaceExactlyOnce(source, before, after) {
   return source.replace(before, after);
 }
 
+export function arrivalBoundaryTransform(source) {
+  const before = 'const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}{jumpHold && !holdMount && session && <ArrivalPrepared ready={arrivalDestinationReady && !loadErr && !bootStall && (wantsFloor || view === "admin" || view === "combined" || !!storeData || !!storeMismatch)} identity={wantsFloor ? floorLinks : storeData} />}</RoomBoundary>{signInLayer}</React.Suspense>;';
+  const original = before.slice('const wrap = (node) => '.length, -1);
+  const destination = original.replace('{signInLayer}', '');
+  // A slow destination may show its fallback, but must not hide its login owner.
+  return replaceExactlyOnce(source, before,
+    'const wrap = (node) => window.__SAGE_POLISH ? <>'+destination+'{signInLayer}</> : '+original+';');
+}
+
+export function slowManagerImport(source) {
+  const imports = [...source.matchAll(/import\("(\.\/Manager-[\w-]+\.js)"\)/g)];
+  if (imports.length !== 1) throw new Error("Slow-manager anchor changed.");
+  return replaceExactlyOnce(source, imports[0][0], 'import("'+imports[0][1]+'?study-lag=1")');
+}
+
 export function proposalTransform(source) {
   const swaps = [
     ['<div className="bp-hero">\n        {updatedAt', '<div className="bp-hero">\n        {window.__SAGE_POLISH && <h2 className="sage-bp-store" title={store.name}>{store.name}</h2>}\n        {updatedAt'],
@@ -85,6 +100,7 @@ export function installProposal(proposed, css) {
     return;
   }
   window.__SAGE_POLISH = proposed;
+  if (new URLSearchParams(location.search).get("trace") === "1") installArrivalProbe();
   const root = document.documentElement;
   const style = document.createElement("style");
   style.textContent = proposed ? css : "";
@@ -151,11 +167,65 @@ export function installProposal(proposed, css) {
   report(proposed ? "Proposed polish, fictional store" : "Current design, same fictional store");
 }
 
+// Study only: observe the real arrival without driving or extending its clock.
+export function installArrivalProbe() {
+  const root = document.documentElement;
+  const output = document.createElement("pre");
+  output.hidden = true; output.id = "sage-arrival-trace";
+  document.body.appendChild(output);
+  let frame = 0, started = 0, last = 0, previous = "", rows = [], events = [];
+  const selectors = [".sage-flash", ".signin-over", ".lpc", ".page", ".hero", ".s2-hero", ".bp-hero", ".topbar"];
+  const sample = () => {
+    const parts = selectors.map(selector => {
+      const el = document.querySelector(selector);
+      if (!el) return {selector, missing:true};
+      const s = getComputedStyle(el);
+      return {selector, width:Math.round(el.getBoundingClientRect().width), classes:el.className,
+        opacity:Number(Number(s.opacity).toFixed(2)), visibility:s.visibility, display:s.display,
+        hiddenAncestor:!!el.closest('[style*="display: none"]'),
+        animation:s.animationName, play:s.animationPlayState, radial:el.classList.contains("sa-radial"),
+        transform:s.transform === "none" ? "none" : "moving"};
+    });
+    const state = {classes:root.className, gutter:innerWidth-root.clientWidth, parts};
+    const key = JSON.stringify(state);
+    if (key !== previous && rows.length < 300) {
+      rows.push({ms:Math.round(performance.now()-started), ...state}); previous = key;
+    }
+  };
+  const tick = time => {
+    if (time-last >= 80) { sample(); last=time; }
+    if (time-started < 12000 && !document.hidden) frame=requestAnimationFrame(tick);
+    else stop();
+  };
+  const begin = () => {
+    cancelAnimationFrame(frame); started=performance.now(); last=0; previous=""; rows=[]; events=[];
+    output.textContent="Recording"; sample(); frame=requestAnimationFrame(tick);
+    observer.observe(root, {attributes:true, attributeFilter:["class"]});
+  };
+  document.addEventListener("click", event => {
+    if (event.target.closest?.(".login-card .lf-go")) begin();
+  }, true);
+  for (const type of ["animationstart", "animationend", "animationcancel"]) {
+    document.addEventListener(type, event => {
+      if (!started || events.length >= 300 || !event.target.matches?.(selectors.join(","))) return;
+      events.push({ms:Math.round(performance.now()-started), type, name:event.animationName, classes:event.target.className});
+    }, true);
+  }
+  const observer = new MutationObserver(() => { if (started) sample(); });
+  const stop = () => {
+    cancelAnimationFrame(frame); observer.disconnect();
+    if (started) output.textContent=JSON.stringify({rows, events});
+    started=0;
+  };
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
+  window.addEventListener("pagehide", () => {stop(); observer.disconnect();}, {once:true});
+}
+
 export function proposalPage() {
   return String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sage | Manager polish study</title>
 <style>@font-face{font-family:Space;src:url('/fonts/space-grotesk-latin.woff2')}*{box-sizing:border-box}body{margin:0;background:#EDEFE9;color:#152B20;font:14px Space,system-ui}header{padding:16px 22px;background:#152B20;color:white;display:flex;align-items:center;flex-wrap:wrap;gap:12px}header b{font-size:20px;margin-right:auto}button,select{font:inherit;border:1px solid #BCD0BF;border-radius:9px;padding:9px 13px;cursor:pointer}button[aria-pressed=true]{background:#E4C98D;color:#152B20;border-color:#E4C98D}label{display:flex;align-items:center;gap:6px}button:focus-visible,select:focus-visible{outline:3px solid #DBA63F;outline-offset:3px}.note{padding:10px 22px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:#fff;border-bottom:1px solid #CAD4C9}.note span{margin-right:auto}main{padding:18px;overflow:auto}iframe{display:block;border:0;width:100%;height:900px;background:white;margin:auto;box-shadow:0 8px 28px #152B2020;border-radius:12px}body[data-device=phone] iframe{width:390px;height:844px}body[data-device=tablet] iframe{width:768px;height:1024px}details{max-width:1440px;margin:20px auto;background:white;padding:18px;border-radius:14px}summary{font-weight:700;cursor:pointer}.decision{padding:16px 0;border-bottom:1px solid #E0E6DD;display:flex;align-items:center;gap:14px}.decision p{flex:1;margin:0}.decision strong{display:block;margin-bottom:5px}#export{white-space:pre-wrap}small{opacity:.8} @media(max-width:600px){header{padding:12px}main{padding:6px}body[data-device=phone] iframe{width:min(390px,100%)}.decision{flex-wrap:wrap}}</style></head><body data-device="desktop">
-<header><b>SAGE / Manager polish</b><button id="current" aria-pressed="false">Current</button><button id="proposed" aria-pressed="true">Proposed</button><select id="device" aria-label="Preview size"><option value="desktop">Desktop</option><option value="phone">Phone, 390 px</option><option value="tablet">Tablet, 768 px</option></select><button id="replay">Replay landing</button><label><input id="reduce" type="checkbox">Reduce motion</label></header>
-<div class="note"><span>Approval study only. Fictional people and figures. Login arrival unchanged. No production writes.</span><small id="status" role="status">Loading Sage</small></div>
+<header><b>SAGE / Manager polish</b><button id="current" aria-pressed="false">Current</button><button id="proposed" aria-pressed="true">Proposed</button><select id="device" aria-label="Preview size"><option value="desktop">Desktop</option><option value="phone">Phone, 390 px</option><option value="tablet">Tablet, 768 px</option></select><button id="replay">Replay page motion</button><button id="signin">Replay full sign-in</button><label><input id="reduce" type="checkbox">Reduce page motion</label></header>
+<div class="note"><span>Approval study only. Fictional people and figures. Lightspeed artwork and timing retained. No production writes.</span><label><input id="trace" type="checkbox">Record transition</label><small id="status" role="status">Loading Sage</small></div>
 <main><iframe id="app" title="Sage manager dashboard proposal" src="/app?mode=proposed"></iframe>
 <details open><summary>Five decisions for this pass</summary>
 ${[
@@ -165,8 +235,8 @@ ${[
   ["4. Monthly grace wording","Explain that colours are held during the start of each month, not a new hire's first days."],
   ["5. History labels","Name the five metrics above the phone's rows, so colour is not the only way to recognise a column."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
-<p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Compare both modes at the same size. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
-<script>const app=document.querySelector('#app');let mode='proposed';const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});for(const id of ['current','proposed'])document.getElementById(id).onclick=()=>{if(mode===id)return;mode=id;document.querySelectorAll('header button[aria-pressed]').forEach(b=>b.setAttribute('aria-pressed',String(b.id===mode)));app.src='/app?mode='+mode};document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#replay').onclick=()=>app.contentWindow.postMessage({type:'sage-polish-replay'},location.origin);const sendReduce=()=>app.contentWindow.postMessage({type:'sage-polish-reduce',value:document.querySelector('#reduce').checked},location.origin);document.querySelector('#reduce').onchange=sendReduce;app.onload=sendReduce;window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===app.contentWindow&&e.data?.type==='sage-polish-status')document.querySelector('#status').textContent=e.data.status});document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';</script></body></html>`;
+<p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
+<script>const app=document.querySelector('#app');let mode='proposed';const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});for(const id of ['current','proposed'])document.getElementById(id).onclick=()=>{if(mode===id)return;mode=id;document.querySelectorAll('header button[aria-pressed]').forEach(b=>b.setAttribute('aria-pressed',String(b.id===mode)));app.src='/app?mode='+mode};document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#replay').onclick=()=>app.contentWindow.postMessage({type:'sage-polish-replay'},location.origin);document.querySelector('#signin').onclick=()=>{app.src='/app?mode='+mode+'&signin=1'+(document.querySelector('#trace').checked?'&trace=1':'');document.querySelector('#status').textContent='Full demo sign-in, then store landing'};const sendReduce=()=>app.contentWindow.postMessage({type:'sage-polish-reduce',value:document.querySelector('#reduce').checked},location.origin);document.querySelector('#reduce').onchange=sendReduce;app.onload=sendReduce;window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===app.contentWindow&&e.data?.type==='sage-polish-status')document.querySelector('#status').textContent=e.data.status});document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';</script></body></html>`;
 }
 
 export async function buildProposal() {
@@ -175,7 +245,11 @@ export async function buildProposal() {
   const {build} = await import("vite");
   return build({build:{outDir:"dist-harness/manager-polish"}, plugins:[{
     name:"sage-manager-polish-proposal", enforce:"pre",
-    transform(source, id) { if (id.replace(/\\/g,"/").endsWith("/src/Manager.jsx")) return proposalTransform(source); }
+    transform(source, id) {
+      const file = id.replace(/\\/g,"/");
+      if (file.endsWith("/src/Manager.jsx")) return proposalTransform(source);
+      if (file.endsWith("/src/LeadPerformanceCalculator.jsx")) return arrivalBoundaryTransform(source);
+    }
   }]});
 }
 
@@ -192,18 +266,36 @@ export async function serveProposal(root = "dist-harness/manager-polish", port =
     try {
       const url = new URL(req.url,"http://127.0.0.1");
       let bytes, type = "text/html";
-      if (url.pathname === "/") bytes = proposalPage();
+      if (url.pathname === "/") {
+        bytes = proposalPage();
+        if (url.searchParams.get("slow") === "1") bytes = bytes
+          .replace("&signin=1", "&signin=1&slow=1")
+          .replace("No production writes.", "No production writes. Slow manager download test (3.5 s).");
+      }
       else if (url.pathname === "/app") {
         const proposed = url.searchParams.get("mode") === "proposed";
         // Run before the module so JSX and CSS agree on the selected mode.
         const setup = `<script>window.__SAGE_POLISH=${proposed};const d=new Date();localStorage.setItem('lpc:roundup:sage-demo:'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),'1');window.addEventListener('error',e=>{const show=()=>{const p=document.createElement('pre');p.hidden=true;p.className='sage-study-error';p.textContent=String(e.error?.stack||e.message).slice(0,2400);document.body.appendChild(p)};if(document.body)show();else document.addEventListener('DOMContentLoaded',show,{once:true})});</script>`;
-        const runtime = `<script>(${installProposal.toString()})(${proposed},${JSON.stringify(polishCSS)});</script>`;
-        bytes = html.replace("<head>","<head>"+setup).replace("</body>",runtime+"</body>");
+        // Only the disposable loopback app's known auth key is reset, not all
+        // browser storage, decisions, or any real preview's session.
+        const fresh = url.searchParams.get("signin") === "1" ? `<script>localStorage.removeItem('lpc-auth');</script>` : "";
+        const runtime = `<script>${installArrivalProbe.toString()};(${installProposal.toString()})(${proposed},${JSON.stringify(polishCSS)});</script>`;
+        bytes = html.replace("<head>","<head>"+fresh+setup).replace("</body>",runtime+"</body>");
       } else {
         if (url.pathname === "/sw.js" || url.pathname.startsWith("/_vercel/")) {res.writeHead(204).end();return;}
         const file = assetPath(root, req.url);
         if (!file) {res.writeHead(403).end();return;}
+        if (/^\/assets\/Manager-[\w-]+\.js$/.test(url.pathname) && url.searchParams.get("study-lag") === "1") {
+          await new Promise(resolve => setTimeout(resolve, 3500));
+        }
         bytes = await fs.readFile(file); type = mime[path.extname(file)] || "application/octet-stream";
+        const from = new URL(req.headers.referer || "http://localhost/");
+        // Keep the entry's canonical URL. Adding a query there evaluates it a
+        // second time when Manager imports the shared exports from that entry.
+        if (url.pathname === entry && from.pathname === "/app" && from.searchParams.get("slow") === "1") {
+          const source = bytes.toString("utf8");
+          bytes = slowManagerImport(source);
+        }
       }
       res.writeHead(200,{"Content-Type":type,"Cache-Control":"no-store","X-Content-Type-Options":"nosniff",
         "Content-Security-Policy":"connect-src 'self' http://127.0.0.1:5433 ws://127.0.0.1:5433"});

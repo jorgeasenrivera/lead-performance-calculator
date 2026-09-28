@@ -1,5 +1,31 @@
 # Lightspeed comparison QA
 
+## 28 September: five approvals, connected-arrival investigation
+
+Jorge approved items 1 through 5 in the published manager study. He also reports
+flashing in both the study and live Sage. Approved direction does not mean the
+flashing is resolved. The updated study adds full ordinary mock sign-in replay,
+separate from page motion, and an opt-in bounded diagnostic trace.
+
+Current desktop trace: no second page/hero mount-animation start after landing,
+one recorded cover rise and clear, stable settled page/hero widths across the
+15px gutter's return. The gutter's return alone was not evidence of a layout
+shift. The screenshot initially saved as full-desktop-start actually showed
+the settled dashboard, so it is rejected as login-start evidence. No claim of
+frame-by-frame visual verification or repeated-flash reproduction is made.
+The corrected delayed-manager test confirms the login layer is hidden by that
+shared Suspense boundary and restored before handoff. Proposed's in-memory core
+transform places it outside the destination boundary. Desktop and 390px traces
+show no premature hidden login layer, and both populated dashboards eventually
+release flight classes. A captured settled phone image is accepted for that
+final state, not for the intermediate motion. No frame-by-frame visual pass or
+full live flash repair is claimed. The first delay run queried the shared entry
+and evaluated it twice; its final state is rejected. Source ownership remains
+Claude's. Artwork and arrival clocks stay unchanged.
+
+769 tests, normal and isolated builds pass. The earlier feel failure and unattributed
+console error remain unresolved. Result: needs iteration, not release-ready.
+
 ## 28 September: manager polish approval study
 
 Target: existing Sage manager UI, not a new design system. Original and proposed
