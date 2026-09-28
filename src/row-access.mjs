@@ -55,5 +55,5 @@ export async function readVia(via, stamp, fetchImpl) {
   return out || {};
 }
 
-/* The public topic 01-doorbell.sql rings on every write to a row. */
+/* The public topic the row_doorbell migration rings on every write to a row. */
 export const doorbellTopic = (table, id) => `row:${table}:${id}`;

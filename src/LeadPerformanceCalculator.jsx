@@ -9511,7 +9511,7 @@ function useLiveRow(table, id, onChange) {
     try {
       /* A TV cannot hear postgres_changes once the rows close (C92): it
          listens to the row's public doorbell instead, which carries a time
-         and nothing of the row (supabase/pending/01-doorbell.sql). */
+         and nothing of the row (the row_doorbell migration). */
       ch = viaFor(table, id)
         ? supabase.channel(doorbellTopic(table, id)).on("broadcast", { event: "changed" }, () => {
             try { cb.current(); } catch (e) {}

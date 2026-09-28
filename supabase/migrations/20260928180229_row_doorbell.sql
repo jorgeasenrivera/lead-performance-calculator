@@ -1,20 +1,17 @@
--- C92, step 1 of 2: a doorbell anyone may hear, carrying nothing but a time.
+-- C92: a doorbell anyone may hear, carrying nothing but a time.
+-- Applied to the live project on 28 September, after #435 merged.
 --
--- The pages learn that a row moved through postgres_changes, which obeys the
--- table's select policy. Once 02-lock.sql closes the tables to the public key,
--- a phone with no account and a TV would stop hearing anything and fall back
+-- The TV learns that a row moved through postgres_changes, which obeys the
+-- table's select policy. Once supabase/pending/02-lock.sql closes the tables
+-- to the public key, a TV (nobody signed in) would hear nothing and fall back
 -- to polling. This rings a public broadcast topic per row instead:
 --
 --   topic  row:<table>:<id>        e.g. row:floor_public:dm:2026-09-28
 --   event  changed
 --   body   { "stamp": <updated_at> }
 --
--- No part of the row travels; the page reads it through /api/floor-row, which
--- checks who is asking. Tickets ring nothing.
---
--- Additive and harmless on its own. Apply before the client switch ships, so
--- the switched pages have something to listen to. NOT in supabase/migrations
--- until it is applied, so nothing applies it by accident.
+-- No part of the row travels; the TV reads it through /api/floor-row, which
+-- checks its key. Tickets ring nothing.
 
 create or replace function public.row_doorbell() returns trigger
 language plpgsql security definer set search_path = '' as $$

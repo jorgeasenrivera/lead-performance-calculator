@@ -59,7 +59,7 @@ There is no write through the endpoint. Before C99 it also took the QR's daily
 code and wrote rows and tickets for it; that went with the codes.
 
 **Live updates**, for the TV, which can no longer hear `postgres_changes`:
-`01-doorbell.sql` rings a public Realtime broadcast topic, `row:<table>:<id>`,
+The doorbell (`supabase/migrations/20260928180229_row_doorbell.sql`) rings a public Realtime broadcast topic, `row:<table>:<id>`,
 on every write, with `{ stamp }` and nothing of the row. The TV then reads the
 row through the endpoint, as it already reads only when the stamp moves.
 
@@ -80,7 +80,7 @@ are 0 tickets on the live project. `saveTicket` now fills both columns.
    fills its columns (C98). Needs `WALL_KEY_SECRET` in Vercel (Production, at
    least 32 characters) before the TV link can carry a key. A visual change, so
    it merges after Jorge has had it on a phone.
-3. **`01-doorbell.sql` applied.** Additive: a trigger that rings a topic only
+3. **The doorbell applied** (28 September, done). Additive: a trigger that rings a topic only
    the TV listens to.
 4. **Each TV opened once with its new link**, from the manager's "TV link".
    A TV on its old link still reads the table directly, until step 5.
