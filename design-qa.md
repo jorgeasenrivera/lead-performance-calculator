@@ -1,5 +1,47 @@
 # Lightspeed comparison QA
 
+## 28 September: manager polish approval study
+
+Target: existing Sage manager UI, not a new design system. Original and proposed
+build share fictional Demo Motors data, same origin, viewport, navigation and
+component source. Approved login sequence is outside the design changes.
+Local evidence: ignored `shots/manager-proposal-20260928/`.
+
+Matched desktop dashboard, phone Targets and associate sheet images were
+reviewed together, not from memory. History headers were checked in the rendered
+DOM with screenshot captures of both modes. Tablet sizing was checked separately.
+The desktop reference viewport is 1440 x 1100 including the study controls;
+the app occupies the framed content area, not the entire 1440px width. Phone
+and tablet frame widths are 390px and 768px. Those are browser sizes, not devices.
+
+Intentional departures: store heading/separators, flatter desktop text, quieter
+shadows, bounded directional entrances, explicit phone store identity, larger
+Targets inputs, monthly grace copy, textual History keys and scoped sheet actions.
+Existing chart shapes, dot artwork, employee metrics and layout relationships
+are retained. No generated artwork or new library is needed.
+
+The comparison caught two first-draft mistakes before approval: the action
+fit did not fix white-on-white primary text, and a globally lightened `.s2-scap`
+also lightened the title over a white coaching card. The action colours are now
+explicit and the light caption rule is scoped to the hero. The first claim of
+visible actions based only on geometry was insufficient.
+
+Measured: original sheet 335 / 363, proposed 335 / 335, two 48px actions;
+ten threshold inputs at 44px; History header 354 / 354 with five text labels;
+tablet document 753 / 753 clientWidth / scrollWidth. Reduced-motion replay reports
+no travel. No FPS or low-end performance claim follows from those measurements.
+
+756 functional tests, normal build and isolated build pass. The Chromium feel
+run passed its intermediate rows but timed out on reduced-motion return sign-in
+waiting for `.ar-bar` after 40000ms, exit 1. It was not retried or weakened.
+An unattributed browser-console observer error remains, and the in-page error
+listener has not captured its source. WebKit, real iPhone and second-reader
+approval remain release gates. Broader audit findings are still a backlog.
+
+final result: needs iteration
+
+---
+
 ## 24 September: finishing scan no longer cancelled by assembly cleanup
 
 Study-only repair gives the scan its own lifetime and holds scrolling until

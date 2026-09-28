@@ -34,4 +34,6 @@ test("motion is bounded, cancels and honours the system preference", () => {
   assert.ok(runtime.includes('"pagehide"'));
   assert.ok(polishCSS.includes("@media(prefers-reduced-motion:reduce)"));
   assert.ok(!polishCSS.includes("overflow-x:hidden"));
+  assert.ok(polishCSS.includes('.sage-perf-actions .fr-b.warnpri { background:#B8332B'));
+  assert.ok(polishCSS.includes('.sage-polish .s2-hero .s2-cap, .sage-polish .s2-hero .s2-scap'));
 });

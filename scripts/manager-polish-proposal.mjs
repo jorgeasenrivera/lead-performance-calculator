@@ -36,7 +36,8 @@ export const polishCSS = `
 .sage-polish .bp-five { padding-top:10px; }
 .sage-polish .bp-upd i { animation:none; background:#E4C98D; box-shadow:none; }
 .sage-polish .bp-goal, .sage-polish .bp-left, .sage-polish .bp-tl { color:rgba(255,255,255,.87); }
-.sage-polish .s2-cap, .sage-polish .s2-scap { color:rgba(255,255,255,.88); }
+.sage-polish .s2-scap { color:var(--ink); }
+.sage-polish .s2-hero .s2-cap, .sage-polish .s2-hero .s2-scap { color:rgba(255,255,255,.88); }
 .sage-polish .s2-hero .s2-tube { filter:none; }
 .sage-polish .sec-cap { color:var(--ink); letter-spacing:.10em; }
 .sage-polish .page .card { box-shadow:0 3px 10px -7px rgba(18,34,26,.25); }
@@ -45,13 +46,15 @@ export const polishCSS = `
 .sage-polish button:focus-visible, .sage-polish input:focus-visible { outline:3px solid #267D62; outline-offset:3px; }
 .sage-polish .co-upd i, .sage-polish .s2-imp::after { animation:none; }
 .sage-polish .sage-perf-actions { box-sizing:border-box; min-width:0; width:100%; flex:0 1 auto; justify-content:stretch; }
-.sage-polish .sage-perf-actions .fr-b { box-sizing:border-box; min-width:0; white-space:normal; }
+.sage-polish .sage-perf-actions .fr-b { box-sizing:border-box; min-width:0; white-space:normal; border:2px solid #D4DFD3; background:#fff; color:#15211B; }
+.sage-polish .sage-perf-actions .fr-b.pri { background:#567D61; border-color:#567D61; color:#fff; }
+.sage-polish .sage-perf-actions .fr-b.warnpri { background:#B8332B; border-color:#B8332B; color:#fff; }
 .sage-polish .tg-in input { min-height:44px; width:64px; box-sizing:border-box; font-size:16px; font-weight:700; }
 .sage-polish .grace-label input { min-height:44px; font-size:16px; }
 .sage-polish .tg-row { min-height:64px; }
 .sage-polish .tg-hint { color:rgba(255,255,255,.9); font-size:12px; line-height:1.5; }
 .sage-polish .hs-head { grid-template-columns:minmax(72px,1fr) repeat(5,minmax(0,1fr)); column-gap:5px; }
-.sage-polish .hs-head > span:not(:first-child) { font:700 10px/1.25 var(--font-ui); text-align:center; overflow-wrap:anywhere; }
+.sage-polish .hs-head > span:not(:first-child) { font:700 10px/1.25 var(--font-ui); text-align:center; overflow-wrap:anywhere; color:#15211B !important; }
 .sage-polish .hs-row { grid-template-columns:minmax(72px,1fr) repeat(5,minmax(0,1fr)); column-gap:5px; }
 /* One foreground entrance replaces independently bouncing page pieces. It does
    not apply during the already-approved login arrival. */
@@ -77,6 +80,10 @@ export const polishCSS = `
 
 export function installProposal(proposed, css) {
   if (!["127.0.0.1", "localhost"].includes(location.hostname) || parent === window) return;
+  if (!document.body) {
+    document.addEventListener("DOMContentLoaded", () => installProposal(proposed, css), {once:true});
+    return;
+  }
   window.__SAGE_POLISH = proposed;
   const root = document.documentElement;
   const style = document.createElement("style");
@@ -104,7 +111,7 @@ export function installProposal(proposed, css) {
         {transform:"translate(0,0)", opacity:1}
       ], {duration:340, delay:Math.min(index * 24, 96), easing:"cubic-bezier(.16,.78,.24,1)"}));
     }
-    report(direction ? "Directional landing: 340 ms, then still" : "Replay: header and visible sections land together");
+    report(direction ? (direction > 0 ? "From right" : "From left") + ": 340 ms, then still" : "Replay: header and visible sections land together");
   };
   const ensureStyle = () => { if (document.body.lastElementChild !== style) document.body.appendChild(style); };
   const fillDemo = () => {
@@ -189,7 +196,7 @@ export async function serveProposal(root = "dist-harness/manager-polish", port =
       else if (url.pathname === "/app") {
         const proposed = url.searchParams.get("mode") === "proposed";
         // Run before the module so JSX and CSS agree on the selected mode.
-        const setup = `<script>window.__SAGE_POLISH=${proposed};const d=new Date();localStorage.setItem('lpc:roundup:sage-demo:'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),'1');</script>`;
+        const setup = `<script>window.__SAGE_POLISH=${proposed};const d=new Date();localStorage.setItem('lpc:roundup:sage-demo:'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),'1');window.addEventListener('error',e=>{const show=()=>{const p=document.createElement('pre');p.hidden=true;p.className='sage-study-error';p.textContent=String(e.error?.stack||e.message).slice(0,2400);document.body.appendChild(p)};if(document.body)show();else document.addEventListener('DOMContentLoaded',show,{once:true})});</script>`;
         const runtime = `<script>(${installProposal.toString()})(${proposed},${JSON.stringify(polishCSS)});</script>`;
         bytes = html.replace("<head>","<head>"+setup).replace("</body>",runtime+"</body>");
       } else {

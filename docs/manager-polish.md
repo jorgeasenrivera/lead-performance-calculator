@@ -280,3 +280,84 @@ attempt could not spawn test/build workers under the filesystem sandbox;
 running those same checks with worker permission passed. Existing PDF eval and
 large-chunk warnings remain. No feel run was required for these documentation
 changes, and no new motion or device performance result is claimed.
+
+## 28 September: first interactive approval study
+
+Jorge asked for more dashboard character while keeping the established language
+and density. The isolated study is at http://localhost:49214/ while its two
+local servers are running. It uses the actual Sage components and the existing
+fictional Demo Motors seed. No application file is edited, and no production
+backend is used. Current and Proposed switch between the same data; switching
+modes returns to Dashboard, then use Sage's navigation to compare another view.
+
+Five decisions are collected locally, not sent to a server:
+
+1. Dashboard character and flow: stronger store typography and separators,
+   flatter text instead of the desktop displacement filter, quieter shadows,
+   no repeating update blink, and a brief directional foreground entrance.
+   The phone names the store inside the performance hero. Existing colours,
+   dot numbers, chart shapes and metrics remain. This is a proposal to change
+   those pixels, not a measured claim that removing the filter solves jank.
+2. Associate actions: replace the shared account-action class in the performance
+   sheet with a scoped, border-box action group. The original fictional-data
+   sheet reproduces clientWidth 335 / scrollWidth 363; the proposal measures
+   335 / 335. Geometry alone was not enough: the first screenshot comparison
+   caught white text over a white action because the portalled card had no
+   `--frgap` value. Explicit scoped colours now make both 48px actions visible,
+   verified in the screenshot and computed colours. No overflow is hidden.
+3. Targets: ten threshold inputs measured at 44px tall on the phone, with
+   metric-specific names. The monthly grace input is named as well.
+4. Grace copy: the phone explains the start of each month, not new-hire tenure.
+5. History: dark textual metric labels over each role's phone rows. The column
+   header measured 354 / 354 with all five labels, replacing the colour-only key.
+
+Motion moves at most six visible top-level groups, never a hundred person rows.
+Reads are batched before writes. Transform and opacity carry the 340ms entrance,
+with at most 96ms of stagger. New navigation cancels existing study animations;
+hidden pages and page disposal cancel them too. System Reduce Motion is never
+overridden. The extra study toggle can only further reduce movement. The
+approved arrival engine and its timing are unchanged, and its classes are
+excluded from the study's page-animation override. No new dependency is added.
+This follows the [compositing guidance](https://web.dev/articles/animations-guide)
+and keeps the History key aligned with [text beyond colour](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html).
+
+Run the disposable manager mock with `SALESPERSON=0`, then:
+
+```
+node scripts/manager-polish-proposal.mjs --build
+```
+
+The build targets `dist-harness/manager-polish`, an ignored directory. The server
+refuses a bundle without the loopback mock URL, listens on loopback, rejects
+nonlocal hosts and writes, disables service-worker installation, and limits
+connections to itself and the mock. The localhost address is intentional:
+previous 127.0.0.1 preview origins served stale cached bundles. Those blank
+loads are excluded from this study's evidence.
+
+### Verification and limits
+
+756 tests pass, including four proposal guards. The normal app and isolated
+proposal build pass, with the pre-existing PDF eval and chunk-size warnings.
+Browser-size checks cover desktop, 390px phone and 768px tablet. These are not
+physical-phone approval or a low-end-device FPS benchmark. The rest of the
+33-screen audit is still a backlog, not implemented by this first study.
+
+The required Chromium feel run was attempted once against the original mode
+with the disposable associate mock and 400ms data delay. Both full sign-ins
+completed (6814ms and 6697ms). Taps, room switches, swipe, blend, double tap,
+FlyBy and press checks were under their unchanged bars. The final reduced-motion
+return sign-in timed out waiting 40000ms for `.ar-bar`, before recording a time.
+Exit 1, not green. The run was not retried and no bar was weakened. The study
+installer returns immediately when not framed, and Current does not apply its
+CSS or JSX changes; that isolates the proposed manager motion from this failure
+but does not establish its cause. There was no captured final page state or
+trace, so the cause remains open. WebKit has not been run locally for this study.
+
+Approval, Claude's second read, a clean full motion check and a real iPhone
+preview are required before any production visual batch merges.
+
+The connected browser also logs an unattributed MutationObserver target error.
+An early page error listener in the study has not captured it, in either the
+page DOM or the reported iframe error register. Its source is not established.
+Do not label the console clean or infer an application defect from it. This and
+the incomplete feel run keep the study's verification status at needs iteration.

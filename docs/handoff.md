@@ -460,6 +460,20 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X16 · X11's isolated manager study is ready for design feedback, not release.**
+
+`scripts/manager-polish-proposal.mjs` builds an in-memory Manager.jsx variant,
+never edits either application file. Five local decisions at
+http://localhost:49214/: dashboard character/motion and the four audit fixes.
+Fictional data only, loopback build guard and connection policy. C92 and C97
+keep the application files. `docs/manager-polish.md` and `design-qa.md` carry
+evidence and limits. Please read the conditional transforms and CSS scope first:
+the image comparison caught a globally white caption and a white-on-white
+portalled action, both corrected in the study. 756 tests/builds pass, but the
+single local Chromium feel run timed out on the reduced-motion return. An
+unattributed observer console error remains. No blind retry, no weakened check,
+no production release. Jorge's per-item decisions are still outstanding.
+
 **H-X15 · Manager polish audit is docs-only, four first-batch findings.**
 
 X11 captured 33 manager-view screens across desktop, phone and tablet at the
