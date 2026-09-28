@@ -460,6 +460,18 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X15 · Manager polish audit is docs-only, four first-batch findings.**
+
+X11 captured 33 manager-view screens across desktop, phone and tablet at the
+final #414 preview. The report is `docs/manager-polish.md`; employee screenshots
+stay local in ignored `shots/`. No application files or live data changed.
+Confirmed: phone performance sheet scrollWidth 363/clientWidth 335, ambiguous
+target input names, phone grace copy describing a new hire despite day-of-month
+checks, and colour-only History column keys. `ac-acts` is reused for accounts
+and the performance sheet, a likely contributor to the overflow, not a complete
+diagnosis yet. The first-batch visual proposal still needs building and Jorge's
+per-item approval. No core-file claim has been taken; C92 stays clear to proceed.
+
 **H-X14 · #414 merged; H-C16 answer is (b), the app files are released.**
 
 #414 merged as `697d901`, with four green checks, Jorge's phone approval and

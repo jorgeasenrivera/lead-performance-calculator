@@ -1,0 +1,282 @@
+# Manager polish: evidence before changes
+
+28 September 2026. X11, Codex. Audit draft, not a visual approval or an
+implementation. The approved login arrival is deliberately outside this pass.
+The salesperson app and native app are outside scope.
+
+## Direction
+
+Keep the dashboard recognisably Sage: dense, readable, dot-matrix, coloured by
+meaning, with the existing CRT character. Do not replace it with a sparse
+marketing dashboard. The opportunity is to remove friction between the views,
+not remove information from them.
+
+Use one motion language for a manager's repeated work: a clear press response,
+a brief directional change, and a stable landing. The lightspeed arrival is the
+special entrance, not an effect repeated on every tab or data refresh.
+
+## What was inspected
+
+Live, authenticated preview at build `2026.09.28.02c9125`, one populated store,
+administrator account. Desktop 1440 x 900, phone 390 x 844, narrow phone
+375 x 812, tablet 768 x 1024. Phone sizes are browser viewport tests, not a
+physical iPhone or Safari test. Administrator visibility can differ from a
+store-manager account, so the role-specific surface still needs verification.
+
+Screenshots were saved locally and inspected. They contain real employee
+figures and must not be committed or published to the public repository.
+Evidence lives under `shots/manager-audit-20260928/`, which is ignored.
+Any published proposal will use fictional people and figures.
+
+No report was uploaded, no person was added or restricted, no plate assigned,
+no queue changed, no target changed, no board published, and no printing was
+sent to a printer. The page returned to sign-in near the end of the audit. No
+Sign out action was taken, and the reason is not established. Temporary viewport
+overrides were reset. Do not treat the session ending as a diagnosed app defect.
+
+### Capture register
+
+Health is limited to the observed screen, not a full functional certification.
+"Polish" means a design opportunity. "Fix" means confirmed evidence below.
+Repeated stale frames after navigation were rejected and overwritten. There
+are 33 accepted captures, with the overview captured first and the lower roster
+and account menu later.
+
+| Step | Screenshot prefix and observed screen | Health |
+|---|---|---|
+| 1 | 01 desktop dashboard, hero and first cards | Strong identity; polish reading hierarchy |
+| 2 | 02 desktop month round-up | Readable grouping; modal/focus follow-up needed |
+| 3 | 03 desktop Summary | Polish metric provenance and secondary labels |
+| 4 | 04 desktop History | Clear named columns; lower-row context needs checking |
+| 5 | 05 desktop Targets | Fix input names; small controls |
+| 6 | 06 desktop People | Clear store context; long alert copy |
+| 7 | 07 desktop expanded person fields | Useful detail; secondary labels need polish |
+| 8 | 08 desktop Imports | Fix status-context ambiguity before decorative changes |
+| 9 | 09 desktop Daily Activity | Strong overview; compact row labels |
+| 10 | 10 desktop Coaching list | Clear entry; substantial introductory block |
+| 11 | 11 desktop Coaching detail | Good density; long tables and secondary type |
+| 12 | 12 desktop License Plates, empty day | Useful empty-state instruction; populated state untested |
+| 13 | 13 desktop Daily Standards | Clear groups; repeated plus/minus names lack context |
+| 14 | 14 desktop Live Floor, empty room | Strong identity; populated actions untested |
+| 15 | 15 desktop Phone Line, empty room | Consistent room colour; populated state untested |
+| 16 | 16 desktop Online | Placeholder, not an operational queue |
+| 17 | 17 desktop TV launcher | Clear store cards; repeated action names need context |
+| 18 | 18 phone dashboard | Strong compact summary; small secondary type and tabs |
+| 19 | 19 phone performance detail | Fix horizontal overflow and action area |
+| 20 | 20 phone Summary | Preserves density; metric-source context needs polish |
+| 21 | 21 phone History | Fix colour-only column key |
+| 22 | 22 phone Targets | Fix misleading grace explanation and improve fields |
+| 23 | 23 phone People | Clear grouping; redundant one-person bulk actions |
+| 24 | 24 phone Daily Activity | Fix cross-screen language; compact labels |
+| 25 | 25 phone Coaching list | Good compact comparison; labels and meaning need care |
+| 26 | 26 phone Coaching detail | Useful hierarchy; long content and focus follow-up |
+| 27 | 27 phone More drawer | Clear named tools; better model for touch targets |
+| 28 | 28 phone Live Floor | Fits; dense map labels need physical-phone test |
+| 29 | 29 phone Imports | Preserves status; context ambiguity remains |
+| 30 | 30 narrow-phone dashboard | Fits; trailing People tab is clipped |
+| 31 | 31 tablet dashboard | Fits; tall hero and concealed trailing navigation |
+| 32 | 32 desktop lower associate roster | Dense and useful; charts repeat tiny labels |
+| 33 | 33 desktop account menu | Straightforward; current preview lacks new account controls |
+
+Full filename is the prefix plus the screen name and `.png`. The earlier
+stale captures under prefixes 01, 20 and 21 were overwritten, not counted as
+separate evidence. Captured images show some softness across the page. That
+alone does not establish a production blur or a font-rendering defect; final
+type and contrast decisions need fresh high-fidelity capture and computed styles.
+
+## Findings and recommended batches
+
+### P1. Phone performance sheet overflows horizontally
+
+Confirmed in step 19. At 390 pixels, the named dialog's client width was 335
+pixels and its scroll width was 363. A horizontal scrollbar was visible. The
+action group protruded to the right. The primary restriction action was not
+legible in the captured settled frame, while Coach was visible. Do not assume
+it was disabled or unavailable without inspecting its exact styles.
+
+The source uses `fr-acts ac-acts` for these actions at Manager.jsx:17578.
+`ac-acts` is also the accounts-table action class: fixed desktop width at
+25616, 100% at the 960-pixel breakpoint, and another padding rule at 26039.
+This is a plausible selector collision, not yet a proven complete root cause.
+
+Proposal: give this sheet its own scoped action layout, keep both actions
+visible, retain the restriction meaning and confirmation behaviour, and fit the
+content without hiding overflow. Do not "fix" it with overflow-x:hidden.
+Test long names, 320/375/390/430 widths, large text, restricted and unrestricted
+states, and keyboard focus. No lead or restriction logic change.
+
+### P1. Targets use ambiguous input names
+
+Confirmed in steps 5 and 22. Desktop accessibility exposes ten percentage
+fields named only `%`. Phone exposes `Green at %` and `Yellow at %` but not the
+metric. DOM measurements: 26-pixel-high fields, 11.5-pixel text, width 52 on
+desktop and 64 on phone. The grace field is named only `days`.
+
+Source at Manager.jsx:20255 uses wrapping labels containing the percent sign,
+not a metric-specific name. Values save on blur, so clarity matters before a
+manager accidentally edits the wrong row. No field was focused or edited here.
+
+Proposal: names such as `Internet delivered, green threshold, percent`, visible
+green/yellow labels in both layouts, a labelled grace field, larger phone
+controls and readable numeric text. Keep row density on desktop. A 44-pixel
+phone-control target is a product design goal, not a claim that 26 pixels fails
+WCAG: the AA target-size criterion generally specifies 24 CSS pixels, subject
+to exceptions and spacing.
+
+### P1. Phone grace explanation contradicts the actual rule
+
+Confirmed in step 22 and source. The phone hero says grace is how long a new
+hire is judged on effort before results count. Desktop says colours are held
+while the month is thin. Existing checks use day-of-month against graceDays,
+for example Manager.jsx:17605 and :19592. It is a monthly grace window, not a
+new-hire probation period.
+
+Proposal: use the same concise monthly explanation on desktop and phone.
+Example for approval: `First 10 days of each month: coach before restricting.`
+Keep the separate new-associate/history provisions untouched. Copy needs visual
+approval too; this audit does not authorise shipping it.
+
+### P1. Phone History needs a textual column key
+
+Confirmed in step 21 and source Manager.jsx:19554. The table header is five
+coloured marks without names. Rows show five coloured percentages and mini
+bars. The earlier hero has named metrics, but it scrolls out of view. The
+button's accessible name lists percentages without identifying their metrics.
+
+Proposal: retain the five compact columns and their colours; add readable short
+names, for example `Int`, `Phone`, `Show`, `Appt`, `Eng`, plus accessible
+metric/value names. Test a long roster after the hero leaves the screen. Sticky
+labels may help, but must not cover rows or compete with the bottom navigation.
+
+### P2. Import counters answer different questions without explaining it
+
+Confirmed in steps 8 and 29. Navigation says `Import 0/2`, the hero says
+`1 of 3 in`, and the checklist shows four report names, including Campaign
+Delivery Summary. The delivery row is marked landed today. This is not evidence
+that a report is missing or incorrectly stored; counts can refer to different
+required sets. A manager should not have to infer those sets.
+
+Proposal: trace each counter's definition, then label its scope consistently.
+Keep per-report states and clear month/day context. Do not alter import routing,
+daily-date handling, report replacement or save semantics as a polish task.
+
+### P2. Navigation and small labels need a density-aware touch pass
+
+Steps 18, 21, 30 and 31. Phone top tabs measured 25.2 pixels high, with
+12-pixel text. People is clipped at 375 width. On tablet the secondary bar
+conceals its last item while the hero consumes most of the first viewport.
+These are discoverability and comfort findings, not proof navigation is broken.
+
+Proposal: keep the tabs and bottom tool bar, improve touch area and the cue
+that more tabs exist, retain the selected tab in view, and give important
+secondary labels a readable floor. Do not enlarge every label equally or reduce
+the dashboard to fewer metrics. Start with thresholds, chart keys, dates and
+action labels. Native device keyboard, text zoom and Safari toolbar behaviour
+remain untested.
+
+### P2. Daily Activity wording and visual signals diverge
+
+Step 9 uses `Most penalty points this month`; step 24 uses `Biggest Loser`.
+The underlying source still uses that label in other views too. This is a
+language decision for Jorge, not a newly inferred calculation error.
+
+The mobile updated timestamp uses a red dot; source at Manager.jsx:26054 gives
+it an infinite 1.6-second blink. A recent report and a connection error should
+not share an alarming signal. The site already has purposeful VHS noise for
+lost connection, which must be retained.
+
+Proposal: align the manager-facing label and distinguish fresh report time from
+an actual connection state. Consider a brief update acknowledgement, then a
+stationary timestamp. Do not remove the room's meaningful live-state signalling.
+
+### P2. Repeated controls need context, not a new visual style
+
+Steps 6, 13 and 17 expose repeated `Card`, `Change standing`, `+`, `-`,
+`Publish` and `Open the board` controls. The visible row gives context to a
+sighted user; the accessible name often does not. Some heroes also render
+counters as buttons without handlers, visible in the Targets source.
+
+Proposal: name controls for their person/store/metric, preserve their visible
+brevity, and use non-interactive semantics for informational counters unless a
+real detail view exists. Verify keyboard focus, focus return, Escape, body
+scroll locking and close controls consistently across sheet types. Do not
+invent a confirmation or change a save workflow without a separate review.
+
+## Motion and performance pass, after the first repairs
+
+Source inspection, not measured FPS, supports the next investigation:
+
+- Hero entry uses a 400 ms spring animation. Several other controls use
+  `transition:all`. Audit what actually moves before narrowing those rules.
+- Desktop hero content uses `filter:url(#lpc-bulge)`; some responsive rules
+  remove it. Keep the CRT appearance, but measure its paint cost with the
+  current charts before deciding it is expensive or removing it.
+- The phone update indicator has a perpetual animation. Prefer motion tied to
+  actual events for report-based data, not perpetual activity for its own sake.
+- Keep the existing directional room state sheet authoritative. Do not rebuild
+  room transitions as part of a dashboard style pass.
+
+Recommended prototype motion: short press response, directional foreground
+movement for adjacent tabs, restrained colour/background handoff, and one
+settle without a second bounce. Data updates should keep names and controls
+stationary, with a brief local signal. Initial content may rise into place;
+returning to a previous tab should not replay a full entrance.
+
+These are proposals, not approved timings or performance promises. Before
+implementation, capture current and proposed versions with identical fictional
+data, normal and reduced motion. Measure navigation latency, long tasks,
+layout shifts, paint/composite behaviour and frame intervals on Chromium and
+WebKit, then an older office computer and Jorge's real iPhone. Browser sizes do
+not establish device performance. A 60 Hz display cannot show more than 60
+distinct frames a second; the target is consistent delivery within its frame
+budget, and 120 Hz behaviour where supported, not a universal "above 60 FPS"
+claim.
+
+## Evidence-based references
+
+Apple recommends purposeful, brief feedback that follows the interaction and
+does not repeatedly delay frequent actions. That supports preserving the big
+arrival and making everyday movement smaller and more precise, not adding
+another cinematic effect to each control. [Apple: Motion](https://developer.apple.com/design/human-interface-guidelines/motion)
+
+W3C recommends text or another cue alongside colour to convey meaning. That
+supports named phone-history columns while retaining their colours.
+[W3C: Use of Color](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html)
+
+The WCAG AA target-size rule generally uses 24 x 24 CSS pixels, with exceptions.
+Larger touch targets here are a deliberate usability choice, not an unsupported
+compliance finding. [W3C: Target Size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
+
+Google's animation guidance favours transform and opacity when possible, calls
+for checking rendering costs, and warns against indiscriminate will-change.
+That supports profiling the existing effects before choosing a library or
+rewriting motion. [web.dev: High-performance CSS animations](https://web.dev/articles/animations-guide)
+
+## Not yet tested
+
+This is a broad screen audit, not "every state passed". Still outstanding:
+store-manager-only permissions and navigation, all-store view, actual iPhone
+Safari, Android, landscape phones, browser text zoom, contrast measurements,
+screen-reader operation, complete keyboard paths, printed output, schedule
+overlays, populated plate logs, populated rooms, restriction confirmations,
+save/import errors, offline recovery and performance traces on slower hardware.
+The preview was already authenticated. No new login flight was replayed here.
+
+## Next deliverable
+
+An isolated first-batch proposal on the existing Sage screens, with fictional
+data and one Keep / Approve / Adjust decision for each of P1 sheet fit, Targets,
+grace copy and History labels. No new component framework or motion package is
+needed to correct these findings. Show phone and desktop side by side, and
+explicitly prove the same information remains. Then obtain Jorge's decisions,
+coordinate the single Manager.jsx writer with Claude, implement a small batch,
+run test/build plus motion harnesses if motion changes, and get the real-phone
+check and second read before merge.
+
+## Branch verification
+
+752 tests and the production build pass after this docs-only audit. The first
+attempt could not spawn test/build workers under the filesystem sandbox;
+running those same checks with worker permission passed. Existing PDF eval and
+large-chunk warnings remain. No feel run was required for these documentation
+changes, and no new motion or device performance result is claimed.
