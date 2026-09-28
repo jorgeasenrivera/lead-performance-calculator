@@ -47,13 +47,23 @@ test("the cold-download experiment changes only one manager import, not the shar
   assert.throws(() => slowManagerImport('import("./Manager-one.js");import("./Manager-two.js")'));
 });
 
-test("approval page scripts parse and retain five approvals plus two new motion decisions", () => {
+test("approval page scripts parse and retain existing decisions plus compact History", () => {
   const html = proposalPage();
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]);
-  assert.equal((html.match(/data-decision="/g) || []).length,7);
+  assert.equal((html.match(/data-decision="/g) || []).length,8);
+  assert.ok(html.includes("Compact phone, 320 x 568"));
+  assert.ok(html.includes("Landscape, 844 x 390"));
+  assert.ok(html.includes("8. Compact phone History"));
   assert.ok(html.includes("Fictional people and figures"));
   assert.ok(html.includes("Replay full sign-in"));
   assert.ok(html.includes("Replay page motion"));
+});
+
+test("compact History gives the name and no-data message their own full row", () => {
+  assert.ok(polishCSS.includes("@media(max-width:380px)"));
+  assert.ok(polishCSS.includes(".sage-polish .hs-who { grid-column:1 / -1; }"));
+  assert.ok(polishCSS.includes(".sage-polish .hs-nf { grid-column:1 / -1; text-align:left; }"));
+  assert.ok(polishCSS.includes(".sage-polish .hs-head > span:first-child { display:none; }"));
 });
 
 function motionHarness() {

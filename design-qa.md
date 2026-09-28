@@ -1,5 +1,21 @@
 # Lightspeed comparison QA
 
+## 28 September: continuation at compact and landscape sizes
+
+Three bounded steps: compact History, short/scrolled associate explanations,
+390px units drawer. The prior History label fix collides at a narrower width.
+New pending decision 8 gives names their own row below 381px, leaving fonts,
+copy, all five metrics and larger layouts unchanged. Keyboard/populated/no-data
+captures show aligned columns at 320x568. Compact and landscape BH Video tips
+fit vertically and horizontally, including a landscape card scrolled 20px.
+
+The units drawer fits but exposes NaN: its stated-split early return lacks the
+percentages the pace view consumes. Its goal input also lacks an accessible
+name. Source repair requested of Claude in H-X22, not hidden or implemented in
+the proposal. A compact six-dial strip is still crowded and waits for a later
+visual proposal. Observer error recurs, source remains unattributed. No new
+motion, FPS, physical-iPhone or clean-console claim. See docs/manager-polish.md.
+
 ## 28 September: proposal card-edge repairs
 
 Three CSS-only fixes authorized by Jorge: bounded gauge-area pointer tooltips,

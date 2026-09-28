@@ -5,6 +5,49 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 28 September: compact phones, short cards and the units drawer
+
+Continuation audit, fictional local manager only. The screenshot-led audit and
+motion-performance guidance kept this pass focused on readable states and
+bounded ownership, not new effects. No motion routine or production source edit.
+
+1. Small History: my previous 52px Showroom repair is insufficient on narrower
+   phones. At the 302px content width, Internet's label needed 39px in a 27px
+   column, Phone needed 31px in 22px, and Engaged needed 43px in 27px. Labels and
+   figures collide. New proposal decision 8 puts the person's name on its own
+   line below 381px, then keeps all five figures aligned with their headings.
+   Fonts, copy and metrics stay the same. At the 320x568 preset the content is
+   305px wide, headings have 48.8px except Showroom's 52px, and none overflows.
+   Populated, keyboard-focused and no-data rows are captured. 390px and desktop
+   keep their existing layouts. Item 8 is pending, not inferred approved.
+2. Long explanations: the BH Video tooltip fits in the compact 320x568 card
+   (220.8px wide, top 78.35px inside card top 18.30px) and scrolled 844x390
+   landscape card (top 74.93px inside card top 5.43px, scrollTop 20px). This
+   closes those two previously untested geometry cases, not every scroll state
+   or a physical touch test. The six-dial strip still looks crowded at 320px;
+   it is recorded for the next visual batch, not silently redesigned here.
+3. Phone units drawer: its controls fit at 390px, but it displays NaN for both
+   stock-mix paces. The statedSplitOf early return in BoardPhone's split object
+   omits newPct and usedPct. popBody multiplies pace.projected by those missing
+   fields. The desktop vehicleSplit equivalent supplies them. This is a source
+   contract defect, not a CSS issue or proof of damaged stored figures. Also,
+   the goal input has no accessible name. Neither defect is repaired by this
+   isolated pass. H-X22 asks the application-file owner for a bounded repair.
+
+The preview now exposes compact-phone and landscape sizes for repeatable checks.
+Current remains untouched. Earlier decisions are retained by their original
+indexes. Accepted captures are local under ignored
+`shots/manager-proposal-20260928/pass2-*`; the first compact History capture only
+shows the hero and is not row-layout evidence. The keyboard capture and no-data
+capture supply that evidence. Full report: `pass2-report.md` in that folder.
+
+The observer console error recurs on fresh reload, but the in-app error capture
+is empty, so attribution remains open. No clean-console, full motion, FPS or
+real-iPhone claim. No new Claude review is present on #436. CI's existing
+Chromium feel comment is green but runs the normal source build, not this
+in-memory Proposed build; it does not diagnose the earlier local feel timeout.
+Final checks after rebasing are recorded below before push.
+
 ## 28 September: three card-edge repairs in Proposed
 
 Jorge approved fixing the audit's three findings in the isolated study. This
