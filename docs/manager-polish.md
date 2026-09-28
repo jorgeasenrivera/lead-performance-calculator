@@ -46,7 +46,12 @@ is empty, so attribution remains open. No clean-console, full motion, FPS or
 real-iPhone claim. No new Claude review is present on #436. CI's existing
 Chromium feel comment is green but runs the normal source build, not this
 in-memory Proposed build; it does not diagnose the earlier local feel timeout.
-Final checks after rebasing are recorded below before push.
+Rebased onto 97ae524: 789 tests, including 20 proposal tests, and both builds
+pass. Main's new commits concern floor access, not the manager layout; the
+Manager and entry bundle hashes stay the same. A fresh rebuilt compact History
+check finds 12 headers/rows with the same five-column grid and none overflowing.
+The attempted iframe-bound screenshot read timed out; a fresh DOM check showed
+the loaded page and a normal screenshot supplied the accepted final capture.
 
 ## 28 September: three card-edge repairs in Proposed
 
