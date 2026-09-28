@@ -9,7 +9,8 @@
 --     an admin, the store on an approved profile, or their account linked to
 --     a person on that store's floor (can_use_store, the same three ways in as
 --     staffMayUse in api/_floor-access.mjs);
---   * tickets, which share queue_public, follow the store written on them;
+--   * tickets, which share queue_public, follow their store column like any
+--     other row (NOT NULL; see C98 for why none has been saved until now);
 --   * the public key gets nothing. A phone with no account and a TV go through
 --     /api/floor-row, which holds the service key and checks today's code or
 --     the TV's key.
@@ -37,6 +38,13 @@ drop policy if exists "floor_public update" on public.floor_public;
 drop policy if exists queue_public_read on public.queue_public;
 drop policy if exists queue_public_insert on public.queue_public;
 drop policy if exists queue_public_update on public.queue_public;
+-- and this file's own, so running it twice is the same as running it once
+drop policy if exists floor_staff_read on public.floor_public;
+drop policy if exists floor_staff_insert on public.floor_public;
+drop policy if exists floor_staff_update on public.floor_public;
+drop policy if exists queue_staff_read on public.queue_public;
+drop policy if exists queue_staff_insert on public.queue_public;
+drop policy if exists queue_staff_update on public.queue_public;
 
 create policy floor_staff_read on public.floor_public for select to authenticated
   using (public.can_use_store(store));
@@ -46,12 +54,12 @@ create policy floor_staff_update on public.floor_public for update to authentica
   using (public.can_use_store(store)) with check (public.can_use_store(store));
 
 create policy queue_staff_read on public.queue_public for select to authenticated
-  using (public.can_use_store(case when id like 'ticket:%' then coalesce(data->>'store', '') else store end));
+  using (public.can_use_store(store));
 create policy queue_staff_insert on public.queue_public for insert to authenticated
-  with check (public.can_use_store(case when id like 'ticket:%' then coalesce(data->>'store', '') else store end));
+  with check (public.can_use_store(store));
 create policy queue_staff_update on public.queue_public for update to authenticated
-  using (public.can_use_store(case when id like 'ticket:%' then coalesce(data->>'store', '') else store end))
-  with check (public.can_use_store(case when id like 'ticket:%' then coalesce(data->>'store', '') else store end));
+  using (public.can_use_store(store))
+  with check (public.can_use_store(store));
 
 revoke all on public.floor_public, public.queue_public from anon;
 

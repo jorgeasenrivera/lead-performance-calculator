@@ -78,7 +78,9 @@ export async function handle(req, res, deps) {
     }
     const d = decide({ op, store, date: today, today, via, row: via && via.kind === "token" ? row : null, data });
     if (!d.ok) return res.status(d.status).json({ error: d.why });
-    const put = await deps.insertTicket(TICKET_PREFIX + data.id, { ...data, store });
+    /* store and qdate are NOT NULL on queue_public. The app's own saveTicket
+       sends neither, which is why no ticket has ever been saved (C98). */
+    const put = await deps.insertTicket(TICKET_PREFIX + data.id, { ...data, store }, store, today);
     return put ? res.status(201).json({ ok: true }) : res.status(409).json({ error: "that ticket already exists" });
   }
 
@@ -139,8 +141,8 @@ export default async function handler(req, res) {
         if (error) throw error;
         return out || null;
       },
-      insertTicket: async (id, ticket) => {
-        const { error } = await db.from("queue_public").insert({ id, data: ticket });
+      insertTicket: async (id, ticket, store, day) => {
+        const { error } = await db.from("queue_public").insert({ id, store, qdate: day, data: ticket });
         if (error && error.code === "23505") return false;
         if (error) throw error;
         return true;

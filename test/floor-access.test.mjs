@@ -96,7 +96,7 @@ function world() {
       const next = { data, updated_at: `2026-09-28T14:00:0${++clock}Z` };
       rows.set(k, next); return next;
     },
-    insertTicket: async (id, t) => { if (rows.has(`queue_public|${id}`)) return false; rows.set(`queue_public|${id}`, { data: t }); return true; },
+    insertTicket: async (id, t, store, day) => { if (rows.has(`queue_public|${id}`)) return false; rows.set(`queue_public|${id}`, { data: t, store, qdate: day }); return true; },
   };
   return { rows, deps };
 }
@@ -144,6 +144,8 @@ test("the endpoint: tickets from a phone with any of today's codes, once each; t
   const t = { op: "ticket", store: "dm", data: { id: "tk12345", kind: "problem", body: "the TV froze" } };
   assert.equal((await call(deps, t, { [TOKEN_HEADER]: "line99" })).status, 201);
   assert.equal(rows.get("queue_public|ticket:tk12345").data.store, "dm");
+  assert.equal(rows.get("queue_public|ticket:tk12345").store, "dm", "the column, which is NOT NULL: the app's saveTicket never filled it (C98)");
+  assert.equal(rows.get("queue_public|ticket:tk12345").qdate, TODAY);
   assert.equal((await call(deps, t, { [TOKEN_HEADER]: "line99" })).status, 409, "the same ticket twice is not a second ticket");
   assert.equal((await call(deps, { ...t, data: { ...t.data, id: "tk2" } }, { [TOKEN_HEADER]: "line99" })).status, 400, "an id too short to be one is refused");
   assert.equal((await call(deps, { ...t, data: { ...t.data, id: "tk99999" } }, { [TOKEN_HEADER]: "wrong" })).status, 403);
