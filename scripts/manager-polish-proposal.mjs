@@ -42,9 +42,21 @@ export function createStudyCardMotion(el, origin, onClose, env = window) {
   const label = value => {phase=value;el.dataset.studyCardMotion=value;};
   const rest = () => {el.style.transform="none";el.style.opacity="1";children.forEach(k=>{k.style.transform=originals.get(k).transform;k.style.opacity="1";});};
   const finish = () => {
-    cancel();
-    if (phase === "closing") {if (!closed) {closed=true;label("closed");onClose();}}
-    else {rest();label("open");}
+    if (phase === "closing") {
+      // React may not remove the portal in this microtask. Commit the invisible
+      // end pose before cancelling fill, or the pinned open pose flashes back.
+      el.style.transform=from;el.style.opacity="0";
+      children.forEach(k=>{k.style.opacity="0";});
+      cancel();
+      if (!closed) {
+        closed=true;label("closed");
+        if (root.getAttribute?.("data-study-record-card") === "true") {
+          const s=env.getComputedStyle(el);
+          root.setAttribute("data-study-card-close",JSON.stringify({phase,opacity:s.opacity,transform:s.transform,attached:el.isConnected}));
+        }
+        onClose();
+      }
+    } else {rest();cancel();label("open");}
   };
   el.style.animation="none";
   el.style.transformOrigin="0 0";
@@ -82,7 +94,9 @@ export function createStudyCardMotion(el, origin, onClose, env = window) {
   }
   return {close,dispose() {
     disposed=true;cancel();observer.disconnect();media.removeEventListener("change",preference);doc.removeEventListener("visibilitychange",visibility);
-    for (const [k,style] of originals) Object.assign(k.style,style);
+    // A closed portal stays hidden through cleanup until React detaches it.
+    // Open/interrupted mounts still restore their baseline for effect replay.
+    if (!closed) for (const [k,style] of originals) Object.assign(k.style,style);
     delete el.dataset.studyCardMotion;
   }};
 }
@@ -300,6 +314,7 @@ export function installProposal(proposed, css) {
 // Study only: observe the real arrival without driving or extending its clock.
 export function installArrivalProbe() {
   const root = document.documentElement;
+  root.setAttribute("data-study-record-card","true");
   const output = document.createElement("pre");
   output.hidden = true; output.id = "sage-arrival-trace";
   document.body.appendChild(output);
@@ -353,7 +368,7 @@ export function installArrivalProbe() {
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
   window.addEventListener("message", event => {
     if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "sage-polish-trace") return;
-    enabled = !!event.data.value; if (!enabled) stop();
+    enabled = !!event.data.value; root.setAttribute("data-study-record-card",String(enabled)); if (!enabled) stop();
   });
   window.addEventListener("pagehide", () => {stop(); observer.disconnect();}, {once:true});
 }
@@ -415,7 +430,7 @@ ${[
   ["3. Targets controls","Larger inputs with metric-specific accessible names. Keep all five metrics and their thresholds visible."],
   ["4. Monthly grace wording","Explain that colours are held during the start of each month, not a new hire's first days."],
   ["5. History labels","Name the five metrics above the phone's rows, so colour is not the only way to recognise a column."],
-  ["6. Associate card motion","Dashboard: open a person's card, then close it quickly. It returns from its actual position with a short settle, not a jump to fully open first. Repeated closes have one owner. Reduce page motion also stops this travel."],
+  ["6. Associate card motion","Dashboard: open a person's card, then close it quickly. It returns from its actual position and stays invisible until removed, preventing the flash at the end of close. Repeated closes have one owner. Reduce page motion also stops this travel."],
   ["7. Number updates","Dashboard podium and month recap: first counts settle sooner. Updated numbers continue from the displayed value instead of restarting at zero. Hidden pages and Reduce Motion show the final number without counting."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
 <p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>

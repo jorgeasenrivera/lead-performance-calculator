@@ -87,7 +87,7 @@ test("card reverses from painted pose, closes once, and cancels owned effects", 
   el.effects[1].complete();await Promise.resolve();assert.equal(closes,1);
   assert.equal(h.timers.size,0);assert.equal(el.dataset.studyCardMotion,"closed");
   m.dispose();assert.ok(h.observers.every(o=>!o.active));assert.deepEqual(h.handlers,{});
-  assert.equal(el.style.transform,"");assert.equal(el.style.animation,"");
+  assert.equal(el.style.opacity,"0");assert.equal(el.style.animation,"none");
 });
 
 test("card preferences and hidden pages settle without residual travel", () => {
@@ -101,10 +101,36 @@ test("card preferences and hidden pages settle without residual travel", () => {
   assert.equal(hiddenCloses,1);assert.equal(h2.timers.size,0);m2.dispose();
 });
 
+test("a finished close stays invisible while React removal is delayed", async () => {
+  const h=motionHarness(), el=h.element(), child=h.element();el.querySelectorAll=()=>[child];
+  let atClose;
+  const m=createStudyCardMotion(el,null,()=>{atClose={opacity:el.style.opacity,transform:el.style.transform,childOpacity:child.style.opacity};},h.env);
+  el.effects[0].complete();await Promise.resolve();
+  m.close();el.effects[1].complete();await Promise.resolve();
+  assert.equal(atClose.opacity,"0");
+  assert.equal(atClose.transform,el.effects[1].keys.at(-1).transform);
+  assert.equal(atClose.childOpacity,"0");
+  assert.equal(el.style.opacity,"0");
+  m.dispose(); // Layout-effect cleanup can precede DOM removal in the same commit.
+  assert.equal(el.style.opacity,"0");assert.equal(el.style.animation,"none");
+});
+
 test("unmount cancels a pending close without invoking an old callback", async () => {
   const h=motionHarness(), el=h.element();let closes=0;
   const m=createStudyCardMotion(el,null,()=>closes++,h.env);m.close();m.dispose();
   el.effects[1].complete();await Promise.resolve();assert.equal(closes,0);assert.equal(h.timers.size,0);
+  assert.equal(el.style.opacity,"");assert.equal(el.style.animation,"");
+});
+
+test("close watchdog and reduced-motion completion retain the invisible terminal pose", () => {
+  for (const reduced of [false,true]) {
+    const h=motionHarness(), el=h.element();let closes=0;
+    const m=createStudyCardMotion(el,null,()=>closes++,h.env);m.close();
+    if (reduced) {h.media.matches=true;h.handlers.media();}
+    else [...h.timers.values()][0]();
+    assert.equal(closes,1);assert.equal(el.style.opacity,"0");assert.equal(h.timers.size,0);
+    m.dispose();assert.equal(el.style.opacity,"0");
+  }
 });
 
 test("numbers retarget from displayed value, including descending to zero", () => {

@@ -5,6 +5,41 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 28 September: card-close completion flash
+
+Jorge: 6 Adjust, 7 Approve. The browser's decision controls confirm both choices.
+Number motion is retained, unchanged. The revised card still needs his retry.
+
+My first card helper had a terminal-state defect. Close pinned the current open
+pose, animated to invisible, then cancelled the fill before calling onClose.
+That exposed the pinned visible pose while React's portal removal was pending.
+Cleanup also restored the base acpop animation, which should not be restarted on
+a closed portal. The earlier settle/removed checks missed the intermediate gap.
+A new delayed-removal test fails on the old helper with opacity 1 at onClose.
+
+The helper now writes its invisible return pose before cancelling effects, and
+does not restore a closed portal's styles during cleanup. Open or interrupted
+mounts still restore their original styles, preserving effect replay cleanup.
+No extra timeout, duration, page animation or backdrop redesign is introduced.
+The sequencing/performance skills informed retaining the terminal pose through
+the rendering handoff, rather than adding a second animation to conceal it.
+
+Record transition now also enables one tiny, last-close diagnostic on the study
+document. It samples the parent card after effect cancellation, before onClose,
+and stores phase, opacity, transform and attached state. No RAF loop or history,
+no identity/data capture; disabled when Record transition is unchecked. Connected
+desktop, 390px phone, 768px tablet/Escape and reduced close record phase closed,
+opacity 0, attached true at that handoff, then the dialog detaches. Terminal JSON
+files are `card-close-terminal-{desktop,phone,tablet,reduced}.json` in the local
+ignored shots folder. The tablet podium attempt did not open a card; the actual
+associate row did. The non-opening attempt is not a passing card check.
+
+18 study tests, 787 total tests, normal build and isolated build pass on
+`378c689`. Tests cover delayed removal, cleanup, watchdog and preference paths.
+This is terminal-state evidence, not a recording of every painted frame or FPS.
+The previous feel timeout, observer error and release gates remain open. Keep
+#436 draft and live Sage unchanged.
+
 ## 28 September: within-tab motion, first bounded pass
 
 Jorge approves the updated Proposed navigation and asks to refine motion inside

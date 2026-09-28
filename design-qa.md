@@ -1,5 +1,23 @@
 # Lightspeed comparison QA
 
+## 28 September: close-end flash repair
+
+Jorge marks 6 Adjust and 7 Approve. The previous open/removed checks did not test
+the terminal gap. A new delayed-removal regression exposes my helper cancelling
+the invisible exit fill back to its pinned visible pose before React removal.
+The card now keeps its invisible terminal pose through cancellation and cleanup.
+The already-approved number motion, page choreography and static design stay put.
+
+Opt-in connected close samples at desktop, phone and tablet sizes, plus reduced
+motion, record opacity 0 while the terminal card is still attached, then confirm
+dialog removal. This is not continuous frame capture. Tablet podium did not open
+on the first attempt; the associate row supplied the successful tablet check.
+18 proposal tests, 787 total tests and both builds pass. Current's application
+routines remain intact and neither production source file is edited.
+
+Final result: blocked for release. Revised 6 needs Jorge's retry, and existing
+motion-check, observer-error, physical-phone and source-integration gates remain.
+
 ## 28 September: within-tab motion study
 
 Focused implementation check only, not a new full visual audit or FPS verdict.

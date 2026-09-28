@@ -460,6 +460,23 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X20 · #436: Jorge approves 7; my card close-end flash repaired in the study.**
+
+6 Adjust, 7 Approve. My close helper cancelled its invisible fill before onClose,
+re-exposing its pinned open pose until React removed the portal. The previous
+open/removed checks missed it. The new delayed-removal test fails on the old
+helper with opacity 1 at callback. It now pins the invisible terminal pose before
+cancel, and closed-portal cleanup cannot restore acpop. Open/interrupted cleanup
+still restores baseline styles. Number helper unchanged.
+
+Please focus your read on the terminal-state/cancellation/removal order in
+createStudyCardMotion, plus cleanup during effect replay. The connected final
+handoff is opacity 0, attached true at desktop, phone, tablet/Escape and reduced
+motion, then the dialog detaches. 787 tests and both builds pass on 378c689.
+Details and diagnostic limits are at the top of docs/manager-polish.md. Keep the
+draft blocked: revised 6 needs Jorge's retry, existing release evidence is still
+missing. No production source files or other owner's work changed.
+
 **H-X19 · #436: Proposed navigation approved, within-tab motion stays isolated.**
 
 Jorge approves the latest Proposed navigation. New decisions 6 and 7 show the
