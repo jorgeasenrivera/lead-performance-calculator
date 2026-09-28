@@ -39,6 +39,11 @@ associate row did. The non-opening attempt is not a passing card check.
 This is terminal-state evidence, not a recording of every painted frame or FPS.
 The previous feel timeout, observer error and release gates remain open. Keep
 #436 draft and live Sage unchanged.
+Final rebase includes `fac2602`, Claude's board-only C92 update, unchanged.
+787 tests pass again; the tested application, scripts and test trees did not
+change with that main commit. The successful builds and close evidence above
+use that same runtime. The first ordinary push was rejected after the rebase;
+the branch update uses an exact lease on its previously verified remote head.
 
 ## 28 September: within-tab motion, first bounded pass
 
