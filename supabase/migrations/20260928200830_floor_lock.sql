@@ -1,4 +1,4 @@
--- C92, step 2 of 2: close the day's floor and phone-line rows to the public key.
+-- C92: close the day's floor and phone-line rows to the public key.
 --
 -- Until now floor_public and queue_public let anybody with the site's public
 -- key (which is in every copy of the page) read, insert and update any store's
@@ -63,5 +63,7 @@ create policy queue_staff_update on public.queue_public for update to authentica
 
 revoke all on public.floor_public, public.queue_public from anon;
 
+-- Applied to the live project on 28 September (Jorge: lock now, unlock if a
+-- TV that has not been re-linked matters on a given day).
 -- Undo: supabase/pending/02-lock-undo.sql, which puts back exactly what was
 -- live before this, and is checked by scripts/c92-lock-check.sh.

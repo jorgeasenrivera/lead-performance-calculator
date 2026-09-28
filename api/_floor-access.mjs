@@ -3,7 +3,7 @@
  * -------------------------------------------------------------------------
  * `floor_public` and `queue_public` have been open to anybody holding the
  * site's public key, which is in every copy of the page: read, insert and
- * update, any store, any day. supabase/pending/02-lock.sql closes them to
+ * update, any store, any day. the floor_lock migration closes them to
  * everyone who is not signed in; signed-in staff keep using them directly,
  * for their own stores.
  *

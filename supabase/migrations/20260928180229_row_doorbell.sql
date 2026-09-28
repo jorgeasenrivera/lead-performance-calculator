@@ -2,7 +2,7 @@
 -- Applied to the live project on 28 September, after #435 merged.
 --
 -- The TV learns that a row moved through postgres_changes, which obeys the
--- table's select policy. Once supabase/pending/02-lock.sql closes the tables
+-- table's select policy. Once the floor_lock migration closes the tables
 -- to the public key, a TV (nobody signed in) would hear nothing and fall back
 -- to polling. This rings a public broadcast topic per row instead:
 --

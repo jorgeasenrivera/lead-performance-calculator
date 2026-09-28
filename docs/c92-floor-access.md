@@ -84,7 +84,7 @@ are 0 tickets on the live project. `saveTicket` now fills both columns.
    the TV listens to.
 4. **Each TV opened once with its new link**, from the manager's "TV link".
    A TV on its old link still reads the table directly, until step 5.
-5. **`02-lock.sql` applied**, then the feel run and a phone check. Undo is
+5. **The lock applied** (28 September, `migrations/20260928200830_floor_lock.sql`), then the feel run and a phone check. Undo is
    `02-lock-undo.sql`, which puts back exactly what was live before (the six
    open policies and the public key's four grants). Jorge, 28 September: lock
    now, unlock if a TV that has not been re-linked matters on a given day, lock

@@ -120,7 +120,7 @@ test("the endpoint: only staff at that store get a TV's key, and none without th
 });
 
 test("the lock and the endpoint name the same three ways in for staff", () => {
-  const sql = fs.readFileSync(new URL("../supabase/pending/02-lock.sql", import.meta.url), "utf8");
+  const sql = fs.readFileSync(new URL("../supabase/migrations/20260928200830_floor_lock.sql", import.meta.url), "utf8");
   assert.match(sql, /role = 'admin'/);
   assert.match(sql, /not p\.pending and store = any\(p\.stores\)/);
   assert.match(sql, /from public\.floor_people/);

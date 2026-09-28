@@ -3,7 +3,7 @@
  * -------------------------------------------------------------------------
  * The day's row for a TV showing the line, which has nobody signed in. Once
  * `floor_public` and `queue_public` close to the public key
- * (supabase/pending/02-lock.sql), this is its only way in. Signed-in staff
+ * (the floor_lock migration), this is its only way in. Signed-in staff
  * keep using the tables directly.
  *
  * POST { op: "read", room, store, date, stamp? }
