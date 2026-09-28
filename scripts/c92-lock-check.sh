@@ -1,6 +1,7 @@
 #!/bin/bash
-# C92: proves supabase/pending/01-doorbell.sql and 02-lock.sql on a real
-# Postgres before either reaches the live project. Throwaway cluster, stand-ins
+# C92: proves the doorbell (applied 28 September, now in supabase/migrations)
+# and supabase/pending/02-lock.sql on a real Postgres, before the lock reaches
+# the live project. Throwaway cluster, stand-ins
 # for Supabase's auth.uid() and realtime.send(), the baseline's tables and
 # its open policies; then the two files, then every kind of visitor.
 #
@@ -11,6 +12,7 @@ set -euo pipefail
 BIN=${PGBIN:-/usr/lib/postgresql/16/bin}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 PENDING=${PENDING:-$HERE/supabase/pending}   # point it elsewhere to prove a bad lock fails
+DOORBELL=${DOORBELL:-$HERE/supabase/migrations/20260928180229_row_doorbell.sql}
 DIR=$(mktemp -d)
 PORT=${PGPORT:-5499}
 trap '"$BIN/pg_ctl" -D "$DIR" -m immediate stop >/dev/null 2>&1 || true; rm -rf "$DIR"' EXIT
@@ -78,11 +80,11 @@ expect abc123 "$(as anon '' "select data->>'token' from floor_public")" "before:
 # and the table refuses it for want of its store. The reason no ticket exists.
 case "$(as anon '' "insert into queue_public (id, data) values ('ticket:t9','{}')")" in *"not-null"*) ok "C98: a ticket as the app sends it today is refused (store is NOT NULL)";; *) fail "C98 did not reproduce";; esac
 
-for f in 01-doorbell.sql 02-lock.sql; do
-  if ! q -f "$PENDING/$f" >/dev/null 2>"$DIR/err"; then cat "$DIR/err"; fail "$f did not apply"; echo; echo "1 check(s) failed."; exit 1; fi
+for f in "$DOORBELL" "$PENDING/02-lock.sql"; do
+  if ! q -f "$f" >/dev/null 2>"$DIR/err"; then cat "$DIR/err"; fail "$f did not apply"; echo; echo "1 check(s) failed."; exit 1; fi
 done
-ok "both pending files apply cleanly"
-if q -f "$PENDING/01-doorbell.sql" >/dev/null 2>&1 && q -f "$PENDING/02-lock.sql" >/dev/null 2>&1; then ok "and apply again without error (safe to re-run)"; else fail "a second run errors"; fi
+ok "the doorbell and the lock apply cleanly"
+if q -f "$DOORBELL" >/dev/null 2>&1 && q -f "$PENDING/02-lock.sql" >/dev/null 2>&1; then ok "and apply again without error (safe to re-run)"; else fail "a second run errors"; fi
 
 A=00000000-0000-0000-0000-00000000000a M=00000000-0000-0000-0000-0000000000a1 O=00000000-0000-0000-0000-0000000000a2
 L=00000000-0000-0000-0000-0000000000a3 P=00000000-0000-0000-0000-0000000000a4 I=00000000-0000-0000-0000-0000000000a5
