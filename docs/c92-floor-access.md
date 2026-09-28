@@ -77,7 +77,7 @@ file, so it is its own item.
    files in `supabase/pending/`, which nothing applies. Nothing live changes.
 2. **`01-doorbell.sql` applied.** Additive: a trigger that rings a topic nobody
    listens to yet.
-3. **The client switch, in the app file:** the no-account pages and the TV read
+3. **The client switch, in the app file** (`claude/c92-client`, 28 September): the no-account pages and the TV read
    and write through `/api/floor-row` and listen to the doorbell; the table tag
    uses the code the phone kept from its sign-in; `saveTicket` fills its columns
    (C98). Staff code is untouched. Needs `WALL_KEY_SECRET` in Vercel, and each
@@ -104,3 +104,25 @@ file, so it is its own item.
 - **The table tag** relies on the phone keeping today's code from its QR sign-in.
   A phone that was added to the line by the desk, and never scanned, cannot use
   a tag until it does.
+
+## The client switch, as built
+
+- `src/row-access.mjs` holds what a screen with no account carries: today's
+  code (kept on the phone per store, for a table tag) or a TV's key. The row
+  helpers (`loadRowIfChanged`, `loadFloorRow`, `saveFloorRow`, `loadQueueRow`,
+  `saveQueueRow`, `useLiveRow`) ask `viaFor()` first and use `/api/floor-row`
+  when it answers. A signed-in screen registers nothing and is unchanged.
+- `FloorSignIn` and `QueueSignIn` register the code they hold when they have no
+  account; the table tag uses the one this phone kept. The TV reads its key from
+  `&key=` in its link, and the manager's "TV link" asks the server for it.
+- Any of today's codes at a store opens that store's rows today, because a
+  salesperson's own screen reads both rooms: a change to the server rule, made
+  here.
+- A refused code reads as "no row for this code", so the page still says the
+  code isn't for today.
+- `saveTicket` fills `store` and `qdate` (C98), and a screen with no account
+  files through the endpoint.
+- The doorbell's `realtime.send` is guarded: a failed ring must never fail the
+  write. The lock check proves it (a write lands with Realtime down; without
+  the guard it fails).
+

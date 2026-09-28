@@ -15,9 +15,11 @@
  *             store's floor. The same three as `can_use_store` in
  *             supabase/pending/02-lock.sql, which is what lets signed-in
  *             phones keep reading and writing the tables directly.
- *   token     no account: holds today's code from the QR on the wall. Today's
- *             row for that store only, and never to make a row or change
- *             the code on it.
+ *   token     no account: holds one of today's codes from a QR on the wall.
+ *             Today's rows at that store: the floor's and the lines'. Any of
+ *             today's codes will do, because each proves the person is in
+ *             that showroom today, and a salesperson's own screen reads both
+ *             rooms. Never to make a row, or to change the code on one.
  *   wall      a TV showing the line and its QR code. Reads today's row for
  *             one store, with a key made for that store; writes nothing.
  *
@@ -30,7 +32,8 @@ export const TOKEN_HEADER = "x-sage-day-token";
 export const WALL_HEADER = "x-sage-wall-key";
 export const MAX_ROW_BYTES = 256 * 1024;      // the largest live row is 14 KB
 export const MAX_TICKET_BYTES = 16 * 1024;
-export const TICKET_PREFIX = "ticket:";
+/* One copy, shared with the app, which files the same rows (see no-duplicates). */
+export { TICKET_PREFIX } from "../src/row-access.mjs";
 
 const STORE_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -75,7 +78,8 @@ const deny = (status, why) => ({ ok: false, status, why });
 /**
  * decide({ op, room, store, date, today, via, row, data, expect, stamp })
  *   op    "read" | "write" | "ticket"
- *   via   { kind: "staff", allowed } | { kind: "token", token } | { kind: "wall", ok } | null
+ *   via   { kind: "staff", allowed } | { kind: "token", ok } | { kind: "wall", ok } | null
+ *         a token's `ok` is whether it matched any of today's rows at the store
  *   row   the row as it stands: { data, updated_at } or null when there is none
  *   data  for a write, the whole new row; for a ticket, the ticket
  * Returns { ok: true } or { ok: false, status, why }.
@@ -93,11 +97,11 @@ export function decide({ op, room, store, date, today, via, row, data, expect })
     if (op !== "read") return deny(403, "a wall screen only reads");
     if (date !== today) return deny(403, "a wall screen shows today");
   } else if (via.kind === "token") {
-    /* A code read off the wall at 9 in the morning opens today's row and
-       nothing else, and stops opening it at midnight. */
+    /* A code read off the wall at 9 in the morning opens today's rows at that
+       store and nothing else, and stops opening them at midnight. */
     if (date !== today) return deny(403, "that code was for another day");
-    if (!row || !row.data || !row.data.token) return deny(403, "that code does not open anything");
-    if (!sameSecret(via.token, row.data.token)) return deny(403, "that code is not today's");
+    if (!via.ok) return deny(403, "that code is not today's");
+    if (op !== "ticket" && !row) return deny(404, "that room is not open today");
   } else return deny(401, "sign in, or scan today's code");
 
   if (op === "write") {
@@ -105,7 +109,7 @@ export function decide({ op, room, store, date, today, via, row, data, expect })
     if (Buffer.byteLength(JSON.stringify(data)) > MAX_ROW_BYTES) return deny(413, "too large");
     if (via.kind === "token") {
       /* The room is the desk's to open and its code the desk's to set. */
-      if (data.token !== row.data.token) return deny(403, "the code cannot be changed from a phone");
+      if (!row.data || data.token !== row.data.token) return deny(403, "the code cannot be changed from a phone");
     }
     if (expect && row && row.updated_at && expect !== row.updated_at) return deny(409, "the row moved; read it again");
   }

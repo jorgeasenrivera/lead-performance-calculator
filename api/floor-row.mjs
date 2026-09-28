@@ -28,7 +28,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, serviceKey, envGap } from "./_env.mjs";
 import { decide, readable, rowAddress, staffMayUse, storeDay, wallKey, sameSecret,
-  TOKEN_HEADER, WALL_HEADER, TICKET_PREFIX } from "./_floor-access.mjs";
+  TOKEN_HEADER, WALL_HEADER, TICKET_PREFIX, ROOMS } from "./_floor-access.mjs";
 
 const header = (req, name) => {
   const h = (req.headers && req.headers[name]) || "";
@@ -46,7 +46,16 @@ async function whoIsAsking(req, store, deps) {
   const wall = header(req, WALL_HEADER);
   if (wall) return { kind: "wall", ok: sameSecret(wall, wallKey(store, deps.wallSecret)) };
   const token = header(req, TOKEN_HEADER);
-  if (token) return { kind: "token", token };
+  if (token) {
+    /* Any of today's codes at this store: the floor's or a line's. */
+    const day = storeDay(deps.now ? deps.now() : new Date());
+    for (const r of ROOMS) {
+      const a = rowAddress(r, store, day);
+      const got = a ? await deps.getRow(a) : null;
+      if (got && got.data && sameSecret(token, got.data.token)) return { kind: "token", ok: true };
+    }
+    return { kind: "token", ok: false };
+  }
   return null;
 }
 
@@ -66,17 +75,9 @@ export async function handle(req, res, deps) {
   }
 
   if (op === "ticket") {
-    /* A phone with no account files a ticket with the code it scanned, which
-       belongs to one of today's rows at that store: the floor's or a line's. */
-    let row = null;
-    if (via && via.kind === "token") {
-      for (const r of ["floor", "line", "online"]) {
-        const a = rowAddress(r, store, today);
-        const got = a ? await deps.getRow(a) : null;
-        if (got && got.data && sameSecret(via.token, got.data.token)) { row = got; break; }
-      }
-    }
-    const d = decide({ op, store, date: today, today, via, row: via && via.kind === "token" ? row : null, data });
+    /* A phone with no account files a ticket with any of today's codes at
+       that store (whoIsAsking checked it). */
+    const d = decide({ op, store, date: today, today, via, row: null, data });
     if (!d.ok) return res.status(d.status).json({ error: d.why });
     /* store and qdate are NOT NULL on queue_public. The app's own saveTicket
        sends neither, which is why no ticket has ever been saved (C98). */

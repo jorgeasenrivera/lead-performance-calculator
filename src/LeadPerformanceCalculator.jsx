@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { viaFor, readVia, writeVia, ticketVia, rememberDayCode, storedDayCode, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
 import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
 import { createArrivalScheduler } from "./arrival-scheduler.mjs";
 import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
@@ -2961,10 +2962,11 @@ export default function LeadPerformanceCalculator() {
     try {
       const p = new URLSearchParams(window.location.search);
       const b = p.get("qboard");
-      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase() } : null;
+      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase(), key: p.get("key") || "" } : null;
     } catch { return null; }
   })();
-  if (qBoardParams) return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>;
+  /* A TV reads the day's row with its store's key, from its link (C92). */
+  if (qBoardParams) { rememberWallKey(qBoardParams.store, qBoardParams.key); return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>; }
 
   const boardParams = (() => {
     try {
@@ -3822,10 +3824,14 @@ function QueueBoard({ storeId, kind }) {
     let channel = null;
     if (supabase) {
       try {
-        channel = supabase.channel(`qb:${table}:${rowId}`)
+        /* With a key, the row's public doorbell (C92); the TV cannot hear
+           postgres_changes once the rows close. */
+        channel = (viaFor(table, rowId)
+          ? supabase.channel(doorbellTopic(table, rowId)).on("broadcast", { event: "changed" }, () => { if (!dead) pull(); })
+          : supabase.channel(`qb:${table}:${rowId}`)
           .on("postgres_changes",
             { event: "*", schema: "public", table, filter: `id=eq.${rowId}` },
-            () => { if (!dead) pull(); })
+            () => { if (!dead) pull(); }))
           .subscribe();
       } catch (e) { /* no realtime: the poll below still carries it */ }
     }
@@ -6615,7 +6621,6 @@ const QUEUE_TABLE = "queue_public";
    without signing in, which matters: the people most likely to hit a problem are
    salespeople on a sign-in page who have no account at all. A ticket nobody can
    file is a ticket nobody sends. */
-const TICKET_PREFIX = "ticket:";
 
 
 
@@ -6646,9 +6651,14 @@ const isTestId = (id) => id === TEST_ID;
 
 async function saveTicket(t) {
   if (!supabase) return false;
+  /* store and qdate are NOT NULL on queue_public, and this used to send
+     neither, so the table refused every ticket ever filed (C98). A phone with
+     no account files through /api/floor-row with today's code (C92). */
+  const day = today();
   try {
+    if (!(await getTokens()) && t.store && (await ticketVia(t.store, day, t))) return true;
     const { error } = await supabase.from(QUEUE_TABLE)
-      .upsert({ id: TICKET_PREFIX + t.id, data: t }, { onConflict: "id" });
+      .upsert({ id: TICKET_PREFIX + t.id, store: t.store || "", qdate: day, data: t }, { onConflict: "id" });
     if (error) throw error;
     return true;
   } catch (e) { console.error("saveTicket", e); return false; }
@@ -6721,6 +6731,8 @@ const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${
    yet. Every caller below acts on that difference. */
 async function loadQueueRow(store, date, kind) {
   if (!supabase) return undefined;
+  const via = viaFor(QUEUE_TABLE, queueRowId(store, date, kind));
+  if (via) { try { return (await readVia(via)).row || null; } catch (e) { if (e && (e.status === 403 || e.status === 404)) return null; console.error("loadQueueRow", e); return undefined; } }
   try {
     const { data, error } = await supabase.from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date, kind)).maybeSingle();
     if (error) throw error;
@@ -6729,6 +6741,8 @@ async function loadQueueRow(store, date, kind) {
 }
 async function saveQueueRow(store, date, data, kind) {
   if (!supabase) return false;
+  const via = viaFor(QUEUE_TABLE, queueRowId(store, date, kind));
+  if (via) { try { await writeVia(via, data); return true; } catch (e) { console.error("saveQueueRow", e); return false; } }
   try {
     const { error } = await supabase.from(QUEUE_TABLE).upsert(
       { id: queueRowId(store, date, kind), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
@@ -8829,6 +8843,8 @@ function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
 
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false,
   account = null, onSignOut = null, rooms = null, onRoom = null, active = true , onReady = null }) {
+  /* No account: the rows are reached with today's code (C92). */
+  useState(() => { if (!account && token) rememberDayCode(store, date, token); return null; });
   const [row, setRow] = useState(undefined);
   /* An account that a manager has joined to a name IS the identity, the same
      way it already is on the floor: no daily code, no name to type. The QR
@@ -9527,7 +9543,21 @@ const rowStamps = new Map();
 async function loadRowIfChanged(table, id, tag) {
   if (!supabase) return undefined;
   const k = tag || (table + "|" + id);
+  const via = viaFor(table, id);
   const read = async () => {
+    /* A screen with no account (C92): the endpoint makes the same bargain,
+       answering "same" for the stamp it was shown, and writes nothing shared. */
+    if (via) {
+      /* A refused code is "no row for this code", not a failed read, so the
+         page says the code isn't for today, as it did before (C92). */
+      const out = await readVia(via, rowStamps.get(k)).catch((e) => {
+        if (e && (e.status === 403 || e.status === 404)) return { row: null };
+        throw e;
+      });
+      if (out.same) return "same";
+      if (out.row) cachePut("row:" + table + "|" + id, out.row);
+      return { row: out.row || null, stamp: out.row ? (out.stamp || "none") : "missing" };
+    }
     const { data: s, error: e1 } = await supabase.from(table).select("updated_at").eq("id", id).maybeSingle();
     if (e1) throw e1;
     const stamp = s ? (s.updated_at || "none") : "missing";
@@ -9585,11 +9615,18 @@ function useLiveRow(table, id, onChange) {
     if (!supabase || !id) return undefined;
     let ch = null;
     try {
-      ch = supabase.channel(`live:${table}:${id}`)
+      /* A screen with no account cannot hear postgres_changes once the rows
+         close (C92): it listens to the row's public doorbell instead, which
+         carries a time and nothing of the row (supabase/pending/01-doorbell.sql). */
+      ch = viaFor(table, id)
+        ? supabase.channel(doorbellTopic(table, id)).on("broadcast", { event: "changed" }, () => {
+            try { cb.current(); } catch (e) {}
+          })
+        : supabase.channel(`live:${table}:${id}`)
         .on("postgres_changes", { event: "*", schema: "public", table, filter: `id=eq.${id}` }, () => {
           try { cb.current(); } catch (e) {}
-        })
-        .subscribe((status) => setLive(status === "SUBSCRIBED"));
+        });
+      ch = ch.subscribe((status) => setLive(status === "SUBSCRIBED"));
     } catch (e) { ch = null; }
     return () => { setLive(false); if (ch) { try { supabase.removeChannel(ch); } catch (e) {} } };
   }, [table, id]);
@@ -9597,6 +9634,8 @@ function useLiveRow(table, id, onChange) {
 }
 async function loadFloorRow(store, date) {
   if (!supabase) return undefined;
+  const via = viaFor(FLOOR_TABLE, floorRowId(store, date));
+  if (via) { try { return (await readVia(via)).row || null; } catch (e) { if (e && (e.status === 403 || e.status === 404)) return null; console.error("loadFloorRow", e); return undefined; } }
   try {
     const { data, error } = await supabase.from(FLOOR_TABLE).select("data").eq("id", floorRowId(store, date)).maybeSingle();
     if (error) throw error;
@@ -9608,6 +9647,8 @@ async function loadFloorRow(store, date) {
    and then quietly disagrees. */
 async function saveFloorRow(store, date, data) {
   if (!supabase) throw new Error("No database connection");
+  const via = viaFor(FLOOR_TABLE, floorRowId(store, date));
+  if (via) { await writeVia(via, data); return true; }
   const { error } = await supabase.from(FLOOR_TABLE).upsert(
     { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
   if (error) {
@@ -10820,6 +10861,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    yet, and the floor tab is where they get on. */
 function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null, active = true,
   tab: tabFrom = null, onTab = null, onHold = null, onSlide = null, onReady = null }) {
+  /* No account: the rows are reached with today's code (C92). A table tag
+     carries none, so it uses the one this phone kept when it scanned. Before
+     the first read, so every helper below already knows. */
+  useState(() => { if (!account) { const code = token || (tag ? storedDayCode(store, date) : null); if (code) rememberDayCode(store, date, code); } return null; });
   const [row, setRow] = useState(undefined);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one

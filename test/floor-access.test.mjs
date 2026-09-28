@@ -38,17 +38,17 @@ test("staff: an admin, the store on an approved profile, or a floor link; nobody
   assert.equal(staffMayUse({ profile: null, linkedStores: ["dm"] }, "dm"), false, "no profile, no way in");
 });
 
-test("a phone with today's code: today's row at that store, read and write, never the code itself", () => {
+test("a phone with one of today's codes: today's rows at that store, never another day, never the code itself", () => {
   const base = { room: "floor", store: "dm", date: TODAY, today: TODAY, row: row() };
-  assert.equal(decide({ ...base, op: "read", via: { kind: "token", token: "abc123" } }).ok, true);
-  assert.equal(decide({ ...base, op: "read", via: { kind: "token", token: "abc124" } }).status, 403);
-  assert.equal(decide({ ...base, op: "read", via: { kind: "token", token: "abc123" }, date: "2026-09-27", today: TODAY }).status, 403,
-    "yesterday's row, even with its own code");
-  assert.equal(decide({ ...base, op: "read", via: { kind: "token", token: "abc123" }, row: null }).status, 403, "no row, nothing to hold a code against");
-  assert.equal(decide({ ...base, op: "write", via: { kind: "token", token: "abc123" }, data: { token: "abc123", line: [1] } }).ok, true);
-  assert.equal(decide({ ...base, op: "write", via: { kind: "token", token: "abc123" }, data: { token: "mine", line: [] } }).status, 403,
+  const ok = { kind: "token", ok: true }, bad = { kind: "token", ok: false };
+  assert.equal(decide({ ...base, op: "read", via: ok }).ok, true);
+  assert.equal(decide({ ...base, op: "read", via: bad }).status, 403);
+  assert.equal(decide({ ...base, op: "read", via: ok, date: "2026-09-27" }).status, 403, "yesterday's row, even with its own code");
+  assert.equal(decide({ ...base, op: "read", via: ok, row: null }).status, 404, "a room not open today");
+  assert.equal(decide({ ...base, op: "write", via: ok, data: { token: "abc123", line: [1] } }).ok, true);
+  assert.equal(decide({ ...base, op: "write", via: ok, data: { token: "mine", line: [] } }).status, 403,
     "a phone cannot reset the code and lock the desk out");
-  assert.equal(decide({ ...base, op: "write", via: { kind: "token", token: "abc123" }, data: { line: [] } }).status, 403);
+  assert.equal(decide({ ...base, op: "write", via: ok, data: { line: [] } }).status, 403);
 });
 
 test("a TV reads today's row with its store's key, and writes nothing", () => {
@@ -113,7 +113,9 @@ test("the endpoint: code, TV key and session each get exactly their share", asyn
   const read = { op: "read", room: "floor", store: "dm", date: TODAY };
   assert.equal((await call(deps, read)).status, 401, "no headers at all");
   assert.equal((await call(deps, read, { [TOKEN_HEADER]: "abc123" })).out.row.token, "abc123");
-  assert.equal((await call(deps, read, { [TOKEN_HEADER]: "line99" })).status, 403, "the line's code does not open the floor");
+  assert.equal((await call(deps, read, { [TOKEN_HEADER]: "line99" })).out.row.token, "abc123",
+    "the line's code opens the floor at the same store today: a salesperson's own screen reads both rooms");
+  assert.equal((await call(deps, read, { [TOKEN_HEADER]: "nope" })).status, 403);
   assert.equal((await call(deps, { ...read, room: "line" }, { [WALL_HEADER]: wallKey("dm", SECRET) })).out.row.token, "line99");
   assert.equal((await call(deps, read, { [WALL_HEADER]: wallKey("other", SECRET) })).status, 403);
   assert.equal((await call(deps, read, { authorization: "Bearer jwt-mgr" })).status, 200);
@@ -134,7 +136,7 @@ test("the endpoint: writes keep the code, refuse a stale version, and only staff
   assert.equal(stale.status, 409, "the version it read has been replaced");
   assert.deepEqual(rows.get("floor_public|dm:2026-09-28").data.line, ["x"], "and nothing was overwritten");
   const newDay = { ...w, room: "online", data: { token: "new1", line: [] } };
-  assert.equal((await call(deps, newDay, { [TOKEN_HEADER]: "abc123" })).status, 403, "a code cannot open a room");
+  assert.equal((await call(deps, newDay, { [TOKEN_HEADER]: "abc123" })).status, 404, "a code cannot open a room: it is not open today");
   assert.equal((await call(deps, newDay, { authorization: "Bearer jwt-mgr" })).status, 200, "the desk can");
   assert.equal(rows.get("queue_public|dm:2026-09-28:online").data.token, "new1");
 });

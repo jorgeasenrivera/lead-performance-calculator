@@ -2191,10 +2191,18 @@ const UPS_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
 /* The wall address for this queue. Copy it once into a screen and leave it. */
 function QueueBoardLink({ storeId, kind }) {
   const [said, setSaid] = useState(false);
-  const url = `${window.location.origin}${window.location.pathname}?qboard=${encodeURIComponent(storeId)}&k=${kind}`;
+  const base = `${window.location.origin}${window.location.pathname}?qboard=${encodeURIComponent(storeId)}&k=${kind}`;
+  /* The link carries this store's key: once the day's rows close to the
+     public key, it is how a TV with nobody signed in reads them (C92,
+     Jorge chose this on 28 September). Asked for at the tap, from the server. */
+  const linkWithKey = async () => {
+    const out = await apiCall("/api/floor-row", { method: "POST", body: { op: "wallkey", store: storeId } });
+    return out && out.key ? `${base}&key=${encodeURIComponent(out.key)}` : base;
+  };
   return (
-    <button className="btn-quiet" title={url}
-      onClick={() => {
+    <button className="btn-quiet" title={base}
+      onClick={async () => {
+        const url = await linkWithKey();
         navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
           () => askCopy("Point a screen at this address", url));
       }}>

@@ -41,7 +41,6 @@ const API = path.join(ROOT, "api");
    need to agree. */
 const KNOWN = new Map([
   ["uid", "Two independent random id generators. Nothing ever compares one to the other, so there is nothing for them to disagree about."],
-  ["TICKET_PREFIX", "C92: /api/floor-row files a no-account phone's ticket under the same prefix the app reads. Temporary: the C92 client switch has the app import it from api/_floor-access.mjs, and this line goes."],
 ]);
 
 const topLevelNames = (src) => {
