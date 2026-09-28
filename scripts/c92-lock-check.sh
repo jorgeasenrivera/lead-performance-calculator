@@ -1,6 +1,6 @@
 #!/bin/bash
-# C92: proves the doorbell (applied 28 September, now in supabase/migrations)
-# and supabase/pending/02-lock.sql on a real Postgres, before the lock reaches
+# C92: proves the doorbell (applied 28 September, now in supabase/migrations),
+# supabase/pending/02-lock.sql and its undo on a real Postgres, before the lock reaches
 # the live project. Throwaway cluster, stand-ins
 # for Supabase's auth.uid() and realtime.send(), the baseline's tables and
 # its open policies; then the two files, then every kind of visitor.
@@ -127,6 +127,27 @@ expect 0 "$tickets" "tickets ring nothing"
 # A doorbell that breaks must not break the write.
 q -c "create or replace function realtime.send(payload jsonb, event text, topic text, private boolean default true) returns void language plpgsql as \$\$ begin raise exception 'realtime is down'; end \$\$" >/dev/null
 expect UPDATE "$(as authenticated $M "update floor_public set data = jsonb_set(data,'{line}','[2]') where id='dm:2026-09-28' returning 'UPDATE'" | grep -v WARNING)" "with Realtime down, the write still lands"
+
+# Undo, and lock again: the lock goes on and off with the TVs (Jorge, 28
+# September), so both directions are proved, twice each, against the state
+# the live project had before (read from it that day).
+state() { q -tA -c "select string_agg(tablename||'/'||policyname||'/'||cmd||'/'||roles::text||'/'||coalesce(qual,'-')||'/'||coalesce(with_check,'-'), ' ' order by tablename, policyname) from pg_policies where tablename in ('floor_public','queue_public')"; }
+grants() { q -tA -c "select string_agg(table_name||':'||privilege_type, ',' order by table_name, privilege_type) from information_schema.role_table_grants where grantee='anon' and table_name in ('floor_public','queue_public')"; }
+LIVE_BEFORE='floor_public/floor_public read/SELECT/{public}/true/- floor_public/floor_public update/UPDATE/{public}/true/true floor_public/floor_public write/INSERT/{public}/-/true queue_public/queue_public_insert/INSERT/{public}/-/true queue_public/queue_public_read/SELECT/{public}/true/- queue_public/queue_public_update/UPDATE/{public}/true/true'
+LIVE_GRANTS='floor_public:DELETE,floor_public:INSERT,floor_public:SELECT,floor_public:UPDATE,queue_public:DELETE,queue_public:INSERT,queue_public:SELECT,queue_public:UPDATE'
+UNDO="$PENDING/02-lock-undo.sql"
+if q -f "$UNDO" >/dev/null 2>"$DIR/err" && q -f "$UNDO" >/dev/null 2>>"$DIR/err"; then ok "the undo applies, and again (safe to re-run)"; else cat "$DIR/err"; fail "the undo did not apply"; fi
+expect "$LIVE_BEFORE" "$(state)" "undone: the six policies are exactly what was live before the lock"
+expect "$LIVE_GRANTS" "$(grants)" "undone: and the public key's four grants, DELETE included"
+expect 1 "$(as anon '' "select count(*) from floor_public")" "undone: the public key reads the floor again (an old TV link works)"
+expect UPDATE "$(as anon '' "update queue_public set data = data where id='dm:2026-09-28' returning 'UPDATE'" | grep -v WARNING)" "undone: and writes it"
+expect 1 "$(as authenticated $M "select count(*) from floor_public where store='dm'")" "undone: staff still read"
+if q -f "$PENDING/02-lock.sql" >/dev/null 2>"$DIR/err" && q -f "$PENDING/02-lock.sql" >/dev/null 2>>"$DIR/err"; then ok "locked again, twice, without error"; else cat "$DIR/err"; fail "the lock did not apply after the undo"; fi
+case "$(as anon '' "select count(*) from floor_public")" in *"permission denied"*) ok "locked again: the public key cannot read the floor";; *) fail "locked again: the public key still reads the floor";; esac
+case "$(as anon '' "update queue_public set data='{}'")" in *"permission denied"*) ok "locked again: nor write";; *) fail "locked again: the public key can still write";; esac
+expect 1 "$(as authenticated $M "select count(*) from floor_public where store='dm'")" "locked again: manager of dm reads dm"
+expect 0 "$(as authenticated $O "select count(*) from floor_public where store='dm'")" "locked again: another store's manager sees none"
+expect 1 "$(as authenticated $L "select count(*) from floor_public")" "locked again: the linked account reads its floor"
 
 echo
 if [ "$fails" = 0 ]; then echo "All checks passed."; else echo "$fails check(s) failed."; fi

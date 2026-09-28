@@ -16,8 +16,8 @@
 --     the TV's key.
 --
 -- APPLY ONLY AFTER the no-account pages and the TVs use /api/floor-row, or
--- the floor goes down for everybody without an account. Undo is the six
--- baseline policies, at the foot of this file.
+-- the floor goes down for everybody without an account. Undo is
+-- 02-lock-undo.sql.
 
 create or replace function public.can_use_store(store text) returns boolean
 language sql stable security definer set search_path = '' as $$
@@ -63,11 +63,5 @@ create policy queue_staff_update on public.queue_public for update to authentica
 
 revoke all on public.floor_public, public.queue_public from anon;
 
--- Undo, if the floor stops: restore the baseline's six policies and grants.
---   grant select, insert, update on public.floor_public, public.queue_public to anon;
---   create policy "floor_public read" on public.floor_public for select to public using (true);
---   create policy "floor_public write" on public.floor_public for insert to public with check (true);
---   create policy "floor_public update" on public.floor_public for update to public using (true) with check (true);
---   create policy queue_public_read on public.queue_public for select to public using (true);
---   create policy queue_public_insert on public.queue_public for insert to public with check (true);
---   create policy queue_public_update on public.queue_public for update to public using (true) with check (true);
+-- Undo: supabase/pending/02-lock-undo.sql, which puts back exactly what was
+-- live before this, and is checked by scripts/c92-lock-check.sh.
