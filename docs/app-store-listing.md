@@ -8,9 +8,10 @@ this file and the listing never disagree.
 Distribution is **unlisted**: the app is reviewed like any other and reached
 only by its link. That is a request to Apple, not a setting (see the end).
 
-**Not yet:** submit only after C92 (the floor rows closed), the Privacy link
-under sign-in, the Delete my account page, and one production build carrying
-all of it. The privacy and support pages go live with #420.
+**Ready as of 29 September:** C92 (the floor rows closed), the Privacy link
+under sign-in, the Delete my account page and the privacy and support pages are
+live, and TestFlight build 54 is the production build: every native change is
+in it, and everything since is web, which the app loads live.
 
 ---
 
@@ -55,10 +56,12 @@ dealership,car sales,sales floor,up system,rotation,salesperson,showroom,leaderb
 | Privacy Policy URL | https://www.sageonline.io/privacy |
 | Marketing URL | leave empty |
 
-**Screenshots:** five, 6.9-inch (1320 x 2868), from the demo store, no
-captions: Live Floor with a line, You're up, Phone Line with desks, your
-corner, and the lock screen card (from a phone; the harness cannot draw it).
-Made from the production build, once it exists.
+**Screenshots:** five, in the 6.9-inch slot, signed in as Sam Demo on the demo
+store, no captions: Live Floor with a line, You're up, Phone Line with desks,
+your corner, and the lock screen card. Taken on Jorge's iPhone Air (1260 x
+2736), opening Sage from its Home Screen icon so the status bar carries no
+"TestFlight" back link, and on a plain lock screen with no widgets or Focus.
+Upload the originals from Photos, not copies sent through a chat.
 
 ## App Privacy
 
@@ -85,7 +88,7 @@ reviewer will look for it. Jorge's A5.
 | Field | Value |
 |---|---|
 | Sign-in required | Yes |
-| User name | demo@sageonline.app |
+| User name | demo.sales@sageonline.app (Sam Demo, a salesperson) |
 | Password | Jorge types it in App Store Connect. It is not written here. |
 | Contact | Jorge Rivera, jorge.rivera@hollerford.com, and a phone number Jorge adds |
 
@@ -94,13 +97,13 @@ reviewer will look for it. Jorge's A5.
 ```
 Sage is a work app for car dealership staff. Accounts are set up by the dealership; this one is a demo store with fictional people.
 
-Sign in: demo@sageonline.app, password in the fields above. You land on the demo store's floor.
+Two demo logins. The one in the fields above, demo.sales@sageonline.app, is Sam Demo, a salesperson: you land on his corner, with Live Floor and Phone Line at the bottom. To see the manager's screens, sign out (You, then Sign out) and sign in as demo@sageonline.app, password: [Jorge types it here].
 
 Location "Always": only if a store has drawn its lot. The iPhone watches the edge of the lot and, when the salesperson leaves, asks on the phone whether they are done for the day, so the rotation does not keep calling somebody who has gone home. Coordinates never leave the phone. Location can be refused and the app still works; it asks instead of noticing.
 
-Live Activity: signing on to the floor starts a lock screen card showing your place in line.
+Live Activity: as Sam, tap Live Floor, then Get me on. A lock screen card shows your place in line.
 
-Deleting the account: You, then Your account, then Delete my account, then type DELETE.
+Deleting the account: You, then Your account, then Delete my account, then type DELETE. Please do not complete it on the demo logins: the next reviewer needs them, and the nightly reset brings back the store, not the logins.
 ```
 
 ## Age rating
