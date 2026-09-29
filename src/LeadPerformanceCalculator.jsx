@@ -3071,6 +3071,9 @@ export default function LeadPerformanceCalculator() {
       localStorage.removeItem("lpcf:home");
     } catch (e) {}
     const home = homeLinkFor(floorLinks, remembered);
+    if (home && SALESPERSON_APP_ONLY && !inSageApp()) {
+      return wrap(<Shell><AppOnlyCard name={session.name} onSignOut={signOut} /><Style /></Shell>);
+    }
     if (home) {
       try { localStorage.setItem(homeKey, home.store); } catch (e) {}
       /* Their corner, through the account. The daily QR stays the second door
@@ -4957,6 +4960,35 @@ function HelpPanel({ config, who, store, context, figures, onClose, dark = false
 /* Where the phone app lives, once it does. Empty until then, and the Help row
    says the app is coming instead of pointing anywhere. */
 const APP_STORE_LINKS = { ios: "", android: "" };
+/* The salesperson's screens live in the app, never on a website (C103, Jorge,
+   29 September). Off until the App Store release, which is when the app is
+   reachable at all: switching it on sooner would lock out the people using a
+   browser today with nowhere to go. The release turns this on and fills
+   APP_STORE_LINKS.ios in the same change. */
+const SALESPERSON_APP_ONLY = false;
+/* Inside the app the page has the phone's bridge; no browser has it. */
+const inSageApp = () => typeof window !== "undefined" && !!window.ReactNativeWebView;
+
+/* What a browser shows a salesperson instead of their screens (C103, A1 a):
+   where to go, a way there, and their account, so Delete my account still
+   works from a browser. */
+function AppOnlyCard({ name, onSignOut }) {
+  const [acct, setAcct] = useState(false);
+  const link = APP_STORE_LINKS.ios;
+  return (
+    <div className="login"><div className="login-card">
+      <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
+      <h1 className="login-title lf-balance">Sage for salespeople is in the app</h1>
+      <p className="lf-note">Your floor, your line and your numbers are on your phone. Open Sage there, signed in with this same account.</p>
+      {link
+        ? <a className="lf-go lf-solo" href={link} target="_blank" rel="noopener"><span>Get the Sage app</span></a>
+        : <p className="lf-note">The app is on its way to the App Store.</p>}
+      <button className="lf-alt" onClick={() => setAcct(true)}>Your account</button>
+      <button className="lf-alt" onClick={onSignOut}>Sign out</button>
+      {acct && <AccountSheet desk name={name} onClose={() => setAcct(false)} onDeleted={() => { setAcct(false); onSignOut(); }} />}
+    </div></div>
+  );
+}
 
 /* ---------------- Claim your name ----------------
    Which store, and which name on its roster. The roster comes from the store's
@@ -14639,6 +14671,10 @@ html.signin-gone .signin-over { display:none; }
 .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
         font:inherit; font-size:13px; color:#6E6E76; }
 .lf-alt:hover { color:#2E3A32; }
+/* The app-only card (C103): its pill is a link to the store, dressed as the
+   buttons beside it, and its heading breaks evenly rather than leaving one word. */
+a.lf-go { text-decoration:none; justify-content:center; }
+.login-title.lf-balance { text-wrap:balance; }
 /* The policy (C90): quieter than Create New Account, and centred under it. */
 .lf-privacy { display:block; width:max-content; margin:12px auto 0; font-size:12px; color:#8A8A92; text-decoration:none; }
 .lf-privacy:hover { color:#2E3A32; text-decoration:underline; }
