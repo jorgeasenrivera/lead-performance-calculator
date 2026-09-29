@@ -264,7 +264,30 @@ async function run(b) {
     await p.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app").catch(() => {});
     await p.fill('input[type="password"]', "x");
     const t0 = Date.now(); await p.click('button:has-text("Sign in")');
-    await p.waitForSelector(".ar-bar", { timeout: 40000 });
+    try {
+      await p.waitForSelector(".ar-bar", { timeout: 40000 });
+    } catch (e) {
+      /* C102: twice this has never landed, on two branches, and passed on the
+         next run. A timeout alone says nothing, so say what the page was doing
+         at the moment the wait gave up, then fail exactly as before. */
+      const at = await p.evaluate(() => {
+        const vis = (el) => { if (!el) return "absent"; const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+          return cs.visibility === "hidden" || cs.display === "none" || cs.opacity === "0" ? `hidden (${cs.visibility}, ${cs.display}, ${cs.opacity})` : `shown ${Math.round(r.width)}x${Math.round(r.height)}`; };
+        const html = document.documentElement;
+        return {
+          phases: window.__loginPhases || [],
+          html: html.className,
+          signIn: vis(document.querySelector(".signin-over")),
+          bar: `${document.querySelectorAll(".ar-bar").length} in the page`,
+          rootInert: !!document.getElementById("root")?.inert,
+          stall: !!document.querySelector(".boot-stall, .boot-slow"),
+          url: location.pathname + location.search + location.hash,
+          text: (document.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160),
+        };
+      }).catch((err) => ({ unreadable: String(err).slice(0, 120) }));
+      console.log(`feel: the ${full ? "full" : "reduced-motion"} sign-in did not land in 40 s. At that moment: ${JSON.stringify(at)}`);
+      throw e;
+    }
     // Visible is not interactive while the finishing scan owns the screen.
     // Include that wait in the same speed bar, never tap through an inert root.
     await p.waitForFunction(() => !document.getElementById("root")?.inert
