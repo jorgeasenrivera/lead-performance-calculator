@@ -12217,7 +12217,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                 <span>Something looks wrong<span className="hint">Send a number or a ticket back with a note</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
                 <span className="ic"><PixIcon glyph="user" size={16} /></span>
-                <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+                <span>Message {((cfg && cfg.support && cfg.support.name) || "Jorge").split(" ")[0]}</span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               {!inNative && (
                 <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); if (appLink) window.open(appLink, "_blank", "noopener"); else setAppOpen(true); }}>
                   <span className="ic"><PixIcon glyph="phone" size={16} /></span>

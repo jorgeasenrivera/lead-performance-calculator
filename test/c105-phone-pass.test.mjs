@@ -56,6 +56,10 @@ test("C2 b: the This phone rows have no descriptions; Reach and The day keep the
   assert.ok(you.length > 500 && !/className="hint"/.test(you), "no description on any This phone row");
   const reach = app.slice(app.indexOf('<div className="mc-cap">REACH</div>'), app.indexOf('<div className="mc-cap">THE DAY</div>'));
   assert.match(reach, /Send a number or a ticket back with a note/);
+  /* Jorge, after the preview: the Message row names him and has no line under
+     it. A store whose settings carry no support contact said "Message the". */
+  assert.match(reach, /<span>Message \{\(\(cfg && cfg\.support && cfg\.support\.name\) \|\| "Jorge"\)\.split\(" "\)\[0\]\}<\/span>/);
+  assert.ok(!reach.includes("Straight to the top"));
 });
 
 test("the demo store has both rooms, so the reviewer sees the Phone Line", () => {
