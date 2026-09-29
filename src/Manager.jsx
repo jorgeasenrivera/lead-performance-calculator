@@ -283,7 +283,12 @@ const statedSplitOf = (M) => {
   if (!v) return null;
   const nw = v.new ?? null, us = v.used ?? null, other = v.other ?? null;
   if (nw == null && us == null) return null;
-  return { nw: nw || 0, us: us || 0, other: other || 0, counted: true };
+  /* The shares come with it. The phone board once took the counts and not the
+     shares, and drew "NaN" for both paces whenever the report carried its own
+     split (Codex, H-X22). */
+  const n = nw || 0, u = us || 0, o = other || 0, known = n + u + o;
+  return { nw: n, us: u, other: o, counted: true, known,
+    newPct: known > 0 ? n / known : null, usedPct: known > 0 ? u / known : null };
 };
 
 /* Whether this month has a goal. There is nothing else to ask: a goal belongs
@@ -17063,7 +17068,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     const known = nw + us + other;
     const newPct = known > 0 ? nw / known : null, usedPct = known > 0 ? us / known : null;
     const told = statedSplitOf(M);
-    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, known: told.nw + told.us };
+    if (told) return { seen: true, ...told };
     if (statedM && known > 0) { const f = statedM.deliveries / known; nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10; }
     return { seen, nw, us, known, newPct, usedPct };
   })();
@@ -17274,7 +17279,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
         </div>
         {canSetGoal && (
           <div className="fr-acts">
-            <input className="fr-ref" type="number" min="0" inputMode="numeric" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
+            <input className="fr-ref" type="number" min="0" inputMode="numeric" aria-label="Units goal for the month" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
             <button type="button" className="fr-b pri" onClick={() => saveGoal()}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
           </div>
         )}
@@ -17703,10 +17708,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
        only ever a stand-in for a figure the report had all along, and it is the
        thing that put a third of a car on the card. */
     const told = statedSplitOf(M);
-    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, other: told.other,
-      known: told.nw + told.us + told.other,
-      newPct: (told.nw + told.us + told.other) > 0 ? told.nw / (told.nw + told.us + told.other) : null,
-      usedPct: (told.nw + told.us + told.other) > 0 ? told.us / (told.nw + told.us + told.other) : null };
+    if (told) return { seen: true, ...told };
     if (statedM && known > 0) {
       const f = statedM.deliveries / known;
       nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10;
