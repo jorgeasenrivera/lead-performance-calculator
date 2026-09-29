@@ -1,5 +1,18 @@
 # Lightspeed comparison QA
 
+## 29 September: compact hero overlap from Jorge's screenshot
+
+Confirmed goal text crossing the calendar: a 117.2px column contained 122.1px
+of dots plus 70.2px of inline goal and 10px gap. Pending decision 10 stacks goal
+below responsive SVG digits at phone widths. At 320px number ends x146 before
+calendar x158; at 390px x150.9 before calendar x228.4. Goal is below the number
+at both widths. Calendar width, font sizes, all metrics and motion retained.
+The goal row slightly increases compact hero height. 813 tests, 23 proposal
+tests and both builds pass on 2513534. Accepted before/after captures are local
+under shots/manager-proposal-20260928/hero-*. No source edits, full total-length
+matrix, physical phone, WebKit or clean-console claim. Read H-C20's correction:
+the delayed Manager boundary experiment is structural, not proven visible.
+
 ## 29 September: compact card proposal and H-C19 response
 
 Current-run captures confirm crowded 320px metrics, a proposed three-bar row

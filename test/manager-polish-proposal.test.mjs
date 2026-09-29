@@ -50,11 +50,12 @@ test("the cold-download experiment changes only one manager import, not the shar
 test("approval page scripts parse and retain existing decisions plus compact History", () => {
   const html = proposalPage();
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]);
-  assert.equal((html.match(/data-decision="/g) || []).length,9);
+  assert.equal((html.match(/data-decision="/g) || []).length,10);
   assert.ok(html.includes("Compact phone, 320 x 568"));
   assert.ok(html.includes("Landscape, 844 x 390"));
   assert.ok(html.includes("8. Compact phone History"));
   assert.ok(html.includes("9. Compact associate metrics"));
+  assert.ok(html.includes("10. Phone hero fit"));
   assert.ok(html.includes("Fictional people and figures"));
   assert.ok(html.includes("Replay full sign-in"));
   assert.ok(html.includes("Replay page motion"));
@@ -72,6 +73,15 @@ test("compact associate metrics keep all six in their original reading order", (
   assert.ok(compact.includes(".sage-polish .acard .ac-gauges .mstrip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 10px; }"));
   assert.ok(!compact.includes("font-size"));
   assert.ok(!compact.includes(".s2g4 { display:none"));
+});
+
+test("phone hero keeps the goal below responsive dot digits without hiding data", () => {
+  const phone = polishCSS.split("@media(max-width:600px) {")[1].split("\n}")[0];
+  assert.ok(phone.includes(".sage-polish .bp-page .bp-l1 { flex-direction:column; align-items:flex-start; gap:8px; }"));
+  assert.ok(phone.includes(".bp-num .dotnum { max-width:100%; }"));
+  assert.ok(phone.includes(".bp-num .dotnum > svg { min-width:0; height:auto; }"));
+  assert.ok(!phone.includes(".bp-r1"));
+  assert.ok(!phone.includes("display:none"));
 });
 
 function motionHarness() {

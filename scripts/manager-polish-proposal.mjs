@@ -235,6 +235,12 @@ export const polishCSS = `
 @keyframes sagePolishOut { from {opacity:1;transform:none} to {opacity:0;transform:translateX(var(--tabx-out,var(--tx-out,0px)))} }
 @keyframes sagePolishIn { from {opacity:1;transform:translateX(var(--tabx-in,var(--tx-in,0px)))} to {opacity:1;transform:none} }
 @media(max-width:600px) {
+  /* The units column is narrower than the digits plus an inline goal. Keep
+     the goal below, and let real SVG digits shrink together without clipping. */
+  .sage-polish .bp-page .bp-l1 { flex-direction:column; align-items:flex-start; gap:8px; }
+  .sage-polish .bp-page .bp-num { max-width:100%; line-height:0; }
+  .sage-polish .bp-page .bp-num .dotnum { max-width:100%; }
+  .sage-polish .bp-page .bp-num .dotnum > svg { min-width:0; height:auto; }
   .sage-polish .s2-store { font-size:22px; }
   .sage-polish .s2-right { padding-left:0; border-left:0; }
   .sage-polish .tg-in input { width:64px; }
@@ -467,7 +473,8 @@ ${[
   ["6. Associate card motion","Dashboard: open a person's card, then close it quickly. It returns from its actual position and stays invisible until removed, preventing the flash at the end of close. Repeated closes have one owner. Reduce page motion also stops this travel."],
   ["7. Number updates","Dashboard podium and month recap: first counts settle sooner. Updated numbers continue from the displayed value instead of restarting at zero. Hidden pages and Reduce Motion show the final number without counting."],
   ["8. Compact phone History","At 380 px and below, put the name above the five figures. Keep every metric label readable and aligned without shrinking the font. Larger phone and desktop layouts stay the same. Try Compact phone, then History."],
-  ["9. Compact associate metrics","At 380 px and below, keep three channel bars above three video dials, instead of squeezing six into one row. All figures, targets, labels and explanations stay. Fonts and larger layouts are unchanged. Try Compact phone, Dashboard, then open a person's card."]
+  ["9. Compact associate metrics","At 380 px and below, keep three channel bars above three video dials, instead of squeezing six into one row. All figures, targets, labels and explanations stay. Fonts and larger layouts are unchanged. Try Compact phone, Dashboard, then open a person's card."],
+  ["10. Phone hero fit","Keep the goal below the dot-matrix total, with the dots sized to their own column so they cannot cross into the calendar. Keep the calendar, pace, stock mix and on-floor count. Applies to phone widths; tablet and desktop are unchanged."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
 <p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
 <script>const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';(${installComparison.toString()})();</script></body></html>`;

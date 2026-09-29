@@ -5,6 +5,42 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 29 September: Jorge's compact hero overlap
+
+Jorge supplied a screenshot showing the dot total's goal over the calendar.
+Current-run capture reproduces it. The left column is 117.2px, but the total
+is 122.1px and the inline goal adds 70.2px plus a 10px gap. The goal reaches
+x231.1 while the right calendar begins at x158. This is an existing phone
+hero flex-layout defect, not an animation or data defect.
+
+Pending decision 10: at phone widths up to 600px, put the goal below the dot
+total and allow the actual SVG digits to shrink proportionately within their
+column. No clipping, removed metric, font reduction, calendar movement rule,
+new asset or new motion. The calendar keeps its 118px column. At 320px, the
+number now ends at x146 and calendar starts x158; the goal ends x99, below the
+number. SVGs are 52.55x73.56, retaining their original aspect ratio. At 390px
+the number ends x150.9 and calendar starts x228.4. All controls/copy remain.
+The extra goal row makes the compact hero slightly taller, a stated trade-off.
+
+Two checked steps: compact hero overlap repaired; standard-phone fit repaired.
+Accepted screenshots `hero-02-overlap-before.png`, `hero-03-compact-fixed.png`
+and `hero-04-phone390-fixed.png` are under ignored local shots. The first capture
+was scrolled past the hero and is not overlap evidence. A real-key Control+Home
+on the units button revealed the complete hero before the accepted before shot.
+Full visual report: `shots/manager-proposal-20260928/hero-report.md`.
+
+813 tests, including 23 proposal tests, and normal/isolated builds pass on
+2513534. No motion routine or production source file edited. Console's known
+observer error remains open; no clean-console, FPS, every-total-length, physical
+phone or WebKit claim. Decisions 8, 9 and 10 pending; 6 remains Adjust.
+
+Latest main includes Claude's #441 source contract repair and goal input name,
+answering H-X22. H-C20 also corrects H-C19's cold-download assessment: with a
+12s delayed chunk the owner is structurally absent but the flight remains
+visible outside it. We do not have captured evidence attributing a visible
+gap to this boundary and will not port it on that claim. The isolated
+experiment remains available, not approved production necessity.
+
 ## 29 September: compact associate metrics and H-C19 response
 
 Three bounded steps, still the isolated fictional manager study:
