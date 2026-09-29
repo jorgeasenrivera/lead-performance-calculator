@@ -464,6 +464,9 @@ export function buildDemo(now = new Date()) {
     goal: { units: GOAL, pct: 0, byMonth: { [month]: GOAL } },
     graceDays: 10,
     hours: { open: "09:00", close: "20:00" },
+    /* Both rooms, as on the stores that run the Phone Line. Without it the
+       demo had the Live Floor only and the reviewer never saw the line (C105). */
+    rooms: { floor: true, line: true },
     reportCutoff: "23:00",
   };
 

@@ -4455,7 +4455,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             <span className="sf-band-txt">
               <span className="sf-band-lbl">{t.label}</span>
               <span className="sf-band-of">
-                {made ? <b>made it</b> : t.target ? `of ${t.target} · ${t.target - t.v} to go` : "no bar set"}
+                {made ? <b>completed</b> : t.target ? `of ${t.target} · ${t.target - t.v} to go` : "no bar set"}
               </span>
               {p != null && <span className={"sf-meter" + (made ? " done" : "")}><i style={{ width: p + "%" }} /></span>}
             </span>
@@ -8642,6 +8642,46 @@ function useTrackLight(ref, key, pipSel) {
     return () => offs.forEach((off) => off && off());
   }, [key]);   // eslint-disable-line
 }
+/* Somebody joining a straight line runs in (C105, Jorge, 29 September, A2 a):
+   the Phone Line cord's arrival, on the line at the top of Home and the one on
+   the Live Floor, where a newcomer used to be drawn in place and simply be
+   there. From behind, fading up, on to the one ahead until they touch, then
+   back to their place, 1.4 s; the one ahead gives a little at contact, as on
+   the cord. `ids` run from the door back. `translate`, not `transform`, so the
+   run rides on top of the transform that places the pip and its glide. Only a
+   newcomer since the last render moves; the first render places everybody. */
+function useLineArrivals(ref, ids, sel) {
+  const seen = useRef(null);
+  useLayoutEffect(() => {
+    const prev = seen.current;
+    seen.current = new Set(ids);
+    const el = ref.current;
+    /* An empty line before is a first sight too: the rail on Home is drawn
+       only once you are on the line, and everybody on it is not arriving. */
+    if (!el || !prev || !prev.size) return;
+    try { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; } catch (e) {}
+    const w = el.getBoundingClientRect().width;
+    if (!w) return;
+    const step = w * 0.13;
+    const byId = {};
+    el.querySelectorAll(sel).forEach((n) => { if (n.dataset && n.dataset.id) byId[n.dataset.id] = n; });
+    const HIT = 560;
+    ids.forEach((id, i) => {
+      if (prev.has(id)) return;
+      const p = byId[id];
+      if (!p || !p.animate) return;
+      const ahead = i > 0 && prev.has(ids[i - 1]) ? byId[ids[i - 1]] : null;
+      p.animate([
+        { translate: `${(-0.6 * step).toFixed(1)}px 0`, opacity: 0, easing: "cubic-bezier(.35,.1,.7,.8)" },
+        { translate: `${((ahead ? 0.5 : 0.2) * step).toFixed(1)}px 0`, opacity: 1, offset: HIT / 1400, easing: "cubic-bezier(.2,.8,.3,1)" },
+        { translate: "0px 0", opacity: 1 }], { duration: 1400 });
+      if (ahead && ahead.animate) ahead.animate([
+        { translate: "0px 0" },
+        { translate: `${(0.22 * step).toFixed(1)}px 0`, offset: .2, easing: "cubic-bezier(.4,.6,.5,1)" },
+        { translate: "0px 0" }], { duration: 1000, delay: HIT - 30, easing: "cubic-bezier(.2,.8,.3,1)" });
+    });
+  });
+}
 function SfCord({ ahead, behind, pos, landed, lit }) {
   const youT = landed ? 0.975 : 0.8 - ahead.length * SF_CORD_STEP;
   const tOf = {};
@@ -10037,6 +10077,7 @@ function McTrack({ line, meId, roster }) {
   const youL = ahead.length * 15;
   const behindL = (k) => ahead.length * 15 + (k + 1) * 13;
   useTrackLight(ref, waiting.map((p2) => p2.id).join(","), ".mcf-pip, .mcf-you");
+  useLineArrivals(ref, waiting.map((p2) => p2.id), ".mcf-pip, .mcf-you");
   return (
     <div className="mcf-track" ref={ref}>
       <s className="lt" /><s className="lt" />
@@ -10044,12 +10085,12 @@ function McTrack({ line, meId, roster }) {
           40 ms after the one in front, from the door backwards. The delay
           rides every move, which on a join reads as the line making room. */}
       {ahead.map((p2, i) => (
-        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i), transitionDelay: `${i * 40}ms` }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} data-id={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i), transitionDelay: `${i * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
       {behind.map((p2, k) => (
-        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k), transitionDelay: `${(ahead.length + 1 + k) * 40}ms` }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} data-id={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k), transitionDelay: `${(ahead.length + 1 + k) * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
-      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL, transitionDelay: `${ahead.length * 40}ms` }}>{labelOf(meId)}</span>}
+      {meIdx >= 0 && <span data-id={meId} className="mcf-you" style={{ "--p": youL, transitionDelay: `${ahead.length * 40}ms` }}>{labelOf(meId)}</span>}
     </div>
   );
 }
@@ -10124,7 +10165,6 @@ function McSpine({ rows, land = false }) {
   const temp = pct >= 100 ? "made" : pct < 34 ? "cold" : "warm";
   return (
     <div className={"mc-spine " + temp + (land ? " mc-land" : "")} aria-label={pct + " percent of the day"}>
-      <span className="rt">{temp === "made" ? "DAY MADE" : pct + "%"}</span>
       <span className="sp">
         <u style={{ bottom: "33%" }} /><u style={{ bottom: "66%" }} />
         <i style={{ height: pct + "%" }} /><b style={{ bottom: pct + "%" }} />
@@ -10307,6 +10347,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const iAmUp = !!me && me.status === "waiting" && availableAhead === 0;
   const railRef = useRef(null);
   useTrackLight(railRef, me ? (line || []).slice(0, 8).map((p) => p.id).join(",") : "", ".mc-pip");
+  useLineArrivals(railRef, me ? (line || []).slice(0, 8).map((p) => p.id) : [], ".mc-pip");
 
   /* ---- where the month stands against its pace ----
      The goal is set at the start of the month, and the pace to it follows the
@@ -10571,7 +10612,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               const mine2 = p.id === meId;
               const step = Math.min(82, i * 13);   // the head at the rail's end, the rest 13% a step back; the CSS puts it there
               const lbl = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
-              return <i key={p.id || i} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
+              return <i key={p.id || i} data-id={p.id} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
                 style={{ "--p": step,
                   background: mine2 ? undefined
                     : (p.status && p.status !== "waiting"
@@ -10649,7 +10690,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             <span className="mc-tx">
               <b>{r2.label}</b>
               {r2.met
-                ? <span className="mc-made"><PixIcon glyph="check" size={13} /><span>MADE IT</span></span>
+                ? <span className="mc-made"><PixIcon glyph="check" size={13} /><span>COMPLETED</span></span>
                 : <>
                     <span className="st">OF {r2.need}</span>
                     <span className="bar"><i style={{ width: Math.min(100, Math.round(((r2.got || 0) / Math.max(1, r2.need)) * 100)) + "%" }} /></span>
@@ -10687,7 +10728,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               <span className="ck">{it.d && <PixIcon glyph="check" size={12} />}</span><span>{it.l}</span>
             </div>
           ))}
-          <span className="mc-lifoot">Off today&rsquo;s report. Nothing here is ticked by hand.</span>
         </div>
       </div>
 
@@ -10710,7 +10750,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                 );
               })}
             </div>
-            <span className="mc-boardsub">{board.meIdx >= 0 ? `you are ${board.all[board.meIdx].rank}${["st", "nd", "rd"][board.all[board.meIdx].rank - 1] || "th"} of ${board.all.length}` : `${board.all.length} on the board`}</span>
           </button>
         </>
       )}
@@ -10795,15 +10834,15 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                     const c = cal.find((x2) => x2 && x2.d === pickDay);
                     const r = c && c.r;
                     const lbl = `${MC_MONTHS[mo - 1]} ${pickDay}`;
-                    if (c && c.isOff) return <><div className="mc-scr"><span>{lbl}</span><i /><span>DAY OFF</span></div><span className="mc-scd-hint">Scheduled off. Your stats stay open.</span></>;
-                    if (!c || !c.past) return <><div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULED</span></div><span className="mc-scd-hint">Ahead of you. On the floor, RockEd by ten.</span></>;
-                    if (!r) return <><div className="mc-scr"><span>{lbl}</span><i /><span>NO REPORT</span></div><span className="mc-scd-hint">Nothing the phone can still read for this day.</span></>;
+                    if (c && c.isOff) return <div className="mc-scr"><span>{lbl}</span><i /><span>DAY OFF</span></div>;
+                    if (!c || !c.past) return <div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULED</span></div>;
+                    if (!r) return <div className="mc-scr"><span>{lbl}</span><i /><span>OFF</span></div>;
                     const pd = pointsForDay(r, std);
                     return (
                       <>
                         <div className="mc-scr"><span>{lbl}{c.d === bestDay ? " \u00b7 BEST DAY" : ""}</span><i /><span>{pd.noData ? "\u00b7" : pd.points === 0 ? "CLEAN" : "+" + pd.points}</span></div>
                         <div className="mc-scr"><span>UNITS</span><i /><span>{r.units || 0}</span></div>
-                        <div className="mc-scr"><span>CALLS \u00b7 VIDEOS</span><i /><span>{r.calls || 0} \u00b7 {r.video || 0}</span></div>
+                        <div className="mc-scr"><span>{"CALLS \u00b7 VIDEOS"}</span><i /><span>{`${r.calls || 0} \u00b7 ${r.video || 0}`}</span></div>
                         <div className="mc-scr"><span>TASKS</span><i /><span>{r.tasks || 0}{r.tasksPosted ? " / " + r.tasksPosted : ""}</span></div>
                         <div className="mc-scr"><span>ROCKED</span><i /><span>{r.rocked === true ? "YES" : r.rocked === false ? "NO" : "\u00b7"}</span></div>
                         {pd.missed.length > 0 && <span className="mc-scd-hint">Slipped on {pd.missed.join(", ")}. That is where the {pd.points === 1 ? "point" : "points"} came from.</span>}
@@ -11575,22 +11614,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   /* The salesperson shell: pill, palette and moments. On the line, or through
      the door and about to be. */
   const inShell = (eff === "done" && !!me) || eff === "home";
-  /* ---- dark or light ----
-     Follows the phone unless the person says otherwise in the help sheet. */
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("lpcf:pref:theme") || "auto"; } catch (e) { return "auto"; } });
   const [textSize, setTextSize] = useState(textSizeOf);
   useEffect(() => { applyTextSize(textSize); }, [textSize]);
   const [, prefTick] = useState(0);
   const prefOn = (k) => { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
   const flipPref = (k) => { try { localStorage.setItem(k, prefOn(k) ? "0" : "1"); } catch (e) {} buzz(8); prefTick((n) => n + 1); };
-  const [sysLight, setSysLight] = useState(() => { try { return window.matchMedia("(prefers-color-scheme: light)").matches; } catch (e) { return false; } });
-  useEffect(() => {
-    let mq; try { mq = window.matchMedia("(prefers-color-scheme: light)"); } catch (e) { return; }
-    const on = (e) => setSysLight(e.matches);
-    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
-    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
-  }, []);
-  const lightMode = theme === "light" || (theme === "auto" && sysLight);
+  /* Dark, always (C105, Jorge, 29 September): the corner no longer follows a
+     phone in light mode, and the Look row that offered Light is gone. A Light
+     picked before then is ignored rather than cleared, so nothing reads it. */
+  const lightMode = false;
   /* Remembered for the next cold start, so index.html can paint this ground
      before any of this has run. Without it the first paint is the browser's
      white and the dark shell arrives over the top of it, which is the flash. */
@@ -12140,21 +12172,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <div className="mc-card mc-you-card">
               <div className="mc-set-row">
                 <span className="ic"><PixIcon glyph="search" size={16} /></span>
-                <span>Text size<span className="hint">Every screen here, and the buttons with it</span></span>
+                <span>Text size</span>
                 <span className="mc-seg3 txt" role="radiogroup" aria-label="Text size">
                   {TEXT_SIZES.map(([k, l]) => (
                     <button key={k} type="button" role="radio" aria-checked={textSize === k} aria-label={l} className={textSize === k ? "on" : ""}
                       onClick={() => { try { localStorage.setItem("lpcf:pref:text", k); } catch (e) {} setTextSize(k); buzz(8); }}>A</button>
-                  ))}
-                </span>
-              </div>
-              <div className="mc-set-row stack">
-                <span className="ic"><PixIcon glyph="star" size={16} /></span>
-                <span>Look<span className="hint">{theme === "auto" ? "Follows the phone" : theme === "dark" ? "Dark, always" : "Light, always"}</span></span>
-                <span className="mc-seg3 wide" role="radiogroup" aria-label="Look">
-                  {[["auto", "AUTO"], ["dark", "DARK"], ["light", "LIGHT"]].map(([k, l]) => (
-                    <button key={k} type="button" role="radio" aria-checked={theme === k} className={theme === k ? "on" : ""}
-                      onClick={() => { try { localStorage.setItem("lpcf:pref:theme", k); } catch (e) {} setTheme(k); buzz(8); }}>{l}</button>
                   ))}
                 </span>
               </div>
@@ -12166,7 +12188,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                 return (
                   <div className="mc-set-row stack">
                     <span className="ic"><PixIcon glyph="door" size={16} /></span>
-                    <span>Opens to<span className="hint">{cur === "last" ? "The room you were in last" : cur === "home" ? "Home, every time" : cur === "floor" ? "The Live Floor, every time" : "The Phone Line, every time"}</span></span>
+                    <span>Opens to</span>
                     <span className="mc-seg3 wide" role="radiogroup" aria-label="Opens to">
                       {choices.map(([k, l]) => (
                         <button key={k} type="button" role="radio" aria-checked={cur === k} className={cur === k ? "on" : ""}
@@ -12176,13 +12198,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   </div>
                 );
               })()}
-              {[["lpcf:pref:buzz", "tap", "Haptics", "A buzz on every tap"],
-                ["lpcf:pref:notif", "bolt", "Notifications", "Your turn, and the Live Activity"],
-                ["lpcf:pref:streak", "flame", "Streak warnings", "When a day is about to break the run"],
-                ["lpcf:pref:mile", "trophy", "Milestone moments", "The little celebrations"]].map(([k, g, l, h]) => (
+              {[["lpcf:pref:buzz", "tap", "Haptics"],
+                ["lpcf:pref:notif", "bolt", "Notifications"],
+                ["lpcf:pref:streak", "flame", "Streak warnings"],
+                ["lpcf:pref:mile", "trophy", "Milestone moments"]].map(([k, g, l]) => (
                 <button type="button" className="mc-set-row" key={k} role="switch" aria-checked={prefOn(k)} onClick={() => flipPref(k)}>
                   <span className="ic"><PixIcon glyph={g} size={16} /></span>
-                  <span>{l}<span className="hint">{h}</span></span>
+                  <span>{l}</span>
                   <span className={"mc-sw" + (prefOn(k) ? " on" : "")} aria-hidden="true" />
                 </button>
               ))}
@@ -12195,7 +12217,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                 <span>Something looks wrong<span className="hint">Send a number or a ticket back with a note</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
                 <span className="ic"><PixIcon glyph="user" size={16} /></span>
-                <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+                <span>Message {((cfg && cfg.support && cfg.support.name) || "Jorge").split(" ")[0]}</span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               {!inNative && (
                 <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); if (appLink) window.open(appLink, "_blank", "noopener"); else setAppOpen(true); }}>
                   <span className="ic"><PixIcon glyph="phone" size={16} /></span>
@@ -17111,6 +17133,9 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    of the ground's own field: Jorge, 18 September. Opaque, so nothing shows
    through it, and a shade under the room's ink so it sits in the page. */
 .mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:#0E1812; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); overflow:hidden; }
+/* The front circle sits right in the rounded end: centred on the end's own
+   radius, 17 px, an even ring round a 30 px circle (C105). */
+.mc-rail{ --edge:17px; }
 /* the light along the line: dots in from the left edge, a stop at every
    person, as far as the head, then again; the phone room's cord's logic */
 .mc-rail > s.lt, .mcf-track > s.lt, .fr-rail > s.lt{ position:absolute; left:-3px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%;
@@ -17539,7 +17564,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mcf-track{ height:40px; margin-top:14px; }
 .mcf-pip{ width:26px; height:26px; font-size:9px; }
 .mcf-pip.hd{ width:34px; height:34px; font-size:10.5px; }
-.mcf-track{ --edge:21px; }
+.mcf-track{ --edge:20px; }
 .mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
 .mcf-track > s.lt{ width:8px; height:8px; margin-top:-4px; left:-4px; }
