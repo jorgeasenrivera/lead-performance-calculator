@@ -51,6 +51,12 @@ Accepted current-run captures and the full visual report are under ignored
 `shots/manager-proposal-20260928/pass3-*`. Decisions 8 and 9 remain pending,
 decision 6 remains Adjust. Production source files are untouched and #436 draft.
 
+Final push tree also includes main 640d1d9. Its changes since d7deef3 are the
+SFTP README and C102 board entry only. 809 tests and both builds pass again.
+C102 records the recurring reduced-motion sign-in failure without assigning a
+cause; this pass does not retry or claim to clear it. Current-run visual
+captures above use d7deef3's identical manager source.
+
 ## 28 September: compact phones, short cards and the units drawer
 
 Continuation audit, fictional local manager only. The screenshot-led audit and
