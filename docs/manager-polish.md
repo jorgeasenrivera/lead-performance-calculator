@@ -5,6 +5,52 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 29 September: compact associate metrics and H-C19 response
+
+Three bounded steps, still the isolated fictional manager study:
+
+1. Compact card, 320x568: neighbouring percentage values visibly collide in
+   the six-column strip. Pending decision 9 gives the three channel bars their
+   own row above the three video dials. No figures, targets, explanations,
+   labels or fonts change. The final grid is three 64.5px columns; each metric's
+   scrollWidth equals clientWidth. The longer card retains its own scroll.
+   Coach now needs a short scroll on this preset, an explicit trade-off.
+2. Larger phone, 390px: the six-column grid is unchanged, with six 46.5px
+   columns. The settled screenshot shows both actions and all six metrics.
+   The first capture showed the underlying board and is rejected as card
+   evidence. A DOM check confirmed the open card at opacity 1 and transform
+   none before the accepted settled capture. This is not continuous-frame proof.
+3. Card settling: Claude's H-C19 is right. My helper forced child opacity to
+   1 after entry, ignoring a dimmed inline style. Entry now ends at the original
+   inline opacity and rest restores that exact style. A new regression verifies
+   .35 through normal and reduced-motion entry, settle and cleanup. The opening
+   and closing durations, travel, cancellation and invisible close are retained.
+
+H-C19's other limits remain open: origin object identity can replay entry on a
+parent render, not reproduced against static mock rows; a pointer tooltip can
+clip when gauges are scrolled to the card's top; tablet Points visual order
+differs from DOM reading order; future nested board/tab pages need a stronger
+single-owner selector. None is silently waived. The cold-download sign-in owner
+remains an isolated fix pending coordinated production work and visual gates.
+
+Rebased on d7deef3, including C89. 809 tests, including 22 proposal tests, and
+normal plus isolated builds pass. The initial sandbox test launch was blocked
+with spawn EPERM; the permitted unsandboxed runner passes, not a test retry.
+Build warnings for pdfjs eval and chunk sizes are unchanged.
+
+The browser capture operation timed out and reset its JavaScript bindings.
+Reconnecting the existing tab found the card already open, so no second open
+click was sent. The next capture and DOM measurements succeeded. A subsequent
+outer-body Control+Home action also hit its selector deadline; no force or
+coordinate fallback was used. Console logs still include unattributed observer
+and null-append errors, so no clean-console claim. The known local feel timeout
+was not blindly rerun. These checks do not establish FPS, WebKit behavior, a
+physical iPhone result or a release recommendation.
+
+Accepted current-run captures and the full visual report are under ignored
+`shots/manager-proposal-20260928/pass3-*`. Decisions 8 and 9 remain pending,
+decision 6 remains Adjust. Production source files are untouched and #436 draft.
+
 ## 28 September: compact phones, short cards and the units drawer
 
 Continuation audit, fictional local manager only. The screenshot-led audit and

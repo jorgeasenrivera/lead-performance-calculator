@@ -50,10 +50,11 @@ test("the cold-download experiment changes only one manager import, not the shar
 test("approval page scripts parse and retain existing decisions plus compact History", () => {
   const html = proposalPage();
   for (const script of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(script[1]);
-  assert.equal((html.match(/data-decision="/g) || []).length,8);
+  assert.equal((html.match(/data-decision="/g) || []).length,9);
   assert.ok(html.includes("Compact phone, 320 x 568"));
   assert.ok(html.includes("Landscape, 844 x 390"));
   assert.ok(html.includes("8. Compact phone History"));
+  assert.ok(html.includes("9. Compact associate metrics"));
   assert.ok(html.includes("Fictional people and figures"));
   assert.ok(html.includes("Replay full sign-in"));
   assert.ok(html.includes("Replay page motion"));
@@ -64,6 +65,13 @@ test("compact History gives the name and no-data message their own full row", ()
   assert.ok(polishCSS.includes(".sage-polish .hs-who { grid-column:1 / -1; }"));
   assert.ok(polishCSS.includes(".sage-polish .hs-nf { grid-column:1 / -1; text-align:left; }"));
   assert.ok(polishCSS.includes(".sage-polish .hs-head > span:first-child { display:none; }"));
+});
+
+test("compact associate metrics keep all six in their original reading order", () => {
+  const compact = polishCSS.split("@media(max-width:380px) {")[1].split("\n}")[0];
+  assert.ok(compact.includes(".sage-polish .acard .ac-gauges .mstrip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 10px; }"));
+  assert.ok(!compact.includes("font-size"));
+  assert.ok(!compact.includes(".s2g4 { display:none"));
 });
 
 function motionHarness() {
@@ -121,6 +129,22 @@ test("card preferences and hidden pages settle without residual travel", () => {
   const h2=motionHarness(), el2=h2.element();let hiddenCloses=0;
   const m2=createStudyCardMotion(el2,null,()=>hiddenCloses++,h2.env);m2.close();h2.doc.hidden=true;h2.handlers.visibilitychange();
   assert.equal(hiddenCloses,1);assert.equal(h2.timers.size,0);m2.dispose();
+});
+
+test("card entry preserves a child's dimmed inline opacity through settle and cleanup", async () => {
+  for (const reduce of [false,true]) {
+    const h=motionHarness(), el=h.element(), child=h.element();
+    child.style.opacity=".35"; el.querySelectorAll=()=>[child];
+    if (reduce) h.classes.add("sage-study-reduce");
+    const m=createStudyCardMotion(el,null,()=>{},h.env);
+    if (!reduce) {
+      assert.equal(child.effects[0].keys.at(-1).opacity,".35");
+      el.effects[0].complete(); await Promise.resolve();
+    }
+    assert.equal(el.dataset.studyCardMotion,"open");
+    assert.equal(child.style.opacity,".35");
+    m.dispose(); assert.equal(child.style.opacity,".35");
+  }
 });
 
 test("a finished close stays invisible while React removal is delayed", async () => {

@@ -1,5 +1,24 @@
 # Lightspeed comparison QA
 
+## 29 September: compact card proposal and H-C19 response
+
+Current-run captures confirm crowded 320px metrics, a proposed three-bar row
+above a three-video-dial row, and unchanged 390px six-column layout. All six
+metrics, targets and explanations remain. Compact columns are 64.5px with no
+metric width overflow. The card stays scroll-contained; Coach needs a short
+scroll at 320x568. New decision 9 pending, 8 pending, 6 Adjust.
+
+Claude correctly found my settle helper overriding dimmed child opacity.
+Entry and settle now preserve its inline value; the .35 regression covers both
+normal and reduced entry, then cleanup. No new travel or timing. 809 tests,
+22 proposal tests, both builds pass on d7deef3. Browser capture timeout reset
+bindings; reconnect showed an open card and successful capture. No blind open
+retry. A rejected 390px screenshot showed the underlying board; settled DOM
+and a later accepted screenshot show the card. No continuous-frame/FPS proof.
+H-C19's origin-identity replay risk, top-scrolled tooltip clipping, DOM order
+and future nesting remain open. Console and local feel gaps remain. No source
+integration or production release. See docs/manager-polish.md for details.
+
 ## 28 September: continuation at compact and landscape sizes
 
 Three bounded steps: compact History, short/scrolled associate explanations,

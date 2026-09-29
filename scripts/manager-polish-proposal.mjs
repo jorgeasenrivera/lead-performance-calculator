@@ -40,7 +40,7 @@ export function createStudyCardMotion(el, origin, onClose, env = window) {
   const pose = () => [el, ...children].map(k => ({k, transform:env.getComputedStyle(k).transform, opacity:env.getComputedStyle(k).opacity}));
   const pin = rows => rows.forEach(({k,transform,opacity}) => {k.style.transform=transform;k.style.opacity=opacity;});
   const label = value => {phase=value;el.dataset.studyCardMotion=value;};
-  const rest = () => {el.style.transform="none";el.style.opacity="1";children.forEach(k=>{k.style.transform=originals.get(k).transform;k.style.opacity="1";});};
+  const rest = () => {el.style.transform="none";el.style.opacity="1";children.forEach(k=>{k.style.transform=originals.get(k).transform;k.style.opacity=originals.get(k).opacity;});};
   const finish = () => {
     if (phase === "closing") {
       // React may not remove the portal in this microtask. Commit the invisible
@@ -90,7 +90,7 @@ export function createStudyCardMotion(el, origin, onClose, env = window) {
   if (reduced() || doc.hidden || typeof el.animate!=="function") finish();
   else {
     play([{transform:from},{transform:"none"}],320,"cubic-bezier(.16,.78,.24,1)",finish);
-    for (const k of children) own(k.animate([{opacity:0},{opacity:0,offset:.18},{opacity:1}],{duration:240,easing:"ease-out",fill:"both"}));
+    for (const k of children) own(k.animate([{opacity:0},{opacity:0,offset:.18},{opacity:originals.get(k).opacity || "1"}],{duration:240,easing:"ease-out",fill:"both"}));
   }
   return {close,dispose() {
     disposed=true;cancel();observer.disconnect();media.removeEventListener("change",preference);doc.removeEventListener("visibilitychange",visibility);
@@ -191,6 +191,9 @@ export const polishCSS = `
   .sage-polish .hs-row { row-gap:8px; }
   .sage-polish .hs-who { grid-column:1 / -1; }
   .sage-polish .hs-nf { grid-column:1 / -1; text-align:left; }
+  /* Keep channel bars together, then video dials. Six cramped columns make
+     neighbouring percentages read like one number on a compact card. */
+  .sage-polish .acard .ac-gauges .mstrip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 10px; }
 }
 /* Keep scroll containment. Anchor pointer explanations to the whole gauge
    area, not a narrow dial whose centred popup crosses the card's edge.
@@ -463,7 +466,8 @@ ${[
   ["5. History labels","Name the five metrics above the phone's rows, so colour is not the only way to recognise a column."],
   ["6. Associate card motion","Dashboard: open a person's card, then close it quickly. It returns from its actual position and stays invisible until removed, preventing the flash at the end of close. Repeated closes have one owner. Reduce page motion also stops this travel."],
   ["7. Number updates","Dashboard podium and month recap: first counts settle sooner. Updated numbers continue from the displayed value instead of restarting at zero. Hidden pages and Reduce Motion show the final number without counting."],
-  ["8. Compact phone History","At 380 px and below, put the name above the five figures. Keep every metric label readable and aligned without shrinking the font. Larger phone and desktop layouts stay the same. Try Compact phone, then History."]
+  ["8. Compact phone History","At 380 px and below, put the name above the five figures. Keep every metric label readable and aligned without shrinking the font. Larger phone and desktop layouts stay the same. Try Compact phone, then History."],
+  ["9. Compact associate metrics","At 380 px and below, keep three channel bars above three video dials, instead of squeezing six into one row. All figures, targets, labels and explanations stay. Fonts and larger layouts are unchanged. Try Compact phone, Dashboard, then open a person's card."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
 <p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
 <script>const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';(${installComparison.toString()})();</script></body></html>`;
