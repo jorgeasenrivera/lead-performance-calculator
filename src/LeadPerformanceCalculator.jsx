@@ -15705,9 +15705,13 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    also means the way to help does not scroll off, which is what the question
    mark it replaces already did. */
 :root{ --mc-axis:30px; }   /* from the right edge to the gutter's centre line */
+/* On a screen wider than the column (430), the gutter is the column's, not the
+   screen's: the spare width either side is added to the offset. Zero on a
+   phone, so nothing there moves (C101). */
+:root{ --mc-off:max(0px, (100% - 430px) / 2); }
 .mc-me{ width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; background:#567D61; color:#fff;
   font:700 12px var(--sfmono); letter-spacing:.02em; display:grid; place-items:center;
-  position:fixed; z-index:8; top:calc(var(--sat) + 14px); right:calc(var(--mc-axis) - 20px); }
+  position:fixed; z-index:8; top:calc(var(--sat) + 14px); right:calc(var(--mc-axis) - 20px + var(--mc-off)); }
 /* Three shapes, not nine (item 5). The phone's section strip is the desk's
    strip: a grey track, a white thumb that glides. The corner's three-ways are
    the rooms' status pill in mint. Up Next's tiles are the tool bar's pills. */
@@ -17384,7 +17388,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-shell .sf-link-quiet{ color:rgba(237,242,234,.42); }
 .mc-shell .mcf-title{ color:#EDF2EA; }
 .mc{ padding-right:44px; }
-.mc-spine{ position:fixed; right:calc(var(--mc-axis) - 11px); top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
+.mc-spine{ position:fixed; right:calc(var(--mc-axis) - 11px + var(--mc-off)); top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
   flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
 .mc-spine .rt{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.18em;
   color:rgba(237,242,234,.42); writing-mode:vertical-rl; }
@@ -17492,7 +17496,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-offc b{ font-size:17px; }
 .mc-offc .hint{ font-size:13px; }
 .mc-offb button{ padding:11px 20px; font-size:13px; min-height:44px; }
-.mc-spine{ width:26px; right:calc(var(--mc-axis) - 13px); }
+.mc-spine{ width:26px; right:calc(var(--mc-axis) - 13px + var(--mc-off)); }
 .mc-spine .rt{ font-size:11px; }
 .mc-spine .sp{ width:5px; }
 .mc-spine .sp b{ width:13px; height:13px; }
