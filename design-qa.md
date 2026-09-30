@@ -1,5 +1,231 @@
 # Lightspeed comparison QA
 
+## 29 September: compact hero overlap from Jorge's screenshot
+
+Confirmed goal text crossing the calendar: a 117.2px column contained 122.1px
+of dots plus 70.2px of inline goal and 10px gap. Pending decision 10 stacks goal
+below responsive SVG digits at phone widths. At 320px number ends x146 before
+calendar x158; at 390px x150.9 before calendar x228.4. Goal is below the number
+at both widths. Calendar width, font sizes, all metrics and motion retained.
+The goal row slightly increases compact hero height. 813 tests, 23 proposal
+tests and both builds pass on 2513534. Accepted before/after captures are local
+under shots/manager-proposal-20260928/hero-*. No source edits, full total-length
+matrix, physical phone, WebKit or clean-console claim. Read H-C20's correction:
+the delayed Manager boundary experiment is structural, not proven visible.
+
+## 29 September: compact card proposal and H-C19 response
+
+Current-run captures confirm crowded 320px metrics, a proposed three-bar row
+above a three-video-dial row, and unchanged 390px six-column layout. All six
+metrics, targets and explanations remain. Compact columns are 64.5px with no
+metric width overflow. The card stays scroll-contained; Coach needs a short
+scroll at 320x568. New decision 9 pending, 8 pending, 6 Adjust.
+
+Claude correctly found my settle helper overriding dimmed child opacity.
+Entry and settle now preserve its inline value; the .35 regression covers both
+normal and reduced entry, then cleanup. No new travel or timing. 809 tests,
+22 proposal tests, both builds pass on d7deef3. Browser capture timeout reset
+bindings; reconnect showed an open card and successful capture. No blind open
+retry. A rejected 390px screenshot showed the underlying board; settled DOM
+and a later accepted screenshot show the card. No continuous-frame/FPS proof.
+H-C19's origin-identity replay risk, top-scrolled tooltip clipping, DOM order
+and future nesting remain open. Console and local feel gaps remain. No source
+integration or production release. See docs/manager-polish.md for details.
+
+## 28 September: continuation at compact and landscape sizes
+
+Three bounded steps: compact History, short/scrolled associate explanations,
+390px units drawer. The prior History label fix collides at a narrower width.
+New pending decision 8 gives names their own row below 381px, leaving fonts,
+copy, all five metrics and larger layouts unchanged. Keyboard/populated/no-data
+captures show aligned columns at 320x568. Compact and landscape BH Video tips
+fit vertically and horizontally, including a landscape card scrolled 20px.
+
+The units drawer fits but exposes NaN: its stated-split early return lacks the
+percentages the pace view consumes. Its goal input also lacks an accessible
+name. Source repair requested of Claude in H-X22, not hidden or implemented in
+the proposal. A compact six-dial strip is still crowded and waits for a later
+visual proposal. Observer error recurs, source remains unattributed. No new
+motion, FPS, physical-iPhone or clean-console claim. See docs/manager-polish.md.
+
+Final rebase includes 7473999, Claude's account/privacy screens. 801 tests,
+20 proposal tests and both builds pass. The first new privacy guard failed on
+this checkout's stale CRLF geofence comment; restoring the declared LF format
+leaves no source diff and passes without changing the assertion. Fresh compact
+History still has 12 aligned headers/rows with no width overflow.
+
+## 28 September: proposal card-edge repairs
+
+Three CSS-only fixes authorized by Jorge: bounded gauge-area pointer tooltips,
+two-line tablet Activity rows with Points visible, and a shared History grid
+with room for the complete Showroom heading. No motion routine or production
+source changes. Desktop, 768px tablet and 390px phone-width captures and bounds
+confirm the affected layouts. All seven tablet rows fit, including no-data rows.
+The long BH Video explanation fits inside each tested card.
+
+788 tests, including 19 proposal tests, and both builds pass. This is not a real
+iPhone touch, every viewport, continuous-frame or FPS result. The known observer
+error and previous feel failure remain unresolved. Release gates remain open.
+See docs/manager-polish.md for bounds, evidence paths and limitations.
+
+## 28 September: close-end flash repair
+
+Jorge marks 6 Adjust and 7 Approve. The previous open/removed checks did not test
+the terminal gap. A new delayed-removal regression exposes my helper cancelling
+the invisible exit fill back to its pinned visible pose before React removal.
+The card now keeps its invisible terminal pose through cancellation and cleanup.
+The already-approved number motion, page choreography and static design stay put.
+
+Opt-in connected close samples at desktop, phone and tablet sizes, plus reduced
+motion, record opacity 0 while the terminal card is still attached, then confirm
+dialog removal. This is not continuous frame capture. Tablet podium did not open
+on the first attempt; the associate row supplied the successful tablet check.
+18 proposal tests, 787 total tests and both builds pass. Current's application
+routines remain intact and neither production source file is edited.
+
+Final result: blocked for release. Revised 6 needs Jorge's retry, and existing
+motion-check, observer-error, physical-phone and source-integration gates remain.
+
+## 28 September: within-tab motion study
+
+Focused implementation check only, not a new full visual audit or FPS verdict.
+The approved navigation is retained; pending decisions 6 and 7 cover interrupted
+associate-card motion and count retargeting. Desktop before/after captures retain
+the card layout, content, dot iconography and colours. Screenshot stream softness
+limits small-type and antialiasing comparisons. The phone overlay's settled capture
+shows a clipped hover tooltip, an existing placement problem not repaired here.
+
+Connected checks reach open/transform none/opacity 1 at desktop, phone and tablet
+sizes; button close removes the card in all three. Phone reduced entry is already
+open with no transform, and Escape closes it. Widths fit the visible documents.
+Summary Calls and 90 days update without re-entering the whole page in the checked
+states. Behavioral tests cover partial-pose reversal, duplicate close, unmount,
+preference/visibility changes, no polling under the cover and decreasing counts.
+They are not captured animation frames or a real-phone performance result.
+
+Production integration and motion release checks remain missing, with the earlier
+feel failure undiagnosed and the connected observer error still present. New
+motion decisions and latest physical-iPhone trial also remain outstanding.
+785 tests and both builds pass on the `378c689` rebase, with existing build
+warnings. These checks do not replace the missing motion release evidence.
+Final result: blocked for release. Local study only.
+
+## 28 September: manager navigation cleanup repair
+
+Findings: [P1] Current Summary resumes pageIn and nested cardIn at opacity 0
+after tab-enter clears. [P1] The first Proposed slide animated the outgoing
+page before the actual swap. [P2] Current/Proposed reloaded the visible iframe
+through blank first paint and its refresh arrival. Fixes are confined to the
+study: real-phase foreground motion, persistent nested mount suppression and
+a readiness-gated comparison frame. Production source is untouched.
+
+Source visual truth: `shots/manager-proposal-20260928/phone-targets-proposed.png`,
+the previously approved Proposed Targets screen. Implementation screenshot:
+`shots/manager-proposal-20260928/phone-targets-navigation-repaired.png`.
+Combined comparison: `shots/manager-proposal-20260928/targets-navigation-comparison.png`.
+Source pixels 1425x1089, implementation pixels 1425x1050. Both contain the
+390px-wide, 844px-high phone frame. The wrapper height/copy differ intentionally.
+The comparison takes the same 390x844 crop at (512,128) from both, with no
+resampling, then places them together. The outer browser override was
+1440x1100; these screenshot streams are not proof of native device density.
+Full-view comparison inspected both phone captures together; the combined phone
+crop makes Targets and the fixed dock readable without surrounding study chrome.
+
+Required fidelity surfaces: typography families/weights and hierarchy retained,
+with ten rendered threshold inputs at 44px and Geist Mono; section spacing,
+hero proportions and dock position retained; green hero and semantic metric
+colours retained; actual Sage logo and dot icons retained, no replacement art;
+approved monthly-grace copy and named controls retained. The older stream is
+blurred, so exact antialiasing and small glyph fidelity cannot be judged from it.
+No claim that this change improved font rendering. No new actionable static
+layout drift found in this focused comparison, not a full dashboard re-audit.
+
+Post-fix connected traces: desktop Summary/Daily Activity, phone Summary and
+tablet Summary stay at opacity 1, animation none after cleanup. Phone/tablet
+client and scroll widths match (375 and 753). Page-reduce shows animation none
+during mobile tool exit. A quick History-to-Targets sequence settles on Targets.
+Current/Proposed holds one visible and one hidden frame until ready; reversal
+keeps the original. Subsequent full desktop sign-in reaches the store and
+clears flight classes. Traces do not capture every visual frame or establish FPS.
+
+779 tests and both builds pass after rebasing onto `c47c931`; a fresh Summary
+trace keeps page and block opaque at cleanup. Console inspection still has the earlier
+unattributed observer error; it has not been dismissed or proven fixed. The
+earlier reduced-motion feel timeout remains undiagnosed, not blindly retried.
+The full desktop replay reached the store with cover-opacity and scan-window
+warnings, so it is not a clean arrival timing pass.
+Source integration, motion checks and latest physical-iPhone check are missing.
+Final result: blocked. Keep the study draft; the technical fixes are ready for
+Jorge to try locally, not a production-release approval.
+
+## 28 September: five approvals, connected-arrival investigation
+
+Jorge approved items 1 through 5 in the published manager study. He also reports
+flashing in both the study and live Sage. Approved direction does not mean the
+flashing is resolved. The updated study adds full ordinary mock sign-in replay,
+separate from page motion, and an opt-in bounded diagnostic trace.
+
+Current desktop trace: no second page/hero mount-animation start after landing,
+one recorded cover rise and clear, stable settled page/hero widths across the
+15px gutter's return. The gutter's return alone was not evidence of a layout
+shift. The screenshot initially saved as full-desktop-start actually showed
+the settled dashboard, so it is rejected as login-start evidence. No claim of
+frame-by-frame visual verification or repeated-flash reproduction is made.
+The corrected delayed-manager test confirms the login layer is hidden by that
+shared Suspense boundary and restored before handoff. Proposed's in-memory core
+transform places it outside the destination boundary. Desktop and 390px traces
+show no premature hidden login layer, and both populated dashboards eventually
+release flight classes. A captured settled phone image is accepted for that
+final state, not for the intermediate motion. No frame-by-frame visual pass or
+full live flash repair is claimed. The first delay run queried the shared entry
+and evaluated it twice; its final state is rejected. Source ownership remains
+Claude's. Artwork and arrival clocks stay unchanged.
+
+769 tests, normal and isolated builds pass. The earlier feel failure and unattributed
+console error remain unresolved. Result: needs iteration, not release-ready.
+
+## 28 September: manager polish approval study
+
+Target: existing Sage manager UI, not a new design system. Original and proposed
+build share fictional Demo Motors data, same origin, viewport, navigation and
+component source. Approved login sequence is outside the design changes.
+Local evidence: ignored `shots/manager-proposal-20260928/`.
+
+Matched desktop dashboard, phone Targets and associate sheet images were
+reviewed together, not from memory. History headers were checked in the rendered
+DOM with screenshot captures of both modes. Tablet sizing was checked separately.
+The desktop reference viewport is 1440 x 1100 including the study controls;
+the app occupies the framed content area, not the entire 1440px width. Phone
+and tablet frame widths are 390px and 768px. Those are browser sizes, not devices.
+
+Intentional departures: store heading/separators, flatter desktop text, quieter
+shadows, bounded directional entrances, explicit phone store identity, larger
+Targets inputs, monthly grace copy, textual History keys and scoped sheet actions.
+Existing chart shapes, dot artwork, employee metrics and layout relationships
+are retained. No generated artwork or new library is needed.
+
+The comparison caught two first-draft mistakes before approval: the action
+fit did not fix white-on-white primary text, and a globally lightened `.s2-scap`
+also lightened the title over a white coaching card. The action colours are now
+explicit and the light caption rule is scoped to the hero. The first claim of
+visible actions based only on geometry was insufficient.
+
+Measured: original sheet 335 / 363, proposed 335 / 335, two 48px actions;
+ten threshold inputs at 44px; History header 354 / 354 with five text labels;
+tablet document 753 / 753 clientWidth / scrollWidth. Reduced-motion replay reports
+no travel. No FPS or low-end performance claim follows from those measurements.
+
+766 functional tests after the latest rebase, normal build and isolated build pass. The Chromium feel
+run passed its intermediate rows but timed out on reduced-motion return sign-in
+waiting for `.ar-bar` after 40000ms, exit 1. It was not retried or weakened.
+An unattributed browser-console observer error remains, and the in-page error
+listener has not captured its source. WebKit, real iPhone and second-reader
+approval remain release gates. Broader audit findings are still a backlog.
+
+final result: needs iteration
+
+---
+
 ## 24 September: finishing scan no longer cancelled by assembly cleanup
 
 Study-only repair gives the scan its own lifetime and holds scrolling until
@@ -410,3 +636,15 @@ still ticks; production implementation must fully bound resource cleanup.
 final result: passed
 
 ---
+
+
+## 30 September local manager interaction pass
+
+X11 proposal only. New pending decisions 11 (keyboard card ownership) and 12
+(optional final-value reveal, off by default). See docs/manager-polish.md for
+changes, 825 passing tests and both successful builds. No final-code visual
+verification: cloud loopback was blocked and local Chromium could not create
+a socket even with approved sandbox escalation. Live baseline focus escape is
+independently observed, but is not an after screenshot. Desktop, tablet, phone,
+interrupted/repeated controls, reduced motion and focus restoration remain
+required preview checks. No physical-phone/WebKit/FPS or release claim.
