@@ -506,7 +506,22 @@ async function run(b) {
     const seen = { n: 0, at: t0 }; const proto = CanvasRenderingContext2D.prototype; const was = proto.setTransform;
     proto.setTransform = function (...a) { if (this.canvas === c) { seen.n++; seen.at = performance.now(); } return was.apply(this, a); };
     const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2], seen.n, seen.at]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); else proto.setTransform = was; }; requestAnimationFrame(tick); });
+  /* C108, WebKit only: why the ground is not painted on a tab tap there. The
+     candidates, each of which this reads: reduced motion is on (the ramp is
+     skipped and the scroller jumps), the floor page never moves (scrollLeft
+     before and after), the ramp never starts (.sf-ramp never seen), no scroll
+     event arrives, or the paint call is reached by something other than
+     setTransform on this canvas. It prints and changes nothing. */
+  if (WEBKIT) await p.evaluate(() => {
+    const pg = document.querySelector(".sf-floor.sf-panes"); const d = window.__c108 = { found: !!pg, reduce: false, left0: pg ? pg.scrollLeft : null, w: pg ? pg.clientWidth : null, scrolls: 0, ramp: 0, raf: 0, left1: null, gnds: document.querySelectorAll(".ar-gnd").length, other: 0 };
+    try { d.reduce = matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (pg) pg.addEventListener("scroll", () => { d.scrolls++; }, { passive: true });
+    const t0 = performance.now();
+    const tick = () => { d.raf++; if (pg && pg.classList.contains("sf-ramp")) d.ramp++; if (performance.now() - t0 < 700) requestAnimationFrame(tick); else if (pg) d.left1 = pg.scrollLeft; }; requestAnimationFrame(tick);
+    const proto = CanvasRenderingContext2D.prototype; for (const k of ["drawImage", "fillRect", "clearRect"]) { const w = proto[k]; proto[k] = function (...a) { if (this.canvas && this.canvas.classList.contains("ar-gnd")) d.other++; return w.apply(this, a); }; }
+  });
   await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(900);
+  if (WEBKIT) console.log("       C108 diagnostic: " + JSON.stringify(await p.evaluate(() => window.__c108)));
   const gnd = await p.evaluate(() => window.__gnd || []);
   /* Per frame of the blend, not per read: a loaded runner drops frames, and two
      samples 150 ms apart span a fifth of the blend, which read as a step on
