@@ -518,6 +518,10 @@ async function run(b) {
      before and after), the ramp never starts (.sf-ramp never seen), no scroll
      event arrives, or the paint call is reached by something other than
      setTransform on this canvas. It prints and changes nothing. */
+  /* The last run showed one animation frame in 700 ms and the page still 45 px
+     short of Home after 800 ms, so this reads the frame rate of the idle page
+     for a second, and whether WebKit counts the page as visible and focused. */
+  if (WEBKIT) console.log("       C108 idle frames: " + JSON.stringify(await p.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const tick = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); else res({ rafIn1s: n, visibility: document.visibilityState, focus: document.hasFocus() }); }; requestAnimationFrame(tick); }))));
   if (WEBKIT) await p.evaluate(() => {
     const pg = document.querySelector(".sf-floor.sf-panes"); const d = window.__c108 = { found: !!pg, reduce: false, left0: pg ? pg.scrollLeft : null, w: pg ? pg.clientWidth : null, scrolls: 0, ramp: 0, raf: 0, left1: null, gnds: document.querySelectorAll(".ar-gnd").length, other: 0 };
     try { d.reduce = matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
