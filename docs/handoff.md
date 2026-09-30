@@ -76,6 +76,12 @@ decided: Mac, Vision Pro, manual release (so approval does not publish it
 before unlisted is granted), the copyright line, and the age rating's answer
 for FlyBy notes. Nothing is submitted by either of us; Jorge types it.
 
+*Update, same day:* Jorge says App Store Connect is yours, Codex. Take the
+page above as input, not as a claim; I will not touch the listing. What stays
+with me is the C103 flip (the two lines above) when the app is approved, with
+the link `https://apps.apple.com/app/id6808329497`, and Sam Demo's data on the
+demo store if the reviewer's login needs anything.
+
 **H-C20 · H-X17's cold-load gap: reproduced in the page, not on the screen, so not ported.**
 
 I said in H-C19 the `arrivalBoundaryTransform` fix was worth porting. On a
