@@ -54,7 +54,7 @@ async function scenario(name, { stored = null, hash, after = null, expect }) {
   await page.waitForTimeout(4500);
   const form = () => page.getByText("Choose a new password").count();
   const notice = () => page.getByText(NOTICE).count();
-  const seen = { form: await form(), notice: await notice(), card: await page.locator(".signin-over").count() };
+  const seen = { form: await form(), notice: await notice(), card: await page.locator(".signin-over").count(), layer: await page.locator(".signin-over").count(), usable: await page.locator(".ar-bar.up").count() };
   if (after) { await after(page, puts, form, notice, seen); }
   const got = { ...seen, puts: puts.length, putTokens: puts.map((p) => p.token) };
   const fails = [];
@@ -72,6 +72,23 @@ const save = async (page) => {
 /* If the form is up, use it: a write is what counts, and "the form is not there"
    is only half of the claim. */
 const saveIfShown = async (page, puts, form) => { if (await form()) await save(page); };
+/* Leaving a failed link (the second review's P2): Back, then, if the sign-in
+   form is what is there, an ordinary valid login and the full arrival. Reports
+   whether the sign-in layer is gone and the app is usable. */
+const backThenUse = async (page, puts, form, notice, seen) => {
+  await page.click('button:has-text("Back to sign in")');
+  await page.waitForTimeout(800);
+  if (await page.locator('input[type="password"]').count()) {
+    await page.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app");
+    await page.fill('input[type="password"]', "an-ordinary-password");
+    await page.click('button:has-text("Sign in")');
+  }
+  await page.waitForSelector(".ar-bar.up", { timeout: 45000 }).catch(() => {});
+  await page.waitForTimeout(2500);
+  seen.layer = await page.locator(".signin-over").count();
+  seen.usable = await page.locator(".ar-bar.up").count();
+  seen.form = await form(); seen.notice = await notice();
+};
 const broadcast = (page, event, id, token) => page.evaluate(([event, s]) => { const ch = new BroadcastChannel("lpc-auth"); ch.postMessage({ event, session: s }); ch.close(); }, [event, id ? sessionOf(id, token) : null]);
 
 try {
@@ -87,6 +104,12 @@ try {
     { stored: sessionOf(B_ID, "token-b"), hash: "#type=recovery&error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired", after: saveIfShown, expect: { form: 0, notice: 1, puts: 0 } });
   await scenario("B signed in, plain expired link: the notice shows (P2), no write",
     { stored: sessionOf(B_ID, "token-b"), hash: "#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired", expect: { form: 0, notice: 1, card: 1, puts: 0 } });
+  /* Leaving a failed link (P2): Back, an ordinary login if the card is a sign-in, the arrival. */
+  const EXPIRED = "#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
+  await scenario("nobody signed in, expired link, Back, ordinary login, full arrival: the layer is gone, the app is usable, no write",
+    { hash: EXPIRED, after: backThenUse, expect: { layer: 0, usable: 1, form: 0, puts: 0 } });
+  await scenario("B stored, expired link, Back: the layer is gone, the app is usable, no write",
+    { stored: sessionOf(B_ID, "token-b"), hash: EXPIRED, after: backThenUse, expect: { layer: 0, usable: 1, form: 0, puts: 0 } });
   /* Nobody signed in, a good link. */
   await scenario("nobody signed in, a good link for A: the form, and saving writes once, as A",
     { hash: goodHash("token-a"), after: save, expect: { form: 1, notice: 0, puts: 1, putTokens: ["token-a"] } });

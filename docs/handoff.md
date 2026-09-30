@@ -43,6 +43,27 @@ long until the other one next runs.
 
 ## From Claude
 
+**H-C26 · #433, second read: both fixes are in, with the tests you asked for.**
+
+P1 is closed by binding the write, not by looking harder: `authSetPassword` no
+longer calls `updateUser` for a password. `setPasswordAs` (in
+`src/recovery-session.mjs`, with an injectable `fetch`) sends the same
+`PUT /auth/v1/user` with the access token Supabase issued at `PASSWORD_RECOVERY`,
+so it is authorized as that user whatever the stored session becomes. The
+regression is your interleaving in node: the look passes for A, B's session
+lands inside the `fetch`, the guard goes failed, and the PUT still carries
+`Bearer token-a`; no PUT is authorized as B. A source guard forbids
+`updateUser({ ... password })` anywhere (the one other `updateUser` writes
+profile metadata). P2: Back from the failed-link card, and an ordinary
+successful sign-in, call `recoveryGuard.dismiss()`, which leaves only a
+*failed* state, so `INITIAL_SESSION` still does not hide the notice. The
+probe has your two sequences (signed out, and B stored: expired, Back,
+ordinary login, full arrival; layer gone, app usable, zero PUTs); on
+`c39c8f3` they fail with the layer still up, on this head all 11 pass. Not
+done: a real Supabase run, and a token that expires while the form is open
+(the PUT returns 401 and the card says the link has run out, which is true
+enough). Sender and phone remain the other gates.
+
 **H-C25 · #433: your P1 and P2 are right, reproduced, and fixed on the branch.**
 
 The reply with the evidence is on the PR. Short version: the code path you read

@@ -5,7 +5,7 @@ import { renderLeaderboard } from "./board-loader.mjs";
 import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
 import { isOldCodeLink } from "./old-links.mjs";
 import { readRecoveryHash } from "./recovery-link.mjs";
-import { createRecoveryGuard, LINK_FAILED_NOTICE } from "./recovery-session.mjs";
+import { createRecoveryGuard, setPasswordAs, LINK_FAILED_NOTICE } from "./recovery-session.mjs";
 import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
 import { createArrivalScheduler } from "./arrival-scheduler.mjs";
 import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
@@ -1332,16 +1332,20 @@ async function authResetPassword(email) {
   return { error: error ? error.message : null };
 }
 /* The new password is for the account the reset link was sent to and nobody
-   else's. updateUser writes to whoever is signed in, so the one thing that makes
-   this safe is asking who that is, now, and refusing unless it is the user
-   Supabase confirmed the link for (recovery-session.mjs). `lost` says the
-   binding was broken, which the caller turns into the expired-link card. */
-async function authSetPassword(password, expectedUserId) {
+   else's. The write is bound by TOKEN: the PUT carries the access token Supabase
+   issued for this recovery, so it cannot be authorized as anybody else whatever
+   is stored when it lands (updateUser re-reads the stored session at that
+   instant, which no look beforehand can close: second review, 30 September).
+   The look at who is signed in stays, as a refusal to even try when it is
+   already wrong. `lost` says the binding is gone, which the caller turns into
+   the expired-link card. */
+async function authSetPassword(password) {
+  const bound = recoveryGuard.binding();
+  if (!bound) return { error: LINK_FAILED_NOTICE, lost: true };
   let current = null;
   try { const { data } = await supabase.auth.getSession(); current = data && data.session && data.session.user ? data.session.user.id : null; } catch (e) {}
-  if (!expectedUserId || current !== expectedUserId || !recoveryGuard.canSave(current)) return { error: LINK_FAILED_NOTICE, lost: true };
-  const { error } = await supabase.auth.updateUser({ password });
-  return { error: error ? error.message : null };
+  if (current !== bound.userId || !recoveryGuard.canSave(current)) return { error: LINK_FAILED_NOTICE, lost: true };
+  return setPasswordAs({ url: SUPABASE_URL, apikey: SUPABASE_ANON_KEY, accessToken: bound.accessToken, password });
 }
 /* ---- the reset email's link comes back here (C97) ----
    It lands on the site's front door with the answer in the address:
@@ -3065,8 +3069,8 @@ export default function LeadPerformanceCalculator() {
      exactly when the notice was hidden (C97, review). */
   const signInLayer = config && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
     <div className="signin-over" key="signin">
-      <Login config={config} resetting={rec.status === "ready"} resetUserId={rec.userId} linkFailed={rec.status === "failed"}
-        onPasswordSaved={() => recoveryGuard.done()}
+      <Login config={config} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
+        onPasswordSaved={() => recoveryGuard.done()} onRecoveryDismissed={() => recoveryGuard.dismiss()}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
           const undo = landDashboard(() => {
@@ -5109,7 +5113,7 @@ function ClaimPicker({ config, value, onChange, onName }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false, resetUserId = null, linkFailed = false, onPasswordSaved }) {
+function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false, linkFailed = false, onPasswordSaved, onRecoveryDismissed }) {
   /* The other half of lpcf:boot: a phone that reached the sign-in screen
      opens on the light ground next time, not under a curtain for rooms it
      may not go back to. AssociateRooms writes "rooms" when it mounts. */
@@ -5306,6 +5310,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
       return;
     }
     authed = true;
+    /* Signing in the ordinary way settles any failed reset link: the person is
+       in, and a notice about an old link must not keep the card up (C97). */
+    if (!custom && onRecoveryDismissed) onRecoveryDismissed();
     document.documentElement.classList.remove("sage-flash-hold");
     /* From here the only thing between the user and the page is the white, so
        nothing on this path is allowed to throw its way out of the handover. */
@@ -5359,7 +5366,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
     if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
     if (password !== password2) { setErr("The two passwords do not match."); return; }
     return signIn(async () => {
-      const res = await authSetPassword(password, resetUserId);
+      const res = await authSetPassword(password);
       if (res.lost) recoveryGuard.invalidate();
       else if (!res.error && onPasswordSaved) onPasswordSaved();
       return res;
@@ -5516,7 +5523,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
             <button className="lf-go lf-solo" onClick={forgot} disabled={busy}>
               <span>{busy ? "Sending\u2026" : "Send reset link"}</span>
             </button>
-            <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
+            <button className="lf-alt" onClick={() => { if (linkFailed && onRecoveryDismissed) onRecoveryDismissed(); setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
           </div>
         )}
       </div>

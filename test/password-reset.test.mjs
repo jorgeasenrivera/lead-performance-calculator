@@ -42,16 +42,24 @@ test("the form opens on Supabase's proof, from a subscription made where the cli
     "module level: Supabase sends PASSWORD_RECOVERY a tick after reading the link, so a screen that subscribed later could miss it");
   assert.ok(app.indexOf("const recoveryGuard = ") > app.indexOf("export const supabase = "), "after the client exists");
   assert.match(app, /supabase\.auth\.getSession\(\)\.then\(\(\) => setTimeout\(\(\) => recoveryGuard\.settle\(\), 1500\)\)/, "a link Supabase has finished reading and not confirmed fails at once, not at the backstop");
-  assert.match(app, /resetting=\{rec\.status === "ready"\} resetUserId=\{rec\.userId\} linkFailed=\{rec\.status === "failed"\}/);
+  assert.match(app, /resetting=\{rec\.status === "ready"\} linkFailed=\{rec\.status === "failed"\}/);
+  assert.match(app, /onRecoveryDismissed=\{\(\) => recoveryGuard\.dismiss\(\)\}/, "Back leaves a failed link (P2)");
   assert.ok(!/setRecovering|recoveryAtLoad/.test(app), "nothing opens the form from the address any more");
 });
 
-test("the save is for the user Supabase confirmed, checked at the write", () => {
-  const f = app.slice(app.indexOf("async function authSetPassword("), app.indexOf("async function authSetPassword(") + 900);
-  assert.match(f, /supabase\.auth\.getSession\(\)/, "asks who is signed in, now");
-  assert.match(f, /if \(!expectedUserId \|\| current !== expectedUserId \|\| !recoveryGuard\.canSave\(current\)\) return \{ error: LINK_FAILED_NOTICE, lost: true \};/);
-  assert.ok(f.indexOf("canSave") < f.indexOf("updateUser"), "and only then writes");
+test("the save is bound to the recovery's own token, never to a fresh look at the stored session (P1)", () => {
+  const f = app.slice(app.indexOf("async function authSetPassword("), app.indexOf("async function authSetPassword(") + 1100);
+  assert.match(f, /const bound = recoveryGuard\.binding\(\);/);
+  assert.match(f, /if \(!bound\) return \{ error: LINK_FAILED_NOTICE, lost: true \};/);
+  assert.match(f, /current !== bound\.userId \|\| !recoveryGuard\.canSave\(current\)/, "the look stays, as a refusal to try");
+  assert.match(f, /return setPasswordAs\(\{ url: SUPABASE_URL, apikey: SUPABASE_ANON_KEY, accessToken: bound\.accessToken, password \}\);/);
+  assert.ok(!/auth\.updateUser\(\{[^)]*password/.test(app), "updateUser re-reads the stored session at the write: it is not used for a password, anywhere (the one left writes profile metadata)");
   assert.match(app, /if \(res\.lost\) recoveryGuard\.invalidate\(\);/);
+});
+
+test("Back and an ordinary sign-in both leave a failed link (P2)", () => {
+  assert.match(app, /onClick=\{\(\) => \{ if \(linkFailed && onRecoveryDismissed\) onRecoveryDismissed\(\); setMode\("signin"\);/, "the existing Back action");
+  assert.match(app, /if \(!custom && onRecoveryDismissed\) onRecoveryDismissed\(\);/, "an ordinary sign-in that succeeds");
 });
 
 test("saving uses Create Account's rules, then the same flight as signing in (A2)", () => {
@@ -59,7 +67,7 @@ test("saving uses Create Account's rules, then the same flight as signing in (A2
   assert.match(save, /password\.length < 8/);
   assert.match(save, /password !== password2/);
   assert.match(save, /return signIn\(async \(\) => \{/, "one arrival, not a second copy of it");
-  assert.match(save, /authSetPassword\(password, resetUserId\)/);
+  assert.match(save, /authSetPassword\(password\)/);
   assert.match(app, /res = await \(custom \? authCall\(\) : authSignIn\(/);
   assert.match(app, /onPasswordSaved=\{\(\) => recoveryGuard\.done\(\)\}/, "the card lets go only once the password is saved");
 });
