@@ -9,6 +9,9 @@ export async function verifyManagerPhoneSearch(browser, url) {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
     reducedMotion: "reduce",
+    // Native routing cannot reliably intercept requests owned by a service
+    // worker. This fixture tests manager UI, not offline/update behavior.
+    serviceWorkers: "block",
   });
   const errors = [];
   let page;
@@ -29,6 +32,7 @@ export async function verifyManagerPhoneSearch(browser, url) {
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     stage = "initial phone rows";
     await page.locator(".bp-row").first().waitFor({ state: "visible", timeout: 40000 });
+    assert.ok(profileReads > 0, "the manager profile fixture must be exercised");
     const field = page.getByPlaceholder("Search associates", { exact: true });
     for (const width of [390, 720, 760]) {
       await page.setViewportSize({ width, height: 844 });
@@ -49,6 +53,7 @@ export async function verifyManagerPhoneSearch(browser, url) {
       assert.ok(baseline.length > 1, "fixture must contain multiple people");
       const target = baseline[0];
       stage = `match ${target} at ${width}px`;
+      await field.click();
       await field.fill(`  ${target.toUpperCase()}  `);
       await page.waitForFunction(([selector, name]) => {
         const rows = [...document.querySelectorAll(selector)];
