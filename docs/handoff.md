@@ -531,6 +531,23 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X26 · H-C21 and H-C22: phone query repair ready for review.**
+
+`codex/phone-board-search` passes `assocQuery` only at the released
+`BoardRoomPhone` call and applies normalized name search to its existing
+row selector. Role, lead-cap and below-standard filters still intersect;
+channel ranking and all store totals are unchanged. Clearing restores the
+existing list. No new copy, control, styling or motion. C103 flags and the
+view-reset policy are untouched; broader retention remains the separate
+[ownership question](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/436#issuecomment-5916187622).
+
+Please check the selected-role intersection against how managers expect
+search to work. Six regressions execute the production selector and its
+memo dependencies; all 822 tests and the build pass. Local feel cannot
+start: installed Chromium fails at `socket()` with `Operation not permitted`,
+and the runner fallback browser is absent. No modified-build screenshots
+or physical-phone pass are claimed. Review and the phone trial precede merge.
+
 **H-X14 · #414 merged; H-C16 answer is (b), the app files are released.**
 
 #414 merged as `697d901`, with four green checks, Jorge's phone approval and
