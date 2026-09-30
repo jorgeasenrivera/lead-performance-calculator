@@ -17017,7 +17017,7 @@ const bpFirstTag = (a, strengths) => {
   return [...l, ...st, ...sk].filter(Boolean)[0] || null;
 };
 
-function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach }) {
+function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach, query = "" }) {
   const M = data.months?.[ym()];
   const thr = normThresholds(store.thresholds);
   const restrictions = data.restrictions || {};
@@ -17175,13 +17175,15 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const [goalDraft, setGoalDraft] = useState("");
   const close = useCallback(() => setPop(null), []);
   const limitCount = people.filter((p) => p.atLimit).length;
+  const q = norm(query);
   const rows = useMemo(() => {
     let list = people.filter((p) => (limitOnly ? p.atLimit : (!roleFilter || p.a.roleId === roleFilter)));
+    if (q) list = list.filter((p) => norm(p.a.name).includes(q));
     if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && (d.state === "bad" || d.state === "warn"); });
     if (drill && drill.kind === "channel") list = list.slice().sort((x, y) => ((y.st?.[drill.id + "Pct"] ?? -1) - (x.st?.[drill.id + "Pct"] ?? -1)));
     else list = list.slice().sort((x, y) => y.units - x.units || x.a.name.localeCompare(y.a.name));
     return list;
-  }, [people, roleFilter, limitOnly, drill]);
+  }, [people, roleFilter, limitOnly, drill, q]);
 
   const goalMonth = goalMonthState(store, ym());
   const saveGoal = async (draft = goalDraft) => {
