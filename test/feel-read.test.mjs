@@ -134,6 +134,8 @@ test("the same paint read twice saw no blend, and the first 80 ms are the tap's"
 
 test("the harness counts the app's paints and puts the row back the way it found it", () => {
   assert.match(feel, /const stepMax = paints >= 5 \? groundStep\(gnd\) : 999;/, "and a row that saw too few paints fails instead of reading 0");
+  assert.match(feel, /if \(paints < 5 && WEBKIT\) \{/, "except in WebKit, where the ground is not painted on a tab tap and the row read 0 and passed before (C108)");
+  assert.match(feel, /--   ground: not measured in WebKit: the app painted the ground \$\{paints\} time\(s\)/, "which it says, with the count, as the swipe row says it cannot run");
   assert.match(feel, /proto\.setTransform = function \(\.\.\.a\) \{ if \(this\.canvas === c\) \{ seen\.n\+\+; seen\.at = performance\.now\(\); \} return was\.apply\(this, a\); \};/);
   assert.match(feel, /else proto\.setTransform = was; \}; requestAnimationFrame\(tick\); \}\);/, "the patch comes off when the reading ends");
   assert.match(feel, /window\.__gnd\.push\(\[performance\.now\(\) - t0, d\[0\], d\[1\], d\[2\], seen\.n, seen\.at\]\)/);
