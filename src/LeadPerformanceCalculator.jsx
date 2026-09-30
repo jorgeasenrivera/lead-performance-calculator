@@ -3498,7 +3498,7 @@ export default function LeadPerformanceCalculator() {
                         row a person, everything a tap into a pop. The desk keeps the
                         hero, the focus grid and the role cards. */}
                     {phone ? (
-                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session}
+                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session} query={assocQuery}
                         canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig}
                         onSetRestriction={setRestriction}
                         onCoach={() => { coachAfter.current = true; switchTool("activity"); }} />
