@@ -49,6 +49,13 @@ export async function verifyManagerPhoneSearch(browser, url) {
       const nameSelector = width <= 700 ? ".bp-row .bp-nmx" : ".assoc-card .assoc-name";
       const names = page.locator(nameSelector);
       await names.first().waitFor({ state: "visible" });
+      // The first desktop Board mount opens its normal morning round-up.
+      // Close it as a manager would before interacting with the page beneath.
+      if (width === 720) {
+        stage = "close first desktop round-up";
+        await page.getByRole("button", { name: "Close the round-up", exact: true }).click();
+        await page.getByRole("dialog", { name: "Your round-up", exact: true }).waitFor({ state: "hidden" });
+      }
       const baseline = await names.allTextContents();
       assert.ok(baseline.length > 1, "fixture must contain multiple people");
       const target = baseline[0];
