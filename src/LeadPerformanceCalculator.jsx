@@ -13197,8 +13197,6 @@ html:has(.q-page.sf), body:has(.q-page.sf),
       }
 /* ---- small screens (layout only) ---- */
 @media (max-width: 720px) {
-        /* Navigation lives in the drawer now. */
-        .seg-wrap { display:none !important; }
         /* The tool switcher moved into the drawer; account controls stay but tuck under the logo. */
         .topbar .tool-row { display:none; }
         .topbar { flex-wrap:wrap; gap:10px; }
