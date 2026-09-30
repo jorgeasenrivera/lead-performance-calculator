@@ -36,6 +36,14 @@ test("the times it promises are the times the database deletes at", () => {
   assert.ok(page.includes("<b>A device's notification details:</b> 90 days after"));
 });
 
+test("the nightly store copies are kept the 30 days the page says, and the page says what that means for a deletion (C109)", () => {
+  assert.match(migrations, /function public\.prune_store_backups\(\)[\s\S]*?lpc:backup:%[\s\S]*?lpc:config:backup:%[\s\S]*?interval '30 days'/,
+    "the copies, and the settings taken with them, are deleted at 30 days");
+  assert.match(migrations, /lpc:config:backups-index:v1[\s\S]*?interval '30 days'/, "and the list the restore screen reads is cut to match");
+  assert.match(migrations, /select public\.prune_store_backups\(\);/, "by the daily job, not by somebody opening the tool");
+  assert.ok(page.includes("<b>A nightly copy of each store's records, kept so a mistake can be undone:</b> 30 days, then deleted. Something deleted at your request can stay in these copies until they age out."));
+});
+
 test("where you are is never sent, and the lot check says the same", () => {
   assert.ok(page.includes("Where you are is never sent or stored."));
   assert.ok(read("api/_geofence.mjs").includes("the caller keeps\n * the verdict and throws the coordinates away"),

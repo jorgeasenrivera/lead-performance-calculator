@@ -32,6 +32,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
 import { followAssessment, followDetail, groundStep } from "./feel-read.mjs";
+import { verifyManagerPhoneSearch } from "./manager-phone-search.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -220,7 +221,7 @@ async function main() {
      before the browser goes, and a dead browser has already given its
      memory back by the time anybody asks. */
   machine = watchMachine();
-  try { await run(b); }
+  try { await run(b); await verifyManagerPhoneSearch(b, URL_APP); }
   /* Asked here, not in the handler below: the close in the finally fires the
      same disconnect, so a watch read after it calls every failure a lost
      browser. */
@@ -494,6 +495,12 @@ async function run(b) {
     await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   } else {
     console.log("  --   swipe: not run in WebKit (no input channel to move a real thumb)");
+    /* The swipe block ends on Home, and the ground row below taps Live Floor
+       from there. WebKit skips the swipe, so it reached the ground row already
+       on the floor: no travel, no paint, and the row read 0 for that reason
+       (C108: the diagnostic showed the page at scrollLeft 390, the floor,
+       before the tap). Go Home here too, so both engines tap from Home. */
+    await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   }
   /* the ground through a tap: no step. The canvas behind the rooms is read at
      one point on every frame for 700 ms after the tap, and the biggest change
@@ -518,13 +525,18 @@ async function run(b) {
      about 300 ms, so fewer than five paints means the count is not working. */
   const paints = gnd.length ? gnd[gnd.length - 1][4] - gnd[0][4] : 0;
   if (paints < 5 && WEBKIT) {
-    /* Playwright's WebKit does not paint the ground on a tab tap: zero paints,
-       where Chromium counts about fifteen. This row has therefore read 0 and
-       passed there since it was written, a measurement that never happened
-       reported as a pass (found by the paint count, C88). Said plainly rather
-       than passed or failed, as the swipe row says it. Why it does not paint is
-       open on the board (C108). */
-    console.log(`  --   ground: not measured in WebKit: the app painted the ground ${paints} time(s) on the tab tap there, so there was no blend to read`);
+    /* Not measurable in WebKit on the runner, and not the app's fault (C108).
+       Read in CI on 30 September: the page travels Home to the floor and the
+       ground canvas is drawn on (72 draw calls in the window), but the runner's
+       WebKit gives the page about 3 animation frames a second idle and about 13
+       while it travels. A blend that moves a few points a frame cannot be read
+       from 9 frames; the row would be reading the runner's frame rate. This row
+       had read 0 and passed there since it was written, a measurement that
+       never happened reported as a pass (found by C88's paint count). Said
+       plainly rather than passed or failed, as the swipe row says it cannot
+       run. (The paint counter also reads 0 there although the canvas is drawn
+       on; not explained, and moot while the frames are this few.) */
+    console.log(`  --   ground: not measured in WebKit: the runner gave ${gnd.length} frame(s) in the 700 ms watched (about 13 a second on a tab's travel), too few to read a blend of a few points a frame`);
   } else {
     const stepMax = paints >= 5 ? groundStep(gnd) : 999;
     if (paints < 5) console.log(`       the app painted the ground ${paints} time(s) while it was watched: the row is blind, so it fails rather than reads 0 (C88)`);

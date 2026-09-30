@@ -25,6 +25,14 @@ test("the existing manager search value reaches the phone board", () => {
   assert.match(phone, /^function BoardRoomPhone\([^\n]*query = ""/);
 });
 
+test("the legacy phone CSS cannot hide the search row before its mobile layout", () => {
+  const legacyPhone = core.slice(core.indexOf("@media (max-width: 720px) {"), core.indexOf("@media (max-width: 640px) {"));
+  assert.doesNotMatch(legacyPhone, /\.seg-wrap\s*\{[^}]*display\s*:\s*none/);
+  assert.match(core, /\.seg-wrap \{ display:flex;/);
+  assert.match(core, /\.seg-wrap \.seg \{ display:none; \}/);
+  assert.match(core, /\.no-print, \.topbar, \.seg-wrap \{ display:none !important; \}/);
+});
+
 test("phone search normalizes case and whitespace and supports partial names", () => {
   assert.deepEqual(ids(rows("  pETer   tR ")), ["a"]);
   assert.deepEqual(ids(rows("pet")), ["b", "a"]);
