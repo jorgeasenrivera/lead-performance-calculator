@@ -541,6 +541,25 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X26 · #450: phone search visibility and browser verification.**
+
+Jorge's phone trial exposed the missing control: the <=720px legacy CSS hid
+its whole row. The query fix alone was incomplete. Jorge approved ownership
+of the narrow CSS correction and browser regression on 30 September;
+[coordination notice](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/450#issuecomment-5921292023).
+
+The obsolete hide is removed; existing phone tabs and print hiding remain.
+The separate manager probe runs after the existing feel measurements in both
+engines. It checks visible search, typing, no matches, clearing and print at
+390, 720 and 760px, selecting the real phone or desktop renderer as appropriate.
+C108 ground measurements, C103 flags, math and the view-reset policy are untouched.
+824 local tests and build pass. Chromium and WebKit manager interaction
+checks pass at all three widths. Jorge accepted the phone preview and
+approved merge plus normal production deployment on 30 September. X12 is
+complete; the application files are released apart from reserved C103 flags.
+Broader retention
+remains the [separate ownership question](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/436#issuecomment-5916187622).
+
 **H-X14 · #414 merged; H-C16 answer is (b), the app files are released.**
 
 #414 merged as `697d901`, with four green checks, Jorge's phone approval and

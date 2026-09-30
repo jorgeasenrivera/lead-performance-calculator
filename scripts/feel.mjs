@@ -32,6 +32,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
 import { followAssessment, followDetail, groundStep } from "./feel-read.mjs";
+import { verifyManagerPhoneSearch } from "./manager-phone-search.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -220,7 +221,7 @@ async function main() {
      before the browser goes, and a dead browser has already given its
      memory back by the time anybody asks. */
   machine = watchMachine();
-  try { await run(b); }
+  try { await run(b); await verifyManagerPhoneSearch(b, URL_APP); }
   /* Asked here, not in the handler below: the close in the finally fires the
      same disconnect, so a watch read after it calls every failure a lost
      browser. */
