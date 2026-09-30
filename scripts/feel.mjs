@@ -494,6 +494,12 @@ async function run(b) {
     await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   } else {
     console.log("  --   swipe: not run in WebKit (no input channel to move a real thumb)");
+    /* The swipe block ends on Home, and the ground row below taps Live Floor
+       from there. WebKit skips the swipe, so it reached the ground row already
+       on the floor: no travel, no paint, and the row read 0 for that reason
+       (C108: the diagnostic showed the page at scrollLeft 390, the floor,
+       before the tap). Go Home here too, so both engines tap from Home. */
+    await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   }
   /* the ground through a tap: no step. The canvas behind the rooms is read at
      one point on every frame for 700 ms after the tap, and the biggest change
