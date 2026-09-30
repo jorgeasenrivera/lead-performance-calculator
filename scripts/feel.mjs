@@ -31,7 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
-import { followAssessment, followDetail } from "./feel-read.mjs";
+import { followAssessment, followDetail, groundStep } from "./feel-read.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -498,18 +498,27 @@ async function run(b) {
   /* the ground through a tap: no step. The canvas behind the rooms is read at
      one point on every frame for 700 ms after the tap, and the biggest change
      between two frames after the first 80 ms is the row. A blend moves a few
-     points a frame; the step Jorge recorded on 19 September was 30 in one. */
+     points a frame; the step Jorge recorded on 19 September was 30 in one.
+     Every sample also carries how many times the app had painted the ground and
+     when it last did (C88): each paint begins with one setTransform on that
+     canvas, so counting those is the blend's own clock. See groundStep. */
   await p.evaluate(() => { window.__gnd = []; const c = document.querySelector(".ar-gnd"); const g = c.getContext("2d"); const t0 = performance.now();
-    const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2]]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+    const seen = { n: 0, at: t0 }; const proto = CanvasRenderingContext2D.prototype; const was = proto.setTransform;
+    proto.setTransform = function (...a) { if (this.canvas === c) { seen.n++; seen.at = performance.now(); } return was.apply(this, a); };
+    const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2], seen.n, seen.at]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); else proto.setTransform = was; }; requestAnimationFrame(tick); });
   await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(900);
   const gnd = await p.evaluate(() => window.__gnd || []);
-  /* Per frame-time, not per sample: a loaded runner drops frames, and two
-     samples 150 ms apart then span a fifth of the blend, which read as a
-     step on WebKit's first run of this row (46 against 24, on a runner that
-     had every tap three times over). A real step is a big change in one
-     frame however long the frame took. */
-  let stepMax = 0;
-  for (let i = 1; i < gnd.length; i++) { if (gnd[i][0] < 80) continue; const d = Math.abs(gnd[i][1] - gnd[i - 1][1]) + Math.abs(gnd[i][2] - gnd[i - 1][2]) + Math.abs(gnd[i][3] - gnd[i - 1][3]); const frames = Math.max(1, (gnd[i][0] - gnd[i - 1][0]) / 16.7); const r = Math.round(d / frames); if (r > stepMax) stepMax = r; }
+  /* Per frame of the blend, not per read: a loaded runner drops frames, and two
+     samples 150 ms apart span a fifth of the blend, which read as a step on
+     WebKit's first run of this row (46 against 24). A real step is a big change
+     in one frame of the blend however long the read took; and a read that came
+     a frame late against the app's paint is not one (C88). */
+  /* Blind is not green: if the paint count never moved, every sample is skipped
+     and the row would read 0. A tab's travel paints the ground on most frames of
+     about 300 ms, so fewer than five paints means the count is not working. */
+  const paints = gnd.length ? gnd[gnd.length - 1][4] - gnd[0][4] : 0;
+  const stepMax = paints >= 5 ? groundStep(gnd) : 999;
+  if (paints < 5) console.log(`       the app painted the ground ${paints} time(s) while it was watched: the row is blind, so it fails rather than reads 0 (C88)`);
   row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
   const toPhone = [], toFloor = [];
   for (let k = 0; k < 3; k++) {

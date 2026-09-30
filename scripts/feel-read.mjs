@@ -62,3 +62,33 @@ export function followAssessment(at) {
 export function sustainedFollowSpread(at) {
   return followAssessment(at).spread;
 }
+
+/* C88. The ground row: the biggest colour change per frame of the blend.
+
+   Each sample is [ms since the tap, r, g, b, paints, paintAt]: one pixel of the
+   ground, read on the harness's own frame, with how many times the app had
+   painted the ground by then and when it last did. The row used to divide a
+   change by the time between two READS. That is the harness's clock, not the
+   blend's: the blend moves when the app paints, and a read that lands before
+   the app's paint in one frame and after it in the next sees two frames of
+   blend in one sample at about one frame's length, which reads double (26 to
+   30 against a bar of 24, the size of the real step, once in 72 runs). So the
+   change is divided by the time between the two PAINTS the reads saw, which is
+   how far the blend moved; a loaded runner that drops frames still reads as
+   the blend's own pace, as the first version of this learned on WebKit (46
+   against 24). A sample that saw the same paint as the one before it saw no
+   blend at all, and is skipped. The first 80 ms belong to the tap. */
+export function groundStep(gnd, { settle = 80, frame = 16.7 } = {}) {
+  let worst = 0;
+  for (let i = 1; i < (gnd || []).length; i++) {
+    const [ms, r, g, b, n, at] = gnd[i];
+    const [, r0, g0, b0, n0, at0] = gnd[i - 1];
+    if (ms < settle) continue;
+    if (n === n0) continue;
+    const d = Math.abs(r - r0) + Math.abs(g - g0) + Math.abs(b - b0);
+    const frames = Math.max(1, (at - at0) / frame);
+    const v = Math.round(d / frames);
+    if (v > worst) worst = v;
+  }
+  return worst;
+}
