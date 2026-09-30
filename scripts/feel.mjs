@@ -512,26 +512,7 @@ async function run(b) {
     const seen = { n: 0, at: t0 }; const proto = CanvasRenderingContext2D.prototype; const was = proto.setTransform;
     proto.setTransform = function (...a) { if (this.canvas === c) { seen.n++; seen.at = performance.now(); } return was.apply(this, a); };
     const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2], seen.n, seen.at]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); else proto.setTransform = was; }; requestAnimationFrame(tick); });
-  /* C108, WebKit only: why the ground is not painted on a tab tap there. The
-     candidates, each of which this reads: reduced motion is on (the ramp is
-     skipped and the scroller jumps), the floor page never moves (scrollLeft
-     before and after), the ramp never starts (.sf-ramp never seen), no scroll
-     event arrives, or the paint call is reached by something other than
-     setTransform on this canvas. It prints and changes nothing. */
-  /* The last run showed one animation frame in 700 ms and the page still 45 px
-     short of Home after 800 ms, so this reads the frame rate of the idle page
-     for a second, and whether WebKit counts the page as visible and focused. */
-  if (WEBKIT) console.log("       C108 idle frames: " + JSON.stringify(await p.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const tick = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); else res({ rafIn1s: n, visibility: document.visibilityState, focus: document.hasFocus() }); }; requestAnimationFrame(tick); }))));
-  if (WEBKIT) await p.evaluate(() => {
-    const pg = document.querySelector(".sf-floor.sf-panes"); const d = window.__c108 = { found: !!pg, reduce: false, left0: pg ? pg.scrollLeft : null, w: pg ? pg.clientWidth : null, scrolls: 0, ramp: 0, raf: 0, left1: null, gnds: document.querySelectorAll(".ar-gnd").length, other: 0 };
-    try { d.reduce = matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
-    if (pg) pg.addEventListener("scroll", () => { d.scrolls++; }, { passive: true });
-    const t0 = performance.now();
-    const tick = () => { d.raf++; if (pg && pg.classList.contains("sf-ramp")) d.ramp++; if (performance.now() - t0 < 700) requestAnimationFrame(tick); else if (pg) d.left1 = pg.scrollLeft; }; requestAnimationFrame(tick);
-    const proto = CanvasRenderingContext2D.prototype; for (const k of ["drawImage", "fillRect", "clearRect"]) { const w = proto[k]; proto[k] = function (...a) { if (this.canvas && this.canvas.classList.contains("ar-gnd")) d.other++; return w.apply(this, a); }; }
-  });
   await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(900);
-  if (WEBKIT) console.log("       C108 diagnostic: " + JSON.stringify(await p.evaluate(() => window.__c108)));
   const gnd = await p.evaluate(() => window.__gnd || []);
   /* Per frame of the blend, not per read: a loaded runner drops frames, and two
      samples 150 ms apart span a fifth of the blend, which read as a step on
@@ -543,13 +524,18 @@ async function run(b) {
      about 300 ms, so fewer than five paints means the count is not working. */
   const paints = gnd.length ? gnd[gnd.length - 1][4] - gnd[0][4] : 0;
   if (paints < 5 && WEBKIT) {
-    /* Playwright's WebKit does not paint the ground on a tab tap: zero paints,
-       where Chromium counts about fifteen. This row has therefore read 0 and
-       passed there since it was written, a measurement that never happened
-       reported as a pass (found by the paint count, C88). Said plainly rather
-       than passed or failed, as the swipe row says it. Why it does not paint is
-       open on the board (C108). */
-    console.log(`  --   ground: not measured in WebKit: the app painted the ground ${paints} time(s) on the tab tap there, so there was no blend to read`);
+    /* Not measurable in WebKit on the runner, and not the app's fault (C108).
+       Read in CI on 30 September: the page travels Home to the floor and the
+       ground canvas is drawn on (72 draw calls in the window), but the runner's
+       WebKit gives the page about 3 animation frames a second idle and about 13
+       while it travels. A blend that moves a few points a frame cannot be read
+       from 9 frames; the row would be reading the runner's frame rate. This row
+       had read 0 and passed there since it was written, a measurement that
+       never happened reported as a pass (found by C88's paint count). Said
+       plainly rather than passed or failed, as the swipe row says it cannot
+       run. (The paint counter also reads 0 there although the canvas is drawn
+       on; not explained, and moot while the frames are this few.) */
+    console.log(`  --   ground: not measured in WebKit: the runner gave ${gnd.length} frame(s) in the 700 ms watched (about 13 a second on a tab's travel), too few to read a blend of a few points a frame`);
   } else {
     const stepMax = paints >= 5 ? groundStep(gnd) : 999;
     if (paints < 5) console.log(`       the app painted the ground ${paints} time(s) while it was watched: the row is blind, so it fails rather than reads 0 (C88)`);
