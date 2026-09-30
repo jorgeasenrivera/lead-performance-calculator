@@ -38,7 +38,7 @@ export async function verifyManagerPhoneSearch(browser, url) {
       assert.ok(display.tabs.every((value) => value === "none"), "no duplicate desktop tabs");
       const nameSelector = width <= 700 ? ".bp-row .bp-nmx" : ".assoc-card .assoc-name";
       const names = page.locator(nameSelector);
-      await names.first().waitFor({ state: "attached" });
+      await names.first().waitFor({ state: "visible" });
       const baseline = await names.allTextContents();
       assert.ok(baseline.length > 1, "fixture must contain multiple people");
       const target = baseline[0];
@@ -47,6 +47,7 @@ export async function verifyManagerPhoneSearch(browser, url) {
         const rows = [...document.querySelectorAll(selector)];
         return rows.length === 1 && rows[0].textContent === name;
       }, [nameSelector, target]);
+      await names.first().waitFor({ state: "visible" });
       await field.fill("no-such-person-phone-regression");
       await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 0, nameSelector);
       if (width <= 700) assert.equal(await page.locator(".bp-stand .fr-empty").textContent(), "Nobody here.");
