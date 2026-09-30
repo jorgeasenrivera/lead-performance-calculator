@@ -553,8 +553,11 @@ The separate manager probe runs after the existing feel measurements in both
 engines. It checks visible search, typing, no matches, clearing and print at
 390, 720 and 760px, selecting the real phone or desktop renderer as appropriate.
 C108 ground measurements, C103 flags, math and the view-reset policy are untouched.
-824 local tests and build pass. Actual manager browser CI must pass before
-another preview; physical-phone review still precedes merge. Broader retention
+824 local tests and build pass. Chromium and WebKit manager interaction
+checks pass at all three widths. Jorge accepted the phone preview and
+approved merge plus normal production deployment on 30 September. X12 is
+complete; the application files are released apart from reserved C103 flags.
+Broader retention
 remains the [separate ownership question](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/436#issuecomment-5916187622).
 
 **H-X14 · #414 merged; H-C16 answer is (b), the app files are released.**
