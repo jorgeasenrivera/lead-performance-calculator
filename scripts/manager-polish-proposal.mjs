@@ -129,13 +129,86 @@ export function createStudyCount(target, options, env = window) {
   return ()=>{done=true;remove();};
 }
 
+// The card is a modal, so keyboard focus belongs to it until it leaves.
+// Keep the existing background inert flag and return only to a live invoker.
+export function createStudyCardFocus(el) {
+  const doc=el.ownerDocument, opener=doc.activeElement, app=doc.getElementById("root");
+  const wasInert=app?.inert, priorTabIndex=el.getAttribute("tabindex");
+  let disposed=false;
+  const focusables=()=>[...el.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')]
+    .filter(k=>!k.disabled && k.tabIndex>=0 && !k.closest('[inert]') && k.getClientRects().length>0);
+  const focus=k=>k?.focus({preventScroll:true});
+  const first=()=>focus(focusables()[0] || el);
+  const key=e=>{
+    if(e.key!=="Tab") return;
+    const items=focusables(), active=doc.activeElement;
+    if(!items.length) {e.preventDefault();focus(el);return;}
+    if(!el.contains(active) || active===el || (e.shiftKey && active===items[0]) || (!e.shiftKey && active===items.at(-1))) {
+      e.preventDefault();focus(e.shiftKey ? items.at(-1) : items[0]);
+    }
+  };
+  const keep=e=>{if(!disposed && !el.contains(e.target)) first();};
+  el.setAttribute("tabindex","-1");
+  if(app && !app.contains(el)) app.inert=true;
+  doc.addEventListener("keydown",key,true);doc.addEventListener("focusin",keep);
+  first();
+  return ()=>{
+    if(disposed) return;disposed=true;
+    const shouldReturn=el.contains(doc.activeElement) || doc.activeElement===doc.body;
+    doc.removeEventListener("keydown",key,true);doc.removeEventListener("focusin",keep);
+    if(app && !app.contains(el)) app.inert=wasInert;
+    if(priorTabIndex===null) el.removeAttribute("tabindex");else el.setAttribute("tabindex",priorTabIndex);
+    if(shouldReturn && opener?.isConnected && !opener.closest('[inert]')) focus(opener);
+  };
+}
+
 export function withinTabTransform(source) {
   const cardStart='function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, actions = null }) {\n';
-  source=replaceExactlyOnce(source,cardStart,createStudyCardMotion.toString()+'\n'+cardStart+'  const studyMotion = useRef(null);\n  const studyClose = useRef(onClose); studyClose.current = onClose;\n');
+  source=replaceExactlyOnce(source,cardStart,createStudyCardMotion.toString()+'\n'+createStudyCardFocus.toString()+'\n'+cardStart+'  const studyMotion = useRef(null);\n  const studyOrigin = useRef(origin);\n  const studyClose = useRef(onClose); studyClose.current = onClose;\n');
   source=replaceExactlyOnce(source,'  const grew = useRef(null);\n  const shut = () => {','  const grew = useRef(null);\n  const shut = () => {\n    if (window.__SAGE_POLISH) { if (studyMotion.current) studyMotion.current.close(); else studyClose.current(); return; }');
-  source=replaceExactlyOnce(source,'    const el = boxRef.current;\n    if (!el || !origin) return;','    const el = boxRef.current;\n    if (window.__SAGE_POLISH && el) {\n      const motion = createStudyCardMotion(el, origin, () => studyClose.current());\n      studyMotion.current = motion;\n      return () => { motion.dispose(); studyMotion.current = null; };\n    }\n    if (!el || !origin) return;');
-  source=replaceExactlyOnce(source,'function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {\n  const [v, setV] = useState(0);\n  useEffect(() => {',createStudyCount.toString()+'\nfunction useCountUp(target, ms = 1000, delay = 150, decimals = 0) {\n  const [v, setV] = useState(0);\n  const displayed = useRef(0), counted = useRef(false);\n  useEffect(() => {\n    if (window.__SAGE_POLISH) {\n      const first = !counted.current; counted.current = true;\n      return createStudyCount(target || 0, {from:displayed.current, ms:Math.min(ms, first ? 640 : 320), delay:first ? Math.min(delay,160) : 0, decimals, onValue:value => {displayed.current=value;setV(value);}});\n    }');
+  source=replaceExactlyOnce(source,'    const el = boxRef.current;\n    if (!el || !origin) return;','    const el = boxRef.current;\n    if (window.__SAGE_POLISH && el) {\n      const releaseFocus = createStudyCardFocus(el);\n      const motion = createStudyCardMotion(el, origin, () => studyClose.current());\n      studyMotion.current = motion;\n      return () => { motion.dispose(); studyMotion.current = null; releaseFocus(); };\n    }\n    if (!el || !origin) return;');
+  // The opener is a snapshot for this mounted card. Phone polling creates a
+  // fresh origin object; it must not cancel a close and restart the entrance.
+  source=replaceExactlyOnce(source,'  }, [origin]);\n  useEffect(() => {', '  }, [window.__SAGE_POLISH ? studyOrigin.current : origin]);\n  useEffect(() => {');
+  source=replaceExactlyOnce(source,'role="dialog" aria-label={a.name}>','role="dialog" aria-modal={window.__SAGE_POLISH ? true : undefined} aria-label={a.name}>');
+  source=replaceExactlyOnce(source,'function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {\n  const [v, setV] = useState(0);\n  useEffect(() => {',createStudyCount.toString()+'\nfunction useCountUp(target, ms = 1000, delay = 150, decimals = 0) {\n  const [v, setV] = useState(0);\n  const displayed = useRef(0), counted = useRef(false);\n  useEffect(() => {\n    if (window.__SAGE_POLISH) {\n      if (window.__SAGE_FINAL_TOTALS) return;\n      const first = !counted.current; counted.current = true;\n      return createStudyCount(target || 0, {from:displayed.current, ms:Math.min(ms, first ? 640 : 320), delay:first ? Math.min(delay,160) : 0, decimals, onValue:value => {displayed.current=value;setV(value);}});\n    }');
+  source=replaceExactlyOnce(source,'  }, [target, ms, delay, decimals]);\n  return v;', '  }, [target, ms, delay, decimals]);\n  return window.__SAGE_POLISH && window.__SAGE_FINAL_TOTALS ? target || 0 : v;');
+  source=replaceExactlyOnce(source,'  return <>{fmtNum(useCountUp(value || 0, ms, delay, decimals))}</>;', '  const shown = useCountUp(value || 0, ms, delay, decimals);\n  return window.__SAGE_POLISH && window.__SAGE_FINAL_TOTALS ? <span className="sage-final-number">{fmtNum(shown)}</span> : <>{fmtNum(shown)}</>;');
   return source;
+}
+
+// This cache belongs to one render only. Sorting a board must not re-grade the
+// same person at every comparison, but the next render must see fresh inputs.
+export function createStudyEvaluationCache(evaluate) {
+  const statsRows=new Map();
+  return (stats,tiers)=>{
+    let standards=statsRows.get(stats);
+    if(!standards) {standards=new Map();statsRows.set(stats,standards);}
+    if(!standards.has(tiers)) standards.set(tiers,evaluate(stats,tiers));
+    return standards.get(tiers);
+  };
+}
+
+export function boardEvaluationTransform(source) {
+  const start=source.indexOf("function Board("),end=source.indexOf("\nfunction ",start+1);
+  if(start<0 || end<0) throw new Error("Board boundary changed.");
+  let board=source.slice(start,end);
+  if((board.match(/evaluateAssociate\(/g) || []).length!==5) throw new Error("Board evaluation anchors changed.");
+  board=board.replaceAll('evaluateAssociate(', 'evaluateBoard(');
+  const anchor='  const [rollOpen, setRollOpen] = useState({});';
+  board=replaceExactlyOnce(board,anchor,'  const evaluateBoard = window.__SAGE_POLISH ? createStudyEvaluationCache(evaluateAssociate) : evaluateAssociate;\n'+anchor);
+  return source.slice(0,start)+createStudyEvaluationCache.toString()+"\n"+board+source.slice(end);
+}
+
+export function heroRenderTransform(source) {
+  const start=source.indexOf("function StoreHero("), end=source.indexOf("\nfunction ",start+1);
+  if(start<0 || end<0) throw new Error("StoreHero boundary changed.");
+  const hero=replaceExactlyOnce(source.slice(start,end),
+    '  const boardRoster = roster.filter((a) => boardRoleIds.has(a.roleId));',
+    // Unrelated hero updates must not invalidate the month-trail memo. Current
+    // retains its fresh identity; Proposed follows the actual roster and roles.
+    '  const boardRoster = useMemo(() => roster.filter((a) => boardRoleIds.has(a.roleId)), [window.__SAGE_POLISH ? data.roster : roster, window.__SAGE_POLISH ? config.roles : boardRoleIds]);');
+  return source.slice(0,start)+hero+source.slice(end);
 }
 
 export function proposalTransform(source) {
@@ -149,11 +222,15 @@ export function proposalTransform(source) {
     ['<div className="hs-head"><span />{HIST_FIVE.map((f) => <i key={f.k} style={{ background: f.col }} />)}</div>', '<div className="hs-head"><span />{HIST_FIVE.map((f) => window.__SAGE_POLISH ? <span key={f.k} style={{ color: f.col }}>{shortLabel(f)}</span> : <i key={f.k} style={{ background: f.col }} />)}</div>'],
   ];
   for (const [before, after] of swaps) source = replaceExactlyOnce(source, before, after);
-  return withinTabTransform(source);
+  return boardEvaluationTransform(heroRenderTransform(withinTabTransform(source)));
 }
 
 export const polishCSS = `
 /* The hierarchy changes. The store's colour, artwork and data stay Sage's. */
+.sage-polish .sage-final-number { animation:sageFinalNumber .16s ease-out both; }
+@keyframes sageFinalNumber { from { opacity:.8; } to { opacity:1; } }
+.sage-polish.sage-study-reduce .sage-final-number { animation:none; }
+@media(prefers-reduced-motion:reduce) { .sage-polish .sage-final-number { animation:none; } }
 .sage-polish .s2-hero { border:1px solid rgba(255,255,255,.22); box-shadow:0 14px 28px -18px rgba(18,34,26,.5); }
 .sage-polish .s2-store { font-size:26px; letter-spacing:-.035em; }
 .sage-polish .s2-head { padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,.22); }
@@ -278,11 +355,14 @@ export function installProposal(proposed, css) {
   const report = (status) => parent.postMessage({type:"sage-polish-status", status}, location.origin);
   const stop = () => { animations.forEach(a => a.cancel()); animations = []; };
   const travel = (direction = 0) => {
+    // A repeated replay is the same request, not a new entrance from an
+    // invented pose. Include delayed sections before accepting another replay.
+    if (animations.some(a => a.playState === "running" || a.playState === "pending")) return;
     stop();
     if (!proposed || manualReduce || media.matches || document.hidden) return;
     if (root.matches(".jump-under,.sage-assemble,.sage-preparing,.refresh-hold,.tool-move,.tab-move")) return;
     const page = document.querySelector(".page");
-    if (!page) return;
+    if (!page || typeof page.animate !== "function") return;
     root.classList.add("sage-polish-switch");
     // Read all geometry first, then write. Bound the effect to visible groups.
     const candidates = [page.querySelector(".s2-hero,.bp-hero,.hero"), ...page.children];
@@ -416,28 +496,33 @@ export function installArrivalProbe() {
 // Retain the painted frame until the replacement reports its actual readiness.
 export function installComparison() {
   let active = document.querySelector("#app"), pending = null, timeout = 0;
-  let mode = "proposed";
+  let mode = "proposed", finalTotals = false;
   const status = document.querySelector("#status");
   const trace = document.querySelector("#trace");
   const reduce = document.querySelector("#reduce");
+  const totals = document.querySelector("#totals");
   const send = (frame, type, value) => frame?.contentWindow.postMessage({type,value},location.origin);
   const discard = () => { clearTimeout(timeout); pending?.remove(); pending=null; };
   const press = () => document.querySelectorAll("header button[aria-pressed]").forEach(b => b.setAttribute("aria-pressed",String(b.id===mode)));
-  for (const id of ["current","proposed"]) document.getElementById(id).onclick = () => {
+  const compare = id => {
+    const nextTotals=totals.checked;
     discard();
-    if (mode === id) { status.textContent="Ready"; return; }
+    if (mode === id && finalTotals === nextTotals) { status.textContent="Ready"; return; }
     const frame = document.createElement("iframe");
     frame.title=active.title; frame.style.gridArea="1/1"; frame.style.visibility="hidden"; frame.inert=true;
     pending=frame; status.textContent="Preparing "+id+", keeping this view visible";
     frame.onload=() => send(frame,"sage-polish-reduce",reduce.checked);
-    frame.src="/app?mode="+id+"&compare=1"+(trace.checked ? "&trace=1" : "");
+    frame.src="/app?mode="+id+"&compare=1"+(nextTotals ? "&totals=final" : "")+(trace.checked ? "&trace=1" : "");
     active.parentElement.appendChild(frame);
-    timeout=setTimeout(() => { discard(); status.textContent="Comparison did not load. Your previous view is still here."; },30000);
+    timeout=setTimeout(() => { discard(); totals.checked=finalTotals; status.textContent="Comparison did not load. Your previous view is still here."; },30000);
   };
+  for (const id of ["current","proposed"]) document.getElementById(id).onclick=()=>compare(id);
+  totals.onchange=()=>compare(mode);
   document.querySelector("#replay").onclick=() => send(active,"sage-polish-replay");
   document.querySelector("#signin").onclick=() => {
     discard();
-    active.src="/app?mode="+mode+"&signin=1"+(new URLSearchParams(location.search).get("slow")==="1" ? "&slow=1" : "")+(trace.checked ? "&trace=1" : "");
+    totals.checked=finalTotals;
+    active.src="/app?mode="+mode+"&signin=1"+(finalTotals ? "&totals=final" : "")+(new URLSearchParams(location.search).get("slow")==="1" ? "&slow=1" : "")+(trace.checked ? "&trace=1" : "");
     status.textContent="Full demo sign-in, then store landing";
   };
   reduce.onchange=() => {send(active,"sage-polish-reduce",reduce.checked);send(pending,"sage-polish-reduce",reduce.checked);};
@@ -449,6 +534,7 @@ export function installComparison() {
       clearTimeout(timeout);
       const old=active; active=pending; pending=null;
       mode=new URL(active.src).searchParams.get("mode");
+      finalTotals=new URL(active.src).searchParams.get("totals")==="final"; totals.checked=finalTotals;
       old.remove(); active.id="app"; active.style.visibility=""; active.inert=false;
       press(); status.textContent=mode==="proposed" ? "Proposed polish, fictional store" : "Current design, same fictional store";
     } else if (event.source===active.contentWindow && event.data?.type==="sage-polish-status") status.textContent=event.data.status;
@@ -456,11 +542,37 @@ export function installComparison() {
   window.addEventListener("pagehide",discard,{once:true});
 }
 
+// Storage is optional. A denied read or a damaged old value must not disable
+// the comparison controls, and an unsaved choice is still available to export.
+export function installDecisions() {
+  const key="sage-manager-polish-decisions", choices=Object.create(null);
+  const selects=[...document.querySelectorAll("[data-decision]")];
+  const allowed=new Set(["pending","Approve","Adjust","Keep current"]);
+  let saved=null;
+  try { saved=JSON.parse(localStorage.getItem(key) || "{}"); } catch {}
+  if (saved && typeof saved==="object" && !Array.isArray(saved)) {
+    for (const s of selects) {
+      const id=s.dataset.decision;
+      if (Object.hasOwn(saved,id) && allowed.has(saved[id])) choices[id]=saved[id];
+    }
+  }
+  for (const s of selects) {
+    s.value=choices[s.dataset.decision] || "pending";
+    s.onchange=()=>{
+      choices[s.dataset.decision]=allowed.has(s.value) ? s.value : "pending";
+      try { localStorage.setItem(key,JSON.stringify(choices)); }
+      catch { document.querySelector("#export").textContent="Choices are available below, but could not be saved in this browser. Select Show my decisions before leaving."; }
+    };
+  }
+  document.querySelector("#device").onchange=e=>document.body.dataset.device=e.target.value;
+  document.querySelector("#copy").onclick=()=>document.querySelector("#export").textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+": "+v).join("\n") || "No decisions yet";
+}
+
 export function proposalPage() {
   return String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sage | Manager polish study</title>
 <style>@font-face{font-family:Space;src:url('/fonts/space-grotesk-latin.woff2')}*{box-sizing:border-box}body{margin:0;background:#EDEFE9;color:#152B20;font:14px Space,system-ui}header{padding:16px 22px;background:#152B20;color:white;display:flex;align-items:center;flex-wrap:wrap;gap:12px}header b{font-size:20px;margin-right:auto}button,select{font:inherit;border:1px solid #BCD0BF;border-radius:9px;padding:9px 13px;cursor:pointer}button[aria-pressed=true]{background:#E4C98D;color:#152B20;border-color:#E4C98D}label{display:flex;align-items:center;gap:6px}button:focus-visible,select:focus-visible{outline:3px solid #DBA63F;outline-offset:3px}.note{padding:10px 22px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:#fff;border-bottom:1px solid #CAD4C9}.note span{margin-right:auto}main{padding:18px;overflow:auto}iframe{display:block;border:0;width:100%;height:900px;background:white;margin:auto;box-shadow:0 8px 28px #152B2020;border-radius:12px}body[data-device=phone] iframe{width:390px;height:844px}body[data-device=tablet] iframe{width:768px;height:1024px}details{max-width:1440px;margin:20px auto;background:white;padding:18px;border-radius:14px}summary{font-weight:700;cursor:pointer}.decision{padding:16px 0;border-bottom:1px solid #E0E6DD;display:flex;align-items:center;gap:14px}.decision p{flex:1;margin:0}.decision strong{display:block;margin-bottom:5px}#export{white-space:pre-wrap}small{opacity:.8} @media(max-width:600px){header{padding:12px}main{padding:6px}body[data-device=phone] iframe{width:min(390px,100%)}.decision{flex-wrap:wrap}}</style></head><body data-device="desktop">
 <style>body[data-device=compact] iframe{width:320px;height:568px}body[data-device=landscape] iframe{width:844px;height:390px}@media(max-width:600px){body[data-device=compact] iframe{width:min(320px,100%)}}</style>
-<header><b>SAGE / Manager polish</b><button id="current" aria-pressed="false">Current</button><button id="proposed" aria-pressed="true">Proposed</button><select id="device" aria-label="Preview size"><option value="desktop">Desktop</option><option value="phone">Phone, 390 px</option><option value="compact">Compact phone, 320 x 568</option><option value="landscape">Landscape, 844 x 390</option><option value="tablet">Tablet, 768 px</option></select><button id="replay">Replay page motion</button><button id="signin">Replay full sign-in</button><label><input id="reduce" type="checkbox">Reduce page motion</label></header>
+<header><b>SAGE / Manager polish</b><button id="current" aria-pressed="false">Current</button><button id="proposed" aria-pressed="true">Proposed</button><select id="device" aria-label="Preview size"><option value="desktop">Desktop</option><option value="phone">Phone, 390 px</option><option value="compact">Compact phone, 320 x 568</option><option value="landscape">Landscape, 844 x 390</option><option value="tablet">Tablet, 768 px</option></select><button id="replay">Replay page motion</button><button id="signin">Replay full sign-in</button><label><input id="reduce" type="checkbox">Reduce page motion</label><label><input id="totals" type="checkbox">Try final totals (Proposed only)</label></header>
 <div class="note"><span>Approval study only. Fictional people and figures. Lightspeed artwork and timing retained. No production writes.</span><label><input id="trace" type="checkbox">Record transition</label><small id="status" role="status">Loading Sage</small></div>
 <main><div class="frame-stack" style="display:grid"><iframe id="app" style="grid-area:1/1" title="Sage manager dashboard proposal" src="/app?mode=proposed"></iframe></div>
 <details open><summary>Manager polish decisions</summary>
@@ -474,10 +586,12 @@ ${[
   ["7. Number updates","Dashboard podium and month recap: first counts settle sooner. Updated numbers continue from the displayed value instead of restarting at zero. Hidden pages and Reduce Motion show the final number without counting."],
   ["8. Compact phone History","At 380 px and below, put the name above the five figures. Keep every metric label readable and aligned without shrinking the font. Larger phone and desktop layouts stay the same. Try Compact phone, then History."],
   ["9. Compact associate metrics","At 380 px and below, keep three channel bars above three video dials, instead of squeezing six into one row. All figures, targets, labels and explanations stay. Fonts and larger layouts are unchanged. Try Compact phone, Dashboard, then open a person's card."],
-  ["10. Phone hero fit","Keep the goal below the dot-matrix total, with the dots sized to their own column so they cannot cross into the calendar. Keep the calendar, pace, stock mix and on-floor count. Applies to phone widths; tablet and desktop are unchanged."]
+  ["10. Phone hero fit","Keep the goal below the dot-matrix total, with the dots sized to their own column so they cannot cross into the calendar. Keep the calendar, pace, stock mix and on-floor count. Applies to phone widths; tablet and desktop are unchanged."],
+  ["11. Associate card keyboard controls","Start on Close, keep Tab and Shift+Tab inside the open card, and return to the person who opened it after dismissal. Background controls stay inactive while the card is open. Escape keeps its existing close action."],
+  ["12. Accurate numbers at a glance","Optional comparison, off by default. Check Try final totals to show the real value immediately with a brief opacity reveal, rather than counting through temporary totals. No arithmetic changes. Reduce Motion removes the reveal. Existing approved number motion stays the default until you choose."]
 ].map(([title,reason], i) => `<div class="decision"><p><strong>${title}</strong>${reason}</p><select data-decision="${i}" aria-label="Decision for ${title}"><option value="pending">Not decided</option><option>Approve</option><option>Adjust</option><option>Keep current</option></select></div>`).join("")}
 <p>Try Dashboard, Summary, History and Targets in Sage's own navigation. Replay full sign-in to check the lightspeed-to-store join. Arrival follows your system's Reduce Motion setting. Record transition adds a temporary diagnostic probe, off by default. Decisions stay in this browser only.</p><button id="copy">Show my decisions</button><pre id="export" aria-live="polite"></pre></details></main>
-<script>const choices=JSON.parse(localStorage.getItem('sage-manager-polish-decisions')||'{}');document.querySelectorAll('[data-decision]').forEach(s=>{s.value=choices[s.dataset.decision]||'pending';s.onchange=()=>{choices[s.dataset.decision]=s.value;localStorage.setItem('sage-manager-polish-decisions',JSON.stringify(choices))}});document.querySelector('#device').onchange=e=>document.body.dataset.device=e.target.value;document.querySelector('#copy').onclick=()=>document.querySelector('#export').textContent=Object.entries(choices).map(([i,v])=>(Number(i)+1)+': '+v).join('\n')||'No decisions yet';(${installComparison.toString()})();</script></body></html>`;
+<script>(${installDecisions.toString()})();(${installComparison.toString()})();</script></body></html>`;
 }
 
 export async function buildProposal() {
@@ -515,7 +629,7 @@ export async function serveProposal(root = "dist-harness/manager-polish", port =
       else if (url.pathname === "/app") {
         const proposed = url.searchParams.get("mode") === "proposed";
         // Run before the module so JSX and CSS agree on the selected mode.
-        const setup = `<script>window.__SAGE_POLISH=${proposed};const d=new Date();localStorage.setItem('lpc:roundup:sage-demo:'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),'1');window.addEventListener('error',e=>{const show=()=>{const p=document.createElement('pre');p.hidden=true;p.className='sage-study-error';p.textContent=String(e.error?.stack||e.message).slice(0,2400);document.body.appendChild(p)};if(document.body)show();else document.addEventListener('DOMContentLoaded',show,{once:true})});</script>`;
+        const setup = `<script>window.__SAGE_POLISH=${proposed};window.__SAGE_FINAL_TOTALS=${proposed && url.searchParams.get("totals") === "final"};const d=new Date();localStorage.setItem('lpc:roundup:sage-demo:'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),'1');window.addEventListener('error',e=>{const show=()=>{const p=document.createElement('pre');p.hidden=true;p.className='sage-study-error';p.textContent=String(e.error?.stack||e.message).slice(0,2400);document.body.appendChild(p)};if(document.body)show();else document.addEventListener('DOMContentLoaded',show,{once:true})});</script>`;
         // Only the disposable loopback app's known auth key is reset, not all
         // browser storage, decisions, or any real preview's session.
         const fresh = url.searchParams.get("signin") === "1" ? `<script>localStorage.removeItem('lpc-auth');</script>` : "";

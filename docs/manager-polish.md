@@ -5,6 +5,81 @@ implementation, not merged. The login-to-dashboard join is now included in
 the investigation after Jorge reported flashing in both the study and live site.
 The salesperson app and native app are outside scope.
 
+## 30 September: interaction reliability and keyboard ownership
+
+Continuation of X11 from 63e5501. Jorge approved publishing this reviewed pass
+to draft #436 on 30 September. No merge, deployment, or application-source edits.
+Main was read at 92a2cfc; Manager.jsx is unchanged
+between that main and this branch. C97's application-file ownership is respected.
+
+The bounded pass repairs the isolated study in seven places:
+
+1. Card lifetime: capture the initial origin once per mount. Fresh phone origin
+   objects no longer dispose and recreate a Proposed card during parent updates,
+   including an update during close. Current retains its original dependency.
+2. Keyboard ownership, pending decision 11: start at Close, wrap Tab in both
+   directions, keep the background root inert, and restore a connected invoker.
+   Preserve an existing inert flag and newer destination focus during cleanup.
+   The live baseline independently showed Tab then Enter activating another
+   person's card underneath the open one. These new behaviors are unit-tested,
+   not yet visually verified in the modified build.
+3. Preview decisions: malformed, null, non-object or unavailable storage no
+   longer aborts all comparison/size/replay binding. Only known decision IDs and
+   values load. A failed save retains the choices in memory for export and tells
+   the reader they were not saved.
+4. Repeated page replay coalesces while any section, including delayed sections,
+   is still animating. Existing navigation, hidden-page and reduced-motion
+   cancellation remain. Missing WAAPI becomes a no-op rather than a crash.
+5. Pending decision 12 is an optional final-total comparison, off by default.
+   The real number is returned on first render, with a 160ms opacity reveal and
+   no intermediate count or scheduled number work. Both reduced-motion controls
+   remove the reveal. Approved decision 7 remains the default. The comparison
+   keeps its old document until the replacement is ready and reverses on timeout.
+6. Proposed StoreHero keeps boardRoster stable while the actual roster and roles
+   are unchanged, avoiding guaranteed misses in the month-trail memo. A
+   deterministic harness gives one calculation across eleven equal-input renders
+   and recalculates when either input changes. This is an operation-count result,
+   not a measured frame-rate or latency improvement; formulas are unchanged.
+7. Board reuses its pure evaluation for identical stats and standards within
+   one render, including the deferred Late row callback. Five call sites used
+   to repeat tier sorting through ranking, filters, counts, sort comparisons
+   and row rendering. The real evaluator returns identical results for all
+   tested no-data/pass/fail/cap cases: 90 requests make 15 calculations. The
+   next render starts a fresh cache. No formula, ordering or role eligibility
+   changes. This assumes the existing immutable render inputs; it is not a
+   cache across renders or protection against in-place mutation between a
+   render and its deferred row callback. Independent source review found no
+   blocking defect; browser performance is still unmeasured.
+
+After rebasing onto main 92a2cfc, 842 tests pass, including 37 proposal tests.
+Normal and isolated production
+builds pass. Publication preserves the previous PR head and main as parents of
+a new integration commit, using the exact verified rebased tree. The branch
+update is non-force and must refuse a concurrent head change. This is a draft
+branch update, not a pull-request merge or production deployment. Existing pdf.js eval and chunk-size warnings remain. The initial
+five new regressions fail against the untouched baseline while its original 23
+proposal tests pass; later keyboard/numeric/memo tests pass against final code.
+
+Browser verification is blocked here. The cloud browser rejected the loopback
+preview with ERR_BLOCKED_BY_CLIENT. The independent local Chromium test runner
+then failed before navigation with socket() Operation not permitted, including
+the approved sandbox escalation. No security workaround was attempted. No new
+before/after screenshot, final-code browser interaction, npm run feel, WebKit,
+physical-phone, continuous-frame or FPS pass is claimed. The live signed-in
+read-only audit is baseline evidence, not proof of this modified build.
+
+Before publication: review the diff, run the new keyboard/repeated/interrupted
+flows in the isolated preview at desktop/phone/tablet sizes, run feel in supported
+Chromium/WebKit environments, and collect Jorge's decisions and physical-phone
+check. Decisions 6 Adjust, 8/9/10 pending and 11/12 pending remain separate.
+
+Source investigation also found a separate metric-definition issue: GMSummary's
+headline prefers M.stated.deliveries, while its Units delivered comparison sums
+current-roster stats.unitsDelivered. Dashboard and Summary channel percentages
+use different populations. Do not change that arithmetic as a cosmetic repair.
+Agree on a canonical store/month population and label any roster-credit view
+explicitly before implementing a separate consistency fix.
+
 ## 29 September: Jorge's compact hero overlap
 
 Jorge supplied a screenshot showing the dot total's goal over the calendar.

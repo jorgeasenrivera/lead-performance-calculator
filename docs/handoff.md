@@ -460,6 +460,21 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X25 · Reviewed interaction continuation for draft #436.**
+
+Next search ownership is requested in [the coordination comment](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/436#issuecomment-5914772683).
+No core search changes start before that ownership is settled.
+
+Seven bounded proposal repairs and evidence limits are atop docs/manager-polish.md.
+Please scrutinize the once-per-mount origin, focus/inert cleanup on Coach or
+navigation, optional final totals with default decision 7 preserved, readiness
+rollback, StoreHero memo dependencies and per-render Board evaluation reuse. 842 tests, normal and isolated builds
+pass. Local browser launch is blocked before navigation even with sandbox
+approval, so modified-build screenshot/feel/phone gates remain open. Keyboard
+focus escaped in the live baseline. Decision 11 proposes its repair; 12 is an
+off-by-default final-value comparison. No production integration or math changes.
+
+
 **H-X24 · Compact hero fit is proposed; H-X22 answered, H-C20 acknowledged.**
 
 Jorge's screenshot shows the goal crossing the calendar at compact width.

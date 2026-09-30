@@ -636,3 +636,15 @@ still ticks; production implementation must fully bound resource cleanup.
 final result: passed
 
 ---
+
+
+## 30 September local manager interaction pass
+
+X11 proposal only. New pending decisions 11 (keyboard card ownership) and 12
+(optional final-value reveal, off by default). See docs/manager-polish.md for
+changes, 825 passing tests and both successful builds. No final-code visual
+verification: cloud loopback was blocked and local Chromium could not create
+a socket even with approved sandbox escalation. Live baseline focus escape is
+independently observed, but is not an after screenshot. Desktop, tablet, phone,
+interrupted/repeated controls, reduced motion and focus restoration remain
+required preview checks. No physical-phone/WebKit/FPS or release claim.
