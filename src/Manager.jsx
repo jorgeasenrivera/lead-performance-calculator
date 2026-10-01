@@ -1,3 +1,5 @@
+import managerSignalCSS from "./manager-signal.css?inline";
+import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
 /* The manager's pages.
    -------------------------------------------------------------------------
    Everything a salesperson's phone never opens: the dashboard, the desks, the
@@ -1212,7 +1214,7 @@ function tabMove(dir, apply) {
     root.classList.remove("tab-exit");
     root.classList.add("tab-enter");
     tabTimers.push(setTimeout(clearTabMove, TAB_ENTER + 120));
-  }, TAB_EXIT));
+  }, true ? 140 : TAB_EXIT));
 }
 
 function SegControl({ items, value, onChange, renderExtra, attentionId }) {
@@ -2412,6 +2414,7 @@ function CoverageStrip({ store, line, history }) {
    signed in, or off. What can be done about each differs, so the row says which
    it is and offers only the thing that would actually help. */
 function AlsoOnClock({ roster, line, data, date, realName, onAdd, onNudge, nudged }) {
+  const signalFloor = useSignal();
   const inLine = new Map((line || []).map((p) => [p.id, p]));
   const rows = [];
   for (const a of roster || []) {
@@ -2426,16 +2429,17 @@ function AlsoOnClock({ roster, line, data, date, realName, onAdd, onNudge, nudge
       rows.push({ a, kind: "out", what: "Not signed in", since: "", can: "add" });
     }
   }
-  if (!rows.length) return null;
+  const shown = signalFloor ? rows.filter((r) => r.can !== "add") : rows;
+  if (!shown.length) return null;
   const order = { customer: 0, lunch: 1, away: 2, out: 3, off: 4 };
-  rows.sort((x, y) => (order[x.kind] ?? 9) - (order[y.kind] ?? 9) || x.a.name.localeCompare(y.a.name));
+  shown.sort((x, y) => (order[x.kind] ?? 9) - (order[y.kind] ?? 9) || x.a.name.localeCompare(y.a.name));
   return (
     <div className="da-tbl clock-card">
       <div className="warmhead">
         <PixIcon glyph="clock" size={16} style={{ color: "#D0821E" }} />
-        Also on the clock <span className="da-count">{rows.length}</span>
+        Also on the clock <span className="da-count">{shown.length}</span>
       </div>
-      {rows.map((r) => (
+      {shown.map((r) => (
         <div key={r.a.id} className="da-row clock-row">
           <span className={"da-stripe st-" + (r.kind === "customer" ? "g" : r.kind === "out" ? "a" : "dim")} aria-hidden="true" />
           <span className="da-name"><b>{r.a.name}</b>
@@ -2466,11 +2470,13 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
   const stack = (waitingNames || []).slice(0, 6);
   const extra = Math.max(0, (waitingNames || []).length - stack.length);
   const M = metrics || {};
+  const signalFloor = useSignal() && kind === "floor";
+  if (signalFloor) return <SignalFloorDispatch nextName={nextName} nextSub={nextSub} metrics={M} onAssign={onAssign} disabled={assignDisabled} busy={assignBusy} label={assignLabel} />;
   return (
-    <div className="s2-hero floor-hero" style={{ "--facc": accent }}>
+    <div className={signalFloor ? "sg-floor-console" : "s2-hero floor-hero"} style={{ "--facc": accent }}>
       <i className="s2-noise" aria-hidden="true" /><HeroSignal />
       <div className="s2-tube">
-      <div className="s2-head">
+      {signalFloor ? <div className="sg-room-counts">{chips?.map((c, i) => <span key={i} className="fh-chip">{c}</span>)}</div> : (<div className="s2-head">
         <div className="s2-ava">{store && store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
         <div className="s2-idtx">
           <div className="s2-greet">{title}{sub ? ` · ${sub}` : ""}</div>
@@ -2481,7 +2487,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
             {chips.map((c, i) => <span key={i} className="fh-chip">{c}</span>)}
           </div>
         )}
-      </div>
+      </div>)}
 
       {empty && onEmpty ? (
         <div className="fh-up fh-quiet">
@@ -2822,12 +2828,13 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
   const removeTag = (id, t) => onSaveTags({ ...(repTags || {}), [id]: tagsOf(id).filter((x) => x !== t) });
   const doAssign = (id) => { const r = reason.trim(); if (!r) return; onAssign(id, r); setPending(null); setReason(""); setQuery(""); };
 
+  const signalFloor = useSignal() && (kind === "floor" || kind === "line");
   const whoLabel = kind === "floor" ? "on the floor" : "in the line";
   return (
-    <div className="sa sa-card">
-      <div className="sa-head"><PixIcon glyph="search" size={16} style={{ color: "#D0821E" }} />Smart assign</div>
-      <p className="sa-sub">Type what the {kind === "floor" ? "customer" : "lead"} needs and skip the right person forward. A skip always needs a reason.</p>
-      <input className="sa-input" value={query} placeholder={kind === "floor" ? "e.g. spanish speaker, best showroom closer" : "e.g. spanish speaker, best closing percentage"}
+    <div className={"sa sa-card" + (signalFloor ? " sg-floor-match" : "")}>
+      <div className="sa-head"><PixIcon glyph="search" size={16} style={{ color: "#D0821E" }} />Smart assign{signalFloor && (<button className="sa-manage-toggle" onClick={() => setManage((v) => !v)}>{manage ? "Done tagging" : "Manage tags"}</button>)}</div>
+      {!signalFloor && <p className="sa-sub">Type what the {kind === "floor" ? "customer" : "lead"} needs and skip the right person forward. A skip always needs a reason.</p>}
+      <input className="sa-input" aria-label="Match a customer need" value={query} placeholder={signalFloor ? "Language, skill or closing rate" : kind === "floor" ? "e.g. spanish speaker, best showroom closer" : "e.g. spanish speaker, best closing percentage"}
         onChange={(e) => setQuery(e.target.value)} />
       <div className="sa-chips">
         {allTags.slice(0, 8).map((t) => <button key={t} className="sa-chip" onClick={() => setQuery(t)}>{t}</button>)}
@@ -2865,7 +2872,7 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
         ))}
       </div>
 
-      <button className="sa-manage-toggle" onClick={() => setManage((v) => !v)}>{manage ? "Done tagging" : "Manage tags"}</button>
+      {!signalFloor && (<button className="sa-manage-toggle" onClick={() => setManage((v) => !v)}>{manage ? "Done tagging" : "Manage tags"}</button>)}
       {manage && (
         <div className="sa-manage">
           {line.length === 0 && <p className="sa-empty">Nobody {whoLabel} to tag yet.</p>}
@@ -3559,7 +3566,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
   return (
     <div className="sd">
       <div className="sd-hero">
-        <div className="sd-head">
+        <SignalRoomHeader title={variant.label} storeName={store.name} date={date} count={withoutTest(line).length} noun={variant.count} full={<div className="sd-head">
           <div>
             <div className="sd-cap">Sage {"·"} {variant.label}</div>
             <b>{store.name}</b>
@@ -3568,7 +3575,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
             {new Date(date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
             {" · "}{withoutTest(line).length} {variant.count}
           </span>
-        </div>
+        </div>} />
 
         <div className="sd-body">
           <div className="sd-room">
@@ -4137,6 +4144,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         })}
       </div>
 
+<SignalFloorJoin kind="line" expected={expectedNotHere} available={notInLine} add={addPerson} clear={clearLine} count={line.length} busy={busy}>
       {expectedNotHere.length > 0 && (
         <div className="q-missing">
           <div className="q-missing-head">Scheduled today, not in line yet</div>
@@ -4162,6 +4170,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         )}
         {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
       </div>
+      </SignalFloorJoin>
       </div>
       <aside className="mf-side">
         <SmartAssign line={line} realName={realName} kind="line"
@@ -4264,6 +4273,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
      the way the TV board's text size does: the wall remembers being a wall. */
   const [disp, setDisp] = useState(() => { try { return localStorage.getItem("lpcf:disp") === "1"; } catch (e) { return false; } });
   const flipDisp = () => { const v = !disp; setDisp(v); try { localStorage.setItem("lpcf:disp", v ? "1" : "0"); } catch (e) {} };
+  const signalFloor = useSignal();
   const asks = activeAssists(row);
   const line = (row && row.line) || [];
   useAssistTick(asks.length > 0 || line.some((p) => p.status === "customer"));
@@ -4359,7 +4369,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
   return (
     <div className={"fbc" + (disp ? " disp" : "")}>
       <div className="fbc-head">
-        <div><div className="fbc-cap">Live Floor</div><b>The room</b></div>
+        <SignalCopy full={<div><div className="fbc-cap">Live Floor</div><b>The room</b></div>} short={null} />
         <div className="fbc-cover">
           {managers.map((m) => (
             <button key={m.id} type="button" className={"fbc-mgr " + covOf(m.id)}
@@ -4391,7 +4401,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
         }}
         onTap={tapTable}>
         {/* the dock: the up rotation standing at the real door */}
-        <div className="fbc-dock" style={{ left: doorAt.x + "%", top: Math.min(doorAt.y, 62) + "%" }}>
+        <div className={signalFloor ? "sg-floor-old-dock" : "fbc-dock"} style={{ left: doorAt.x + "%", top: Math.min(doorAt.y, 62) + "%" }}>
           {waiting.slice(0, 7).map((p, i) => {
             const nm = realName(p.id);
             const off = p.status !== "waiting";
@@ -4409,6 +4419,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
           {waiting.length > 7 && <span className="fbc-more">+{waiting.length - 7}</span>}
         </div>
       </PlanMap>
+      {signalFloor && <SignalFloorRail line={line} realName={realName} tags={data?.repTags} />}
       {/* the hover card, over everything */}
       {hover && (() => {
         const st = hoverStats(hover.id);
@@ -4428,8 +4439,8 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
           <i>{a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : fmtAssistAge(assistAge(a))}</i>
         </button>
       ))}
-      <div className="fbc-strip">
-        <span className="fbc-lbl">Longest wait</span>
+      <div className={"fbc-strip" + (signalFloor && !asks.some((a) => !a.claimedBy) ? " sg-no-help-wait" : "")}>
+        <span className="fbc-lbl sg-help-wait"><SignalCopy full="Longest wait" short="Help wait" /></span>
         {(() => {
           const longest = asks.filter((a) => !a.claimedBy).reduce((m, a) => Math.max(m, assistAge(a)), 0);
           const mm = String(Math.floor(longest / 60)); const ss = String(longest % 60).padStart(2, "0");
@@ -4437,9 +4448,9 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
             ? <span className="fbc-clock"><DmNumber value={mm} /><i>:</i><DmNumber value={ss} /></span>
             : <span className="fbc-quiet">nobody is waiting</span>;
         })()}
-        <span className="fbc-lbl" style={{ marginLeft: 10 }}>{waiting.filter((p) => p.status === "waiting").length} at the door · {seatByTable.size} with guests</span>
+        <SignalCopy full={<span className="fbc-lbl" style={{ marginLeft: 10 }}>{waiting.filter((p) => p.status === "waiting").length} at the door · {seatByTable.size} with guests</span>} short={null} />
         {asks.some((a) => a.escalatedAt && !a.claimedBy) && <span className="fbc-esc onair">T.O. unclaimed past 2:00 · every manager re-pinged</span>}
-        <span className="fbc-hint">{moveFrom ? `Re-seating ${realName(moveFrom).split(" ")[0]}: tap the right table.` : "Tap a glowing table to claim it. Tap a seated table twice to re-seat somebody."}</span>
+        <SignalTableHelp moveFrom={moveFrom}><span className="fbc-hint">{moveFrom ? `Re-seating ${realName(moveFrom).split(" ")[0]}: tap the right table.` : "Tap a glowing table to claim it. Tap a seated table twice to re-seat somebody."}</span></SignalTableHelp>
       </div>
     </div>
   );
@@ -4746,6 +4757,7 @@ const SEAT_LOOK = { bg: "#E4C98D", color: "#1F2A22" };
    and the stamp are drawn here. */
 function HeroSignal() {
   const net = useNet();
+  const signal = useSignal();
   const ref = useRef(null);
   const [back, setBack] = useState(false);
   const wasOff = useRef(false);
@@ -4765,6 +4777,7 @@ function HeroSignal() {
   }, [net.offline, back]);
   const mins = (t) => Math.max(1, Math.floor((Date.now() - t) / 60000));
   const stale = !net.offline && net.okAt && Date.now() - net.okAt > 60000 ? mins(net.okAt) : 0;
+  if (signal) return <SignalDataSignal signalRef={ref} net={net} back={back} stale={stale} mins={mins} />;
   return (
     <span ref={ref} className="s2-signal">
       {(net.offline || back) && (
@@ -5383,7 +5396,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
   );
 }
 
-function FloorBoard({ config, store, data, onData, userName }) {
+function FloorBoard({ config, store, data, onData, userName, onSettings }) {
   const [row, setRow] = useState(undefined);
   const [setup, setSetup] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
@@ -5689,6 +5702,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
     <div className="checkout q-tab f-tab mf mf-floor">
       <div className="q-topline">
         <div className="q-topline-actions">
+          <SignalFloorSettings onClick={onSettings} />
           {/* Set-up behind one button (five-second pass, item 11). Phones
               stays out only while somebody is asking. The sign-in code that
               led this row went with the QR codes (C99). */}
@@ -5724,6 +5738,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
           docked at the real door, guests on their tables, asks glowing over
           everything. Jorge picked this composition (draft B, "The Door");
           everything the old board led with still lives below it. */}
+      <SignalFloorHero storeName={store.name} date={date} count={withoutTest(line).length}>
       <FloorConsole row={row} act={act} plan={floorPlanOf(config, store.id)}
         managers={(data.roster || []).filter((a) => a.roleId === "manager").map((a) => ({ id: a.id, name: a.name }))}
         meName={userName} data={data} date={date} realName={realName} />
@@ -5745,6 +5760,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
             onEmpty={null} />
         );
       })()}
+      </SignalFloorHero>
 
       <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" onCloseOpp={closeOpp}
         actions={["assigned", "auto-checkin", "auto-appt-show"]} />
@@ -5790,7 +5806,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
           const avail = p.status === "waiting";
           const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
           return (
-            <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""} ${p.status === "customer" ? "f-row-cust" : ""}`}>
+            <div key={p.id} data-floor-person={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""} ${p.status === "customer" ? "f-row-cust" : ""}`}>
               <div className="q-ord">
                 <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="moveup" size={9} /></button>
                 <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down"><PixIcon glyph="tridown" size={9} /></button>
@@ -5849,6 +5865,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
         })}
       </div>
 
+<SignalFloorJoin expected={expectedNotHere} available={notInLine} add={addPerson} clear={clearLine} count={line.length} busy={busy}>
       {expectedNotHere.length > 0 && (
         <div className="q-missing">
           <div className="q-missing-head">Scheduled today, not on the floor yet</div>
@@ -5874,6 +5891,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
         )}
         {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
       </div>
+      </SignalFloorJoin>
       </div>
       <aside className="mf-side">
         <SmartAssign line={line} realName={realName} kind="floor"
@@ -7309,9 +7327,9 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
       </>}>
 
       {hasSub && (
-        <nav className="seg-wrap no-print">
+        <SignalRoomNav subtab={subtab} onChange={setSubtab}><nav className="seg-wrap no-print">
           <SegControl items={[["board", "Live Floor"], ["settings", "Settings"]]} value={subtab} onChange={setSubtab} />
-        </nav>
+        </nav></SignalRoomNav>
       )}
 
       <div key={(store?.id || "none") + queue + effSub} className="page">
@@ -7326,7 +7344,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
         ) : effSub === "settings" && isAdmin ? (
           <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
         ) : (
-          <FloorBoard config={config} store={store} data={data} onData={persist} userName={session.name} />
+          <FloorBoard config={config} store={store} data={data} onData={persist} userName={session.name} onSettings={isAdmin ? () => setSubtab("settings") : null} />
         )}
       </div>
     </AppShell>
@@ -7916,15 +7934,15 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
         <div className="s2-head">
           <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
           <div className="s2-idtx">
-            <div className="s2-greet">Daily Activity · {dayLabel} · {freshLine}</div>
-            <h2 className="s2-store">{store.name}</h2>
+            <SignalHeading title={"Daily Activity"} meta={freshLine.replace(/^numbers as of/, "As of")}><div className="s2-greet">Daily Activity · {dayLabel} · {freshLine}</div>
+            <h2 className="s2-store">{store.name}</h2></SignalHeading>
           </div>
           <div className="s2-chips">
             <select className="da-daysel" value={day} onChange={(e) => setDay(e.target.value)} aria-label="Which day to read">
               {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
             </select>
             <button className="da-hbtn" onClick={() => setShowReport(true)}><PixIcon glyph="report" size={11} /> Daily report</button>
-            <button className="da-hbtn" onClick={() => setShowRoom(true)}><PixIcon glyph="schedule" size={11} /> The schedule</button>
+            <button className="da-hbtn" onClick={() => setShowRoom(true)}><PixIcon glyph="schedule" size={11} /> <SignalCopy full={"The schedule"} short={"Schedule"} /></button>
             <button className="da-hbtn" onClick={() => setShowSchedule(true)}><PixIcon glyph="upload" size={11} /> Upload schedule</button>
           </div>
         </div>
@@ -7933,7 +7951,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
             <div className="da-krow"><span className="da-knum">{fmtNum(tNow.c)}</span>{kpiChip(dCalls)}</div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="doc" size={10} /> Team videos</div>
             <div className="da-krow"><span className="da-knum">{fmtNum(tNow.v)}</span>{kpiChip(dVideos)}</div></div>
-          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> Hit their minimums</div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> <SignalCopy full={"Hit their minimums"} short={"At minimums"} /></div>
             <div className="da-krow"><span className="da-knum">{atMin}<span className="da-ksub">/{withData.length}</span></span></div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="trophy" size={10} /> <span style={{ textTransform: "none" }}>RockEd</span></div>
             <div className="da-krow"><span className="da-knum">{qualToday}</span><span className="da-ksub">done today</span></div></div>
@@ -7957,7 +7975,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
           {offenders.slice(0, 3).map((r, i) => (
             <button key={r.a.id} type="button" className={"da-pod" + (i === 0 ? " first" : "")} onClick={() => setShowLosers(true)}
               title="Open the full leaderboard">
-              <span className={"da-medal m" + (i + 1)}>{i + 1}</span>
+              <SignalPenaltyRank rank={i + 1} />
               <span className="da-pname">{r.a.name}{i === 0 && missLine(r) ? <span className="da-sub">{missLine(r)}</span> : null}</span>
               <span className="da-pval">{r.points} pts</span>
             </button>
@@ -7967,7 +7985,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
         <div className="da-panel da-loserlist">
           {offenders.map((r, i) => (
             <button key={r.a.id} type="button" className="da-lbrow" onClick={() => setShowLosers(true)}>
-              <span className={"da-medal m" + (i + 1)}>{i + 1}</span>
+              <SignalPenaltyRank rank={i + 1} />
               <span className="da-lbn">{r.a.name}{missLine(r) ? <span className="da-sub">{missLine(r)}</span> : null}</span>
               <span className="da-ptb">{r.points} pts</span>
             </button>
@@ -10663,9 +10681,11 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="car" size={26} /></div>
           <div className="s2-idtx">
+            <SignalHeading title="License plates" meta={<SignalPlatePolicy standing={standing} />}>
             <div className="s2-greet">Plates · {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
               {" · "}{standing ? "held until returned" : "out by day, back by close"}</div>
             <h2 className="s2-store">License plates</h2>
+            </SignalHeading>
           </div>
         </div>
         <div className="da-kpis">
@@ -10678,7 +10698,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             <div className="da-krow"><span className="da-knum" style={missingN ? { color: "#C2361F" } : undefined}>{missingN}</span>
               {missingN > 0 && <span className="da-ksub">not checked back in</span>}</div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="list" size={10} /> Registry</div>
-            <div className="da-krow"><span className="da-knum">{knownN}</span><span className="da-ksub">plates known</span></div></div>
+            <div className="da-krow"><span className="da-knum">{knownN}</span><SignalCopy full={<span className="da-ksub">plates known</span>} short={null} /></div></div>
         </div>
         </div>
       </div>
@@ -10697,25 +10717,30 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         </div>
       )}
       {plateErr && <div className="plate-err">{plateErr}</div>}
-      <div className="gm-toolbar">
+      <div className="gm-toolbar sg-plate-tools">
         {!standing && (
-          <select value={day} onChange={(e) => setDay(e.target.value)}>
+          <select aria-label="Plate log date" value={day} onChange={(e) => setDay(e.target.value)}>
             <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
             {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
           </select>
         )}
-        {!standing && <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>}
+        {!standing && <button className="btn secondary" onClick={carryForward} title="Carry forward the last day's tags"><SignalCopy full="Carry forward last day's tags" short={<><PixIcon glyph="copy" size={13} />Carry forward</>} /></button>}
         <button className="btn secondary" onClick={() => setMasterOpen((v) => !v)}>
-          {masterOpen ? "Hide master plate list" : `Master plate list (${registry.filter((r) => !r.retired).length})`}
+          <SignalCopy full={masterOpen ? "Hide master plate list" : `Master plate list (${registry.filter((r) => !r.retired).length})`} short={<><PixIcon glyph="list" size={13} />{masterOpen ? "Close plate list" : "Plate list"}</>} />
         </button>
         <button className="btn secondary" onClick={() => setSetupOpen((v) => !v)}>
-          {setupOpen ? "Hide setup" : "How this store runs plates"}
+          <SignalCopy full={setupOpen ? "Hide setup" : "How this store runs plates"} short={<><PixIcon glyph="gear" size={13} />{setupOpen ? "Close setup" : "Setup"}</>} />
         </button>
-        <span className="hint">
+        <SignalPlateCustody more={<>
+          The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
+          {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
+          {" "}Handing a plate straight to somebody else closes the current trip and opens a new one, so the
+          log never says the wrong person had it.
+        </>}>
           {standing
             ? "Plates stay with whoever is holding them until they are handed back. Every trip keeps its time and a full custody log, so you can always see who has had a plate and for how long."
             : "Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when."}
-        </span>
+        </SignalPlateCustody>
       </div>
       {setupOpen && (
         <div className="card">
@@ -10804,12 +10829,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
           </div>
         )}
-        <Explain label="How the log works">
+        <SignalPlateOriginalHelp><Explain label="How the log works">
           The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
           {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
           {" "}Handing a plate straight to somebody else closes the current trip and opens a new one, so the
           log never says the wrong person had it.
-        </Explain>
+        </Explain></SignalPlateOriginalHelp>
       </div>
       {standing && (
         <div className="card">
@@ -11452,6 +11477,7 @@ function RuBodyLock() {
 }
 
 function RoundUp({ config, store, data, M }) {
+  const signalSignal = useSignal();
   const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
   const digests = digestIntegrity.history;
   const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
@@ -11461,13 +11487,13 @@ function RoundUp({ config, store, data, M }) {
     /* Not while the arrival owns the screen. The dashboard is mounted under the
        streaks now, so this component exists mid-jump, and a modal rising over
        the tunnel is a hand in front of the projector. */
-    try { return !localStorage.getItem(seenKey) && !jumpOwnsEntrance; } catch { return false; }
+    try { return (signalSignal ? recapDue(seenKey, signalRecapSeen, localStorage) : !localStorage.getItem(seenKey)) && !jumpOwnsEntrance; } catch { return false; }
   });
   /* If the round-up was due but the jump was flying, it waits at the door and
      knocks a breath after the landing has settled. */
   useEffect(() => {
     let due = false;
-    try { due = !localStorage.getItem(seenKey); } catch (e) {}
+    try { due = signalSignal ? recapDue(seenKey, signalRecapSeen, localStorage) : !localStorage.getItem(seenKey); } catch (e) {}
     if (!due || !jumpOwnsEntrance) return undefined;
     let t = null;
     const iv = setInterval(() => {
@@ -11479,6 +11505,11 @@ function RoundUp({ config, store, data, M }) {
     return () => { clearInterval(iv); if (t) clearTimeout(t); };
   }, []); // eslint-disable-line
   useRoundUpOpener(useCallback(() => setFull(true), []));
+  // Presentation counts even if navigation unmounts the sheet before Close.
+  useEffect(() => {
+    if (!signalSignal || !full) return;
+    try { recapPresented(seenKey, signalRecapSeen, localStorage); } catch { recapPresented(seenKey, signalRecapSeen, null); }
+  }, [full, seenKey, signalSignal]);
   const close = () => {
     try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it shows again, which is survivable */ }
     setFull(false);
@@ -12007,7 +12038,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       {!query && !filter && <RoundUp config={config} store={store} data={data} M={M} />}
       {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
 
-      {!readOnly && onIgnore && (
+      <SignalOriginalIgnore>{!readOnly && onIgnore && (
         picking ? (
           <div className="bulk-bar">
             <span className="bulk-n">{sel.size} selected</span>
@@ -12022,15 +12053,15 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             <PixIcon glyph="user" size={11} /> Select people to ignore
           </button>
         )
-      )}
+      )}</SignalOriginalIgnore>
       {!query && top3.length > 0 && (<>
-        <div className="sec-cap cap-sent"><PixIcon glyph="trophy" size={12} /> Top performers, by units delivered; standards break the tie</div>
+        <div className="sec-cap cap-sent"><PixIcon glyph="trophy" size={12} /> <SignalCopy full="Top performers, by units delivered; standards break the tie" short="Podium" /></div>
         <div className="s2-podium">
           {top3.map((r, i) => (
             <button key={r.name} className={"s2-pod" + (i === 0 ? " first" : "")} onClick={() => onFocus && onFocus(r.name)}>
               <span className={"s2-medal m" + (i + 1)}><DotNum value={String(i + 1)} dot={4} color="#fff" /></span>
               <span className="s2-podname">{r.name}
-                <span className="s2-podsub">{r.passing ? `on standard · ${r.met}/${r.total} above bar` : `${r.met}/${r.total} standards`}</span>
+                <SignalCopy full={<span className="s2-podsub">{r.passing ? `on standard · ${r.met}/${r.total} above bar` : `${r.met}/${r.total} standards`}</span>} short={null} />
               </span>
               <span className="s2-podval"><CountUp value={r.units} decimals={1} delay={180 + i * 80} /></span>
             </button>
@@ -12085,15 +12116,16 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             <PixIcon glyph="users" size={16} style={{ color: "#D0821E" }} />
             {role.name} <span className="da-count">{people.length}</span>
             <span className="s2-hflex" />
+            {role.id === sections[0]?.role.id && <SignalIgnoreEntry readOnly={readOnly} allowed={!!onIgnore} picking={picking} selected={sel.size} onStart={() => setPicking(true)} onApply={() => { onIgnore([...sel]); stopPicking(); }} onStop={stopPicking} />}
             {["cleared", "attention", "off"].map((b) => {
               const n = counts[b] || 0;
               if (!n && filter !== b) return null;
               const label = b === "cleared" ? "cleared" : b === "attention" ? (inGrace ? "working toward" : "need attention") : "off leads";
               return (
-                <button key={b} className={"s2-fchip " + b + (filter === b ? " on" : "")}
+                <SignalBucketChip key={b} bucket={b}><button className={"s2-fchip " + b + (filter === b ? " on" : "")}
                   onClick={() => (filter === b ? onClearFilter() : onFilter && onFilter(b))}>
                   <b>{n}</b> {label}
-                </button>
+                </button></SignalBucketChip>
               );
             })}
           </div>
@@ -12183,6 +12215,7 @@ const DIAL_ARC = "M5 19.5 A17 17 0 0 1 39 19.5";
 const DIAL_L = Math.PI * 17;
 
 function MetricStrip({ ev, stats, thr, first }) {
+  const signal = useSignal();
   const reqs = ev?.tier?.requirements || [];
   const need = new Map(reqs.map((r) => [r.metric, r]));
   /* A dial needs a number to point at. The tier's requirement is used where it
@@ -12242,7 +12275,7 @@ function MetricStrip({ ev, stats, thr, first }) {
              of the three cleared it. The column fills to the same scale, which
              puts a channel at target exactly on the line and lets a good one
              stand above it. */
-          const h = na || vShow == null ? 0 : Math.max(3, Math.min(100, (vShow / tgt) * CH_STD));
+          const h = na || vShow == null ? 0 : Math.max(3, Math.min(100, (vShow / tgt) * (signal ? 100 / 1.2 : CH_STD)));
           /* The shortfall, drawn, exactly as the hero's own tubes draw it: the
              band between where the fill stops and where the standard sits is
              the amount that is missing, and the amount of tint IS the severity.
@@ -12253,10 +12286,10 @@ function MetricStrip({ ev, stats, thr, first }) {
             : { bottom: h, height: CH_STD - h, deep: vShow < tgt / 2 };
           return (
             <span key={metric} className={"s2g4 s2g4-bar bloop-host" + (t ? " " + t.cls : "")}
-              tabIndex={0} style={{ "--cc": chan.col }}>
+              tabIndex={0} style={{ "--cc": signal ? col : chan.col }}>
               <b className="s2g4-v" style={{ color: vShow == null ? "#B9BEC6" : col }}>{shown}</b>
               <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
-                <i style={{ height: h.toFixed(1) + "%" }} />{gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")} aria-hidden="true" style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}<s />
+                <i style={{ height: h.toFixed(1) + "%" }} />{!signal && gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")} aria-hidden="true" style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}<s />
               </span>
               <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
@@ -12274,6 +12307,7 @@ function MetricStrip({ ev, stats, thr, first }) {
                 tall as the channel column beside it and the row reads as one
                 set of instruments rather than two sizes of them. */}
             <svg viewBox="0 0 44 22" aria-hidden="true">
+              {signal && !na && vShow != null && vShow > tgt && <path className="sg-goal-confirm" d="M35 3l2 2 4-4" fill="none" stroke={col} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
               <path d={DIAL_ARC} fill="none" stroke="rgba(16,32,52,.09)" strokeWidth="5" strokeLinecap="round" />
               {frac > 0 && (
                 <path d={DIAL_ARC} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round"
@@ -12326,7 +12360,81 @@ function MetricStrip({ ev, stats, thr, first }) {
    carries what the drafts asked for: where the units came from, the new/used
    split, how they are trending against their coaching goal, the months behind
    them, the four standards, and the one thing they are best at. */
+function createSignalCardMotion(el, origin, onClose, env = window) {
+  const doc = el.ownerDocument, root = doc.documentElement;
+  const media = env.matchMedia("(prefers-reduced-motion: reduce)");
+  const children = [...el.querySelectorAll(":scope > *")];
+  const originals = new Map([el, ...children].map(k => [k, {transform:k.style.transform, opacity:k.style.opacity, animation:k.style.animation, transformOrigin:k.style.transformOrigin}]));
+  let animations = [], timer = 0, generation = 0, phase = "opening", closed = false, disposed = false;
+  const reduced = () => media.matches || root.classList.contains("sage-signal-reduce");
+  const own = a => {animations.push(a);a.finished.catch(()=>{});return a;};
+  const cancel = () => { ++generation; env.clearTimeout(timer); timer = 0; animations.forEach(a => a.cancel()); animations = []; };
+  const pose = () => [el, ...children].map(k => ({k, transform:env.getComputedStyle(k).transform, opacity:env.getComputedStyle(k).opacity}));
+  const pin = rows => rows.forEach(({k,transform,opacity}) => {k.style.transform=transform;k.style.opacity=opacity;});
+  const label = value => {phase=value;el.dataset.signalCardMotion=value;};
+  const rest = () => {el.style.transform="none";el.style.opacity="1";children.forEach(k=>{k.style.transform=originals.get(k).transform;k.style.opacity=originals.get(k).opacity;});};
+  const finish = () => {
+    if (phase === "closing") {
+      // React may not remove the portal in this microtask. Commit the invisible
+      // end pose before cancelling fill, or the pinned open pose flashes back.
+      el.style.transform=from;el.style.opacity="0";
+      children.forEach(k=>{k.style.opacity="0";});
+      cancel();
+      if (!closed) {
+        closed=true;label("closed");
+        if (root.getAttribute?.("data-signal-record-card") === "true") {
+          const s=env.getComputedStyle(el);
+          root.setAttribute("data-signal-card-close",JSON.stringify({phase,opacity:s.opacity,transform:s.transform,attached:el.isConnected}));
+        }
+        onClose();
+      }
+    } else {rest();cancel();label("open");}
+  };
+  el.style.animation="none";
+  el.style.transformOrigin="0 0";
+  const r = el.getBoundingClientRect(), a = origin?.rect;
+  const from = a?.width && a?.height && r.width && r.height
+    ? `translate(${(a.left-r.left).toFixed(1)}px, ${(a.top-r.top).toFixed(1)}px) scale(${(a.width/r.width).toFixed(4)}, ${(a.height/r.height).toFixed(4)})`
+    : "translateY(12px) scale(.98)";
+  const play = (frames, duration, easing, onDone) => {
+    const token=generation;
+    const lead=own(el.animate(frames,{duration,easing,fill:"both"}));
+    // The watchdog only bounds a lost completion, it never chooses the normal end.
+    timer=env.setTimeout(()=>{if (!disposed && token===generation) onDone();},duration+120);
+    lead.finished.then(()=>{if (!disposed && token===generation) onDone();},()=>{});
+  };
+  const close = () => {
+    if (disposed || closed || phase === "closing") return;
+    const current=pose(); // all reads, then all writes
+    pin(current);cancel();label("closing");
+    if (reduced() || doc.hidden || typeof el.animate!=="function") {finish();return;}
+    // Shorter departure, still decelerated. A fast close starts at the current
+    // matrix and content opacity, not at an invented fully visible frame.
+    play([{transform:current[0].transform,opacity:current[0].opacity},{transform:from,opacity:0}],200,"cubic-bezier(.4,0,.22,1)",finish);
+    for (const {k,opacity} of current.slice(1)) own(k.animate([{opacity},{opacity:0}],{duration:120,easing:"ease-out",fill:"both"}));
+  };
+  const preference = () => {if (reduced() && (phase==="opening" || phase==="closing")) finish();};
+  const visibility = () => {if (doc.hidden && (phase==="opening" || phase==="closing")) finish();};
+  const observer = new env.MutationObserver(preference);
+  observer.observe(root,{attributes:true,attributeFilter:["class"]});
+  media.addEventListener("change",preference);doc.addEventListener("visibilitychange",visibility);
+  label("opening");
+  if (reduced() || doc.hidden || typeof el.animate!=="function") finish();
+  else {
+    play([{transform:from},{transform:"none"}],320,"cubic-bezier(.16,.78,.24,1)",finish);
+    for (const k of children) own(k.animate([{opacity:0},{opacity:0,offset:.18},{opacity:originals.get(k).opacity || "1"}],{duration:240,easing:"ease-out",fill:"both"}));
+  }
+  return {close,dispose() {
+    disposed=true;cancel();observer.disconnect();media.removeEventListener("change",preference);doc.removeEventListener("visibilitychange",visibility);
+    // A closed portal stays hidden through cleanup until React detaches it.
+    // Open/interrupted mounts still restore their baseline for effect replay.
+    if (!closed) for (const [k,style] of originals) Object.assign(k.style,style);
+    delete el.dataset.signalCardMotion;
+  }};
+}
 function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, actions = null }) {
+  const signalMotion = useRef(null), signalOrigin = useRef(origin);
+  const signalClose = useRef(onClose); signalClose.current = onClose;
   const thr = normThresholds(thresholds);
   const [closing, setClosing] = useState(false);
   const boxRef = useRef(null);
@@ -12337,6 +12445,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
      a rect (an opener that only knows the tap), it pops from the point. */
   const grew = useRef(null);
   const shut = () => {
+    if (true) { if (signalMotion.current) signalMotion.current.close(); else signalClose.current(); return; }
     const el = boxRef.current;
     if (grew.current && el) {
       el.querySelectorAll(":scope > *").forEach((k) => k.animate([{ opacity: 1 }, { opacity: 0 }], { duration: MOTION.exit, easing: "ease-out", fill: "both" }));
@@ -12348,6 +12457,11 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
   };
   useLayoutEffect(() => {
     const el = boxRef.current;
+    if (true && el) {
+      const motion = createSignalCardMotion(el, signalOrigin.current, () => signalClose.current());
+      signalMotion.current = motion;
+      return () => { motion.dispose(); signalMotion.current = null; };
+    }
     if (!el || !origin) return;
     let reduce = false;
     try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
@@ -12371,7 +12485,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
     const x = Math.max(0, Math.min(r.width, origin.x - r.left));
     const y = Math.max(-80, Math.min(r.height + 80, origin.y - r.top));
     el.style.transformOrigin = `${x.toFixed(0)}px ${y.toFixed(0)}px`;
-  }, [origin]);
+  }, [true ? null : origin]);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") shut(); };
     document.addEventListener("keydown", onKey);
@@ -12472,7 +12586,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
         </>)}
 
         {(ev?.tier?.requirements?.length > 0 || thr) && (<>
-          <div className="ac-cap">The five</div>
+          <div className="ac-cap"><SignalCopy full="The five" short="Performance" /></div>
           <div className="ac-gauges"><MetricStrip ev={ev} stats={stats} thr={thr} /></div>
         </>)}
 
@@ -12610,12 +12724,12 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             it to be the largest. The sentence is now the bar's own title, so it
             is one hover away rather than on the page nine times over. */}
         {ev.cap != null && (
-          <span className="assoc-gauge" title={capNote}>
+          <SignalLeadMeter value={ev.opps ?? 0} cap={ev.cap}><span className="assoc-gauge" title={capNote}>
             {/* the bar heats up as the allowance goes: sage, amber at 85%, red at 95% */}
             <span className="gauge-fill"
               style={{ width: pct + "%",
                 background: pct >= 95 ? "#C2361F" : pct >= 85 ? "#C98A00" : "var(--p2)" }} />
-          </span>
+          </span></SignalLeadMeter>
         )}
         {showDials && <MetricStrip ev={ev} stats={stats} thr={normThresholds(thresholds)} first={first} />}
         <span className="assoc-spacer" />
@@ -12623,7 +12737,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             are different widths, so aligning the whole thing put the slash in a
             different place on every row. The number ends where every other number
             ends and the cap starts where every other cap starts. */}
-        <span className="assoc-leads"><b>{ev.opps ?? 0}</b><span className="of-cap">/ {ev.cap ?? "-"}</span></span>
+        <SignalOriginalLeadCount cap={ev.cap}><span className="assoc-leads"><b>{ev.opps ?? 0}</b><span className="of-cap">/ {ev.cap ?? "-"}</span></span></SignalOriginalLeadCount>
         {/* One pill, one width: the verdict never resizes the row. The long
             wording rides on desks, the short one on phones. */}
         {(() => {
@@ -14658,7 +14772,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
           <div className="s2-idtx">
             <div className="s2-greet">
               {store.name} · {withData.length === 0
-                ? "needs Daily Activity imported before it can tell you anything"
+                ? <SignalCopy full={"needs Daily Activity imported before it can tell you anything"} short={"Import Daily Activity to see benchmarks"} />
                 : <>what the strongest {top.length} of {withData.length} do differently, averaged across every imported day</>}
             </div>
             <h2 className="s2-store">Coaching</h2>
@@ -14693,7 +14807,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
         <div className="card coach-list-card">
           <h3>Associates</h3>
           <p className="hint">
-            Open anyone to see their card, how they compare, and what to coach.
+            <SignalCopy full={"Open anyone to see their card, how they compare, and what to coach."} short={"Choose a person for results, comparisons and coaching."} />
             {excludedRoles.length > 0 && ` ${excludedRoles.join(" and ")} are not shown here: coaching is built on cars sold, which does not apply to them. You can change that under Stores.`}
           </p>
           <div className="coach-list">
@@ -16573,9 +16687,41 @@ function StoreMismatch({ config, mismatch, isAdmin }) {
 
 /* Animates a number up from zero. Honours the OS reduce-motion setting by
    jumping straight to the final value. */
+function createSignalCount(target, options, env = window) {
+  const {from=0,ms=640,delay=0,decimals=0,onValue} = options;
+  const doc=env.document, root=doc.documentElement, media=env.matchMedia("(prefers-reduced-motion: reduce)");
+  let raf=0, start=null, last=from, done=false;
+  const reduced=()=>media.matches || root.classList.contains("sage-signal-reduce");
+  const remove=()=>{env.cancelAnimationFrame(raf);raf=0;observer.disconnect();media.removeEventListener("change",change);doc.removeEventListener("visibilitychange",change);};
+  const finish=()=>{if (done) return;done=true;remove();if (last!==target) {last=target;onValue(target);}};
+  const tick=t=>{
+    raf=0;if (done) return;
+    if (start===null) start=t;
+    const elapsed=t-start-delay;
+    const p=Math.min(1,Math.max(0,elapsed/Math.max(1,ms)));
+    const f=10**decimals, value=Math.round((from+(target-from)*(1-(1-p)**3))*f)/f;
+    if (value!==last) {last=value;onValue(value);}
+    if (p===1) finish();else raf=env.requestAnimationFrame(tick);
+  };
+  const change=()=>{
+    if (done) return;
+    if (reduced() || doc.hidden || from===target) {finish();return;}
+    // No polling loop and no RAF work under the lightspeed cover.
+    if (!root.classList.contains("jump-under") && !raf && start===null) raf=env.requestAnimationFrame(tick);
+  };
+  const observer=new env.MutationObserver(change);
+  observer.observe(root,{attributes:true,attributeFilter:["class"]});
+  media.addEventListener("change",change);doc.addEventListener("visibilitychange",change);change();
+  return ()=>{done=true;remove();};
+}
 function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
   const [v, setV] = useState(0);
+  const displayed = useRef(0), counted = useRef(false);
   useEffect(() => {
+    if (true) {
+      const first = !counted.current; counted.current = true;
+      return createSignalCount(target || 0, {from:displayed.current, ms:Math.min(ms, first ? 640 : 320), delay:first ? Math.min(delay,160) : 0, decimals, onValue:value => {displayed.current=value;setV(value);}});
+    }
     const reduce = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce || !target) { setV(target || 0); return; }
@@ -17253,6 +17399,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   return (
     <div className="bp-page">
       <div className="bp-hero">
+        {true && <h2 className="sage-bp-store" title={store.name}>{store.name}</h2>}
         {updatedAt && <div className="bp-upd"><i />Updated {fmtTime(updatedAt)}</div>}
         <div className="bp-h5">
           <button type="button" className="bp-l1" onClick={() => setPop({ k: "units" })}>
@@ -17304,7 +17451,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             return (
               <button type="button" key={v.m} className="bp-dial" onClick={() => setPop({ k: "dial", m: v.m })} style={{ "--v": Math.round(v.mean * 100), "--c": t.col }}>
                 <span className="bp-ring"><span>{Math.round(v.mean * 100)}%</span></span>
-                <span className="bp-dl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
+                <span className="bp-dl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span><SignalQualifier />
               </button>
             );
           })}
@@ -17363,12 +17510,12 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
         <AssocCard a={person.a} stats={person.st} ev={person.ev} data={data} config={config} thresholds={store.thresholds}
           origin={frLastTap.x != null ? { x: frLastTap.x, y: frLastTap.y, rect: frLastTap.rect || null } : null} onClose={close}
           actions={
-            <div className="fr-acts ac-acts">
+            <SignalActions className={true ? "fr-acts sage-perf-actions" : "fr-acts ac-acts"}>
               {person.restricted
                 ? <button type="button" className="fr-b pri" onClick={() => { onSetRestriction(person.a, null); close(); }}>Clear to grab leads</button>
                 : <button type="button" className="fr-b pri warnpri" onClick={() => { onSetRestriction(person.a, { since: new Date().toISOString(), until: null, reasons: failureText(person.ev) }); close(); }}>Restrict leads</button>}
               {onCoach && <button type="button" className="fr-b" onClick={() => { close(); onCoach(person.a); }}><PixIcon glyph="user" size={16} />Coach</button>}
-            </div>
+            </SignalActions>
           } />
       )}
     </div>
@@ -17738,20 +17885,21 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     });
   }, [data, boardRoster]);
   // the rotating display under the hero: the chart, then who to talk to
+  const signalSignal = useSignal();
   const [spotOn, setSpotOn] = useState(0);
   const spotTimer = useRef(null); const swipeX = useRef(null);
   const SPOT_N = 2;
   /* Held while somebody is reading the chart. Six seconds is long enough to
-     glance at it and far too short to study it, and a slide that moves under a
+     glance at it and far too short to signal it, and a slide that moves under a
      finger loses whatever the person was looking at. */
   const [spotHeld, setSpotHeld] = useState(false);
   const armSpot = () => {
     clearInterval(spotTimer.current);
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    if (spotHeld) return;
+    if (spotHeld || signalSignal) return;
     spotTimer.current = setInterval(() => setSpotOn((i) => (i + 1) % SPOT_N), 6000);
   };
-  useEffect(() => { armSpot(); return () => clearInterval(spotTimer.current); }, [spotHeld]); // eslint-disable-line
+  useEffect(() => { armSpot(); return () => clearInterval(spotTimer.current); }, [spotHeld, signalSignal]); // eslint-disable-line
   /* Fresh numbers arrive the way a tube redraws (desk item 2, approved): one
      beam sweeps down the picture over the settle token, and everything above
      it is the new frame, everything below it the old. The old frame is a
@@ -17828,9 +17976,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         </div>
         <div className="s2-body">
           <div className="s2-left">
-            <div className="s2-cap"><PixIcon glyph="sold" size={11} /> Units this month</div>
+            <SignalCopy full={<div className="s2-cap"><PixIcon glyph="sold" size={11} /> Units this month</div>} short={<span className="sg-sr">Units sold this month</span>} />
             <div className="s2-big">
-              <DotNum value={String(totalUnits)} dot={6} color="#fff" />
+              <SignalSold value={String(totalUnits)} />
               {/* The goal is read here, so it is set here: with one already on
                   the month a tap on it opens the same field, filled in. A month
                   with none yet offers last month's figure as the prompt, so the
@@ -18005,11 +18153,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             </div>
             {videoDials.length > 0 && (
               <div className="s2-group">
-                <span className="s2-gcap"><PixIcon glyph="check" size={10} /> The video standards</span>
+                <span className="s2-gcap"><PixIcon glyph="check" size={10} /> <SignalCopy full={"The video standards"} short={"Video standards"} /></span>
                 <div className="s2-marks">
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
-                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} />
+                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} /><SignalQualifier />
                       <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
                       <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
@@ -18040,7 +18188,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             {/* The calendar is the only thing that says the date now; this is just
                 the door to the round-up, not a second copy of the day. */}
             <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
-              <PixIcon glyph="roundup" size={11} /> Month so far
+              <PixIcon glyph="roundup" size={11} /> <SignalCopy full="Month so far" short="Open Recap" />
             </button>
             {/* The one card in the hero that asks for something wears a lamp
                 (five-second pass, item 1): amber and breathing while a report
@@ -18056,8 +18204,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             </button>
           </div>
           <div className="s2-chip-state">
+<SignalSchedule onCount={onCount} offCount={offToday.length}>
             <div className="s2-rota bloop-host" tabIndex={0}>
-              <b>{onCount} working today{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
+              <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
               <div className="bloopwin dn r s2-rotawin">
                 <div className="bw-title">On today · {onCount}</div>
                 <div className="s2-names">
@@ -18107,6 +18256,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   : DAILY_TOTALS_UNAVAILABLE}</div>
               </div>
             </div>
+</SignalSchedule>
           </div>
           </div>
       </aside>
@@ -18122,7 +18272,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="s2-an-cap"><Verdict ratio={weakest.mean} size={13} className="on-dark" /> {weakest.below === 0 ? "Standards" : "Weakest standard"}</div>
             <div className="s2-an-name">{weakest.below === 0 ? "Everyone is on target" : METRICS[weakest.metric].label}</div>
             <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
-            <div className="s2-an-sub">{weakest.below} of {weakest.total} below · mouse over for the play</div>
+            <div className="s2-an-sub">{weakest.below} of {weakest.total} below<SignalCopy full=" · mouse over for the play" short={null} /></div>
+            <SignalCoachAction metric={weakest.metric} below={weakest.below} />
             <div className="bloopwin dn s2-answin">
               <div className="bw-title">The play</div>
               <div className="bw-sub" style={{ marginTop: 4 }}>{(METRIC_FIX[weakest.metric] && METRIC_FIX[weakest.metric].play) || METRICS[weakest.metric].label}</div>
@@ -18133,16 +18284,16 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             </div>
           </div>
         )}
-        <div className="s2-spot"
+        <SignalSpot className="s2-spot"
           onPointerDown={(e) => { swipeX.current = e.clientX; }}
           onPointerUp={(e) => {
             if (swipeX.current == null) return;
             const dx = e.clientX - swipeX.current; swipeX.current = null;
-            if (Math.abs(dx) > 40) { setSpotOn((i) => (i + (dx < 0 ? 1 : SPOT_N - 1)) % SPOT_N); armSpot(); }
+            if (!signalSignal && Math.abs(dx) > 40) { setSpotOn((i) => (i + (dx < 0 ? 1 : SPOT_N - 1)) % SPOT_N); armSpot(); }
           }}>
           <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
             <div className="s2-scap cap-sent"><PixIcon glyph="chart" size={12} /> Sold against goal, by channel</div>
-            <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={spotOn} onHold={setSpotHeld} />
+            <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={signalSignal ? 0 : spotOn} onHold={setSpotHeld} />
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
             <div className="s2-scap cap-sent"><PixIcon glyph="sparkle" size={12} /> Talk to these first</div>
@@ -18161,7 +18312,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           </div>
           <div className="s2-dots">{Array.from({ length: SPOT_N }, (_, i) => <i key={i} className={spotOn === i ? "on" : ""} />)}</div>
           <div className={"s2-rtag" + (spotHeld ? " held" : "")}>{spotHeld ? "holding" : "rotating"}</div>
-        </div>
+        </SignalSpot>
       </div>
 
       {inGrace && <div className="hero-strip"><span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span></div>}
@@ -18536,8 +18687,8 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
       <div className="s2-head">
         <div className="s2-ava"><PixIcon glyph="arrowdown" size={24} /></div>
         <div className="s2-idtx">
-          <div className="s2-greet">{sub}</div>
-          <h2 className="s2-store">{title}</h2>
+          <SignalHeading title={title} meta={sub}><div className="s2-greet">{sub}</div>
+          <h2 className="s2-store">{title}</h2></SignalHeading>
         </div>
         <div className="s2-chips">
           {chips}
@@ -18677,7 +18828,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         title={seeding ? "Imports for " + seedMonthLabel : "Imports"}
         short={seeding ? "a past month" : new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
         sub={seeding ? "Seeding a past month · these land in that month, not this one"
-          : `${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`}
+          : <SignalCopy full={`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`} short={<><PixIcon glyph="calendar" size={11} /> {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</>} />}
         chips={<>
           <span className="fh-chip">{doneCount} of 3 in</span>
           {setActivityDay && (
@@ -19326,7 +19477,7 @@ function HistoryPhone({ config, store, data, months, month, setMonth, roster, th
             return <button key={f.k} type="button" onClick={() => setPop({ k: "store", f: f.k })}><i style={{ background: f.col }} /><b>{f.now == null ? "–" : fmtPct(f.now)}</b><span>{shortLabel(f)}</span><em className={mv == null ? "na" : Math.abs(mv) < 0.05 ? "na" : mv > 0 ? "up" : "dn"}>{mv == null ? "–" : Math.abs(mv) < 0.05 ? "level" : `${mv > 0 ? "▲" : "▼"} ${Math.abs(mv).toFixed(1)}`}</em></button>; })}
         </div>
         <div className="cx-tools">
-          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="print" size={16} />Print the month</button>
+          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="print" size={16} /><SignalCopy full={"Print the month"} short={"Print month"} /></button>
           <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "targets" })}><PixIcon glyph="target" size={16} />Targets in force</button>
         </div>
       </div>
@@ -19337,7 +19488,7 @@ function HistoryPhone({ config, store, data, months, month, setMonth, roster, th
         return (
           <div key={role.id} className="co-grp co-gon cx-card">
             <div className="pe-role"><RoleBadge role={role} count={people.length} /></div>
-            <div className="hs-head"><span />{HIST_FIVE.map((f) => <i key={f.k} style={{ background: f.col }} />)}</div>
+            <div className="hs-head"><span />{HIST_FIVE.map((f) => true ? <span key={f.k} style={{ color: f.col }}>{shortLabel(f)}</span> : <i key={f.k} style={{ background: f.col }} />)}</div>
             {people.map((a) => {
               const st = M.stats?.[norm(a.name)];
               const held = evaluateAssociate(st, config.standards?.[store.id]?.[role.id]?.tiers);
@@ -19506,15 +19657,15 @@ function GMSummary({ config, data, stores }) {
   return (
     <div className="gm print-area sm-page">
       {/* the printed page keeps its plain title; the green hero is for the screen */}
-      <div className="sm-printhead">Lead Performance Summary · {monthLabel(month)} · {stores.map((s) => s.name).join(" · ")}</div>
+      <div className="sm-printhead">Lead Performance Summary · {monthLabel(month)} · {stores.map((s) => s.name).join(" · ")}<SignalCopy full={null} short={<> · generated {new Date().toLocaleDateString()}</>} /></div>
       <div className="s2-hero da-hero sm-hero no-print">
         <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{single && single.icon ? <img src={single.icon} alt="" /> : <Logo size={40} />}</div>
           <div className="s2-idtx">
-            <div className="s2-greet">Summary · {monthLabel(month)} · generated {new Date().toLocaleDateString()}</div>
-            <h2 className="s2-store">{single ? single.name : `${stores.length} stores`}</h2>
+            <SignalHeading title={"Summary"} meta={single ? null : `${stores.length} stores`}><div className="s2-greet">Summary · {monthLabel(month)} · generated {new Date().toLocaleDateString()}</div>
+            <h2 className="s2-store">{single ? single.name : `${stores.length} stores`}</h2></SignalHeading>
           </div>
           <div className="s2-chips">
             <select className="da-daysel" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Which month">
@@ -19782,11 +19933,11 @@ function HistoryPanel({ config, store, data }) {
         <div className="s2-head">
           <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
           <div className="s2-idtx">
-            <div className="s2-greet">
-              {store.name} · the five that get tracked, month by month
+            <SignalHeading title={"History"} meta={prevKey ? `Against ${monthLabel(prevKey)}` : "First month"}><div className="s2-greet">
+              {store.name} · <SignalCopy full={"the five that get tracked, month by month"} short={"five metrics, month by month"} />
               {prevKey ? <> · against {monthLabel(prevKey)}</> : <> · the first month on record</>}
             </div>
-            <h2 className="s2-store">History</h2>
+            <h2 className="s2-store">History</h2></SignalHeading>
           </div>
           <div className="s2-chips">
             <select className="hist-month" value={month} onChange={(e) => setMonth(e.target.value)}
@@ -19794,7 +19945,7 @@ function HistoryPanel({ config, store, data }) {
               {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
             <button className="da-hbtn" onClick={() => window.print()}>
-              <PixIcon glyph="print" size={11} /> Print the month
+              <PixIcon glyph="print" size={11} /> <SignalCopy full={"Print the month"} short={"Print month"} />
             </button>
           </div>
         </div>
@@ -19988,7 +20139,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
             <button type="button"><b>{store?.graceDays ?? 10}</b><span>Grace days</span></button>
             <button type="button"><b>{std.tiers.length}</b><span>Lead caps</span></button>
           </div>
-          <div className="tg-hint">Grace days: how long a new hire is judged on effort before results count. Lead caps: how many leads one person can hold at a time, by tier.</div>
+          <div className="tg-hint">{true ? "Monthly grace: colours stay off during the first days of each month." : "Grace days: how long a new hire is judged on effort before results count."} Lead caps: how many leads one person can hold at a time, by tier.</div>
         </div>
       ) : (
       <div className="s2-hero tg-hero">
@@ -19997,7 +20148,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
           <div className="s2-idtx">
-            <div className="s2-greet">{storeName} · what good looks like on the five · every change is logged</div>
+            <div className="s2-greet">{storeName} · <SignalCopy full={"what good looks like on the five · every change is logged"} short={"five metrics · changes logged"} /></div>
             <h2 className="s2-store">Targets</h2>
           </div>
           <div className="s2-chips">
@@ -20024,7 +20175,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
       </div>
       )}
 
-      <div className="sec-cap tg-cap">What green and yellow mean, per metric</div>
+      <div className="sec-cap tg-cap"><SignalCopy full={"What green and yellow mean, per metric"} short={"Green and yellow targets"} /></div>
       <div className="tg-tbl">
         <div className="tg-h">
           <span className="tg-name">Metric</span>
@@ -20043,11 +20194,11 @@ function TargetsEditor({ config, storeId, data, onChange }) {
               <b />
             </span>
             <label className="tg-in">
-              <input type="number" min="0" max="100" defaultValue={r.green} key={"g" + r.id + r.green}
+              <input type="number" min="0" max="100" aria-label={true ? r.long + ", green threshold, percent" : undefined} defaultValue={r.green} key={"g" + r.id + r.green}
                 onBlur={(e) => setTarget(r.id, "green", parseInt(e.target.value, 10) || 0)} />%
             </label>
             <label className="tg-in">
-              <input type="number" min="0" max="100" defaultValue={r.yellow} key={"y" + r.id + r.yellow}
+              <input type="number" min="0" max="100" aria-label={true ? r.long + ", yellow threshold, percent" : undefined} defaultValue={r.yellow} key={"y" + r.id + r.yellow}
                 onBlur={(e) => setTarget(r.id, "yellow", parseInt(e.target.value, 10) || 0)} />%
             </label>
             <span className="tg-hitc">
@@ -20067,7 +20218,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
         <div className="card tg-panel">
           <div className="p-cap2">Grace period</div>
           <label className="grace-label">
-            <input type="number" min="0" max="28" defaultValue={store?.graceDays ?? 10}
+            <input type="number" min="0" max="28" aria-label={true ? "Monthly grace period, days" : undefined} defaultValue={store?.graceDays ?? 10}
               onBlur={(e) => {
                 const v = Math.max(0, Math.min(28, toNum(e.target.value) ?? 10));
                 const cur = store?.graceDays ?? 10;
@@ -20430,7 +20581,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
     if (pop.k === "add") {
       const nm = nuName.trim();
       const reset = () => { setNuName(""); setNuRole(config.roles?.[0]?.id || null); setNuDate(today()); };
-      return (<>{hd("Add a person")}
+      return (<>{hd(<SignalCopy full={"Add a person"} short={"Add person"} />)}
         <div className="pl-in"><input value={nuName} onChange={(e) => setNuName(e.target.value)} placeholder="Full name, as the reports spell it" autoFocus /></div>
         <div className="pl-sec">Position</div>
         <div className="pl-picks">{(config.roles || []).map((r) => <button key={r.id} type="button" className={"pl-pk" + (nuRole === r.id ? " on" : "")} onClick={() => setNuRole(r.id)}>{r.name}</button>)}</div>
@@ -20593,7 +20744,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           {links !== null && counter("noacct", noAcct, "Without an account", noAcct > 0 ? "co-alert" : "")}
         </div>
         <div className="cx-tools pe-tools">
-          <button type="button" className="fr-tool pri" onClick={() => setPop({ k: "add" })}><PixIcon glyph="plus" size={16} />Add a person</button>
+          <button type="button" className="fr-tool pri" onClick={() => setPop({ k: "add" })}><PixIcon glyph="plus" size={16} /><SignalCopy full={"Add a person"} short={"Add person"} /></button>
           <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "why" })}><PixIcon glyph="warn" size={16} />Left, or not this store's</button>
         </div>
       </div>
@@ -21156,7 +21307,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           </div>
           <div className="s2-chips">
             <button className="da-hbtn" onClick={() => setAdding((v) => !v)}>
-              <PixIcon glyph={adding ? "close" : "plus"} size={11} /> {adding ? "Cancel" : "Add a person"}
+              <PixIcon glyph={adding ? "close" : "plus"} size={11} /> {adding ? "Cancel" : <SignalCopy full={"Add a person"} short={"Add person"} />}
             </button>
           </div>
         </div>
@@ -22593,6 +22744,7 @@ function AppShell({
   right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
   storeData, storeName, brand, children, corner, rooms,
 }) {
+  useLayoutEffect(() => ownManagerSignalSurface(), []);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Moving between tools or sections keeps whatever offset the last one had.
@@ -22654,6 +22806,7 @@ function AppShell({
         appModule={appModule} storeData={storeData} storeName={storeName}
         onToolChange={(mod) => { onToolChange(mod); setDrawerOpen(false); }} />
       <Style />
+      <style>{managerSignalCSS}</style>
       {help}
           {corner}
       <AskHost />
@@ -26671,3 +26824,205 @@ button.da-lbrow { cursor:pointer; }
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
 export { AccessPanel, ActivityStandardsEditor, AdminOverview, AppShell, AssistWatcher, AssocSearch, AuditLog, BackupPanel, Board, BoardLauncher, BoardRoomPhone, BoardScreen, ChannelPrompt, CheckOutTracker, ChecklistEditor, CoachingPanel, CombinedBoard, DeliveryGuideModal, FloorModule, GMSummary, HistoryPanel, ImportBadge, ImportPanel, NoAccessPanel, PlateTracker, RepairPanel, SegControl, SettingsPanel, StoreHero, StoreMismatch, StorePeoplePanel, StoreStuck, TargetsEditor, TicketsPanel, TrendsPanel, WelcomeCard, WrongReportStop, printMonthEndRecap, printOnePager };
+
+
+// The manager has one approved design. No comparison controls ship with it.
+function SignalCopy({short}) { return short; }
+
+// Presentation helpers keep existing children and handlers mounted.
+function useSignal() {
+  return true;
+}
+function SignalQualifier() {
+  return useSignal() ? <small className="sg-qualifier">of target</small> : null;
+}
+function SignalSpot({children, ...props}) {
+  const signal = useSignal();
+  const items = React.Children.toArray(children);
+  // Both panels remain available. DOM reading order matches visual order.
+  return <div {...props}>{signal ? [items[1], items[0]] : items}</div>;
+}
+function SignalActions({children, className, ...props}) {
+  const signal = useSignal();
+  const items = React.Children.toArray(children);
+  return <div {...props} className={className + (signal ? ' ac-acts' : '')}>{signal && items.length === 2 ? [items[1], items[0]] : items}</div>;
+}
+
+function SignalHeading({title, meta, children}) {
+  return useSignal() ? <><h2 className="s2-store">{title}</h2>{meta && <div className="sg-heading-meta">{meta}</div>}</> : children;
+}
+function SignalSold({value}) {
+  const signal = useSignal();
+  const dot = value.length <= 2 ? 10 : value.length === 3 ? 8.5 : value.length === 4 ? 6.8 : 5;
+  return <DotNum value={value} dot={signal ? dot : 6} color="#fff" />;
+}
+function SignalCoachAction({metric, below}) {
+  const signal = useSignal();
+  return signal && below > 0 ? <div className="sg-coach-action">{METRIC_FIX[metric]?.play || METRICS[metric].label}</div> : null;
+}
+function SignalRoomHeader({title, storeName, date, count, noun, full = null}) {
+  return useSignal() ? <div className="sd-head sg-room-head">
+    <h2>{storeName}</h2><HeroSignal />
+  </div> : full;
+}
+function SignalFloorHero({storeName, date, count, children}) {
+  const signal = useSignal();
+  const items = React.Children.toArray(children);
+  // Stable ancestry keeps the map's display state and selection when comparing.
+  return <div className={signal ? "sd-hero sg-floor-hero" : "sg-floor-original"}>
+    <SignalRoomHeader title="Live Floor" storeName={storeName} date={date} count={count} noun="on the floor" />
+    <div className="sg-floor-body"><div className="sg-floor-map">{items[0]}</div><div className="sg-floor-side">{items[1]}</div></div>
+  </div>;
+}
+
+function SignalBucketChip({bucket, children}) {
+  const signal = useSignal();
+  return signal && (bucket === "cleared" || bucket === "attention") ? null : children;
+}
+function SignalOriginalIgnore({children}) { return useSignal() ? null : children; }
+function SignalIgnoreEntry({readOnly, allowed, picking, selected, onStart, onApply, onStop}) {
+  const signal = useSignal();
+  if (!signal || readOnly || !allowed) return null;
+  return <div className="sg-ignore-tools">{picking ? <>
+    <span>{selected} selected</span><button className="s2-rowbtn" disabled={!selected} onClick={onApply}>Ignore selected</button>
+    <button className="s2-rowbtn" onClick={onStop}>Done</button>
+  </> : <button className="s2-rowbtn" onClick={onStart}><PixIcon glyph="user" size={11} /> Select people to ignore</button>}</div>;
+}
+function SignalLeadMeter({value, cap, children}) {
+  return useSignal() ? <span className="sg-lead-meter">{children}<span className="assoc-leads"><b>{value}</b><span className="of-cap">/ {cap ?? "-"}</span></span></span> : children;
+}
+function SignalOriginalLeadCount({cap, children}) { return useSignal() && cap != null ? null : children; }
+function SignalSchedule({onCount, offCount, children}) {
+  const signal = useSignal();
+  const [hover, setHover] = React.useState(false);
+  const [pinned, setPinned] = React.useState(false);
+  const panelId = React.useId();
+  const parts = React.Children.toArray(children).filter(React.isValidElement);
+  if (!signal) return children;
+  const roster = React.Children.toArray(parts[0].props.children)[1];
+  const calendar = React.Children.toArray(parts[1].props.children);
+  const open = hover || pinned;
+  return <div className="sg-schedule" onPointerEnter={e => { if(e.pointerType === "mouse") setHover(true); }} onPointerLeave={() => setHover(false)}
+    onBlur={e => { if(!e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}
+    onKeyDown={e => { if(e.key === "Escape") {setPinned(false);setHover(false);} }}>
+    <button className="sg-schedule-trigger" aria-label="Today's schedule and month details" aria-expanded={open} aria-controls={panelId}
+      onFocus={() => setHover(true)} onClick={() => {setHover(false);setPinned(v=>!v);}}>
+      {calendar[0]}<span className="sg-schedule-count">{onCount} on today{offCount ? <small> · {offCount} off</small> : null}</span>
+    </button>
+    {React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}
+    {open && <div id={panelId} className="sg-schedule-details">{roster.props.children}<div className="sg-schedule-month">{calendar[3].props.children}</div></div>}
+  </div>;
+}
+
+function SignalPenaltyRank({rank}) {
+  const signal = useSignal();
+  return <span className={"da-medal m" + rank + (signal ? " sg-penalty-rank" : "")}>
+    {signal ? <DotNum value={String(rank)} dot={4} color="#fff" /> : rank}
+  </span>;
+}
+
+function SignalPlatePolicy({standing}) {
+  return <span className="sg-plate-policy"><PixIcon glyph={standing ? "user" : "calendar"} size={12} />{standing ? "Held until returned" : "Daily return"}</span>;
+}
+function SignalPlateOriginalHelp({children}) { return useSignal() ? null : children; }
+function SignalPlateCustody({children, more}) {
+  return useSignal() ? <details className="sg-plate-audit">
+    <summary aria-label="How custody tracking works">
+      <span><PixIcon glyph="clock" size={12} />Time</span>
+      <span><PixIcon glyph="user" size={12} />Holder</span>
+      <span><PixIcon glyph="list" size={12} />History</span>
+      <PixIcon glyph="tridown" size={9} />
+    </summary>
+    <p>{children}</p>
+    <p>{more}</p>
+  </details> : <span className="hint">{children}</span>;
+}
+
+function SignalFloorDispatch({nextName, nextSub, metrics:M, onAssign, disabled, busy, label}) {
+  return <div className="sg-floor-dispatch">
+    <div className="sd-next">
+      <div className="sd-cap2">Next up</div>
+      {nextName ? <div className="sd-nextwho">
+        <span className="mf-av" style={{background:"hsl(" + hueFromName(nextName) + " 52% 42%)"}}>{initialsOf(nextName)}</span>
+        <div><b>{nextName}</b><em>{nextSub}</em></div>
+      </div> : <p className="sd-none">Nobody available</p>}
+      <button type="button" className="btn btn-primary sd-assign" onClick={onAssign} disabled={disabled}>{busy ? "Assigning" : label}</button>
+    </div>
+    <div className="sg-floor-facts">
+      <div><strong>{M.ready ?? 0}</strong><span>ready</span><strong>{M.withCust ?? 0}</strong><span>with a customer</span></div>
+      <div><PixIcon glyph="calendar" size={11} /><span>{M.scheduled ?? 0} scheduled</span></div>
+      <div><PixIcon glyph="clock" size={11} /><span>Avg wait</span><b>{M.avgWaitMin ?? 0}m</b></div>
+      <div><PixIcon glyph="fair" size={11} /><span>Fairness</span><b>{M.fairness == null ? "No turns yet" : Math.round(M.fairness * 100) + "%"}</b></div>
+    </div>
+  </div>;
+}
+function SignalFloorJump(id) {
+  const root = document.querySelector(".mf-floor .f-line");
+  const row = id ? [...(root?.querySelectorAll("[data-floor-person]") || [])].find((el) => el.dataset.floorPerson === id) : root;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.classList.contains("sage-signal-reduce");
+  row?.scrollIntoView({behavior:reduced ? "auto" : "smooth", block:"center"});
+  row?.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
+}
+function SignalFloorRail({line, realName, tags}) {
+  const colorOf = (id) => tags?.[id]?.length ? frTagColor(tags[id][0]) : null;
+  const lightOf = (id) => tags?.[id]?.length ? frTagLight(tags[id][0]) : false;
+  const people = withoutTest(line).filter((p) => p.status === "waiting");
+  return <div className="sg-floor-rail">
+    <FrRail people={people} nameOf={realName} colorOf={colorOf} lightOf={lightOf} endLabel="DOOR" onPick={SignalFloorJump} onBunch={() => SignalFloorJump()} />
+  </div>;
+}
+function SignalTableHelp({moveFrom, children}) {
+  if (!useSignal() || moveFrom) return children;
+  return <details className="sg-table-help"><summary><PixIcon glyph="question" size={12} />Table actions</summary>{children}</details>;
+}
+function SignalFloorJoin({kind = "floor", expected, available, add, clear, count, busy, children}) {
+  if (!useSignal()) return children;
+  const place = kind === "line" ? "line" : "floor";
+  return <section className={"sg-floor-join sg-join-" + place} aria-label={"Add to " + place}>
+    <div className="sg-join-head"><b><PixIcon glyph="user" size={13} />Add to {place}</b>
+      {available.length > 0 && <select className="q-flag-sel" aria-label="Add anyone from the roster" value="" disabled={busy} onChange={(e) => { if(e.target.value) add(e.target.value); }}>
+        <option value="">Full roster</option>{available.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+      </select>}
+      {count > 0 && <button className="btn btn-sm q-clear" disabled={busy} onClick={clear}>Clear line</button>}
+    </div>
+    {expected.length > 0 && <><span className="sg-join-cap">Scheduled · {expected.length} not signed in</span><div className="sg-join-people">
+      {expected.map((a) => <button key={a.id} type="button" disabled={busy} aria-label={"Add " + a.name + " to the " + place} onClick={() => add(a.id)}>
+        <span className="sg-join-avatar">{initialsOf(a.name)}</span><b>{a.name}</b><span className="sg-join-plus"><PixIcon glyph="plus" size={10} /></span>
+      </button>)}
+    </div></>}
+  </section>;
+}
+
+function SignalRoomNav({subtab, onChange, children}) {
+  if (!useSignal()) return children;
+  return subtab === "settings" ? <nav className="sg-room-return no-print"><button type="button" className="btn btn-sm" onClick={() => onChange("board")}><PixIcon glyph="moveup" size={10} />Back to floor</button></nav> : null;
+}
+function SignalFloorSettings({onClick}) {
+  return useSignal() && onClick ? <button type="button" className="btn sg-room-settings" onClick={onClick}><PixIcon glyph="gear" size={12} />Settings</button> : null;
+}
+function SignalDataSignal({signalRef, net, back, stale, mins}) {
+  const [head, setHead] = useState(null);
+  useLayoutEffect(() => {
+    const root = signalRef.current?.parentElement;
+    setHead(root?.matches(".sg-room-head") ? root : root?.querySelector(".s2-head") || null);
+  }, [signalRef]);
+  const offline = !!net.offline;
+  const age = net.okAt ? mins(net.okAt) : null;
+  const label = offline ? "No connection" : back ? "Connected again" : age ? "Data checked " + age + " min ago" : "Waiting for a data check";
+  const cachedAge = net.asOf ? mins(new Date(net.asOf).getTime()) : 1;
+  const view = <div className={"sg-data-signal" + (offline ? " sg-signal-off" : back ? " sg-signal-back" : stale >= 15 ? " sg-signal-old" : "")}>
+    <details onKeyDown={(e) => {if(e.key === "Escape") {e.currentTarget.open = false; e.currentTarget.querySelector("summary")?.focus();}}}>
+      <summary aria-label={label + ". Open data status"} title={label}>
+        <i aria-hidden="true" />
+        {(offline || back) ? <span role="status">{offline ? "Offline" : "Back online"}</span> : stale >= 15 ? <span>{stale}m</span> : null}
+      </summary>
+      <div className="sg-signal-detail"><b>{offline ? "No connection" : back ? "Connected again" : "Data status"}</b>
+        <span>{offline ? "Showing saved data from " + cachedAge + " min ago." : label + "."}</span>
+        <small>{offline ? "Changes may not reach the server until connection returns." : "This is the last successful data check, not the report's import time."}</small>
+      </div>
+    </details>
+  </div>;
+  return <span ref={signalRef} className="sg-signal-anchor">{head ? createPortal(view, head) : view}</span>;
+}
+
+const signalRecapSeen = new Set();

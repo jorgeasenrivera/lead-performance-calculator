@@ -173,7 +173,35 @@ test("the shipped Manager holds every legacy consumer without changing real acti
   for (const [start, end, expected] of preserved) {
     const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
     assert.ok(a >= 0 && b > a, `preservation anchor: ${start}`);
-    assert.equal(createHash("sha256").update(source.slice(a, b)).digest("hex"), expected,
+    let section = source.slice(a, b);
+    if (start === "function CheckOutTracker(") {
+      // X11 approves these presentation-only replacements. Undo exactly those
+      // spellings for the original fingerprint; every calculation and handler
+      // must still match the immutable baseline, not a newly blessed hash.
+      const visualOnly = [
+        ['<SignalHeading title={"Daily Activity"} meta={freshLine.replace(/^numbers as of/, "As of")}><div className="s2-greet">Daily Activity · {dayLabel} · {freshLine}</div>', '<div className="s2-greet">Daily Activity · {dayLabel} · {freshLine}</div>', 1],
+        ['<h2 className="s2-store">{store.name}</h2></SignalHeading>', '<h2 className="s2-store">{store.name}</h2>', 1],
+        ['<SignalCopy full={"The schedule"} short={"Schedule"} />', 'The schedule', 1],
+        ['<SignalCopy full={"Hit their minimums"} short={"At minimums"} />', 'Hit their minimums', 1],
+        ['<SignalPenaltyRank rank={i + 1} />', '<span className={"da-medal m" + (i + 1)}>{i + 1}</span>', 2],
+      ];
+      for (const [after, before, count] of visualOnly) {
+        assert.equal(section.split(after).length - 1, count, `approved visual anchor: ${after}`);
+        section = section.replaceAll(after, before);
+      }
+    }
+    if (start === "function ImportPanel(") {
+      const visualOnly = [
+        ['<SignalHeading title={title} meta={sub}><div className="s2-greet">{sub}</div>', '<div className="s2-greet">{sub}</div>'],
+        ['<h2 className="s2-store">{title}</h2></SignalHeading>', '<h2 className="s2-store">{title}</h2>'],
+        ['<SignalCopy full={`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`} short={<><PixIcon glyph="calendar" size={11} /> {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</>} />', '`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`'],
+      ];
+      for (const [after, before] of visualOnly) {
+        assert.equal(section.split(after).length - 1, 1, `approved import heading: ${after}`);
+        section = section.replace(after, before);
+      }
+    }
+    assert.equal(createHash("sha256").update(section).digest("hex"), expected,
       `${start} remains byte-for-byte unchanged from ${BEFORE_COMMIT}`);
   }
   assert.equal(proposed.split("statedSplitOf(M)").length - 1, 2, "the hero and phone still read the same monthly stock split");
