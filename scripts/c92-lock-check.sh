@@ -36,7 +36,7 @@ grant usage on schema public to anon, authenticated;
 SQL
 # The baseline's own tables, grants and open policies, lifted from the file
 # rather than retyped, so this checks against what is really there.
-python3 - "$HERE/supabase/migrations/00000000000000_baseline.sql" > "$DIR/base.sql" <<'PY'
+python3 - "$HERE/supabase/reference/2026-09-12-baseline.sql" > "$DIR/base.sql" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
 out = []

@@ -203,7 +203,8 @@ scripts/
   demo-seed.mjs                  the demo store it is seeded from
   feel.mjs                       the feel harness
 test/                            the checks, and test/README.md on why each exists
-supabase/migrations/             the schema, baseline plus migrations
+supabase/migrations/             versioned schema changes, not a fresh-database bootstrap
+supabase/reference/              historical schema snapshot, outside automatic migrations
 workers/lpc-mail.js              the Cloudflare email worker that catches the store's reports
 native/                          the Expo shell around the site, and its own README
 docs/routines.md                 the four scheduled jobs that look after Sage unattended, and the deploy watch

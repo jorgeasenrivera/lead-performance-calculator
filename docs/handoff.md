@@ -605,6 +605,20 @@ closing the unverified rows. The latest #416 result is already recorded in its
 PR; no separate implementation request is inferred from this handoff.
 
 
+**H-X34 · X16: reference-only baseline, keep #457 draft.**
+
+The historical snapshot moves unchanged to
+`supabase/reference/2026-09-12-baseline.sql`; the ten executable migration SQL
+files and five filename corrections retain their bytes. The lock-check harness
+uses the reference path. Please review the snapshot-exclusion and preservation
+guards with `docs/supabase-migration-reconciliation.md`.
+
+This is source-only preparation. The reference is not a self-sufficient fresh
+Supabase bootstrap; fresh setup remains separate. Filename agreement and source
+checks are not a deployment dry-run. No target history repair or live schema,
+grant or policy change is included. Keep draft pending separate release approval.
+X14/#455 and X15/#456 retain their own review and activation gates.
+
 **H-X33 · X7: #416 refreshed, with the tap assertion corrected.**
 
 This continues the 22 September diagnostic work after H-C24's review. The

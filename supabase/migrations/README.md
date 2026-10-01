@@ -1,10 +1,18 @@
-# The database, as files
+# Versioned database changes
 
-Every change to the Supabase project's schema is a file here, named by the
-moment it was applied, applied through the project's own migration record so
-the two never drift. `00000000000000_baseline.sql` is the shape the project had
-when this directory began; the files after it are the changes since, in order.
+This directory contains ten historical migration SQL files. Five filenames are
+corrected in the reconciliation draft without changing their SQL bytes. Add new
+schema changes in new migrations; keep historical files immutable.
 
-Applying is done from a session with the Supabase access (the migration tool),
-and the file is committed in the same change. The security and performance
-advisors are read after every schema change.
+The historical snapshot lives at
+[`../reference/2026-09-12-baseline.sql`](../reference/2026-09-12-baseline.sql),
+outside automatic migrations. It must not run against an existing project.
+Neither that reference nor this directory is a self-sufficient fresh-Supabase
+bootstrap. Fresh setup requires a separately reviewed bootstrap and explicit
+platform prerequisites.
+
+Filename agreement is not a deployment dry-run. Before release, recheck the
+intended target's history and schema, review a no-op deployment plan, and obtain
+separate merge/deployment approval. This draft authorizes no history repair,
+database push/reset or schema write. See
+[the reconciliation plan](../../docs/supabase-migration-reconciliation.md).
