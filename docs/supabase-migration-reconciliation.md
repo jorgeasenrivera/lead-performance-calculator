@@ -1,8 +1,9 @@
-# Migration filename reconciliation, draft only
+# Migration references and filename reconciliation, draft only
 
-This separate draft corrects five historical migration filenames and adds
-offline guards. It changes no SQL bytes, application behavior or pixels.
-It is not approved for merge, deployment or any target migration-history write.
+The historical baseline is now reference material outside executable migrations.
+This draft also corrects five historical filenames. All SQL bytes, application
+behavior and pixels are unchanged. Keep draft; merge and deployment require
+separate approval.
 
 ## Filename corrections
 
@@ -14,79 +15,55 @@ It is not approved for merge, deployment or any target migration-history write.
 | app_vitals | 20260912203000 | 20260912203722 |
 | drop_queue_identity | 20260915170900 | 20260915170915 |
 
-The SQL body and comments of every renamed file are byte-for-byte unchanged.
-The other migration files are unchanged. These names record the versions used
-for those historical migrations; this draft does not reapply their SQL.
+The SQL body and comments of all ten executable migration files remain
+byte-for-byte unchanged. These names describe historical versions; this draft
+does not reapply their SQL.
 
-## The historical baseline needs a separate decision
+## Reference-only baseline
 
-`00000000000000_baseline.sql` remains byte-for-byte unchanged. Its existing header
-says that it describes a historical schema and must not run against the existing
-project. Filename reconciliation does not establish that this snapshot is a safe
-bootstrap or that any target's migration plan is a no-op.
+`supabase/migrations/00000000000000_baseline.sql` has moved unchanged to
+`supabase/reference/2026-09-12-baseline.sql`. Its SHA-256 remains
+`5e9d35fa1f56cf2dce2f33d38775e5c19474b3b5b15db9f07e962716826ccf26`.
+The lock-check harness reads the new reference path. Offline guards preserve the
+snapshot and reject copies in the executable migration directory.
 
-Do not merge this draft while the baseline decision is unresolved. Do not run the
-baseline against an existing database. Do not mark migrations applied or reverted
-merely to make a deployment check pass. Migration history, schema state and safe
-fresh-database replay are different things to verify.
+Do not run the snapshot against an existing project. No mark-applied operation
+is part of this approach. Matching historical filenames or normalized SQL bodies
+does not justify any migration-history write.
 
-## Options to evaluate before release
+The tradeoff is explicit: the reference snapshot is not a self-sufficient
+fresh-Supabase bootstrap, and the ten remaining migrations do not initialize an
+empty project by themselves. Fresh setup needs a separately reviewed bootstrap,
+explicit platform prerequisites and isolated verification. Auth objects, roles,
+extensions, custom event triggers, grants/default grants, publications and jobs
+must be accounted for. Any isolated fixture must use fictional configuration
+and block outbound callbacks. Modeled platform behavior does not establish full
+Supabase equivalence.
 
-- Keep a verified historical baseline in the migration chain. First replay the
-  intended chain in an isolated disposable environment and compare all intended
-  schema and operational objects with the target. Any decision to record an
-  existing baseline as applied is a separate target-specific history write and
-  needs explicit approval. It must not execute the baseline SQL.
-- Keep the snapshot as reference material outside automatic migrations. That
-  requires updating the lock-check harness, baseline guard and documentation,
-  plus providing a separately reviewed bootstrap for fresh databases. Moving a
-  file alone does not make later migrations self-sufficient.
-- Prepare a separately reviewed, sanitized replacement bootstrap and an explicit
-  history-reconciliation plan. Do not commit an unreviewed live schema capture
-  or operational credentials to this repository.
+## Release gates
 
-No option is selected by this draft. No baseline mark-applied action is currently
-recommended. Filename-only changes are useful, but the remaining proof and
-approval gates are still required.
+1. Recheck the exact intended target and recorded migration versions. Explain any
+   missing, extra or changed version without replaying historical SQL.
+2. Compare intended schema and operational objects, including policies, grants,
+   functions, triggers, sequences, publications and scheduled jobs. Resolve
+   platform prerequisites separately from application migrations.
+3. Review deployment integration and execution order. Require a current no-op
+   migration plan showing that no historical SQL is queued. Source checks and
+   read-only catalog comparison are not a completed CLI deployment dry-run.
+4. Keep paid preview provisioning disabled unless separately authorized. Obtain
+   separate approval before any target history write, schema/security change,
+   merge or deployment. Do not repair history merely to make a check pass.
+5. Run exact-head checks and verify the approved deployment when it is separately
+   authorized. Other feature drafts retain their own release gates.
 
-## Required proof and approvals
+## Source verification
 
-1. Recheck the exact target and migration history immediately before a proposed
-   reconciliation. Account for all missing, additional or changed versions.
-2. Replay in an isolated disposable environment with explicit platform
-   prerequisites and fictional configuration. Disable outbound delivery; never
-   aim a test database's callbacks at production. Do not provision paid resources
-   or create persistent access without approval.
-3. Compare the full intended schema and operational objects, including policies,
-   grants and default grants, functions, triggers, sequences, publications and
-   scheduled jobs. Explain every difference. Matching filenames or normalized
-   SQL hashes alone do not prove equivalence.
-4. Choose the baseline treatment and obtain explicit approval for each exact
-   remote-history action and target. Separately approve any schema or security
-   changes if later work establishes that they are needed.
-5. Review the deployment integration and execution order. Do not merge filename
-   corrections and then discover that historical SQL is queued for execution.
-   Require a reviewed no-op plan after the approved history-only treatment.
-6. Obtain separate merge/deployment approval, run the exact-head checks, and
-   verify the resulting deployment without weakening a check to make it pass.
+Offline guards check all ten SQL byte hashes, the five removed old filenames,
+unique fourteen-digit versions, the preserved reference snapshot, its exclusion
+from executable migrations and the lock harness's reference path. They allow new
+migration files while keeping these historical files immutable.
 
-[Supabase's repair reference](https://supabase.com/docs/reference/cli/supabase-migration-repair)
-explains that applied/reverted repairs change history records. They do not prove
-schema equivalence. No repair, migration push, reset or database write was run
-while preparing this draft.
-
-## Verification and limits
-
-- Five rename pairs are 100% identical in Git's diff
-- Seven offline migration guards pass: original SQL byte hashes, no old filename
-  copies, unique fourteen-digit versions, and the unchanged historical baseline
-- All 859 repository tests pass on Node 24.19.0
-- Production build passes with its existing large-chunk warning
-- `git diff --check` passes
-- Full isolated database replay was not run: this executor has no Postgres,
-  psql, Docker or Supabase CLI available
-
-The guards allow new migration files; already-applied files should remain
-immutable. A new migration is the place for a new database change. Application
-CI and these offline tests do not establish a successful database deployment.
-Other feature drafts retain their own review and activation gates.
+Full repository tests and the production build are required before publication;
+the PR records their result for the published head. No application or visual
+change is included. These source checks do not prove a successful database
+migration, a full fresh-project bootstrap or a no-op deployment.
