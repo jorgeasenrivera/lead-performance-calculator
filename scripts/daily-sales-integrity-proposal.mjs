@@ -82,10 +82,14 @@ function useDigestIntegrity(storeId, dataStoreId) {
     '                {(\n                  <BloopWin cls="dn s2-salewin">');
   next = replaceOne(next, '                      : "Click a day to see it"}</div>',
     '                      : DAILY_TOTALS_UNAVAILABLE}</div>');
-  next = replaceOne(next, '                {mcal.best && (\n                  <div className="s2-cw">',
-    '                <div className="s2-cw" data-daily-unavailable="desktop-best-day">{DAILY_TOTALS_UNAVAILABLE}</div>\n                {mcal.best && (\n                  <div className="s2-cw">');
+  next = replaceOne(next, '                <div className="s2-detail">{dayPick\n',
+    '                <div className="s2-detail" data-daily-unavailable="desktop-day-detail">{dayPick\n');
   next = replaceOne(next, ' · no day record</>)', ' · {DAILY_TOTALS_UNAVAILABLE}</>)');
   next = replaceOne(next, ': "Click a day dot to see it"}</div>', ': DAILY_TOTALS_UNAVAILABLE}</div>');
+  next = replaceOne(next, '{pace.daysDone} of {pace.daysAll} days counted · through yesterday',
+    'Pace: {pace.daysDone} of {pace.daysAll} selling days elapsed');
+  next = replaceOne(next, '{storePace.daysDone} of {storePace.daysAll} days counted · through yesterday',
+    'Pace: {storePace.daysDone} of {storePace.daysAll} selling days elapsed');
   next = replaceOne(next, '`${fmtPct(c.pct)} so far. The line draws once two days are on file.`',
     '`${fmtPct(c.pct)} this month. Daily history unavailable.`');
   next = replaceOne(next, "The month's line starts once three days have figures.",

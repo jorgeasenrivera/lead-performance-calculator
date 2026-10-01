@@ -13,6 +13,10 @@ const mockRows = (store) => [20, 21].map((day, i) => ({
     nu: 6 + 7 * i, uu: 4 + 4 * i,
     ch: { internet: { u: 4 + i, l: 20 }, phone: { u: 2 + i, l: 12 }, showroom: { u: 4 + i, l: 15 } } },
 }));
+const capture = async (page, name) => {
+  await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: `${OUT}/${name}-review.png`, fullPage: false, animations: "disabled" });
+};
 const closeRecap = async (page) => {
   const close = page.getByRole("button", { name: "Close the round-up", exact: true });
   if (await close.isVisible()) await close.click();
@@ -74,16 +78,20 @@ export async function verifyDailySalesIntegrity(browser) {
     await before.page.getByText("New sold yesterday", { exact: true }).waitFor({ state: "visible" });
     result.beforeDigestMutations = before.mutations.length;
     assert.ok(result.beforeDigestMutations > 0, "the unmodified before build must exercise the obsolete writer");
-    await before.page.screenshot({ path: `${OUT}/before-recap.png`, fullPage: true, animations: "disabled" });
+    await capture(before.page, "before-recap");
     await closeRecap(before.page);
     result.preservation.beforeMonth = await monthly(before.page, false);
     await before.page.locator(".s2-mcal").hover();
-    await before.page.screenshot({ path: `${OUT}/before-calendar-desktop.png`, fullPage: true, animations: "disabled" });
+    await capture(before.page, "before-calendar-desktop");
+    await before.page.locator(".s2-splitwrap").hover();
+    await before.page.locator(".s2-salewin:visible").first().waitFor({ state: "visible" });
+    assert.ok((await before.page.locator(".s2-salewin:visible .s2-sw-grid b").allTextContents()).some((n) => /^\d/.test(n)), "before must reproduce the desktop sold-by-day count");
+    await capture(before.page, "before-stock-days-desktop");
     await before.page.setViewportSize({ width: 390, height: 844 });
     await before.page.locator(".bp-l2").click();
     await before.page.locator(".bp-swg").waitFor({ state: "visible" });
     assert.ok((await before.page.locator(".bp-swg b").allTextContents()).some((n) => /^\d/.test(n)), "before fixture must reproduce a daily claim");
-    await before.page.screenshot({ path: `${OUT}/before-calendar-phone.png`, fullPage: true, animations: "disabled" });
+    await capture(before.page, "before-calendar-phone");
     await before.page.getByRole("button", { name: "Close", exact: true }).click();
     await before.page.locator("#activity").click();
     result.preservation.beforeActivity = await before.page.locator("main").innerText();
@@ -94,7 +102,7 @@ export async function verifyDailySalesIntegrity(browser) {
     const after = active = await fixture(browser, AFTER);
     await after.page.locator('[data-daily-unavailable="recap"]').waitFor({ state: "visible" });
     await noFalseClaims(after.page);
-    await after.page.screenshot({ path: `${OUT}/after-recap.png`, fullPage: true, animations: "disabled" });
+    await capture(after.page, "after-recap");
     await closeRecap(after.page);
     result.preservation.afterMonth = await monthly(after.page, false);
     assert.equal(result.preservation.afterMonth, "61");
@@ -107,7 +115,8 @@ export async function verifyDailySalesIntegrity(browser) {
         await after.page.locator(".bp-l2").click();
         await after.page.locator('[data-daily-unavailable="phone-calendar"]').waitFor({ state: "visible" });
         assert.ok((await after.page.locator(".bp-swg b").allTextContents()).every((n) => n === "·"), "unknown days cannot display zeroes or inferred counts");
-        await after.page.screenshot({ path: `${OUT}/after-calendar-${width}.png`, fullPage: true, animations: "disabled" });
+        await after.page.getByText("Pace: 21 of 30 selling days elapsed", { exact: true }).waitFor({ state: "visible" });
+        await capture(after.page, `after-calendar-${width}`);
         await after.page.keyboard.press("Escape");
         await after.page.locator(".fr-pop").waitFor({ state: "hidden" });
         await after.page.locator(".bp-r1").click();
@@ -124,15 +133,16 @@ export async function verifyDailySalesIntegrity(browser) {
         // at 860px. Verify that boundary, then exercise its stock/day popup.
         if (width > 860) {
           await after.page.locator(".s2-mcal").hover();
-          await after.page.locator('[data-daily-unavailable="desktop-best-day"]').waitFor({ state: "visible" });
+          await after.page.locator('[data-daily-unavailable="desktop-day-detail"]').waitFor({ state: "visible" });
           await after.page.locator(".s2-mc-grid i:not(.e)").first().click();
           await after.page.locator(".s2-calwin .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
-          await after.page.screenshot({ path: `${OUT}/after-calendar-${width}.png`, fullPage: true, animations: "disabled" });
+          assert.equal((await after.page.locator(".s2-calwin").innerText()).split(UNAVAILABLE).length - 1, 1, "one quiet unavailable line in the calendar");
+          await capture(after.page, `after-calendar-${width}`);
         } else assert.equal(await after.page.locator(".s2-mcal").isVisible(), false, "the existing compact calendar rule is preserved");
         await after.page.locator(".s2-splitwrap").hover();
         await after.page.locator(".s2-salewin:visible").first().waitFor({ state: "visible" });
         assert.ok((await after.page.locator(".s2-salewin:visible .s2-sw-grid b").allTextContents()).every((n) => n === "·"));
-        await after.page.screenshot({ path: `${OUT}/after-stock-days-${width}.png`, fullPage: true, animations: "disabled" });
+        await capture(after.page, `after-stock-days-${width}`);
         await noFalseClaims(after.page);
         await after.page.locator(".s2-ru").click();
         await after.page.locator('[data-daily-unavailable="recap"]').waitFor({ state: "visible" });
@@ -191,7 +201,7 @@ export async function verifyDailySalesIntegrity(browser) {
     assert.equal(await monthly(race.page, false), "83");
     assert.deepEqual(race.mutations, []); assert.deepEqual(race.errors, []);
     result.mutations = after.mutations.length + race.mutations.length;
-    await race.page.screenshot({ path: `${OUT}/after-store-switch.png`, fullPage: true, animations: "disabled" });
+    await capture(race.page, "after-store-switch");
     await race.context.close();
     await writeFile(`${OUT}/result.json`, JSON.stringify(result, null, 2));
     console.log("Daily integrity: real Manager views, privacy, retry, store switch and preservation passed");

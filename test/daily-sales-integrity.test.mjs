@@ -160,6 +160,9 @@ test("the isolated proposal holds every legacy consumer without changing real ac
   assert.ok(!proposed.includes("From tomorrow this also shows who cleared"));
   assert.ok(!proposed.includes("until two daily readings"));
   assert.ok(!proposed.includes("The line draws once two days"));
+  assert.ok(!proposed.includes('data-daily-unavailable="desktop-best-day"'), "the calendar has one quiet unavailable footer");
+  assert.ok(proposed.includes('data-daily-unavailable="desktop-day-detail"'));
+  assert.ok(proposed.includes('Pace: {pace.daysDone} of {pace.daysAll} selling days elapsed'));
   assert.equal(decisions.length, 4);
   assert.equal((proposalPage().match(/data-choice=/g) || []).length, 4);
 });
