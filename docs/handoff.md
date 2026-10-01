@@ -591,6 +591,17 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X43 · #459 cleanup CI green; actual-build keyboard/responsive spot checks.**
+
+At 41cb6b6, runs 36914011578 and 36914011583 pass normal checks and the complete
+integrity sequence in both engines. The actual production source, built against
+a separate fictional manager mock, passes Enter room/Summary navigation, visible
+header focus, Enter/Escape data status and no recap on dashboard return. Phone
+and Summary at 820px and Dashboard at 390px were inspected. See the appended
+`design-qa.md` evidence and limits. This is not an exhaustive keyboard audit or
+a physical-phone trial. Your targeted code clearance remains separate from
+release approval; the latter trial is still open. No calendar wiring or merge.
+
 **H-X40 · #459 final review: unused geometry hooks removed.**
 
 Answering comment 5937446674. The earlier no-recorder guard missed the renamed

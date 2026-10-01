@@ -429,3 +429,32 @@ final result: passed
 The first browser navigation exposed a loop in my class observer. The corrected
 owner checks the existing class before writing, and disconnects at last shell
 unmount. Earlier study CI and screenshots do not certify this production port.
+
+## Signal follow-up, 1 October: exact production source spot checks
+
+Runtime source at 41cb6b6b2958f89cf64ff9c89fdaa53aa8441af8. Both dormant
+geometry recorder hooks are removed and the production source guard covers
+their current names. Normal CI 36914011578 and full Chromium/WebKit integrity
+36914011583 are green at this exact head. The correction's full local suite
+and build pass. The main adoption changes ownership docs only.
+
+The actual production build was separately built against an in-memory fictional
+manager fixture on port 5434 and inspected at localhost:49217. The existing
+salesperson fixture on 5433 and preview on 49216 were not modified. This was
+not the isolated design comparison or a fixture replacing Manager rendering.
+
+- Manager sign-in reaches the actual dashboard; no captured console errors.
+- Close recap with Enter. Tab traverses the visible header controls. Live Floor
+  has a visible two-pixel focus outline; Enter opens Floor, Phone and Summary.
+- Enter opens the compact data-status disclosure; Escape collapses it.
+- Floor and Phone return to Performance without reopening the recap. Summary
+  returns to Dashboard without reopening it either.
+- Phone and Summary inspected at 820 x 1180 CSS pixels, Dashboard at 390 x 844.
+  No page-wide overflow in measured Phone and Dashboard states. Screenshots
+  appeared inline in this task; the browser produced no disk screenshot path.
+
+These are spot checks, not all controls, keyboard order, screen-reader behavior
+or continuous-frame performance certification. The 390-pixel browser is not a
+physical phone and the 820-pixel browser is not a physical tablet. Jorge's
+earlier comparison-preview approval is retained but does not close the actual
+production-build physical-phone trial. No merge or production deployment.
