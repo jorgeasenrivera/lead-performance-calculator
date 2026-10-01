@@ -73,5 +73,20 @@ test("the policy says what the app does since 28 September: no QR, and deleting 
   const html = fs.readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
   assert.ok(!/QR/.test(html), "the QR sign-in is gone (C99)");
   assert.match(html, /<b>Not the camera\.<\/b> Sage never turns it on\./);
-  assert.match(html, /Delete your account yourself: Your account, then Delete my account\. Your store keeps your name on past days and your numbers\./);
+  assert.match(html, /Delete your account yourself: Your account, then Delete my account\. This removes your login, your name and email, your phone's notification details and your error reports at once\. Your store keeps its history, with your name on past days and your numbers\. Write to us to have those removed too\./);
+});
+
+/* The page says what Delete my account removes, so a test reads the function
+   that does it: every kind of thing the page lists as removed is a delete in
+   api/delete-account.mjs, and nothing the page says is kept is deleted there. */
+test("what the page says Delete my account removes is what the function removes, and what it keeps it keeps (C110)", () => {
+  const html = fs.readFileSync(new URL("../public/privacy.html", import.meta.url), "utf8");
+  const fn = fs.readFileSync(new URL("../api/delete-account.mjs", import.meta.url), "utf8");
+  assert.match(html, /<li><b>Your account:<\/b> until you delete it, and deleting it in the app removes it at once\.<\/li>/);
+  assert.match(html, /<li><b>Your floor days and your numbers:<\/b> for as long as your store uses Sage, because they are the store's history\. They stay when you delete your account\. Write to us to have them removed too\.<\/li>/);
+  assert.ok(!/They are deleted when you ask/.test(html), "the line that read as the opposite of the next one is gone");
+  assert.match(fn, /from\("device_tokens"\)\.delete\(\)/, "the phone's notification details");
+  assert.match(fn, /from\("app_errors"\)\.delete\(\)/, "the error reports");
+  assert.match(fn, /db\.auth\.admin\.deleteUser\(/, "the login, which takes the profile (name, email) with it");
+  assert.ok(!/from\("app_data"\)/.test(fn), "the store's floor days and numbers are not touched here, as the page says");
 });
