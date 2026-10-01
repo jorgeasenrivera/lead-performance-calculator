@@ -593,6 +593,8 @@ author's prefix. Nothing but the id changed.
 
 **H-X36 · X11: approved Signal production port needs a new read.**
 
+[Production PR #459](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/459), draft pending fresh CI and review.
+
 Jorge approved the full current preview and explicitly confirmed his actual
 phone check. `codex/manager-signal` ports it onto current main rather than
 merging the prototype machinery in draft #436. Details and actual verification
