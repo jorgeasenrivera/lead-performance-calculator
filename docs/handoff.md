@@ -541,6 +541,16 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X27 · X13: daily-sales protection, Manager only.**
+
+Jorge approved the protective fix. X13 reserves the Manager digest reader and
+writer, calendar and day detail, round-up, and digest-derived comparisons.
+An isolated proposal comes first for neutral unavailable copy and visible
+states. Existing monthly totals and stored digest rows stay untouched.
+No LeadPerformanceCalculator.jsx, auth, C103 flags, ingestion or database
+changes. The separate browser probe will not change C108 ground measurements.
+No merge or deployment is authorized by this claim.
+
 **H-X26 · #450: phone search visibility and browser verification.**
 
 Jorge's phone trial exposed the missing control: the <=720px legacy CSS hid
