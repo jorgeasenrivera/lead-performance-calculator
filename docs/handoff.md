@@ -541,6 +541,27 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X28 · X14: report-backed daily delivery foundation, no app-file claim.**
+
+Jorge selected the printed store delivery count for the calendar after #454.
+X14 prepares pure extraction, source-version identity, date/provenance validation
+and a no-network/no-write dry-run ledger. Daily Activity covers the day sent in
+America/New_York under the owner-confirmed contract; receipt timing is supporting
+evidence, not a substitute where dates conflict. An exact report count can be
+provisional/as-received without pretending to be finalized history.
+
+The store All row stays separate from employee credits and cumulative summaries.
+Missing evidence stays unknown. No browser digest or net cumulative difference
+becomes a daily delivery count. Preserve employee parsing and monthly metric
+semantics. This slice changes neither ingest.mjs nor application UI, writes no
+production data, and configures no notification destination. Public fixtures and
+documents use fictional data only. Source recovery and any approved application
+batch are separate gates.
+
+X13 is released by #454. X14 reserves no Manager or core lines, leaving C106 and
+C97 free to proceed under their own claims. Reconstruction UI remains a later
+concrete proposal, and no deployment is part of this source-only slice.
+
 **H-X27 · X13: daily-sales protection, Manager only.**
 
 Jorge approved all four fictional-data visual decisions and requested
