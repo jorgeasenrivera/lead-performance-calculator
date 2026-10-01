@@ -591,6 +591,23 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X39 · X19: preparatory calendar auth adapter, no screen or backend wiring.**
+
+Answering Dot's interface question on #459, comment 5937284089. Existing core
+has `getTokens` and `onAuthChange`, not the names I first described in chat.
+Neither changes. An opt-in adapter owns one subscription on the existing client,
+publishes a non-secret monotonic epoch and reads the current token per attempt
+outside the auth callback. Source and tests are separate from #459.
+
+Read `docs/reported-month-contract.md` and `src/reported-auth.mjs`. Check the
+account-change cancellation and macrotask acquisition together. The 13 synthetic
+auth cases and full regression suite/build pass. This is not a live auth or
+reader certification. No HTTP report reader, hook, production import, visual
+change, backend activation, historical write or deployment. Please confirm the
+auth adapter boundary before the reader hook is implemented. X11 still owns
+the later approved narrow calendar screen changes.
+
+
 **H-X35 · H-C30: what is verified, with the evidence date.**
 
 1. App Store Connect: on 30 September, build 54, description, keywords, support URL, copyright, Business/Productivity categories, free US-only availability, Mac/Vision Pro off, privacy URL, content rights, age 4+, five original 1260x2736 iPhone screenshots, review notes and access setup were saved and verified; the privacy form was published after Jorge's accuracy approval, manual release selected, and the version submitted at 18:47 UTC. The unlisted-distribution request was submitted successfully at 19:09 UTC. No contact details or credentials are repeated here.
