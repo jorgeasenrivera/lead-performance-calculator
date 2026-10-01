@@ -25,6 +25,15 @@ test('only the enumerated activity presentation changes compare equal', () => {
   assert.equal(left, right);
 });
 
+test('WebKit blank block separators do not erase any nonempty line', () => {
+  const pair = fixture();
+  pair[0].text = pair[0].text.replaceAll('\n', '\n\n');
+  const [left, right] = normalizeActivityPair(...pair);
+  assert.equal(left, right);
+  pair[1].text = pair[1].text.replace('Calls 100', 'Calls 101');
+  assert.notEqual(...normalizeActivityPair(...pair));
+});
+
 for (const [name, from, to] of [['number', 'Calls 100', 'Calls 101'], ['name', 'Alex', 'Blair']]) {
   test(`activity comparison preserves each ${name}`, () => {
     const pair = fixture();
