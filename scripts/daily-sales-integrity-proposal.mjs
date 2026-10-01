@@ -50,7 +50,7 @@ export function fixtureEntry() {
   for (const [day, rows] of Object.entries(demo.storeData.activity)) {
     for (const row of Object.values(rows)) row.uploadedAt = day + "T16:00:00Z";
   }
-  return `import React, {useState} from "react";
+  return `import React, {useState,useEffect} from "react";
 import {createRoot} from "react-dom/client";
 import {AppShell, BoardRoomPhone, StoreHero, Board, CheckOutTracker} from "./Manager.jsx";
 import {Style, DEFAULT_TIERS, usePhoneLayout} from "./LeadPerformanceCalculator.jsx";
@@ -62,6 +62,11 @@ const config={stores,roles:[{id:'sales',name:'Sales Associate',onBoard:true,coac
   standards:Object.fromEntries(stores.map(s=>[s.id,{sales:{tiers:DEFAULT_TIERS},service:{tiers:DEFAULT_TIERS}}])),holidays:[]};
 const noop=()=>{};
 function Fixture(){const [selected,setSelected]=useState(0),[loaded,setLoaded]=useState(0),[activity,setActivity]=useState(false),[role,setRole]=useState('manager');const phone=usePhoneLayout();
+  const surfaceKey=[activity?'activity':'dashboard',phone?'phone':'desktop',selected,loaded,role].join(':');
+  const [ready,setReady]=useState('');
+  // Child effects register the real recap opener before this parent marks the
+  // committed fixture ready. No fixed delay or production readiness hook.
+  useEffect(()=>setReady(surfaceKey),[surfaceKey]);
   const props={config,store:stores[selected],data:data[loaded],session:{role,name:'Fictional Tester'},canSetGoal:false,onSaveConfig:noop,onSetRestriction:noop,onCoach:noop,onGoTab:noop,onFilter:noop,onMove:noop,onChange:noop,readOnly:true};
   return <AppShell session={props.session} isAdmin={role==='admin'} appModule="performance"
     onSignOut={noop} onReplayIntro={noop} onHelp={noop} onToolChange={noop} onImport={noop}
@@ -72,7 +77,7 @@ function Fixture(){const [selected,setSelected]=useState(0),[loaded,setLoaded]=u
     <button id="mismatch" onClick={()=>{setSelected(1);setLoaded(0)}}>B waiting on data</button><button id="resolve" onClick={()=>setLoaded(selected)}>Resolve data</button>
     <button id="activity" onClick={()=>setActivity(x=>!x)}>{activity?'Performance':'Daily Activity'}</button>
     <select aria-label="Fictional viewer role" value={role} onChange={e=>setRole(e.target.value)}><option>manager</option><option>admin</option></select>
-  </header><main className="page" style={{padding:20}} data-fixture-store={stores[selected].id}>
+  </header><main className="page" style={{padding:20}} data-fixture-store={stores[selected].id} data-fixture-ready={ready===surfaceKey?'true':'false'}>
     {activity?<CheckOutTracker {...props}/>:phone?<BoardRoomPhone {...props}/>:<><StoreHero {...props}/><Board {...props}/></>}
   </main></AppShell>;
 }

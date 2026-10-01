@@ -17,11 +17,6 @@ export function normalizePhoneActivityPair(before, after) {
 // Only the enumerated Signal presentation changes are normalized. Names,
 // numeric associations, time metadata and all remaining text stay exact.
 export function normalizeActivityPair(before, after) {
-  // WebKit inserts extra blank lines between block fragments when a parent
-  // is read. Keep every nonempty line, its spelling and its order intact.
-  const lines = text => text.replace(/\n{2,}/g, '\n');
-  before = {...before, text: lines(before.text), header: lines(before.header), ranks: before.ranks.map(r => ({...r, text: lines(r.text)}))};
-  after = {...after, text: lines(after.text), header: lines(after.header), ranks: after.ranks.map(r => ({...r, text: lines(r.text)}))};
   const prefix = 'Daily Activity · Tue, Sep 22 · ';
   const suffix = '\nFictional Store A';
   assert.ok(before.header.startsWith(prefix) && before.header.endsWith(suffix));

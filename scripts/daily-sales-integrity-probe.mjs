@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { normalizeActivityPair, normalizePhoneActivityPair } from "./daily-sales-integrity-copy.mjs";
+import { collectActivitySnapshot } from "./daily-sales-integrity-snapshot.mjs";
 
 const BEFORE = process.env.DAILY_BEFORE_URL || "http://127.0.0.1:49216/";
 const AFTER = process.env.DAILY_AFTER_URL || "http://127.0.0.1:49215/";
@@ -28,13 +29,13 @@ const waitForReads = async (reads, count) => {
   assert.ok(reads.length >= count, "the actual component must retry its failed digest request");
 };
 const monthly = (page, phone) => page.locator(phone ? ".bp-num .dotnum" : ".s2-big .dotnum").first().getAttribute("aria-label");
-const activitySnapshot = async (page) => ({
-  text: await page.locator('main').innerText(),
-  header: await page.locator('main .s2-head .s2-idtx').innerText(),
-  ranks: await page.locator('main .da-pod, main .da-lbrow').evaluateAll(nodes => nodes
-    .filter(node => node.getClientRects().length)
-    .map(node => ({ text: node.innerText, rank: node.querySelector('.da-medal .dotnum')?.getAttribute('aria-label') || node.querySelector('.da-medal')?.textContent.trim() }))),
-});
+const readySurface = async (page, selector) => {
+  await page.locator(`main[data-fixture-ready="true"] ${selector}`).first().waitFor({state: 'visible'});
+};
+const activitySnapshot = async (page, phone = false) => {
+  await readySurface(page, phone ? '.co-page' : '.checkout.da-page .s2-head .s2-idtx');
+  return page.locator('main').evaluate(collectActivitySnapshot, phone);
+};
 const noFalseClaims = async (page) => {
   const text = await page.locator("body").innerText();
   assert.ok(!/New sold yesterday|Used sold yesterday|Best day so far|PRIVATE_DIAGNOSTIC/.test(text), "no unsupported count or private flag is visible");
@@ -107,8 +108,9 @@ export async function verifyDailySalesIntegrity(browser) {
     await capture(before.page, "before-calendar-phone");
     await before.page.getByRole("button", { name: "Close", exact: true }).click();
     await before.page.locator("#activity").click();
-    result.preservation.beforePhoneActivity = await before.page.locator('main').innerText();
-    result.preservation.beforeDailyNumbers = await before.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+    result.preservation.beforePhoneSnapshot = await activitySnapshot(before.page, true);
+    result.preservation.beforePhoneActivity = result.preservation.beforePhoneSnapshot.text;
+    result.preservation.beforeDailyNumbers = result.preservation.beforePhoneSnapshot.numbers;
     await before.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.beforeActivity = await activitySnapshot(before.page);
     assert.ok(result.preservation.beforeDailyNumbers.length >= 2 && result.preservation.beforeDailyNumbers.some((n) => Number(n) > 0), "Daily Activity fixture must contain real nonzero calls and videos");
@@ -125,6 +127,7 @@ export async function verifyDailySalesIntegrity(browser) {
 
     for (const width of [390, 700, 701, 1280]) {
       await after.page.setViewportSize({ width, height: width <= 700 ? 844 : 1000 });
+      await readySurface(after.page, width <= 700 ? '.bp-l2' : '.sg-schedule');
       await closeRecap(after.page);
       if (width <= 700) {
         await after.page.locator(".bp-l2").click();
@@ -172,6 +175,7 @@ export async function verifyDailySalesIntegrity(browser) {
     }
     for (const role of ["manager", "admin"]) {
       await after.page.getByLabel("Fictional viewer role").selectOption(role);
+      await readySurface(after.page, '.s2-ru');
       await after.page.locator(".s2-ru").click();
       await after.page.locator('[data-daily-unavailable="recap"]').waitFor({ state: "visible" });
       await noFalseClaims(after.page);
@@ -179,10 +183,11 @@ export async function verifyDailySalesIntegrity(browser) {
     }
     await after.page.setViewportSize({ width: 390, height: 844 });
     await after.page.locator("#activity").click();
-    result.preservation.afterPhoneActivity = await after.page.locator('main').innerText();
+    result.preservation.afterPhoneSnapshot = await activitySnapshot(after.page, true);
+    result.preservation.afterPhoneActivity = result.preservation.afterPhoneSnapshot.text;
     const [beforePhone, afterPhone] = normalizePhoneActivityPair(result.preservation.beforePhoneActivity, result.preservation.afterPhoneActivity);
     assert.equal(afterPhone, beforePhone, 'phone Daily Activity remains exact outside three approved label casing changes');
-    result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+    result.preservation.afterDailyNumbers = result.preservation.afterPhoneSnapshot.numbers;
     await after.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.afterActivity = await activitySnapshot(after.page);
     assert.deepEqual(result.preservation.afterDailyNumbers, result.preservation.beforeDailyNumbers, "working daily calls and video counts remain exact");
@@ -231,6 +236,13 @@ export async function verifyDailySalesIntegrity(browser) {
     console.log("Daily integrity: real Manager views, privacy, retry, store switch and preservation passed");
   } catch (error) {
     if (active?.page && !active.page.isClosed()) await active.page.screenshot({ path: `${OUT}/failure.png`, fullPage: true, animations: "disabled" }).catch(() => {});
+    const screen = active && await active.page.evaluate(() => ({width: innerWidth, text: document.body.innerText,
+      fixture: {...document.querySelector('main')?.dataset},
+      surfaces: ['.co-page', '.checkout.da-page', '.bp-l2', '.sg-schedule', '.s2-ru', '[role="dialog"]'].map(selector => ({selector,
+        nodes: [...document.querySelectorAll(selector)].map(node => ({text: node.innerText, rect: node.getBoundingClientRect().toJSON(), visible: !!node.getClientRects().length}))})),
+    })).catch(() => null);
+    await writeFile(`${OUT}/failure.json`, JSON.stringify({message: error.message, result, screen,
+      reads: active?.reads, mutations: active?.mutations.length, errors: active?.errors}, null, 2));
     console.error("Daily integrity failure:", error, active && { reads: active.reads, mutations: active.mutations.length, errors: active.errors,
       screen: await active.page.evaluate(() => ({ width: innerWidth, text: document.body.innerText.slice(0, 1400) })).catch(() => null) });
     throw error;

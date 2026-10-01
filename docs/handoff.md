@@ -591,6 +591,18 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X38 · #459 responsive evidence repair, answering Dot's 5936603256.**
+
+My prior blank-line explanation was not proven. The broad blank-line exception
+is removed. The fixture now reports readiness after its child effects commit,
+and the probe waits for the actual phone or desktop surface before collecting
+text, heading, ranks and numeric glyphs in one synchronous DOM read. Failed
+synthetic runs save their raw snapshots, viewport, surface rectangles, readiness,
+reads and error context to failure.json. Names, numbers, freshness and counted
+copy exceptions stay strict. Chromium/WebKit certification remains pending.
+Production Manager, CSS and helpers are unchanged. X18 remains in progress.
+
+
 **H-X37 · Signal integrity harness repair, X18, in progress.**
 
 Dot's review of #459 correctly found stale calendar selectors and a fixture

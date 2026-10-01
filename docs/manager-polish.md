@@ -58,3 +58,13 @@ numbers, names, freshness, duplicate copy and rank reassociation.
 
 All 860 tests pass. Production and immutable before/after fixture builds pass.
 Browser integrity checks in Chromium and WebKit are pending, not certified.
+
+### Responsive evidence correction
+
+Dot correctly pointed out that the sequential snapshot could capture phone
+text and then a desktop heading after resize. My previous explanation about
+WebKit blank lines was not proven, and that normalization is removed. Waits now
+target the visible responsive surface and a fixture-only child-commit marker.
+Each snapshot reads all related fields synchronously. Failed runs retain raw
+synthetic evidence, rather than only a truncated body excerpt. No browser wait
+limit, production source, numeric comparison or copy exception is broadened.
