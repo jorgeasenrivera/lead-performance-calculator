@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeActivityPair} from '../scripts/daily-sales-integrity-copy.mjs';
+import {normalizeActivityPair, normalizePhoneActivityPair} from '../scripts/daily-sales-integrity-copy.mjs';
+
+test('phone casing exceptions retain numbers and reject duplicate labels', () => {
+  const before = 'Calls 100\nAT MINIMUMS\nCLEAN SHEETS\nNO LOG\n';
+  const after = 'Calls 100\nAt minimums\nClean sheets\nNo log\n';
+  const [left, right] = normalizePhoneActivityPair(before, after);
+  assert.equal(left, right);
+  const changed = normalizePhoneActivityPair(before, after.replace('100', '101'));
+  assert.notEqual(...changed);
+  assert.throws(() => normalizePhoneActivityPair(before, after + 'No log\n'));
+});
 
 function fixture() {
   const before = {header: 'Daily Activity · Tue, Sep 22 · numbers as of 1 min ago\nFictional Store A', ranks: [{rank: '1', text: '1\nAlex\n53 pts'}]};

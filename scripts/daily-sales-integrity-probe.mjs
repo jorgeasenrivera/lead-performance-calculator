@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { normalizeActivityPair } from "./daily-sales-integrity-copy.mjs";
+import { normalizeActivityPair, normalizePhoneActivityPair } from "./daily-sales-integrity-copy.mjs";
 
 const BEFORE = process.env.DAILY_BEFORE_URL || "http://127.0.0.1:49216/";
 const AFTER = process.env.DAILY_AFTER_URL || "http://127.0.0.1:49215/";
@@ -180,7 +180,8 @@ export async function verifyDailySalesIntegrity(browser) {
     await after.page.setViewportSize({ width: 390, height: 844 });
     await after.page.locator("#activity").click();
     result.preservation.afterPhoneActivity = await after.page.locator('main').innerText();
-    assert.equal(result.preservation.afterPhoneActivity, result.preservation.beforePhoneActivity, 'phone Daily Activity remains exact');
+    const [beforePhone, afterPhone] = normalizePhoneActivityPair(result.preservation.beforePhoneActivity, result.preservation.afterPhoneActivity);
+    assert.equal(afterPhone, beforePhone, 'phone Daily Activity remains exact outside three approved label casing changes');
     result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     await after.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.afterActivity = await activitySnapshot(after.page);

@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 
 function replaceOnce(text, from, to) {
-  assert.equal(text.split(from).length - 1, 1, `approved copy must occur once: ${from}`);
+  const first = text.indexOf(from);
+  assert.ok(first >= 0 && text.indexOf(from, first + 1) < 0, `approved copy must occur once: ${from}`);
   return text.replace(from, to);
+}
+
+export function normalizePhoneActivityPair(before, after) {
+  for (const [old, current] of [['AT MINIMUMS', 'At minimums'], ['CLEAN SHEETS', 'Clean sheets'], ['NO LOG', 'No log']]) {
+    before = replaceOnce(before, '\n' + old + '\n', '\n[' + old + ']\n');
+    after = replaceOnce(after, '\n' + current + '\n', '\n[' + old + ']\n');
+  }
+  return [before, after];
 }
 
 // Only the enumerated Signal presentation changes are normalized. Names,
