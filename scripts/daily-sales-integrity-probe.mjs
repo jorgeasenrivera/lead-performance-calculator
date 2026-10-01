@@ -107,6 +107,8 @@ export async function verifyDailySalesIntegrity(browser) {
     await capture(before.page, "before-calendar-phone");
     await before.page.getByRole("button", { name: "Close", exact: true }).click();
     await before.page.locator("#activity").click();
+    result.preservation.beforePhoneActivity = await before.page.locator('main').innerText();
+    await before.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.beforeActivity = await activitySnapshot(before.page);
     result.preservation.beforeDailyNumbers = await before.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     assert.ok(result.preservation.beforeDailyNumbers.length >= 2 && result.preservation.beforeDailyNumbers.some((n) => Number(n) > 0), "Daily Activity fixture must contain real nonzero calls and videos");
@@ -177,6 +179,9 @@ export async function verifyDailySalesIntegrity(browser) {
     }
     await after.page.setViewportSize({ width: 390, height: 844 });
     await after.page.locator("#activity").click();
+    result.preservation.afterPhoneActivity = await after.page.locator('main').innerText();
+    assert.equal(result.preservation.afterPhoneActivity, result.preservation.beforePhoneActivity, 'phone Daily Activity remains exact');
+    await after.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.afterActivity = await activitySnapshot(after.page);
     result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     assert.deepEqual(result.preservation.afterDailyNumbers, result.preservation.beforeDailyNumbers, "working daily calls and video counts remain exact");
