@@ -15,8 +15,8 @@ test('phone casing exceptions retain numbers and reject duplicate labels', () =>
 function fixture() {
   const before = {header: 'Daily Activity · Tue, Sep 22 · numbers as of 1 min ago\nFictional Store A', ranks: [{rank: '1', text: '1\nAlex\n53 pts'}]};
   const after = {header: 'Daily Activity\nAs of 1 min ago', ranks: [{rank: '1', text: 'Alex\n53 pts'}]};
-  before.text = `${before.header}\nThe schedule\nHit their minimums\n${before.ranks[0].text}\nCalls 100`;
-  after.text = `${after.header}\nSchedule\nAt minimums\n${after.ranks[0].text}\nCalls 100`;
+  before.text = `${before.header}\nThe schedule\nHIT THEIR MINIMUMS\n${before.ranks[0].text}\nCalls 100`;
+  after.text = `${after.header}\nSchedule\nAT MINIMUMS\n${after.ranks[0].text}\nCalls 100`;
   return [before, after];
 }
 

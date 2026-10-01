@@ -27,8 +27,8 @@ export function normalizeActivityPair(before, after) {
   let right = replaceOnce(after.text, after.header, '[ACTIVITY HEADER]');
   left = replaceOnce(left, 'The schedule', '[SCHEDULE]');
   right = replaceOnce(right, 'Schedule', '[SCHEDULE]');
-  left = replaceOnce(left, 'Hit their minimums', '[MINIMUMS]');
-  right = replaceOnce(right, 'At minimums', '[MINIMUMS]');
+  left = replaceOnce(left, 'HIT THEIR MINIMUMS', '[MINIMUMS]');
+  right = replaceOnce(right, 'AT MINIMUMS', '[MINIMUMS]');
   assert.ok(before.ranks.length > 0, 'fixture must exercise the approved podium ranks');
   assert.equal(after.ranks.length, before.ranks.length);
   for (let i = 0; i < before.ranks.length; i++) {
