@@ -664,11 +664,11 @@ test("the phone's own measurements survive a larger text size, and the top of th
 });
 
 test("new and used are counted off the report on every screen that shows them", () => {
-  // One reader, because three screens draw this and three copies of "prefer the
-  // report, else estimate" is three chances to disagree about the same month.
+  // One reader keeps the hero and phone consistent. The unverified browser
+  // digest writer was removed; it must not count as a third monthly reader.
   assert.ok(/const statedSplitOf = \(M\) => \{/.test(mgr), "there is one reader for the stock split");
-  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 3,
-    "and the three screens that show new and used all go through it: the hero, the phone board and the digest");
+  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 2,
+    "the hero and phone board both use the report split; the digest writer is gone");
   assert.ok(/M\.stated = \{ \.\.\.M\.stated, vehicles: stated\.vehicles \};/.test(ing),
     "a roll-up owns how many cars, but the grid still hands over how many were new");
   assert.ok(/vehicles: stated\.vehicles, day, at: nowISO/.test(ing), "and the grid files its own split with the rest");
