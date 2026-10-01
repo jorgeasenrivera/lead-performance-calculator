@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('./', import.meta.url));
-const URL = process.env.CALENDAR_PROPOSAL_URL || 'http://127.0.0.1:49217/';
+const PROPOSAL_URL = process.env.CALENDAR_PROPOSAL_URL || 'http://127.0.0.1:49217/';
 const widths = [390, 700, 701, 1280];
 const pausePaint = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 const closeRecap = async (page) => {
@@ -42,7 +42,7 @@ async function newPending(page, action) {
 async function settle(page, id, payload) { await page.evaluate(({ id, payload }) => __calendarFixture.settle(id, payload), { id, payload }); await pausePaint(page); }
 
 export async function verifyCalendarProposal(browser, engine = 'chromium') {
-  assert.equal(new globalThis.URL(URL).hostname, '127.0.0.1', 'Capture is limited to the local fixture');
+  assert.equal(new globalThis.URL(PROPOSAL_URL).hostname, '127.0.0.1', 'Capture is limited to the local fixture');
   const out = path.join(root, 'evidence', engine); await mkdir(out, { recursive: true });
   const source = JSON.parse(await readFile(path.join(root, 'source-contract.json'), 'utf8'));
   const result = { engine, sourceCommit: source.sourceCommit, managerSha256: source.files['src/Manager.jsx'], screens: [], races: [], browserErrors: [], unexpectedRequests: [], status: 'running' };
@@ -52,13 +52,14 @@ export async function verifyCalendarProposal(browser, engine = 'chromium') {
       reducedMotion: 'reduce', serviceWorkers: 'block', ...options });
     await context.route('**/*', async (route) => {
       const request = route.request(), target = new globalThis.URL(request.url());
-      if (target.origin === new globalThis.URL(URL).origin && request.method() === 'GET') return route.continue();
+      if (target.origin === new globalThis.URL(PROPOSAL_URL).origin && request.method() === 'GET') return route.continue();
       result.unexpectedRequests.push({ method: request.method(), origin: target.origin, path: target.pathname });
       return route.abort();
     });
     const page = await context.newPage();
+    active = { context, page, width };
     page.on('pageerror', (error) => result.browserErrors.push(error.message));
-    await page.goto(URL, { waitUntil: 'domcontentloaded' });
+    await page.goto(PROPOSAL_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!window.__calendarFixture);
     await page.waitForFunction(() => document.documentElement.classList.contains('manager-signal'));
     await page.locator(width <= 700 ? '.bp-num .dotnum' : '.s2-big .dotnum').first().waitFor();
@@ -162,6 +163,9 @@ export async function verifyCalendarProposal(browser, engine = 'chromium') {
     result.status = 'passed';
   } catch (error) {
     result.status = 'failed'; result.error = error.message;
+    console.error('Calendar capture failure:', JSON.stringify({ error: result.error, browserErrors: result.browserErrors,
+      screen: active?.page && !active.page.isClosed() ? await active.page.locator('body').innerText().catch(() => '') : null,
+      fixture: active?.page && !active.page.isClosed() ? await active.page.evaluate(() => window.__calendarFixture?.snapshot()).catch(() => null) : null }));
     if (active?.page && !active.page.isClosed()) await active.page.screenshot({ path: path.join(out, 'failure.png'), animations: 'disabled' }).catch(() => {});
     throw error;
   } finally {

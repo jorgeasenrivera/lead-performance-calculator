@@ -126,3 +126,8 @@ test('no source generation or held helper is normalized to make a check pass', a
   ];
   for (const fragment of fragments) { assert.ok(fragment.length > 200); assert.ok(code.includes(fragment)); }
 });
+
+test('capture module loads before browser launch without global-name collisions', async () => {
+  const capture = await import('./capture.mjs');
+  assert.equal(typeof capture.verifyCalendarProposal, 'function');
+});
