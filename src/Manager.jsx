@@ -13,6 +13,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { createClient } from "@supabase/supabase-js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { DAILY_TOTALS_UNAVAILABLE, DIGEST_RETRY_MS, createDigestReader, createDigestSelection, digestIdentity, digestState } from "../api/_digest-integrity.mjs";
 import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED } from "./SageMark.jsx";
 import {
   norm, toNum,
@@ -932,52 +933,41 @@ function verdictOf(ev, { restricted = false, inGrace = false } = {}) {
   return VERDICT.room;
 }
 
-/* ---- the daily digest, so rates have a yesterday ----
-   The board rates cannot be trended from anything already stored: the Delivery
-   Summary overwrites the month's totals on every import, and data.snapshots is
-   trimmed to a single entry. So one small row a day is kept — counts only, no
-   names, no money — and that is what "up from last week" is measured against.
-
-   The key sits UNDER lpc:store:<id>: on purpose. RLS allows exactly five
-   prefixes, and a new lpc:digest:% would have been refused with the write
-   failing quietly. As lpc:store:<id>:digest:<day> it lands on the existing
-   store policy, gated by has_store(split_part(key,':',3)) — the same rule the
-   split activity rows already ride on, so it needs no SQL change at all. */
-const digestKey = (storeId, day) => `lpc:store:${storeId}:digest:${day}`;
-
-/* The round-up and both delivery charts all want the same rows. One promise per
-   store, so opening a board does not fetch them three times. */
-const digestCache = new Map();
-
-function digestsFor(storeId) {
-  const key = storeId + ":" + today();
-  if (!digestCache.has(key)) digestCache.set(key, loadDigests(storeId).catch(() => ({})));
-  return digestCache.get(key);
-}
-
-function useDigests(storeId) {
-  const [rows, setRows] = useState(null);
-  useEffect(() => {
-    let live = true;
-    if (!storeId) { setRows(null); return; }
-    digestsFor(storeId).then((d) => { if (live) setRows(d); });
-    return () => { live = false; };
-  }, [storeId]);
-  return rows;
-}
-
-async function loadDigests(storeId) {
-  if (!supabase) return {};
+/* ---- the daily digest, held as unverified audit evidence ----
+   Visit-time month snapshots cannot establish a business day's sales. Keep
+   them in storage, but only a verified report source may supply daily values. */
+const digestReader = createDigestReader(async (storeId) => {
+  if (!supabase) throw new Error("Digest source unavailable");
   const prefix = `lpc:store:${storeId}:digest:`;
   const { data, error } = await supabase.from("app_data")
     .select("key,value").like("key", prefix + "%");
   if (error) throw error;
-  const out = {};
-  for (const row of data || []) {
-    const day = row.key.slice(prefix.length);
-    if (day && row.value) out[day] = row.value;
-  }
-  return out;
+  return data;
+});
+
+function useDigestIntegrity(storeId, dataStoreId) {
+  const day = today();
+  const [state, setState] = useState(() => digestState(storeId, day, "loading", "reading_legacy_rows"));
+  const selection = useMemo(() => createDigestSelection(digestReader, setState), []);
+  useEffect(() => {
+    let live = true, retry = null, retryUsed = false;
+    const read = async (force = false) => {
+      const result = await selection.select(storeId, dataStoreId, today(), { force });
+      if (!live) return;
+      if (result.status === "error" && !retryUsed) {
+        retryUsed = true;
+        retry = setTimeout(() => read(true), DIGEST_RETRY_MS);
+      }
+    };
+    const focus = () => { retryUsed = false; clearTimeout(retry); read(true); };
+    read();
+    window.addEventListener("focus", focus);
+    return () => { live = false; clearTimeout(retry); selection.cancel(); window.removeEventListener("focus", focus); };
+  }, [storeId, dataStoreId, day, selection]);
+  /* Effects run after paint. The render itself must reject old-store state. */
+  return digestIdentity(storeId, dataStoreId, day)
+    || (state.storeId === storeId && state.day === day ? state
+      : digestState(storeId, day, "loading", "reading_legacy_rows"));
 }
 
 async function loadPlatesOnly(key) {
@@ -11279,58 +11269,6 @@ function ruEvaluate({ config, store, data, M }) {
   return { evaluated, restricted, failBy, verdicts, nearing };
 }
 
-// Counts only. Nothing here is not already on a wall the floor walks past.
-/* The daily row. It carries the standings for the round-up, and now the three
-   channels as raw units and leads so the delivery charts have a per-day series.
-
-   Units and leads rather than the percentage, because a percentage cannot be
-   re-aggregated: the chart recomputes the rate from the two numbers, and can
-   still do so if the roster or the roll-up rule changes later. `data.months`
-   only ever holds a month-to-date total, so this row is the ONLY place a
-   day-by-day delivery figure will ever exist. Thirty days are kept, which is
-   exactly the window the charts draw. */
-function buildDigest(args) {
-  const e = ruEvaluate(args);
-  const { config, store, data, M } = args;
-  const onBoard = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-  const roster = monthRoster(data, M, (data.roster || []).filter((a) => a.roleId && onBoard.has(a.roleId)));
-  const ch = {};
-  for (const c of channelRates(M, roster)) {
-    if (c.seen) ch[c.id] = { u: +c.units.toFixed(3), l: Math.round(c.leads) };
-  }
-  /* Total units and the vehicle split, month-to-date. Stored cumulative rather
-     than daily on purpose: a missed day costs one comparison, not the series,
-     and yesterday's figure is always the difference of two rows. */
-  let u = 0, nu = null, uu = null;
-  for (const a of roster) {
-    const st = M?.stats?.[norm(a.name)];
-    if (!st) continue;
-    u += unitsOf(st);
-    if (st.newUnits != null || st.usedUnits != null) {
-      nu = (nu || 0) + (st.newUnits ?? 0);
-      uu = (uu || 0) + (st.usedUnits ?? 0);
-    }
-  }
-  /* The cumulative series prefers DriveCentric's own count for the same reason
-     the hero does: the day-by-day pace chart is read against the goal, and a
-     series built from double-credited rows overstates every point on it. The
-     stock split keeps the people's figures scaled onto the count, so the two
-     lines of the day detail cannot disagree. */
-  const stated = statedOf(M);
-  const toldSplit = statedSplitOf(M);
-  if (stated) {
-    /* The report's own New and Used rows when it carried them, and the scaled
-       people only when it did not. A digest is what the round-up and the day
-       detail read, so a stock split invented here would be a made-up figure
-       stored day after day. */
-    if (toldSplit) { nu = toldSplit.nw; uu = toldSplit.us; }
-    else if (u > 0 && nu != null) { const f = stated.deliveries / u;
-      nu = Math.round(nu * f * 10) / 10; uu = Math.round(uu * f * 10) / 10; }
-    u = stated.deliveries;
-  }
-  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch, u, nu, uu };
-}
-
 /* The digest closest to `back` days ago, so a missed day degrades to the
    nearest one either side rather than silently dropping the comparison. */
 function nearestDigest(digests, back) {
@@ -11459,12 +11397,7 @@ function buildRoundUp({ config, store, data, M, digests }) {
       d: `${daysOnFile.n} day${daysOnFile.n === 1 ? "" : "s"} of activity on file. Two days of imports and yesterday's comparison starts; two weeks and the weekly one joins it.`,
     });
   else if (!was)
-    aware.push({
-      t: "Standards aren't being compared yet",
-      d: Object.keys(digests || {}).length
-        ? "Nothing close enough to yesterday is on file, so who cleared and who slipped is being left out rather than measured against the wrong day."
-        : "Today is the first day the floor's standing was written down. From tomorrow this also shows who cleared and who slipped.",
-    });
+    aware.push({ t: DAILY_TOTALS_UNAVAILABLE, d: "" });
 
   return { improved, worsened, work, aware, trendable: daysOnFile.enough, days: daysOnFile.n, rated: !!was,
     any: improved.length + worsened.length + work.length + aware.length > 0 };
@@ -11474,9 +11407,7 @@ function buildRoundUp({ config, store, data, M, digests }) {
    first sign-in of the day, because a takeover every morning stops being a
    briefing and becomes a door. "Seen today" is per device, which is the right
    scope: it is about this person's morning, not the store's. */
-const ruWritten = new Set();
-
-// one write per store per day per session
+// Existing digest rows remain available for audit, but are no longer written by the browser.
 
 /* The date chip in the hero opens the round-up. The two belong together — the
    chip says which day it is, the round-up says what that day has done so far —
@@ -11521,7 +11452,8 @@ function RuBodyLock() {
 }
 
 function RoundUp({ config, store, data, M }) {
-  const [digests, setDigests] = useState(null);
+  const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
+  const digests = digestIntegrity.history;
   const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
     [config, store, data, M, digests]);
   const seenKey = `lpc:roundup:${store.id}:${today()}`;
@@ -11552,30 +11484,8 @@ function RoundUp({ config, store, data, M }) {
     setFull(false);
   };
 
-  // Read what's on file, then write today's row if it isn't there. The write is
-  // never allowed to matter: a failure costs tomorrow's comparison and nothing
-  // that is on screen now.
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const got = await loadDigests(store.id);
-        if (!live) return;
-        setDigests(got);
-        const stamp = store.id + ":" + today();
-        if (got[today()] || ruWritten.has(stamp)) return;
-        ruWritten.add(stamp);
-        const row = buildDigest({ config, store, data, M });
-        if (!row.ev) return;                 // nobody evaluated: nothing worth keeping
-        await saveShared(digestKey(store.id, today()), row);
-        if (live) setDigests((d) => ({ ...(d || {}), [today()]: row }));
-      } catch (e) {
-        console.error("round-up digest", e);
-        if (live) setDigests({});
-      }
-    })();
-    return () => { live = false; };
-  }, [store.id]);
+  // A browser visit cannot certify a report day. There is deliberately no
+  // digest writer here, including when an import or store selection changes.
 
   useEffect(() => {
     if (!full) return;
@@ -11673,7 +11583,7 @@ function RoundUp({ config, store, data, M }) {
                         headed with today's date while reporting yesterday's numbers is
                         the kind of small lie that costs trust in all the others. */}
                     <div className="ru-sheet-date">
-                      Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+                      {new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
                     </div>
                   </div>
                 </div>
@@ -11719,6 +11629,8 @@ function RoundUp({ config, store, data, M }) {
                   })()}
                 </div>
               )}
+
+              <div className="ru2-pace" data-daily-unavailable="recap">{DAILY_TOTALS_UNAVAILABLE}</div>
 
               {/* ---- yesterday's business: plain numbers ---- */}
               {(ru2.soldY || ru2.close.length > 0) && (
@@ -16780,7 +16692,7 @@ function flowMarks(days) {
    the daily digests, so the lines rise and fall day by day the way the old card
    did. The viewBox is built at the measured width of the card, so nothing is
    stretched: a pixel of stroke is a pixel of stroke at any size. Falls back to
-   the month documents, dashed, until two daily readings are on file. */
+   the month documents. Unverified daily readings are not used. */
 function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   const wrapRef = useRef(null);
   const [w, setW] = useState(560);
@@ -16808,7 +16720,7 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   /* Three points before there is a line (five-second pass, item 9). A frame
      with two dots stops the eye and says nothing. */
   const shown = daily ? series[0].pts.filter((p) => p.pct != null).length : (moTrail || []).length;
-  if (shown < 3) return <div className="s2-none s2-notyet">The month's line starts once three days have figures.</div>;
+  if (shown < 3) return <div className="s2-none s2-notyet">Monthly history starts once three months have figures.</div>;
 
   const SER = CHANNEL_SERIES;
   const ids = ["internet", "phone", "showroom"];
@@ -16884,7 +16796,7 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
             return <React.Fragment key={id}> · {CHANNELS[id]} {v == null ? "–" : Math.round(v * 10) / 10 + "%"}</React.Fragment>;
           })}</>
         : daily ? "Day by day, last 30 days · faint ticks are Mondays · click a day to see it"
-        : "Month over month until two daily readings are on file · click a month to see it"}
+        : "Month over month · click a month to see it"}
     </div>
   </>);
 }
@@ -17017,7 +16929,7 @@ const bpFirstTag = (a, strengths) => {
   return [...l, ...st, ...sk].filter(Boolean)[0] || null;
 };
 
-function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach }) {
+function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach, query = "" }) {
   const M = data.months?.[ym()];
   const thr = normThresholds(store.thresholds);
   const restrictions = data.restrictions || {};
@@ -17072,7 +16984,8 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     if (statedM && known > 0) { const f = statedM.deliveries / known; nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10; }
     return { seen, nw, us, known, newPct, usedPct };
   })();
-  const digests = useDigests(store.id);
+  const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
+  const digests = digestIntegrity.history;
   const dayUnits = useMemo(() => {
     if (!digests) return {};
     const keys = Object.keys(digests).sort();
@@ -17175,13 +17088,15 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const [goalDraft, setGoalDraft] = useState("");
   const close = useCallback(() => setPop(null), []);
   const limitCount = people.filter((p) => p.atLimit).length;
+  const q = norm(query);
   const rows = useMemo(() => {
     let list = people.filter((p) => (limitOnly ? p.atLimit : (!roleFilter || p.a.roleId === roleFilter)));
+    if (q) list = list.filter((p) => norm(p.a.name).includes(q));
     if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && (d.state === "bad" || d.state === "warn"); });
     if (drill && drill.kind === "channel") list = list.slice().sort((x, y) => ((y.st?.[drill.id + "Pct"] ?? -1) - (x.st?.[drill.id + "Pct"] ?? -1)));
     else list = list.slice().sort((x, y) => y.units - x.units || x.a.name.localeCompare(y.a.name));
     return list;
-  }, [people, roleFilter, limitOnly, drill]);
+  }, [people, roleFilter, limitOnly, drill, q]);
 
   const goalMonth = goalMonthState(store, ym());
   const saveGoal = async (draft = goalDraft) => {
@@ -17244,7 +17159,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             <div className="bp-lgl"><span>{new Date(pts[0].key + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}</span><span>{new Date(last.key + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}</span></div>
             <div className="bp-lgleg"><span><i style={{ background: col }} />{c.label}</span><span className="bp-dim">dashed = target</span></div>
           </div>
-        ) : <p className="fr-empty">{pctV == null ? "No figures yet this month." : `${fmtPct(c.pct)} so far. The line draws once two days are on file.`}</p>}
+        ) : <p className="fr-empty">{pctV == null ? "No figures yet this month." : `${fmtPct(c.pct)} this month. Daily history unavailable.`}</p>}
         <div className="bp-defn">Units delivered against the {c.label.toLowerCase()} leads worked, month to date.</div>
         <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { setDrill({ kind: "channel", id: c.id, label: c.label + " closing" }); close(); }}>By person</button></div>
       </>);
@@ -17255,6 +17170,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       const need = short != null && pace.daysLeft > 0 ? Math.ceil((short / pace.daysLeft) * 10) / 10 : null;
       return (<>
         {hd("Sold by day", <><span className="fr-st in">{new Date().toLocaleDateString("en-US", { month: "long" })}</span><span className="fr-w">day {mcal.dNow} of {mcal.dim}</span></>)}
+        <p className="fr-empty" data-daily-unavailable="phone-calendar">{DAILY_TOTALS_UNAVAILABLE}</p>
         <div className="bp-swg">
           {Array.from({ length: mcal.off }, (_, i) => <span key={"e" + i} className="bp-e" />)}
           {Array.from({ length: mcal.dim }, (_, i) => {
@@ -17275,7 +17191,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           {split.seen && split.known > 0 && !pace.tooEarly && (
             <div className="bp-ln">By stock, at today's mix: new pace <b className="bp-sm">{Math.round(pace.projected * split.newPct)}</b> · used pace <b className="bp-sm">{Math.round(pace.projected * split.usedPct)}</b></div>
           )}
-          <div className="bp-tiny">{pace.daysDone} of {pace.daysAll} days counted · through yesterday</div>
+          <div className="bp-tiny">Pace: {pace.daysDone} of {pace.daysAll} selling days elapsed</div>
         </div>
         {canSetGoal && (
           <div className="fr-acts">
@@ -17307,6 +17223,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       return (<>
         {hd(new Date().toLocaleDateString("en-US", { month: "long" }) + " at a glance", <><span className="fr-w">{pace.daysLeft} selling {pace.daysLeft === 1 ? "day" : "days"} left</span></>)}
         <div className="bp-cw">
+          <div data-daily-unavailable="phone-best-day">{DAILY_TOTALS_UNAVAILABLE}</div>
           {!pace.tooEarly && pace.goal && pace.short > 0 && pace.daysLeft > 0 && <div><PixIcon glyph="bolt" size={12} style={{ color: "#C98A00" }} /><span>Need <b>{(Math.round(pace.needPerDay * 10) / 10).toFixed(1)}</b> a day the rest of the way</span></div>}
           {mcal.best && <div><PixIcon glyph="trophy" size={12} style={{ color: "#C99700" }} /><span>Best day so far: {new Date(mcal.best.d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <b>{fmtNum(mcal.best.u)}</b> units</span></div>}
           <div><PixIcon glyph="calendar" size={12} style={{ color: "var(--p2)" }} /><span><b>{mcal.satsLeft}</b> {mcal.satsLeft === 1 ? "Saturday" : "Saturdays"} left</span></div>
@@ -17746,7 +17663,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   })();
 
   /* ---- The redesigned hero pulls a few more threads ---- */
-  const digests = useDigests(store.id);
+  const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
+  const digests = digestIntegrity.history;
   // per-day units out of the cumulative digest trail; a day only appears when
   // both its row and the one before carry a month total to difference
   const dayUnits = useMemo(() => {
@@ -17976,7 +17894,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   {vehicleSplit.seen && vehicleSplit.known > 0 && !storePace.tooEarly && (
                     <div className="bw-desc">By stock, at today's mix: new pace <b>{Math.round(storePace.projected * vehicleSplit.newPct)}</b> · used pace <b>{Math.round(storePace.projected * vehicleSplit.usedPct)}</b></div>
                   )}
-                  <div className="bw-desc">{storePace.daysDone} of {storePace.daysAll} days counted · through yesterday</div>
+                  <div className="bw-desc">Pace: {storePace.daysDone} of {storePace.daysAll} selling days elapsed</div>
                 </BloopWin>
               </div>
             )}
@@ -17987,7 +17905,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   <i className="us" style={{ flex: Math.max(vehicleSplit.us, 0.01) }} />
                 </div>
                 <div className="s2-split-lbl"><span><b>{fmtNum(vehicleSplit.nw)}</b> new</span><span><b>{fmtNum(vehicleSplit.us)}</b> used</span></div>
-                {Object.keys(dayUnits).length > 0 && (
+                {(
                   <BloopWin cls="dn s2-salewin">
                     <div className="bw-title">Sold by day · {new Date().toLocaleDateString("en-US", { month: "long" })}</div>
                     <div className="s2-sw-grid">
@@ -18007,7 +17925,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     </div>
                     <div className="s2-detail">{dayPick && dayUnits[dayPick]
                       ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold{dayUnits[dayPick].nu != null ? <> · {fmtNum(dayUnits[dayPick].nu)} new / {fmtNum(dayUnits[dayPick].uu)} used</> : null}</>
-                      : "Click a day to see it"}</div>
+                      : DAILY_TOTALS_UNAVAILABLE}</div>
                   </BloopWin>
                 )}
               </div>
@@ -18182,11 +18100,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   <div className="s2-cw"><PixIcon glyph="doc" size={11} style={{ color: "#8B93A2" }} />
                     <span>Last import: <b>{new Date(lastImport.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</b></span></div>
                 )}
-                <div className="s2-detail">{dayPick
+                <div className="s2-detail" data-daily-unavailable="desktop-day-detail">{dayPick
                   ? (dayUnits[dayPick] && dayUnits[dayPick].u != null
                     ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold</>
-                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · no day record</>)
-                  : "Click a day dot to see it"}</div>
+                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {DAILY_TOTALS_UNAVAILABLE}</>)
+                  : DAILY_TOTALS_UNAVAILABLE}</div>
               </div>
             </div>
           </div>
