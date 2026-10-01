@@ -52,7 +52,7 @@ export function fixtureEntry() {
   }
   return `import React, {useState} from "react";
 import {createRoot} from "react-dom/client";
-import {BoardRoomPhone, StoreHero, Board, CheckOutTracker} from "./Manager.jsx";
+import {AppShell, BoardRoomPhone, StoreHero, Board, CheckOutTracker} from "./Manager.jsx";
 import {Style, DEFAULT_TIERS, usePhoneLayout} from "./LeadPerformanceCalculator.jsx";
 const seed = ${JSON.stringify({ data: demo.storeData, store: demo.storeConfig })};
 const stores = [0,1].map(i=>({...seed.store,id:i?'store-b':'store-a',name:i?'Fictional Store B':'Fictional Store A'}));
@@ -63,14 +63,18 @@ const config={stores,roles:[{id:'sales',name:'Sales Associate',onBoard:true,coac
 const noop=()=>{};
 function Fixture(){const [selected,setSelected]=useState(0),[loaded,setLoaded]=useState(0),[activity,setActivity]=useState(false),[role,setRole]=useState('manager');const phone=usePhoneLayout();
   const props={config,store:stores[selected],data:data[loaded],session:{role,name:'Fictional Tester'},canSetGoal:false,onSaveConfig:noop,onSetRestriction:noop,onCoach:noop,onGoTab:noop,onFilter:noop,onMove:noop,onChange:noop,readOnly:true};
-  return <><Style/><header style={{padding:12,background:'#fff',display:'flex',gap:12,flexWrap:'wrap'}}><b>Fictional approval study</b>
+  return <AppShell session={props.session} isAdmin={role==='admin'} appModule="performance"
+    onSignOut={noop} onReplayIntro={noop} onHelp={noop} onToolChange={noop} onImport={noop}
+    navItems={[]} navValue={activity?'activity':'dashboard'} navOnChange={noop}
+    storeData={props.data} storeName={props.store.name} brand={props.store.brand}>
+  <header style={{padding:12,background:'#fff',display:'flex',gap:12,flexWrap:'wrap'}}><b>Fictional approval study</b>
     <button id="store-a" onClick={()=>{setSelected(0);setLoaded(0)}}>Store A</button><button id="store-b" onClick={()=>{setSelected(1);setLoaded(1)}}>Store B</button>
     <button id="mismatch" onClick={()=>{setSelected(1);setLoaded(0)}}>B waiting on data</button><button id="resolve" onClick={()=>setLoaded(selected)}>Resolve data</button>
     <button id="activity" onClick={()=>setActivity(x=>!x)}>{activity?'Performance':'Daily Activity'}</button>
     <select aria-label="Fictional viewer role" value={role} onChange={e=>setRole(e.target.value)}><option>manager</option><option>admin</option></select>
   </header><main className="page" style={{padding:20}} data-fixture-store={stores[selected].id}>
     {activity?<CheckOutTracker {...props}/>:phone?<BoardRoomPhone {...props}/>:<><StoreHero {...props}/><Board {...props}/></>}
-  </main></>;
+  </main></AppShell>;
 }
 createRoot(document.getElementById('root')).render(<Fixture/>);`;
 }

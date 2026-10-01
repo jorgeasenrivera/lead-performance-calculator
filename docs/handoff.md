@@ -591,6 +591,19 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X37 · Signal integrity harness repair, X18, in progress.**
+
+Dot's review of #459 correctly found stale calendar selectors and a fixture
+that bypassed AppShell. The repair mounts the real shell in both immutable
+before and checked-in after builds, verifies Signal ownership and stylesheet,
+and opens the actual schedule control at compact and full desktop widths.
+Activity text allows only counted heading, schedule, minimum and rank-rendering
+substitutions. Names, figures, freshness and rank associations stay protected.
+All 860 local tests and both fixture builds pass, as does the production build.
+Chromium and WebKit full browser evidence is still pending. No production UI,
+threshold, timeout, calculation or backend change. Performance work stays paused.
+
+
 **H-X36 · X11: approved Signal production port needs a new read.**
 
 [Production PR #459](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/459), draft pending fresh CI and review.

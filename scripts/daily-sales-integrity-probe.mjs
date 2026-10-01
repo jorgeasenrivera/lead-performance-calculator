@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeActivityPair } from "./daily-sales-integrity-copy.mjs";
 
 const BEFORE = process.env.DAILY_BEFORE_URL || "http://127.0.0.1:49216/";
 const AFTER = process.env.DAILY_AFTER_URL || "http://127.0.0.1:49215/";
@@ -27,6 +28,13 @@ const waitForReads = async (reads, count) => {
   assert.ok(reads.length >= count, "the actual component must retry its failed digest request");
 };
 const monthly = (page, phone) => page.locator(phone ? ".bp-num .dotnum" : ".s2-big .dotnum").first().getAttribute("aria-label");
+const activitySnapshot = async (page) => ({
+  text: await page.locator('main').innerText(),
+  header: await page.locator('main .s2-head .s2-idtx').innerText(),
+  ranks: await page.locator('main .da-pod, main .da-lbrow').evaluateAll(nodes => nodes
+    .filter(node => node.getClientRects().length)
+    .map(node => ({ text: node.innerText, rank: node.querySelector('.da-medal .dotnum')?.getAttribute('aria-label') || node.querySelector('.da-medal')?.textContent.trim() }))),
+});
 const noFalseClaims = async (page) => {
   const text = await page.locator("body").innerText();
   assert.ok(!/New sold yesterday|Used sold yesterday|Best day so far|PRIVATE_DIAGNOSTIC/.test(text), "no unsupported count or private flag is visible");
@@ -66,6 +74,11 @@ async function fixture(browser, url, mode = "legacy", { holdA = false } = {}) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.locator(".s2-big .dotnum").first().waitFor({ state: "visible", timeout: 30000 });
   await page.getByRole("dialog", { name: "Your round-up", exact: true }).waitFor({ state: "visible" });
+  if (url === AFTER) {
+    assert.equal(await page.locator('html.manager-signal').count(), 1, 'real AppShell owns the Signal material');
+    assert.equal(await page.locator('.sg-schedule').count(), 1);
+    assert.equal(await page.locator('.sg-schedule').evaluate(node => getComputedStyle(node).position), 'relative', 'the real Signal stylesheet is active');
+  }
   return { context, page, reads, mutations, errors, releaseA };
 }
 
@@ -94,7 +107,7 @@ export async function verifyDailySalesIntegrity(browser) {
     await capture(before.page, "before-calendar-phone");
     await before.page.getByRole("button", { name: "Close", exact: true }).click();
     await before.page.locator("#activity").click();
-    result.preservation.beforeActivity = await before.page.locator("main").innerText();
+    result.preservation.beforeActivity = await activitySnapshot(before.page);
     result.preservation.beforeDailyNumbers = await before.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     assert.ok(result.preservation.beforeDailyNumbers.length >= 2 && result.preservation.beforeDailyNumbers.some((n) => Number(n) > 0), "Daily Activity fixture must contain real nonzero calls and videos");
     await before.context.close();
@@ -129,16 +142,20 @@ export async function verifyDailySalesIntegrity(browser) {
         await after.page.getByRole("button", { name: "Close", exact: true }).click();
         assert.equal(await monthly(after.page, true), "61");
       } else {
-        // The existing compact desktop layout hides the right-hand calendar
-        // at 860px. Verify that boundary, then exercise its stock/day popup.
-        if (width > 860) {
-          await after.page.locator(".s2-mcal").hover();
+        // Signal joins calendar and roster behind the actual schedule control,
+        // including compact desktop. Keep the unavailable-day assertion.
+        {
+          const schedule = after.page.getByRole('button', { name: "Today's schedule and month details", exact: true });
+          await schedule.click();
+          assert.equal(await schedule.getAttribute('aria-expanded'), 'true');
           await after.page.locator('[data-daily-unavailable="desktop-day-detail"]').waitFor({ state: "visible" });
-          await after.page.locator(".s2-mc-grid i:not(.e)").first().click();
-          await after.page.locator(".s2-calwin .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
-          assert.equal((await after.page.locator(".s2-calwin").innerText()).split(UNAVAILABLE).length - 1, 1, "one quiet unavailable line in the calendar");
+          await after.page.locator(".sg-schedule .s2-mc-grid i:not(.e)").first().click();
+          await after.page.locator(".sg-schedule-month .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
+          assert.equal((await after.page.locator(".sg-schedule-month").innerText()).split(UNAVAILABLE).length - 1, 1, "one quiet unavailable line in the calendar");
           await capture(after.page, `after-calendar-${width}`);
-        } else assert.equal(await after.page.locator(".s2-mcal").isVisible(), false, "the existing compact calendar rule is preserved");
+          await schedule.press('Escape');
+          await after.page.locator('.sg-schedule-details').waitFor({ state: 'hidden' });
+        }
         await after.page.locator(".s2-splitwrap").hover();
         await after.page.locator(".s2-salewin:visible").first().waitFor({ state: "visible" });
         assert.ok((await after.page.locator(".s2-salewin:visible .s2-sw-grid b").allTextContents()).every((n) => n === "·"));
@@ -160,10 +177,11 @@ export async function verifyDailySalesIntegrity(browser) {
     }
     await after.page.setViewportSize({ width: 390, height: 844 });
     await after.page.locator("#activity").click();
-    result.preservation.afterActivity = await after.page.locator("main").innerText();
+    result.preservation.afterActivity = await activitySnapshot(after.page);
     result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     assert.deepEqual(result.preservation.afterDailyNumbers, result.preservation.beforeDailyNumbers, "working daily calls and video counts remain exact");
-    assert.equal(result.preservation.afterActivity, result.preservation.beforeActivity, "existing Daily Activity display is unchanged");
+    const [beforeActivity, afterActivity] = normalizeActivityPair(result.preservation.beforeActivity, result.preservation.afterActivity);
+    assert.equal(afterActivity, beforeActivity, "Daily Activity names, figures, associations and controls remain exact outside approved presentation substitutions");
     assert.deepEqual(after.mutations, [], "opening, resizing and reopening do not write digests");
     assert.deepEqual(after.errors, []);
     await after.context.close();

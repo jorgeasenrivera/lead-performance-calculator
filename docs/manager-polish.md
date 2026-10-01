@@ -45,3 +45,16 @@ an incomplete final row. This port does not guess or reconstruct unrelated rows.
 
 Co-Authored-By: Codex <noreply@openai.com>
 Codex-Thread: 01a0a02d-3552-7a32-bbb8-585438151b00
+
+### Integrity harness repair, 1 October
+
+Dot found that the integrity fixture bypassed the actual manager shell and
+waited for the retired calendar wrapper. X18 repairs those test mechanisms,
+without changing production pixels or business code. Both fixtures now mount
+AppShell. The after probe checks the real stylesheet and current schedule
+control. Daily Activity comparison permits only enumerated, counted approved
+copy and rank-rendering differences, with separate regression cases for changed
+numbers, names, freshness, duplicate copy and rank reassociation.
+
+All 860 tests pass. Production and immutable before/after fixture builds pass.
+Browser integrity checks in Chromium and WebKit are pending, not certified.
