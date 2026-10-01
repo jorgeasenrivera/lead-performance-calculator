@@ -560,7 +560,7 @@ readers only because the removed digest builder was the third. No core/auth,
 C103, ingestion, database or C108 ground changes. Refresh or reopen is required:
 an old client can still run its old writer until it loads the new bundle.
 
-All 846 tests and the production plus before/after builds pass locally. An
+All 847 tests and the production plus before/after builds pass locally. An
 independent review proved exact equality with the approved proposal transform
 and found no blockers. Exact-head Chromium/WebKit and normal required checks
 must pass before merge. Reconstruction remains separate. X13 releases its

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { DAILY_TOTALS_UNAVAILABLE, createDigestReader, createDigestSelection,
   digestIdentity, inspectLegacyDigests } from "../api/_digest-integrity.mjs";
-import { BEFORE_COMMIT, BEFORE_MANAGER_BLOB, verifyBeforeManager, decisions, proposalPage } from "../scripts/daily-sales-integrity-proposal.mjs";
+import { BEFORE_COMMIT, BEFORE_MANAGER_BLOB, verifyBeforeManager, decisions, proposalPage, fixtureEntry } from "../scripts/daily-sales-integrity-proposal.mjs";
 
 const record = (day, u, rest = {}, store = "store-a") => ({
   key: `lpc:store:${store}:digest:${day}`, value: { d: day, u, nu: u / 2, uu: u / 2, ...rest },
@@ -199,4 +199,17 @@ test("a substituted before fixture is rejected instead of disguising the regress
   assert.throws(() => verifyBeforeManager("not the reviewed source"), /immutable reviewed blob/);
   assert.throws(() => verifyBeforeManager(fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8")),
     /immutable reviewed blob/, "the protected after source cannot masquerade as before");
+});
+
+test("before and after activity upload timestamps are pinned to their fictional report days", () => {
+  const entry = fixtureEntry();
+  const seed = JSON.parse(entry.match(/^const seed = (.+);$/m)[1]);
+  let rows = 0;
+  for (const [day, records] of Object.entries(seed.data.activity)) {
+    for (const record of Object.values(records)) {
+      assert.equal(record.uploadedAt, day + "T16:00:00Z");
+      rows++;
+    }
+  }
+  assert.ok(rows > 100, "the preservation fixture includes nonempty multi-day activity");
 });

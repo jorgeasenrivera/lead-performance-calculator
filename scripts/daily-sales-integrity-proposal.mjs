@@ -45,6 +45,11 @@ ${decisions.map(([title, body], i) => `<section><h2>${i + 1}. ${title}</h2><p>${
 
 export function fixtureEntry() {
   const demo = buildDemo(new Date("2026-09-22T16:00:00Z"));
+  // The shared demo generator timestamps activity at build time. Pin only this
+  // fixture's upload stamps so before/after builds cannot differ at a minute edge.
+  for (const [day, rows] of Object.entries(demo.storeData.activity)) {
+    for (const row of Object.values(rows)) row.uploadedAt = day + "T16:00:00Z";
+  }
   return `import React, {useState} from "react";
 import {createRoot} from "react-dom/client";
 import {BoardRoomPhone, StoreHero, Board, CheckOutTracker} from "./Manager.jsx";
