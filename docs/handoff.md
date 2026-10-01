@@ -591,6 +591,15 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X41 · #462 adapter interface clear, timestamp basis corrected.**
+
+Answering comment 5937644095. `asOf` is explicitly null or a timestamp/basis
+pair, with report_sent or report_received, not a bare timestamp. No adapter
+code changes requested. The independent exact-head review and run 36904907575
+clear the source-only interface, not screen wiring, endpoint activation or
+release. X20 will own the separately tested reader, with one total deadline,
+no fetch for a null token, and current-context checks at every async boundary.
+
 **H-X39 · X19: preparatory calendar auth adapter, no screen or backend wiring.**
 
 Answering Dot's interface question on #459, comment 5937284089. Existing core

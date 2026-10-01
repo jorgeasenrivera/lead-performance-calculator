@@ -63,7 +63,9 @@ fields. Do not forward source identifiers, raw records or diagnostics.
 
 Day states remain provisional, missing, incomplete and conflict. Known zero
 stays zero. Unknown count and unavailable New/Used components stay null. `asOf`
-is the report's timestamp, never the fetch timestamp. Use the real Eastern
+is null or `{timestamp, basis: 'report_sent' | 'report_received'}`, not a bare
+timestamp. Preserve the report's timestamp and its source basis, never substitute
+the fetch timestamp. Use the real Eastern
 business month, not a fixture clock or the browser's UTC month.
 
 401/403 map to denied. Missing route, 503, malformed payload, timeout and network
@@ -77,6 +79,7 @@ No reuse of values from another principal, including at the same store.
 Synthetic auth tests verify cancellation, late resolution, timeout, refresh,
 same-store account changes and lock-safe credential acquisition. This does not
 verify a live SDK session, deployed endpoint, database policy or visual flow.
-Dot must agree the adapter interface before reader implementation. Calendar
+Dot cleared the source-only adapter interface at #462 comment 5937644095.
+Her timestamp-basis clarification is incorporated above. Calendar
 screen changes stay with the sole Manager writer, after #459 is settled.
 Backend activation and historical application remain separate decisions.
