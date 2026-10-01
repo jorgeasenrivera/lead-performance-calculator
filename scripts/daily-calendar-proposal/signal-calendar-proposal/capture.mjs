@@ -33,6 +33,16 @@ async function expectCount(page, width, value) {
     return el?.textContent === String(value);
   }, { phone: width <= 700, value });
 }
+async function assertDetailVisible(page, width) {
+  const boxes = await detail(page, width).evaluate((element) => {
+    const panel = element.closest('.sg-schedule-details,.fr-sheet');
+    const r = element.getBoundingClientRect(), p = panel.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, panelTop: p.top, panelBottom: p.bottom, width: innerWidth, height: innerHeight };
+  });
+  assert.ok(boxes.top >= Math.max(0, boxes.panelTop) - 1 && boxes.bottom <= Math.min(boxes.height, boxes.panelBottom) + 1,
+    `Selected report detail must be inside both the popup and viewport: ${JSON.stringify(boxes)}`);
+  assert.ok(boxes.left >= 0 && boxes.right <= boxes.width, 'Selected report detail must not overflow horizontally');
+}
 async function newPending(page, action) {
   const before = await page.evaluate(() => __calendarFixture.transport.requests.length);
   await action();
@@ -77,12 +87,14 @@ export async function verifyCalendarProposal(browser, engine = 'chromium') {
       const { context, page } = await start(width);
       await openCalendar(page, width);
       await selectDay(page, width, '2026-09-18'); await expectCount(page, width, 7);
+      await assertDetailVisible(page, width);
       assert.match(await detail(page, width).innerText(), /Provisional/);
       assert.match(await detail(page, width).innerText(), /6:00 PM EDT/);
       assert.equal(await monthly(page, width), '61');
       await capture(page, width, 'positive');
       for (const [date, label, count] of [['2026-09-19','zero',0], ['2026-09-20','split-unavailable',5], ['2026-09-21','receipt-only',3]]) {
         await selectDay(page, width, date); await expectCount(page, width, count);
+        await assertDetailVisible(page, width);
         const text = await detail(page, width).innerText();
         if (label === 'split-unavailable') assert.match(text, /breakdown unavailable/);
         if (label === 'receipt-only') { assert.match(text, /Report received/); assert.doesNotMatch(text, /Report sent/); }
@@ -108,6 +120,21 @@ export async function verifyCalendarProposal(browser, engine = 'chromium') {
       // Keyboard dismissal uses the actual phone popup or actual Signal schedule.
       await page.keyboard.press('Escape');
       await page.locator(width <= 700 ? '.fr-pop' : '.sg-schedule-details').waitFor({ state: 'hidden' });
+      assert.equal(await page.evaluate((phone) => phone
+        ? document.activeElement === document.querySelector('.bp-l2')
+        : document.querySelector('.sg-schedule')?.contains(document.activeElement), width <= 700), true,
+      'Dismissal must leave keyboard focus on the opener or retained schedule control');
+      if (width > 700) {
+        await page.locator('.s2-splitwrap').focus();
+        const stock = page.locator('.s2-salewin.port');
+        await stock.waitFor({ state: 'visible' });
+        await stock.locator('[data-report-date="2026-09-19"]').click();
+        await page.waitForFunction(() => getComputedStyle(document.querySelector('.s2-salewin.port')).opacity === '1');
+        assert.equal(await stock.locator('[data-report-count]').innerText(), '0');
+        await capture(page, width, 'stock-popup-zero');
+        await page.locator('.sg-schedule-trigger').focus();
+        await page.keyboard.press('Escape');
+      }
       assert.deepEqual(await page.evaluate(() => __blockedFixtureRequests), []);
       await context.close();
     }
@@ -157,7 +184,13 @@ export async function verifyCalendarProposal(browser, engine = 'chromium') {
         const sizes = text.map((el) => [el, parseFloat(getComputedStyle(el).fontSize)]);
         for (const [el, size] of sizes) el.style.fontSize = `${size * 2}px`;
       });
-      await capture(page, width, 'large-text-reduced-motion'); await context.close();
+      await capture(page, width, 'large-text-reduced-motion');
+      await detail(page, width).scrollIntoViewIfNeeded();
+      await assertDetailVisible(page, width);
+      await capture(page, width, 'large-text-detail');
+      await page.keyboard.press('Escape');
+      await page.locator(width <= 700 ? '.fr-pop' : '.sg-schedule-details').waitFor({ state: 'hidden' });
+      await context.close();
     }
     assert.deepEqual(result.browserErrors, []); assert.deepEqual(result.unexpectedRequests, []);
     result.status = 'passed';

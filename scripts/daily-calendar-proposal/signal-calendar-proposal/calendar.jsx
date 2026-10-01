@@ -8,7 +8,7 @@ export const formatReportDay = (date) => new Intl.DateTimeFormat('en-US', { time
 const formatTime = (timestamp) => new Intl.DateTimeFormat('en-US', { timeZone: ZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(timestamp));
 const known = (day) => day?.status === 'provisional' && Number.isFinite(day.count);
 
-export function useReportedMonth(storeId, loadedStoreId, active = true) {
+export function useReportedMonth(storeId, loadedStoreId, active = true, restoreFocusSelector = null) {
   const fixture = useContext(CalendarFixtureContext);
   if (!fixture) throw new Error('Reported calendar may run only inside the isolated fixture context');
   const [state, setState] = useState({ phase: 'idle', days: [] });
@@ -17,6 +17,11 @@ export function useReportedMonth(storeId, loadedStoreId, active = true) {
   if (!reader.current) reader.current = createMonthReader({ fetch: fixture.fetch, onChange: setState, timeoutMs: 5000 });
   const revision = `${fixture.revision}:${retry}`;
   const identityOK = storeId === loadedStoreId;
+  useLayoutEffect(() => {
+    if (!active || !restoreFocusSelector) return;
+    const trigger = document.querySelector(restoreFocusSelector);
+    return () => { if (trigger?.isConnected) trigger.focus({ preventScroll: true }); };
+  }, [active, restoreFocusSelector]);
   useLayoutEffect(() => {
     if (!active || !identityOK) { reader.current.cancel(); return; }
     reader.current.select({ storeId, month: fixture.month, revision });
@@ -38,9 +43,29 @@ function stateWords(report) {
   return 'No report available';
 }
 export function ReportedDayDetail({ report, date }) {
+  const detailRef = useRef(null);
   const selected = date?.startsWith(`${report.month}-`) ? date : fallbackDate(report.month);
   const day = report.phase === 'ready' ? report.days.find((item) => item.date === selected) : null;
-  return <section className="rd-detail s2-detail" data-reported-detail={selected} data-report-phase={report.phase}>
+  useLayoutEffect(() => {
+    const element = detailRef.current, panel = element?.closest('.sg-schedule-details');
+    if (!panel) return;
+    const fit = () => {
+      const anchor = panel.parentElement.getBoundingClientRect();
+      const below = innerHeight - anchor.bottom - 16, above = anchor.top - 16;
+      const upward = below < 180 && above > below;
+      panel.style.top = upward ? 'auto' : '100%';
+      panel.style.bottom = upward ? '100%' : 'auto';
+      panel.style.maxHeight = `${Math.max(72, Math.min(innerHeight * .65, upward ? above : below))}px`;
+      // Selecting a date should reveal its report, without scrolling the page.
+      if (date) {
+        const bottom = element.getBoundingClientRect().bottom - panel.getBoundingClientRect().top + panel.scrollTop;
+        panel.scrollTop = Math.max(0, bottom - panel.clientHeight + 16);
+      }
+    };
+    fit(); window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [selected, report.phase, date]);
+  return <section ref={detailRef} className="rd-detail s2-detail" data-reported-detail={selected} data-report-phase={report.phase}>
     <div className="rd-date">{formatReportDay(selected)}</div>
     {known(day) ? <>
       <div className="rd-value"><strong data-report-count>{day.count}</strong><span>reported {day.count === 1 ? 'delivery' : 'deliveries'}</span><span className="rd-provisional">Provisional</span></div>
@@ -58,7 +83,7 @@ export function ReportedCalendarPanel({ report, variant = 'phone', date, onSelec
   const { offset, length } = calendarDays(report.month);
   const days = new Map((report.phase === 'ready' ? report.days : []).map((day) => [day.date, day]));
   return <div className={`rd-calendar rd-${variant}`} data-reported-calendar={variant} data-report-store={report.storeId} data-report-month={report.month}>
-    <div className="rd-caption"><span>{formatReportMonth(report.month)}</span><span>Printed store count</span></div>
+    <div className="rd-caption"><span>{formatReportMonth(report.month)}</span>{variant !== 'phone' && <span>Printed store count</span>}</div>
     <div className="rd-week" aria-hidden="true">{['S','M','T','W','T','F','S'].map((label, i) => <span key={i}>{label}</span>)}</div>
     <div className={variant === 'phone' ? 'bp-swg rd-grid' : 's2-sw-grid rd-grid'} aria-label="Reported deliveries by day">
       {Array.from({ length: offset }, (_, i) => <span key={`blank-${i}`} className="rd-empty" aria-hidden="true" />)}

@@ -17,7 +17,7 @@ export function transformManager(source) {
   };
   let phone = source.slice(phoneStart, desktopStart);
   phone = replaceOne(phone, '  const [pop, setPop] = useState(null);',
-    '  const [pop, setPop] = useState(null);\n  const reportDaily = useReportedMonth(store.id, data.__storeId, pop?.k === "pace" || pop?.k === "units");', 'phone request lifecycle');
+    '  const [pop, setPop] = useState(null);\n  const reportDaily = useReportedMonth(store.id, data.__storeId, pop?.k === "pace" || pop?.k === "units", pop?.k === "units" ? ".bp-l1" : ".bp-l2");', 'phone request lifecycle');
   phone = replaceOne(phone,
     '{hd("Sold by day", <><span className="fr-st in">{new Date().toLocaleDateString("en-US", { month: "long" })}</span><span className="fr-w">day {mcal.dNow} of {mcal.dim}</span></>)}',
     '{hd("Reported deliveries", <span className="fr-w">Printed store count</span>)}', 'phone metric title');

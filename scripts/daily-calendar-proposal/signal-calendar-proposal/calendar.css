@@ -35,6 +35,7 @@ html.manager-signal .sg-schedule .rd-mini button[aria-pressed=true]{background:#
 html.manager-signal .sg-schedule .rd-mini .e{opacity:0;pointer-events:none}
 .s2-salewin:has(.rd-calendar){width:min(340px,calc(100vw - 32px));padding:14px 0}
 .s2-salewin:has(.rd-calendar)>.bw-title{padding:0 16px}
+.s2-salewin.port:has(.rd-calendar):focus-within{opacity:1;pointer-events:auto;transform:translate(-50%,0) scale(1)}
 .rd-desktop .rd-grid .rd-day{min-height:40px}
 .fixture-toolbar{padding:14px 20px;background:#fffdf4;border-bottom:1px solid #cbd3c5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font:500 12px/1.4 system-ui;color:#234939}
 .fixture-toolbar label{display:flex;align-items:center;gap:5px}.fixture-toolbar select,.fixture-toolbar button,.fixture-toolbar input{min-height:34px;padding:5px 8px;border:1px solid #bfccb6;background:#fffdf4;color:#234939;border-radius:7px;font:inherit}
