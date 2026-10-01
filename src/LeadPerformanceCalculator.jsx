@@ -4959,13 +4959,13 @@ function HelpPanel({ config, who, store, context, figures, onClose, dark = false
 
 /* Where the phone app lives, once it does. Empty until then, and the Help row
    says the app is coming instead of pointing anywhere. */
-const APP_STORE_LINKS = { ios: "", android: "" };
+const APP_STORE_LINKS = { ios: "https://apps.apple.com/app/id6808329497", android: "" };
 /* The salesperson's screens live in the app, never on a website (C103, Jorge,
    29 September). Off until the App Store release, which is when the app is
    reachable at all: switching it on sooner would lock out the people using a
    browser today with nowhere to go. The release turns this on and fills
    APP_STORE_LINKS.ios in the same change. */
-const SALESPERSON_APP_ONLY = false;
+const SALESPERSON_APP_ONLY = true;
 /* Inside the app the page has the phone's bridge; no browser has it. */
 const inSageApp = () => typeof window !== "undefined" && !!window.ReactNativeWebView;
 

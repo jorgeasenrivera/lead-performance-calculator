@@ -114,12 +114,14 @@ export async function phone(browser, { width = 393, height = 852, dark = true, o
   /* Where the app opens: "home" (the default a salesperson has), "floor" or
      "line". The first version of this copied the feel harness's "floor" and
      every "Home" picture was the floor. */
+  /* The phone is the app: a salesperson sees their screens only inside it (C103), and the app is a WebView with a bridge that no browser has. So the harness has the bridge too, as the real phone does; without it, once the release turns the switch on, every salesperson picture and bar would be of the "get the app" card. */
   await page.addInitScript(([s, p, o]) => {
     try {
       localStorage.setItem(`lpcf:room:${s}`, o === "line" ? "line" : "floor"); localStorage.setItem(`lpcf:pref:open:${s}`, o);
       for (const [k, v] of Object.entries(p)) localStorage.setItem(k, v);
     } catch (e) {}
     window.__vib = []; navigator.vibrate = (v) => { window.__vib.push(v); return true; };
+    window.ReactNativeWebView = { postMessage() {} };
   }, [STORE, prefs, open]);
   return { ctx, page, errors };
 }
