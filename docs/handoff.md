@@ -541,6 +541,24 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X29 · X15: daily delivery server boundary, dependent source draft.**
+
+The sidecar preserves employee/monthly writes and inserts typed raw bytes before
+immutable daily receipts. No shared daily document is overwritten. The new read
+endpoint validates the session and current active, approved profile/store scope,
+then returns only dated counts, split, status and as-of. Durable coverage holds
+make unreadable or unarchived newer attempts incomplete; exact retry or an
+explicit reviewed immutable resolution is required to clear one. All known counts remain
+provisional; Manager and core are untouched. No RLS changes, live writes,
+deployment or historical application. See docs/daily-delivery-server.md.
+
+Please read archive insert/read-back equality, concurrent receipt selection,
+strict original MIME Date validation and the endpoint's profile lookup first.
+Review caught PostalMime normalizing a missing timezone before validation;
+that was corrected with original-header regression coverage. X15 is an
+unmerged dependent source draft, not a request to activate it.
+
+
 **H-X28 · X14: report-backed daily delivery foundation, no app-file claim.**
 
 Jorge selected the printed store delivery count for the calendar after #454.

@@ -5,6 +5,10 @@
    ========================================================================= */
 
 import PostalMime from "postal-mime";
+import { createClient } from "@supabase/supabase-js";
+import { acceptDailyReport, dailyStorage, registerDailyCoverage } from "./_daily-delivery-store.mjs";
+import { resolvePrintedStore } from "./_daily-deliveries.mjs";
+import { canonicalTimestamp } from "./_report-version.mjs";
 import Papa from "papaparse";
 import pdfjs from "pdfjs-dist/legacy/build/pdf.js";
 /* The reader for the scheduled reports. Shared verbatim with the app, which
@@ -13,7 +17,7 @@ import pdfjs from "pdfjs-dist/legacy/build/pdf.js";
 import {
   norm, toNum, squashT,
   detectReportType, parseReport, parseDeliverySummaryRows, parseStoreRollup,
-  mapDailyActivityGrid, mapDeliverySummaryGrid, matchStoreByName,
+  mapDailyActivityGrid, mapDeliverySummaryGrid, matchStoreByName, readDailyActivityStoreTotals,
 } from "./_report-parsers.mjs";
 /* Where a store's figures live and which of them travel, shared with the app for
    the same reason the reader is: both sides write these rows, and a field list
@@ -567,12 +571,90 @@ async function readRaw(req) {
   return Buffer.concat(chunks);
 }
 
+export function reportSentAt(value) {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string") return "invalid";
+  const iso = canonicalTimestamp(value);
+  if (iso) return iso;
+  // Read the original header, not PostalMime's normalized Date. Normalization
+  // can supply a local timezone or silently roll an impossible date forward.
+  const m = value.trim().match(/^(?:(Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s*)?(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?\s+([+-]\d{4}|GMT|UTC|UT)$/i);
+  if (!m) return "invalid";
+  const month = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ").indexOf(m[3].toLowerCase()) + 1;
+  const day = `${m[4]}-${String(month).padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  const zone = /^[+-]/.test(m[8]) ? m[8].slice(0, 3) + ":" + m[8].slice(3) : "Z";
+  // RFC -0000 declares an unknown local offset, not known UTC provenance.
+  if (m[8] === "-0000") return "invalid";
+  const timestamp = canonicalTimestamp(`${day}T${m[5]}:${m[6]}:${m[7] || "00"}${zone}`);
+  if (!timestamp) return "invalid";
+  if (m[1] && new Date(day + "T12:00:00Z").toUTCString().slice(0, 3).toLowerCase() !== m[1].toLowerCase()) return "invalid";
+  return timestamp;
+}
+export function mailSentAt(mail) {
+  const dates = (mail.headers || []).filter((h) => h.key?.toLowerCase() === "date");
+  return dates.length > 1 ? "invalid" : reportSentAt(dates[0]?.value);
+}
+export function dailyAttemptFrom({ attachment, lines = [], subject, addressStore, stores, receivedAt, sentAt }) {
+  const summary = readDailyActivityStoreTotals(lines);
+  if (mapDeliverySummaryGrid(lines)) return null;
+  if (summary.reason === "not-daily-activity") {
+    const text = [attachment.filename, ...lines.map((l) => l.parts.map((p) => p.str).join(" "))].join(" ");
+    // An email subject describes the whole batch. A recognized non-daily
+    // attachment must not become a daily hold because its neighbor is daily.
+    if (!/\bdaily[\s_-]*activity\b/i.test(text)) {
+      if (/\b(?:delivery[\s_-]*summary|store[\s_-]*rollup|appointment|video)\b/i.test(text)) return null;
+      if (!/\bdaily[\s_-]*activity\b/i.test(subject || "")) return null;
+    }
+  }
+  const store = stores.find((s) => resolvePrintedStore(stores, summary.storeName, s.id).status === "supported") || addressStore;
+  return { type: "activity", store: store || null, dailySource: { receivedAt, sentAt },
+    fileMime: "application/pdf", fileName: attachment.filename || "email.pdf",
+    fileB64: Buffer.from(attachment.content).toString("base64") };
+}
+export async function retainDailyReports(entries, stores, deps = {}) {
+  const eligible = entries.filter((e) => e.type === "activity" && e.dailySource && e.fileMime === "application/pdf");
+  const selected = eligible.filter((e) => e.store?.id);
+  const unassigned = eligible.length - selected.length;
+  const result = { accepted: 0, held: unassigned, unrecorded: unassigned };
+  if (!selected.length) return result;
+  const controller = new globalThis.AbortController();
+  let timer, recordedHolds = 0;
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => {
+    controller.abort(); resolve({ accepted: result.accepted, held: eligible.length - result.accepted,
+      unrecorded: eligible.length - recordedHolds });
+  }, deps.budgetMs ?? 2000); });
+  const work = (async () => {
+    try {
+      const storage = deps.storage || dailyStorage(createClient(SB().url, SB().key,
+        { auth: { persistSession: false } }), controller.signal);
+      const inputs = selected.map((e) => ({ bytes: Buffer.from(e.fileB64, "base64"), storeId: e.store.id, stores,
+        metadata: { reportType: "activity", filename: e.fileName, ...e.dailySource } }));
+      const registered = await Promise.all(inputs.map(async (input) => {
+        try { await registerDailyCoverage(input, storage); recordedHolds++; return true; }
+        catch (_) { return false; }
+      }));
+      for (let index = 0; index < inputs.length; index++) {
+        if (controller.signal.aborted) break;
+        if (!registered[index]) { result.held++; result.unrecorded++; continue; }
+        const outcome = await acceptDailyReport(inputs[index],
+        { storage, extractLines: deps.extractLines || extractPdfLines, signal: controller.signal });
+        result[outcome.status === "accepted" ? "accepted" : "held"]++;
+        if (outcome.unrecorded) result.unrecorded++;
+      }
+    } catch (_) { result.unrecorded = eligible.length - recordedHolds; result.held = eligible.length - result.accepted; }
+    return { ...result };
+  })();
+  try { return await Promise.race([work, timeout]); }
+  finally { clearTimeout(timer); }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "POST only" });
   if ((req.headers["x-ingest-secret"] || "") !== process.env.INGEST_SECRET) {
     return res.status(401).json({ ok: false, error: "bad secret" });
   }
   try {
+    const receivedAt = new Date().toISOString();
     const raw = await readRaw(req);
     const mail = await PostalMime.parse(raw);
     const to = (mail.to?.[0]?.address || req.headers["x-envelope-to"] || "").toLowerCase();
@@ -595,6 +677,7 @@ export default async function handler(req, res) {
     }
 
     const entries = [];
+    const dailyAttempts = [];
     const skippedFiles = [];
     const pdfReads = [];
     // Anything that parsed cleanly and then had nowhere to go. This is the case
@@ -650,8 +733,12 @@ export default async function handler(req, res) {
     // suspect and NOTHING is written — but it is now reported as a failure
     // rather than being buried in a 200.
     for (const a of pdfs) {
+      let dailyAttempt = null;
       try {
         const lines = await extractPdfLines(Buffer.from(a.content));
+        dailyAttempt = dailyAttemptFrom({ attachment: a, lines, subject, addressStore,
+          stores: cfg?.stores || [], receivedAt, sentAt: mailSentAt(mail) });
+        if (dailyAttempt) dailyAttempts.push(dailyAttempt);
 
         // Try both mappers; each returns null unless the layout truly matches.
         let mapped = null, kind = null, pairings = null;
@@ -737,6 +824,11 @@ export default async function handler(req, res) {
           } catch (e) { console.error("ingest: could not store the unparsed dump", String(e.message || e)); }
         }
       } catch (e) {
+        if (!dailyAttempt) {
+          dailyAttempt = dailyAttemptFrom({ attachment: a, subject, addressStore,
+            stores: cfg?.stores || [], receivedAt, sentAt: mailSentAt(mail) });
+          if (dailyAttempt) dailyAttempts.push(dailyAttempt);
+        }
         const why = "PDF read failed: " + String(e.message || e);
         skippedFiles.push({ file: a.filename, why });
         failures.push({ file: a.filename, why });
@@ -747,11 +839,12 @@ export default async function handler(req, res) {
     // and ok:false, so the Cloudflare worker records an error and the run shows
     // up red instead of blending into the successes.
     if (!entries.length) {
+      const dailyEvidence = await retainDailyReports(dailyAttempts, cfg?.stores || []);
       const why = failures.length
         ? "nothing in this message could be filed"
         : `no store matches address "${to}" or any PDF header`;
       console.error("ingest:", why, JSON.stringify(skippedFiles));
-      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
+      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads, dailyEvidence });
     }
 
     /* Each attachment is filed under the store IT names, and a message carrying
@@ -888,10 +981,15 @@ export default async function handler(req, res) {
       stores.push({ store: st.id, results, board, dayWrites });
     }
 
+    /* All legacy store, archive, activity and board writes finish first.
+       Daily coverage must also record a rejected employee-mapping attempt. */
+    const dailyEvidence = await retainDailyReports(dailyAttempts, cfg?.stores || []);
+    if (dailyEvidence.held) console.warn("ingest: daily evidence held", { attempts: dailyEvidence.held, unrecorded: dailyEvidence.unrecorded });
+
     if (!stores.length) {
       const why = "every attachment was refused; nothing was written";
       console.error("ingest:", why, JSON.stringify(failures));
-      return res.status(422).json({ ok: false, error: why, stores, failures, skippedFiles, pdfReads });
+      return res.status(422).json({ ok: false, error: why, stores, failures, skippedFiles, pdfReads, dailyEvidence });
     }
 
     // Some files landed and others did not. The import stands, but the message
@@ -899,10 +997,10 @@ export default async function handler(req, res) {
     if (failures.length) {
       console.error("ingest: partial success", JSON.stringify(failures));
       return res.status(422).json({ ok: false, error: "some attachments could not be filed",
-        stores, failures, skippedFiles, pdfReads });
+        stores, failures, skippedFiles, pdfReads, dailyEvidence });
     }
 
-    return res.status(200).json({ ok: true, stores, skippedFiles, pdfReads });
+    return res.status(200).json({ ok: true, stores, skippedFiles, pdfReads, dailyEvidence });
   } catch (e) {
     console.error(e);
     await serverFault("ingest", e);
