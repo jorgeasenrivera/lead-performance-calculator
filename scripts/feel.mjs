@@ -239,9 +239,11 @@ async function run(b) {
   if (cpu > 1) { try { const c = await ctx.newCDPSession(p); await c.send("Emulation.setCPUThrottlingRate", { rate: cpu }); } catch (e) { say("no CPU throttle: " + e.message); } }
   if (lost) lost.watchPage(p);
   const errs = []; p.on("pageerror", (e) => errs.push(String(e).slice(0, 160)));
+  /* The phone is the app: a salesperson sees their screens only inside it (C103), and the app is a WebView with a bridge that no browser has. So the harness has the bridge too, as the real phone does; without it, once the release turns the switch on, every salesperson picture and bar would be of the "get the app" card. */
   await p.addInitScript(([s]) => {
     try { localStorage.setItem(`lpcf:room:${s}`, "floor"); localStorage.setItem(`lpcf:pref:open:${s}`, "floor"); } catch (e) {}
     window.__vib = []; navigator.vibrate = (v) => { window.__vib.push(v); return true; };
+    window.ReactNativeWebView = { postMessage() {} };
   }, [STORE]);
   const rows = [];
   /* Most rows are a time. The swipe's are pixels and a count of frames, the
