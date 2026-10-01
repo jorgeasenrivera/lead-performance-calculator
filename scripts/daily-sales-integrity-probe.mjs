@@ -108,9 +108,9 @@ export async function verifyDailySalesIntegrity(browser) {
     await before.page.getByRole("button", { name: "Close", exact: true }).click();
     await before.page.locator("#activity").click();
     result.preservation.beforePhoneActivity = await before.page.locator('main').innerText();
+    result.preservation.beforeDailyNumbers = await before.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     await before.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.beforeActivity = await activitySnapshot(before.page);
-    result.preservation.beforeDailyNumbers = await before.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     assert.ok(result.preservation.beforeDailyNumbers.length >= 2 && result.preservation.beforeDailyNumbers.some((n) => Number(n) > 0), "Daily Activity fixture must contain real nonzero calls and videos");
     await before.context.close();
 
@@ -181,9 +181,9 @@ export async function verifyDailySalesIntegrity(browser) {
     await after.page.locator("#activity").click();
     result.preservation.afterPhoneActivity = await after.page.locator('main').innerText();
     assert.equal(result.preservation.afterPhoneActivity, result.preservation.beforePhoneActivity, 'phone Daily Activity remains exact');
+    result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     await after.page.setViewportSize({ width: 1280, height: 1000 });
     result.preservation.afterActivity = await activitySnapshot(after.page);
-    result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     assert.deepEqual(result.preservation.afterDailyNumbers, result.preservation.beforeDailyNumbers, "working daily calls and video counts remain exact");
     const [beforeActivity, afterActivity] = normalizeActivityPair(result.preservation.beforeActivity, result.preservation.afterActivity);
     assert.equal(afterActivity, beforeActivity, "Daily Activity names, figures, associations and controls remain exact outside approved presentation substitutions");
