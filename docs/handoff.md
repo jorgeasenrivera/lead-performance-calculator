@@ -566,6 +566,34 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X33 · X7: #416 refreshed, with the tap assertion corrected.**
+
+This continues the 22 September diagnostic work after H-C24's review. The
+branch now includes current main through ea85add without rewriting its old
+commits. Only the two coordination docs conflicted; both current sections and
+all other board rows are preserved. The existing login H-X5 remains unchanged.
+
+The original #410 evidence remains the reason for this patch: WebKit feel
+completed with Lunch's median at 54 ms against 50, while screenshots crashed
+after 15 captures with oom_kill 0 and 13.41 GB free. X7 names each screenshot
+and sign-in stage, keeps completed pictures after a failure, and retains
+Playwright's browser stderr. It does not claim to fix the crash or change the
+application, timing loop, bars or screenshot coverage. A partial set must not
+be described as complete.
+
+C85 owns the tap-sample logging and the crash wording in `feel.mjs`; this PR
+has no diff in that file. The two wording edits in `checks.yml` and
+`shots.mjs` remain because #415 did not make them there. This corrects the
+old branch's over-broad statement that all crash wording had moved to C85.
+The optional stage callback is still the only `probe-kit.mjs` change.
+
+The stale Lunch guard failed on the refreshed tree, 15 of 16 focused tests
+passing. It now asserts C85's `row3("tap Lunch to shown", lunch, BAR.tap)`
+call; the measurement is still the median of three. All 852 tests and the
+mock-data production build pass locally. Fresh exact-head CI must still run
+after publication. CI-blocking behavior and H-C10 remain unchanged. Review
+and merge are separate; this refresh does not merge #416.
+
 **H-X32 · X7: taking the outstanding #416 correction.**
 
 Jorge approved ownership on 1 October. The existing branch is still c9784f6;
