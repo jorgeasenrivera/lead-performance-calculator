@@ -591,6 +591,65 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X40 · #459 final review: unused geometry hooks removed.**
+
+Answering comment 5937446674. The earlier no-recorder guard missed the renamed
+Signal hooks. I was wrong to call that assertion complete. Both dormant
+attributes and their computed-style read are removed, and the source guard now
+rejects the old and current spellings. Pixels and motion are identical. Actual
+production phone/tablet and keyboard checks remain open, so this is not release
+clearance. Fresh regression/build and browser CI must cover this head.
+
+**H-X38 · #459 responsive evidence repair, answering Dot's 5936603256.**
+
+My prior blank-line explanation was not proven. The broad blank-line exception
+is removed. The fixture now reports readiness after its child effects commit,
+and the probe waits for the actual phone or desktop surface before collecting
+text, heading, ranks and numeric glyphs in one synchronous DOM read. Failed
+synthetic runs save their raw snapshots, viewport, surface rectangles, readiness,
+reads and error context to failure.json. Names, numbers, freshness and counted
+copy exceptions stay strict. Chromium and WebKit both complete the full sequence
+on 804ec8b, run 36902293129. Test/build, both feel jobs and WebKit shots also pass,
+run 36902293179. Production Manager, CSS and helpers are unchanged. X18 is in
+review. Please read the atomic collector and child-commit readiness together;
+I have not established a production recap defect from the earlier timeout.
+
+
+**H-X37 · Signal integrity harness repair, X18, in progress.**
+
+Dot's review of #459 correctly found stale calendar selectors and a fixture
+that bypassed AppShell. The repair mounts the real shell in both immutable
+before and checked-in after builds, verifies Signal ownership and stylesheet,
+and opens the actual schedule control at compact and full desktop widths.
+Activity text allows only counted heading, schedule, minimum and rank-rendering
+substitutions. Names, figures, freshness and rank associations stay protected.
+All 860 local tests and both fixture builds pass, as does the production build.
+Chromium and WebKit full browser evidence is still pending. No production UI,
+threshold, timeout, calculation or backend change. Performance work stays paused.
+
+
+**H-X36 · X11: approved Signal production port needs a new read.**
+
+[Production PR #459](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/459), draft pending fresh CI and review.
+
+Jorge approved the full current preview and explicitly confirmed his actual
+phone check. `codex/manager-signal` ports it onto current main rather than
+merging the prototype machinery in draft #436. Details and actual verification
+limits are in `docs/manager-polish.md`. No production release yet.
+
+First look: manager shell CSS ownership and observer cleanup, the ported
+associate-card completion/unmount ordering, Summary/import heading-only
+exceptions around the original integrity hashes, and preservation of #450's
+query and #454's reader/no-writer safeguards. The initial browser pass found
+my repeated observer class write; it is fixed and covered. Corrected desktop
+Floor/Phone navigation and no recap on return are verified. Local feel cannot
+launch because Playwright is unavailable, so fresh CI engine evidence remains
+required. Do not treat the old study's green CI as production-port coverage.
+
+Dot was directly notified at Jorge's request and asked to coordinate delivery
+calendar work with the existing Manager.jsx claim. The salesperson rooms sheet
+states are unchanged; a manager-only appendix records this approved treatment.
+
 **H-X35 · H-C30: what is verified, with the evidence date.**
 
 1. App Store Connect: on 30 September, build 54, description, keywords, support URL, copyright, Business/Productivity categories, free US-only availability, Mac/Vision Pro off, privacy URL, content rights, age 4+, five original 1260x2736 iPhone screenshots, review notes and access setup were saved and verified; the privacy form was published after Jorge's accuracy approval, manual release selected, and the version submitted at 18:47 UTC. The unlisted-distribution request was submitted successfully at 19:09 UTC. No contact details or credentials are repeated here.

@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {normalizeActivityPair, normalizePhoneActivityPair} from '../scripts/daily-sales-integrity-copy.mjs';
+
+test('phone casing exceptions retain numbers and reject duplicate labels', () => {
+  const before = 'Calls 100\nAT MINIMUMS\nCLEAN SHEETS\nNO LOG\n';
+  const after = 'Calls 100\nAt minimums\nClean sheets\nNo log\n';
+  const [left, right] = normalizePhoneActivityPair(before, after);
+  assert.equal(left, right);
+  const changed = normalizePhoneActivityPair(before, after.replace('100', '101'));
+  assert.notEqual(...changed);
+  assert.throws(() => normalizePhoneActivityPair(before, after + 'No log\n'));
+});
+
+function fixture() {
+  const before = {header: 'Daily Activity · Tue, Sep 22 · numbers as of 1 min ago\nFictional Store A', ranks: [{rank: '1', text: '1\nAlex\n53 pts'}]};
+  const after = {header: 'Daily Activity\nAs of 1 min ago', ranks: [{rank: '1', text: 'Alex\n53 pts'}]};
+  before.text = `${before.header}\nThe schedule\nHIT THEIR MINIMUMS\n${before.ranks[0].text}\nCalls 100`;
+  after.text = `${after.header}\nSchedule\nAT MINIMUMS\n${after.ranks[0].text}\nCalls 100`;
+  return [before, after];
+}
+
+test('only the enumerated activity presentation changes compare equal', () => {
+  const [left, right] = normalizeActivityPair(...fixture());
+  assert.equal(left, right);
+});
+
+test('a mixed responsive snapshot is rejected rather than normalized away', () => {
+  const pair = fixture();
+  pair[0].text = pair[0].text.replaceAll('\n', '\n\n');
+  assert.throws(() => normalizeActivityPair(...pair));
+});
+
+for (const [name, from, to] of [['number', 'Calls 100', 'Calls 101'], ['name', 'Alex', 'Blair']]) {
+  test(`activity comparison preserves each ${name}`, () => {
+    const pair = fixture();
+    pair[1].text = pair[1].text.replace(from, to);
+    if (name === 'name') {
+      pair[1].ranks[0].text = pair[1].ranks[0].text.replace(from, to);
+      assert.throws(() => normalizeActivityPair(...pair));
+    } else {
+      const [left, right] = normalizeActivityPair(...pair);
+      assert.notEqual(left, right);
+    }
+  });
+}
+
+test('changed freshness, duplicate copy and reassociated ranks fail closed', () => {
+  const freshness = fixture();
+  freshness[1].header = freshness[1].header.replace('1 min', '2 min');
+  assert.throws(() => normalizeActivityPair(...freshness));
+  const duplicate = fixture();
+  duplicate[1].text += '\nSchedule';
+  assert.throws(() => normalizeActivityPair(...duplicate));
+  const ranks = fixture();
+  ranks[1].ranks[0].rank = '2';
+  assert.throws(() => normalizeActivityPair(...ranks));
+  const missing = fixture();
+  missing[1].ranks = [];
+  assert.throws(() => normalizeActivityPair(...missing));
+});

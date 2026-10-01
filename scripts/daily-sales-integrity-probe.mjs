@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { normalizeActivityPair, normalizePhoneActivityPair } from "./daily-sales-integrity-copy.mjs";
+import { collectActivitySnapshot } from "./daily-sales-integrity-snapshot.mjs";
 
 const BEFORE = process.env.DAILY_BEFORE_URL || "http://127.0.0.1:49216/";
 const AFTER = process.env.DAILY_AFTER_URL || "http://127.0.0.1:49215/";
@@ -27,6 +29,13 @@ const waitForReads = async (reads, count) => {
   assert.ok(reads.length >= count, "the actual component must retry its failed digest request");
 };
 const monthly = (page, phone) => page.locator(phone ? ".bp-num .dotnum" : ".s2-big .dotnum").first().getAttribute("aria-label");
+const readySurface = async (page, selector) => {
+  await page.locator(`main[data-fixture-ready="true"] ${selector}`).first().waitFor({state: 'visible'});
+};
+const activitySnapshot = async (page, phone = false) => {
+  await readySurface(page, phone ? '.co-page' : '.checkout.da-page .s2-head .s2-idtx');
+  return page.locator('main').evaluate(collectActivitySnapshot, phone);
+};
 const noFalseClaims = async (page) => {
   const text = await page.locator("body").innerText();
   assert.ok(!/New sold yesterday|Used sold yesterday|Best day so far|PRIVATE_DIAGNOSTIC/.test(text), "no unsupported count or private flag is visible");
@@ -66,6 +75,11 @@ async function fixture(browser, url, mode = "legacy", { holdA = false } = {}) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.locator(".s2-big .dotnum").first().waitFor({ state: "visible", timeout: 30000 });
   await page.getByRole("dialog", { name: "Your round-up", exact: true }).waitFor({ state: "visible" });
+  if (url === AFTER) {
+    assert.equal(await page.locator('html.manager-signal').count(), 1, 'real AppShell owns the Signal material');
+    assert.equal(await page.locator('.sg-schedule').count(), 1);
+    assert.equal(await page.locator('.sg-schedule').evaluate(node => getComputedStyle(node).position), 'relative', 'the real Signal stylesheet is active');
+  }
   return { context, page, reads, mutations, errors, releaseA };
 }
 
@@ -94,8 +108,11 @@ export async function verifyDailySalesIntegrity(browser) {
     await capture(before.page, "before-calendar-phone");
     await before.page.getByRole("button", { name: "Close", exact: true }).click();
     await before.page.locator("#activity").click();
-    result.preservation.beforeActivity = await before.page.locator("main").innerText();
-    result.preservation.beforeDailyNumbers = await before.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+    result.preservation.beforePhoneSnapshot = await activitySnapshot(before.page, true);
+    result.preservation.beforePhoneActivity = result.preservation.beforePhoneSnapshot.text;
+    result.preservation.beforeDailyNumbers = result.preservation.beforePhoneSnapshot.numbers;
+    await before.page.setViewportSize({ width: 1280, height: 1000 });
+    result.preservation.beforeActivity = await activitySnapshot(before.page);
     assert.ok(result.preservation.beforeDailyNumbers.length >= 2 && result.preservation.beforeDailyNumbers.some((n) => Number(n) > 0), "Daily Activity fixture must contain real nonzero calls and videos");
     await before.context.close();
 
@@ -110,6 +127,7 @@ export async function verifyDailySalesIntegrity(browser) {
 
     for (const width of [390, 700, 701, 1280]) {
       await after.page.setViewportSize({ width, height: width <= 700 ? 844 : 1000 });
+      await readySurface(after.page, width <= 700 ? '.bp-l2' : '.sg-schedule');
       await closeRecap(after.page);
       if (width <= 700) {
         await after.page.locator(".bp-l2").click();
@@ -129,16 +147,20 @@ export async function verifyDailySalesIntegrity(browser) {
         await after.page.getByRole("button", { name: "Close", exact: true }).click();
         assert.equal(await monthly(after.page, true), "61");
       } else {
-        // The existing compact desktop layout hides the right-hand calendar
-        // at 860px. Verify that boundary, then exercise its stock/day popup.
-        if (width > 860) {
-          await after.page.locator(".s2-mcal").hover();
+        // Signal joins calendar and roster behind the actual schedule control,
+        // including compact desktop. Keep the unavailable-day assertion.
+        {
+          const schedule = after.page.getByRole('button', { name: "Today's schedule and month details", exact: true });
+          await schedule.click();
+          assert.equal(await schedule.getAttribute('aria-expanded'), 'true');
           await after.page.locator('[data-daily-unavailable="desktop-day-detail"]').waitFor({ state: "visible" });
-          await after.page.locator(".s2-mc-grid i:not(.e)").first().click();
-          await after.page.locator(".s2-calwin .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
-          assert.equal((await after.page.locator(".s2-calwin").innerText()).split(UNAVAILABLE).length - 1, 1, "one quiet unavailable line in the calendar");
+          await after.page.locator(".sg-schedule .s2-mc-grid i:not(.e)").first().click();
+          await after.page.locator(".sg-schedule-month .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
+          assert.equal((await after.page.locator(".sg-schedule-month").innerText()).split(UNAVAILABLE).length - 1, 1, "one quiet unavailable line in the calendar");
           await capture(after.page, `after-calendar-${width}`);
-        } else assert.equal(await after.page.locator(".s2-mcal").isVisible(), false, "the existing compact calendar rule is preserved");
+          await schedule.press('Escape');
+          await after.page.locator('.sg-schedule-details').waitFor({ state: 'hidden' });
+        }
         await after.page.locator(".s2-splitwrap").hover();
         await after.page.locator(".s2-salewin:visible").first().waitFor({ state: "visible" });
         assert.ok((await after.page.locator(".s2-salewin:visible .s2-sw-grid b").allTextContents()).every((n) => n === "·"));
@@ -153,6 +175,7 @@ export async function verifyDailySalesIntegrity(browser) {
     }
     for (const role of ["manager", "admin"]) {
       await after.page.getByLabel("Fictional viewer role").selectOption(role);
+      await readySurface(after.page, '.s2-ru');
       await after.page.locator(".s2-ru").click();
       await after.page.locator('[data-daily-unavailable="recap"]').waitFor({ state: "visible" });
       await noFalseClaims(after.page);
@@ -160,10 +183,16 @@ export async function verifyDailySalesIntegrity(browser) {
     }
     await after.page.setViewportSize({ width: 390, height: 844 });
     await after.page.locator("#activity").click();
-    result.preservation.afterActivity = await after.page.locator("main").innerText();
-    result.preservation.afterDailyNumbers = await after.page.locator(".co-unum .dotnum").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+    result.preservation.afterPhoneSnapshot = await activitySnapshot(after.page, true);
+    result.preservation.afterPhoneActivity = result.preservation.afterPhoneSnapshot.text;
+    const [beforePhone, afterPhone] = normalizePhoneActivityPair(result.preservation.beforePhoneActivity, result.preservation.afterPhoneActivity);
+    assert.equal(afterPhone, beforePhone, 'phone Daily Activity remains exact outside three approved label casing changes');
+    result.preservation.afterDailyNumbers = result.preservation.afterPhoneSnapshot.numbers;
+    await after.page.setViewportSize({ width: 1280, height: 1000 });
+    result.preservation.afterActivity = await activitySnapshot(after.page);
     assert.deepEqual(result.preservation.afterDailyNumbers, result.preservation.beforeDailyNumbers, "working daily calls and video counts remain exact");
-    assert.equal(result.preservation.afterActivity, result.preservation.beforeActivity, "existing Daily Activity display is unchanged");
+    const [beforeActivity, afterActivity] = normalizeActivityPair(result.preservation.beforeActivity, result.preservation.afterActivity);
+    assert.equal(afterActivity, beforeActivity, "Daily Activity names, figures, associations and controls remain exact outside approved presentation substitutions");
     assert.deepEqual(after.mutations, [], "opening, resizing and reopening do not write digests");
     assert.deepEqual(after.errors, []);
     await after.context.close();
@@ -207,6 +236,13 @@ export async function verifyDailySalesIntegrity(browser) {
     console.log("Daily integrity: real Manager views, privacy, retry, store switch and preservation passed");
   } catch (error) {
     if (active?.page && !active.page.isClosed()) await active.page.screenshot({ path: `${OUT}/failure.png`, fullPage: true, animations: "disabled" }).catch(() => {});
+    const screen = active && await active.page.evaluate(() => ({width: innerWidth, text: document.body.innerText,
+      fixture: {...document.querySelector('main')?.dataset},
+      surfaces: ['.co-page', '.checkout.da-page', '.bp-l2', '.sg-schedule', '.s2-ru', '[role="dialog"]'].map(selector => ({selector,
+        nodes: [...document.querySelectorAll(selector)].map(node => ({text: node.innerText, rect: node.getBoundingClientRect().toJSON(), visible: !!node.getClientRects().length}))})),
+    })).catch(() => null);
+    await writeFile(`${OUT}/failure.json`, JSON.stringify({message: error.message, result, screen,
+      reads: active?.reads, mutations: active?.mutations.length, errors: active?.errors}, null, 2));
     console.error("Daily integrity failure:", error, active && { reads: active.reads, mutations: active.mutations.length, errors: active.errors,
       screen: await active.page.evaluate(() => ({ width: innerWidth, text: document.body.innerText.slice(0, 1400) })).catch(() => null) });
     throw error;
