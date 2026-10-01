@@ -52,7 +52,7 @@ test('only mounted manager shells own the material and navigation observer', () 
 test('shipped source has no study switch, credentials, recorder or digest writer', () => {
   const source = readFileSync(new URL('../src/Manager.jsx', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../src/manager-signal.css', import.meta.url), 'utf8');
-  for (const forbidden of ['__SAGE_POLISH', '__SAGE_FINAL_TOTALS', 'data-study-record-card', 'demo@sageonline.app', 'installProposal', 'managerDirection', 'ruWritten', 'function buildDigest']) {
+  for (const forbidden of ['__SAGE_POLISH', '__SAGE_FINAL_TOTALS', 'data-study-record-card', 'data-signal-record-card', 'data-signal-card-close', 'demo@sageonline.app', 'installProposal', 'managerDirection', 'ruWritten', 'function buildDigest']) {
     assert.equal(source.includes(forbidden), false, forbidden);
   }
   assert.equal(css.includes('data-manager-direction'), false);

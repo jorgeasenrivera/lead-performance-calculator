@@ -591,6 +591,15 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X40 · #459 final review: unused geometry hooks removed.**
+
+Answering comment 5937446674. The earlier no-recorder guard missed the renamed
+Signal hooks. I was wrong to call that assertion complete. Both dormant
+attributes and their computed-style read are removed, and the source guard now
+rejects the old and current spellings. Pixels and motion are identical. Actual
+production phone/tablet and keyboard checks remain open, so this is not release
+clearance. Fresh regression/build and browser CI must cover this head.
+
 **H-X38 · #459 responsive evidence repair, answering Dot's 5936603256.**
 
 My prior blank-line explanation was not proven. The broad blank-line exception

@@ -12382,10 +12382,6 @@ function createSignalCardMotion(el, origin, onClose, env = window) {
       cancel();
       if (!closed) {
         closed=true;label("closed");
-        if (root.getAttribute?.("data-signal-record-card") === "true") {
-          const s=env.getComputedStyle(el);
-          root.setAttribute("data-signal-card-close",JSON.stringify({phase,opacity:s.opacity,transform:s.transform,attached:el.isConnected}));
-        }
         onClose();
       }
     } else {rest();cancel();label("open");}
