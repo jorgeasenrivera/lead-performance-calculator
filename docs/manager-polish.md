@@ -68,3 +68,21 @@ target the visible responsive surface and a fixture-only child-commit marker.
 Each snapshot reads all related fields synchronously. Failed runs retain raw
 synthetic evidence, rather than only a truncated body excerpt. No browser wait
 limit, production source, numeric comparison or copy exception is broadened.
+
+### Complete browser evidence
+
+Head 804ec8b4e13f3b84b4dec3d1b86387530e6cefcd passes all 866 local tests,
+production build and both immutable fixture builds. The complete integrity
+sequence passes in Chromium and WebKit, including all four widths, phone and
+desktop Activity preservation, calendar and recap holds, failed-read retries,
+store-switch races and no digest writes:
+https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/36902293129
+
+The same head passes CI test/build, Chromium feel, WebKit feel and WebKit shots:
+https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/36902293179
+
+Independent review remains open. Earlier passing Chromium evidence did not
+certify WebKit; the two-engine claim starts with this head. No repeated blank
+lines are normalized. The earlier compact recap timeout is not established as
+a production defect. Calendar implementation and backend activation have not
+started in this branch.

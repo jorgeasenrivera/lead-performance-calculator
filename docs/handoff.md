@@ -599,8 +599,11 @@ and the probe waits for the actual phone or desktop surface before collecting
 text, heading, ranks and numeric glyphs in one synchronous DOM read. Failed
 synthetic runs save their raw snapshots, viewport, surface rectangles, readiness,
 reads and error context to failure.json. Names, numbers, freshness and counted
-copy exceptions stay strict. Chromium/WebKit certification remains pending.
-Production Manager, CSS and helpers are unchanged. X18 remains in progress.
+copy exceptions stay strict. Chromium and WebKit both complete the full sequence
+on 804ec8b, run 36902293129. Test/build, both feel jobs and WebKit shots also pass,
+run 36902293179. Production Manager, CSS and helpers are unchanged. X18 is in
+review. Please read the atomic collector and child-commit readiness together;
+I have not established a production recap defect from the earlier timeout.
 
 
 **H-X37 · Signal integrity harness repair, X18, in progress.**
