@@ -22,10 +22,16 @@ organized by their sale date. Nothing in this slice changes the monthly metric.
 
 The two new helpers are Node-side evidence tooling, not client imports. No
 application file, database policy or production row is changed. `ingest.mjs`
-has one import-only compatibility change: PDF.js uses its CommonJS default
-export so the existing shared extractor also runs on Node 22. Node 24 resolves
-the same getDocument and GlobalWorkerOptions objects. Extraction geometry,
-arguments and ingestion write behavior are unchanged.
+has a narrow import-only compatibility boundary: prefer the PDF.js namespace
+when it exposes getDocument, otherwise use its default export. Native Node 22
+needs the default; esbuild's generic CommonJS interop can need the namespace.
+An explicit .mjs-aware bundle behaves differently again. The earlier default-only
+fix covered native Node but not that generic bundle, a gap found in review and
+reproduced with actual synthetic-PDF extraction. Extraction geometry, arguments
+and ingestion write behavior are unchanged. The regression exercises native ESM
+and bundled CommonJS from both .js and .mjs entries on the running Node version;
+all three paths also passed locally on both Node 22 and Node 24. This does not
+establish Vercel's exact live bundling mode or claim a deployed-runtime test.
 The protective UI remains in place. This is not an ingestion rollout or a
 historical application batch, and no owner-notification destination is installed.
 
