@@ -40,7 +40,9 @@ transition or its monthly data handling.
 `src/Manager.jsx` now contains the approved protection. The after build in
 `scripts/daily-sales-integrity-proposal.mjs` mounts the checked-in Manager
 components directly, with no after transform. The before fixture reads Manager
-from immutable reviewed commit `8d2befb7db44fb8ab8dcd855a5d09ccd62005906`.
+from immutable reviewed commit `8d2befb7db44fb8ab8dcd855a5d09ccd62005906`,
+verified against blob `e306078d145c3cb7816a14543147367580e76b89`. CI checks
+that source out separately, avoiding a Git trust-setting change in the container.
 Both use fictional Store A and Store B. The probe pins the clock to 22 September
 2026, checks monthly totals of 61 and 83 respectively, and preserves the original
 Daily Activity display. Fingerprint guards protect the existing Daily Activity,

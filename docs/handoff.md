@@ -560,9 +560,11 @@ readers only because the removed digest builder was the third. No core/auth,
 C103, ingestion, database or C108 ground changes. Refresh or reopen is required:
 an old client can still run its old writer until it loads the new bundle.
 
-Production tests and build pass locally; exact-head Chromium/WebKit checks and
-review are required before merge. Reconstruction remains separate from this
-protective patch. Ownership releases when the production patch is complete.
+All 846 tests and the production plus before/after builds pass locally. An
+independent review proved exact equality with the approved proposal transform
+and found no blockers. Exact-head Chromium/WebKit and normal required checks
+must pass before merge. Reconstruction remains separate. X13 releases its
+Manager ownership when #454 merges; C103 and core ownership are unaffected.
 
 **H-X26 · #450: phone search visibility and browser verification.**
 

@@ -1,15 +1,28 @@
 /* Approved daily-sales protection: test the shipped Manager source directly.
    Only the before fixture uses an immutable historical Manager blob. */
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildDemo } from "./demo-seed.mjs";
 
 export const BEFORE_COMMIT = "8d2befb7db44fb8ab8dcd855a5d09ccd62005906";
+export const BEFORE_MANAGER_BLOB = "e306078d145c3cb7816a14543147367580e76b89";
+export function verifyBeforeManager(source) {
+  const sha = createHash("sha1").update(`blob ${Buffer.byteLength(source)}\0`).update(source).digest("hex");
+  if (sha !== BEFORE_MANAGER_BLOB) throw new Error("Before Manager does not match the immutable reviewed blob");
+  return source;
+}
 export function readBeforeManager() {
-  return execFileSync("git", ["show", BEFORE_COMMIT + ":src/Manager.jsx"],
-    { encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
+  // A pinned second checkout avoids changing Git trust settings in CI's
+  // container. The hash must match whether read from that checkout or Git.
+  const source = process.env.DAILY_BEFORE_SOURCE
+    ? readFileSync(process.env.DAILY_BEFORE_SOURCE, "utf8")
+    : execFileSync("git", ["show", BEFORE_COMMIT + ":src/Manager.jsx"],
+      { encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
+  return verifyBeforeManager(source);
 }
 
 export const decisions = [

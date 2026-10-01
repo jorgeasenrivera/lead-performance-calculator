@@ -23,8 +23,14 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:
       - uses: actions/checkout@v4
+      - name: Check out the immutable reviewed before source
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: 8d2befb7db44fb8ab8dcd855a5d09ccd62005906
+          path: .daily-integrity-before
+          sparse-checkout: src/Manager.jsx
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -33,6 +39,8 @@ jobs:
       - run: npm i --no-save playwright@1.63.0
       - run: node --test test/daily-sales-integrity.test.mjs
       - run: node scripts/daily-sales-integrity-proposal.mjs
+        env:
+          DAILY_BEFORE_SOURCE: .daily-integrity-before/src/Manager.jsx
       - name: Verify actual Manager components
         shell: bash
         env:

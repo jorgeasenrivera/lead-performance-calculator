@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { DAILY_TOTALS_UNAVAILABLE, createDigestReader, createDigestSelection,
   digestIdentity, inspectLegacyDigests } from "../api/_digest-integrity.mjs";
-import { BEFORE_COMMIT, decisions, proposalPage } from "../scripts/daily-sales-integrity-proposal.mjs";
+import { BEFORE_COMMIT, BEFORE_MANAGER_BLOB, verifyBeforeManager, decisions, proposalPage } from "../scripts/daily-sales-integrity-proposal.mjs";
 
 const record = (day, u, rest = {}, store = "store-a") => ({
   key: `lpc:store:${store}:digest:${day}`, value: { d: day, u, nu: u / 2, uu: u / 2, ...rest },
@@ -192,4 +192,11 @@ test("the after browser build uses checked-in Manager, while before uses the imm
   assert.equal(BEFORE_COMMIT, "8d2befb7db44fb8ab8dcd855a5d09ccd62005906");
   assert.ok(script.includes('if (before && file.endsWith("/src/Manager.jsx")) return beforeManager;'));
   assert.ok(!script.includes("dailyIntegrityTransform"));
+});
+
+test("a substituted before fixture is rejected instead of disguising the regression", () => {
+  assert.equal(BEFORE_MANAGER_BLOB, "e306078d145c3cb7816a14543147367580e76b89");
+  assert.throws(() => verifyBeforeManager("not the reviewed source"), /immutable reviewed blob/);
+  assert.throws(() => verifyBeforeManager(fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8")),
+    /immutable reviewed blob/, "the protected after source cannot masquerade as before");
 });
