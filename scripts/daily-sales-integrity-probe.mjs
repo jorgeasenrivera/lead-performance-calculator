@@ -111,14 +111,19 @@ export async function verifyDailySalesIntegrity(browser) {
         await after.page.getByRole("button", { name: "Close", exact: true }).click();
         assert.equal(await monthly(after.page, true), "61");
       } else {
-        await after.page.locator(".s2-mcal").hover();
-        await after.page.locator('[data-daily-unavailable="desktop-best-day"]').waitFor({ state: "visible" });
-        await after.page.locator(".s2-mc-grid i:not(.e)").first().click();
-        await after.page.locator(".s2-calwin .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
-        await after.page.screenshot({ path: `${OUT}/after-calendar-${width}.png`, fullPage: true });
+        // The existing compact desktop layout hides the right-hand calendar
+        // at 860px. Verify that boundary, then exercise its stock/day popup.
+        if (width > 860) {
+          await after.page.locator(".s2-mcal").hover();
+          await after.page.locator('[data-daily-unavailable="desktop-best-day"]').waitFor({ state: "visible" });
+          await after.page.locator(".s2-mc-grid i:not(.e)").first().click();
+          await after.page.locator(".s2-calwin .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
+          await after.page.screenshot({ path: `${OUT}/after-calendar-${width}.png`, fullPage: true });
+        } else assert.equal(await after.page.locator(".s2-mcal").isVisible(), false, "the existing compact calendar rule is preserved");
         await after.page.locator(".s2-splitwrap").hover();
         await after.page.locator(".s2-salewin:visible").first().waitFor({ state: "visible" });
         assert.ok((await after.page.locator(".s2-salewin:visible .s2-sw-grid b").allTextContents()).every((n) => n === "·"));
+        await after.page.screenshot({ path: `${OUT}/after-stock-days-${width}.png`, fullPage: true });
         await noFalseClaims(after.page);
         await after.page.locator(".s2-ru").click();
         await after.page.locator('[data-daily-unavailable="recap"]').waitFor({ state: "visible" });
@@ -178,7 +183,8 @@ export async function verifyDailySalesIntegrity(browser) {
     console.log("Daily integrity: real Manager views, privacy, retry, store switch and preservation passed");
   } catch (error) {
     if (active?.page && !active.page.isClosed()) await active.page.screenshot({ path: `${OUT}/failure.png`, fullPage: true }).catch(() => {});
-    console.error("Daily integrity failure:", error, active && { reads: active.reads, mutations: active.mutations.length, errors: active.errors });
+    console.error("Daily integrity failure:", error, active && { reads: active.reads, mutations: active.mutations.length, errors: active.errors,
+      screen: await active.page.evaluate(() => ({ width: innerWidth, text: document.body.innerText.slice(0, 1400) })).catch(() => null) });
     throw error;
   } finally { if (active) await active.context.close().catch(() => {}); }
 }

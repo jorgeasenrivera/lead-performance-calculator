@@ -12,6 +12,7 @@ permissions:
   contents: read
 jobs:
   manager-proposal:
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
