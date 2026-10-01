@@ -2,6 +2,11 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
+import { isOldCodeLink } from "./old-links.mjs";
+import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
+import { createArrivalScheduler } from "./arrival-scheduler.mjs";
+import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
 /* The CSV reader is a manager's tool: it runs when somebody drops a report on
    the Import page. A salesperson on the floor never touches it, so it is fetched
    on the first parse rather than carried in everyone's first load. */
@@ -65,7 +70,6 @@ import { notesFor, owesNote, makeNote, addNote,
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
-import qrcodeGen from "qrcode-generator";
 
 /* ---- the manager's pages ----
    They live in their own file (Manager.jsx) and their own download, fetched
@@ -224,12 +228,6 @@ const STORE_TZ = "America/New_York";
 const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
 const today = () => dayIn();
 
-/* The arrival plays only on the first sign-in of each calendar day, per person:
-   keyed by dealership day plus user, so it resets at midnight and is independent
-   per account on a shared machine. The key is `lpc:arrival` rather than the old
-   `lpc:intro-played`, which means everybody sees the new arrival once even if
-   they had already seen the old cinematic today — which is the right way round,
-   since it is the thing they have not seen. */
 const ym = () => today().slice(0, 7);
 
 const dayOfMonth = () => Number(today().slice(8, 10));
@@ -877,6 +875,13 @@ function analyzeImport(prior, after, importedChannels) {
 
 
 
+/* The TV showing the line: a page with nobody signed in, ever. */
+const WALL_SCREEN = (() => { try { return new URLSearchParams(window.location.search).has("qboard"); } catch (e) { return false; } })();
+/* An old QR code, a poster or a table tag opens Sage's own sign-in (C99): its
+   address is cleared before anything reads it, so the app starts as if the
+   person had typed the site's name. */
+try { if (isOldCodeLink(window.location.search)) window.history.replaceState(null, "", window.location.pathname + window.location.hash); } catch (e) {}
+
 /* ===== BACKEND BLOCK: Supabase (storage + real auth) ===== */
 // Set in Vercel: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -885,7 +890,7 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         // Keep people signed in across reloads and across days. The cinematic
-        // loading sequence is gated separately (once per calendar day); the login
+        // loading sequence belongs to explicit sign-in; the login
         // itself persists so The Board and their session survive between visits.
         persistSession: true,
         autoRefreshToken: true,
@@ -1669,17 +1674,21 @@ export default function LeadPerformanceCalculator() {
   useLayoutEffect(() => {
     /* jumpLanded: once the landing has revealed the app, a session identity
        change must not hide it again. See the latch's comment. */
-    const under = !session || (jumpHold && !jumpLanded);
+    /* Never on the TV (?qboard=): it has nobody signed in, so this hid the
+       whole board, and the TV showed only the ground from 11 September. */
+    const under = !WALL_SCREEN && (!session || (jumpHold && !jumpLanded));
     document.documentElement.classList.toggle("jump-under", under);
+    // Release only after React has removed the old form, never in the timer
+    // that merely schedules its removal. A busy commit can leave a visible gap.
+    if (!jumpHold) document.documentElement.classList.remove("signin-gone");
     return () => document.documentElement.classList.remove("jump-under");
   }, [session, jumpHold]);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
-  // means the next sign-in plays it as well, which is what makes it possible to
-  // review the whole handover end to end.
+  // Replay the dashboard landing from the account menu. The complete tunnel
+  // still begins at explicit sign-in, where the login mark is available.
   /* Kept for the account menu, which has always had it, though with the arrival
      playing every time there is far less for it to do. */
   const replayIntro = () => {
@@ -1743,7 +1752,7 @@ export default function LeadPerformanceCalculator() {
     wait();
     return () => { cancelAnimationFrame(raf); clearTimeout(doneT); undo(); clear(); };
   }, [session]);
-  // The cinematic intro plays once per calendar day per user. null = not decided yet.
+  // Tracks whether the current arrival has completed.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
   /* Opens on the store this browser last worked in; see rememberView. Starting
@@ -1795,6 +1804,9 @@ export default function LeadPerformanceCalculator() {
   // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
   // "All Stores", and the activity guard then bounced you to the first store.
   const viewPicked = useRef(false);
+  const viewPickInFlight = useRef(false);
+  // The initial "admin" value is a placeholder, not a committed destination.
+  const [initialViewReady, setInitialViewReady] = useState(false);
   // which slice of the board is showing. Driven by the hero tiles.
   const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
   const [assocQuery, setAssocQuery] = useState("");
@@ -1884,16 +1896,21 @@ export default function LeadPerformanceCalculator() {
      own. So a config adopted while signed out is marked provisional and fetched
      again the moment a session exists; the cruise absorbs the re-read the same
      way it absorbs everything else. */
-  const cfgProvisional = useRef(false);
+  const cfgProvisional = useRef(true);
+  const cfgReadInFlight = useRef(false);
+  const cfgAuthReadPending = useRef(false);
   const [cfgWave, setCfgWave] = useState(0);
   const sessionRef = useRef(null);
   sessionRef.current = session;
   useEffect(() => {
     if (!session || !cfgProvisional.current) return;
-    cfgProvisional.current = false;
+    if (cfgReadInFlight.current) { cfgAuthReadPending.current = true; return; }
+    cfgReadInFlight.current = true;
     setCfgWave((w) => w + 1);
   }, [session]);
   useEffect(() => {
+    cfgReadInFlight.current = true;
+    const authenticatedAtStart = !!sessionRef.current;
     (async () => {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
       // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
@@ -1905,7 +1922,7 @@ export default function LeadPerformanceCalculator() {
            stands in, unchanged and unsaved, until a read gets through; with
            nothing remembered the boot says so and offers to try again. */
         const c = cacheGet("shared:" + CONFIG_KEY);
-        if (c && c.value) { netSet(true, c.at); setConfig(c.value); return; }
+        if (c && c.value) { cfgProvisional.current = !authenticatedAtStart; netSet(true, c.at); setConfig(c.value); return; }
         setBootStall(true); return;
       }
       netSet(false);
@@ -1948,10 +1965,11 @@ export default function LeadPerformanceCalculator() {
         }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
+        cfgProvisional.current = !authenticatedAtStart;
         setConfig(cfg);
         /* Signed in, so this is allowed: keep the public slice current even for
            a config that was saved before the slice existed. */
-        if (sessionRef.current) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
+        if (authenticatedAtStart) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
         return;
       }
 
@@ -1972,9 +1990,10 @@ export default function LeadPerformanceCalculator() {
           for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
         }
       }
-      if (sessionRef.current) {
+      if (authenticatedAtStart) {
         /* Genuinely new install, confirmed by an authenticated read: create it. */
         await saveShared(CONFIG_KEY, cfg);
+        cfgProvisional.current = false;
       } else {
         /* Signed out, row invisible: run the login on defaults, write nothing,
            and re-read the moment a session exists. The group's own stores,
@@ -1991,11 +2010,22 @@ export default function LeadPerformanceCalculator() {
         } catch (e) { /* the defaults stand */ }
       }
       setConfig(cfg);
-    })().catch(() => setLoadErr(true));
+    })().catch(() => setLoadErr(true)).finally(() => {
+      cfgReadInFlight.current = false;
+      const pending = cfgAuthReadPending.current;
+      cfgAuthReadPending.current = false;
+      if (pending && sessionRef.current && cfgProvisional.current) {
+        cfgReadInFlight.current = true;
+        setCfgWave((w) => w + 1);
+      }
+    });
   }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
-    if (!config || !session) return;
+    if (!config || !session || cfgProvisional.current) return;
+    if (!viewPicked.current && viewPickInFlight.current) return;
+    const firstPick = !viewPicked.current;
+    if (firstPick) viewPickInFlight.current = true;
     (async () => {
       const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
       if (!viewPicked.current) {
@@ -2016,7 +2046,8 @@ export default function LeadPerformanceCalculator() {
             else { setLoadErr(true); return; }
           } else if (d) cachePut("store:" + s.id, d);
           if (!d) {
-            const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
+            const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`));
+            const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
           }
@@ -2055,6 +2086,7 @@ export default function LeadPerformanceCalculator() {
           if (first) { setView(first); setStoreData(all[first]); }
           else if (session.role === "admin") setView("admin");
         }
+        setInitialViewReady(true);
         return;
       }
       // Later runs happen when the config or (more often) the auth session reference
@@ -2069,7 +2101,7 @@ export default function LeadPerformanceCalculator() {
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
-        if (!d) { const legacy = await loadStrict(`lpc:store:${s.id}:v1`); d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        if (!d) { const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`)); const legacy = legacyRead.value || { ok: false }; d = (legacy.ok && legacy.value) || emptyStoreData(); }
         if (d.__storeId && d.__storeId !== s.id) {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
@@ -2078,7 +2110,10 @@ export default function LeadPerformanceCalculator() {
         add[s.id] = d;
       }
       if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
-    })();
+    })().catch((error) => {
+      if (firstPick) setLoadErr(true);
+      else console.error("store refresh failed", error);
+    }).finally(() => { if (firstPick) viewPickInFlight.current = false; });
   }, [config, session]);
 
   useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
@@ -2120,15 +2155,17 @@ export default function LeadPerformanceCalculator() {
   }, [storeData, view, ready]);
   /* ---- what the arrival is waiting for ----
      The jump's cruise holds until the screen it will land on is actually
-     standing. "Standing" includes the failure screens on purpose: a store that
-     answered with a mismatch or a failed load still has something honest to
-     land on, and holding the tunnel for data that is never coming would just be
-     a spinner with better art. The destination sign is the store's own name and
-     brand colour, from config. */
+     standing. A store mismatch has an honest warning to land on. A failed read
+     stays in the arrival's connection panel with a retry, never a successful
+     landing on the temporary All Stores view. The first destination must have
+     been selected from the authenticated config and its completed store reads. */
   const [iconWave, setIconWave] = useState(0);
   const iconCache = useRef({});
+  // The associate's destination reads its own floor rows. Making it wait for
+  // the manager's full store documents adds round trips it does not consume.
+  const arrivalDestinationReady = wantsFloor ? floorLinks !== undefined : initialViewReady;
   useEffect(() => {
-    if (!jumpHold) { tellArrivalReady(false, null); return; }
+    if (!jumpHold) { arrivalSurfaceReady = false; arrivalFailed = false; tellArrivalReady(false, null); return; }
     const atStore = view !== "admin" && view !== "combined";
     const store = atStore ? (config?.stores || []).find((x) => x.id === view) : null;
     /* The landing has to arrive COMPLETE: a store icon that pops in a beat
@@ -2155,14 +2192,16 @@ export default function LeadPerformanceCalculator() {
         }
       }
     }
-    const landable = !!session && !!config && iconReady
-      && (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    const landable = !!session && !!config && arrivalDestinationReady && !cfgProvisional.current && iconReady
+      && (wantsFloor || !atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    arrivalFailed = loadErr || bootStall || (!!storeLoadFailed && !storeMismatch);
     tellArrivalReady(landable, store
       ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
       : null);
-  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave]);
+    activeEngineSend?.({ type: "recovery", failed: arrivalFailed });
+  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave, arrivalDestinationReady, wantsFloor, loadErr, bootStall]);
   useEffect(() => {
-    if (!config || view === "admin" || view === "combined" || !session) return;
+    if (!config || view === "admin" || view === "combined" || !session || !initialViewReady) return;
     /* A load takes two round trips now (the document, then the split day rows), so
        switching stores mid-flight used to let the SLOWER, older store answer last and
        overwrite the newer one. The screen then showed one store's roster while the
@@ -2236,7 +2275,7 @@ export default function LeadPerformanceCalculator() {
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready]); // eslint-disable-line
+  }, [view, ready, initialViewReady]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -2912,30 +2951,20 @@ export default function LeadPerformanceCalculator() {
   const phoneBoot = usePhoneLayout();
   const [bootRooms] = useState(() => { try { return localStorage.getItem("lpcf:boot") === "rooms"; } catch (e) { return false; } });
 
-  // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
-  const queueParams = (() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      const d = p.get("d"), t = p.get("t");
-      const q = p.get("q"), o = p.get("o");
-      if (q && d && t) return { store: q, date: d, token: t, variant: LEAD_VARIANTS.line };
-      if (o && d && t) return { store: o, date: d, token: t, variant: LEAD_VARIANTS.online };
-      return null;
-    } catch { return null; }
-  })();
-  if (queueParams) {
-    return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} variant={queueParams.variant} /><Style /></Shell>;
-  }
+  /* The QR sign-in pages were here: ?q=, ?o= and ?f= with the day's code, and
+     ?f=&tbl= for a table tag. Retired on 28 September (C99); an old link now
+     opens the sign-in, see isOldCodeLink. */
   // --- casted board: a TV pointed at this URL, no sign-in, read-only ---
   // ?qboard={storeId}&k=line|online|floor
   const qBoardParams = (() => {
     try {
       const p = new URLSearchParams(window.location.search);
       const b = p.get("qboard");
-      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase() } : null;
+      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase(), key: p.get("key") || "" } : null;
     } catch { return null; }
   })();
-  if (qBoardParams) return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>;
+  /* A TV reads the day's row with its store's key, from its link (C92). */
+  if (qBoardParams) { rememberWallKey(qBoardParams.store, qBoardParams.key); return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>; }
 
   const boardParams = (() => {
     try {
@@ -2944,24 +2973,7 @@ export default function LeadPerformanceCalculator() {
     } catch { return null; }
   })();
   if (boardParams) return <BoardBoundary><React.Suspense fallback={<BoardHold />}><BoardScreen storeId={boardParams.store} /></React.Suspense></BoardBoundary>;
-  // --- live floor: public sign-in intercept (before any auth) ---
-  const floorParams = (() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      const f = p.get("f"), d = p.get("d"), t = p.get("t"), tbl = p.get("tbl");
-      if (f && d && t) return { store: f, date: d, token: t, tag: tbl };
-      /* A TABLE TAG: an NFC sticker or QR on the table itself, written once and
-         never rotated. It carries only WHERE -- who you are still comes from
-         today's sign-in code, so a tag read off a table at home does nothing. */
-      if (f && tbl) return { store: f, date: today(), token: null, tag: tbl };
-      return null;
-    } catch { return null; }
-  })();
-  if (floorParams) {
-    return <Shell ground={false}><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
-  }
   const retryBoot = () => { setBootStall(false); setLoadErr(false); netSet(false); setCfgWave((w) => w + 1); setLinksWave((w) => w + 1); refreshProfile(); };
-  if (loadErr || bootStall) return <Shell><BootStall onRetry={retryBoot} /><Style /></Shell>;
   /* ---- the sign-in screen is a LAYER, not a branch ----
      It used to be one of this component's early returns, which meant the app
      underneath it did not exist until the jump handed over — so the dashboard
@@ -2990,20 +3002,24 @@ export default function LeadPerformanceCalculator() {
       <Login config={config}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
-          const undo = landDashboard();
-          /* And the tidying, once the landing is over and a render is free. */
-          setTimeout(() => {
-            undo();
-            jumpOwnsEntrance = false;
-            setJumpHold(false);
-            setHoldMount(false);   // belt and braces: the gate must never outlive the jump
-            setIntroDone(true);
-          }, jumpShort ? 360 : ARRIVAL.assemble);
+          const undo = landDashboard(() => {
+            /* Settle React state after the landing, not during its first paint. */
+            finishArrivalLanding(() => {
+              undo();
+              jumpOwnsEntrance = false;
+              setJumpHold(false);
+              setHoldMount(false);   // belt and braces: the gate must never outlive the jump
+              setIntroDone(true);
+            }, jumpShort ? 360 : ARRIVAL.assemble);
+          });
         }}
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
   ) : null;
-  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}</RoomBoundary>{signInLayer}</React.Suspense>;
+  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}{jumpHold && !holdMount && session && <ArrivalPrepared ready={arrivalDestinationReady && !loadErr && !bootStall && (wantsFloor || view === "admin" || view === "combined" || !!storeData || !!storeMismatch)} identity={wantsFloor ? floorLinks : storeData} />}</RoomBoundary>{signInLayer}</React.Suspense>;
+
+  // Keep the login owner mounted so a failed boot can stop in themed recovery.
+  if (loadErr || bootStall) return wrap(<Shell><BootStall onRetry={retryBoot} /><Style /></Shell>);
 
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
@@ -3011,6 +3027,7 @@ export default function LeadPerformanceCalculator() {
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
+    setInitialViewReady(false);
     setSession(null); setEntered(false); setAppModule("perf");
   };
 
@@ -3054,6 +3071,9 @@ export default function LeadPerformanceCalculator() {
       localStorage.removeItem("lpcf:home");
     } catch (e) {}
     const home = homeLinkFor(floorLinks, remembered);
+    if (home && SALESPERSON_APP_ONLY && !inSageApp()) {
+      return wrap(<Shell><AppOnlyCard name={session.name} onSignOut={signOut} /><Style /></Shell>);
+    }
     if (home) {
       try { localStorage.setItem(homeKey, home.store); } catch (e) {}
       /* Their corner, through the account. The daily QR stays the second door
@@ -3074,7 +3094,7 @@ export default function LeadPerformanceCalculator() {
 
   // The Tools chooser is gone. Signing in drops the person straight into the
   // Performance dashboard; the cinematic intro (below) covers the transition on the
-  // first sign-in of the day. chooseModule stays for the in-app "Tools" button.
+  // explicit sign-in. chooseModule stays for the in-app "Tools" button.
   const chooseModule = (mod) => {
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
@@ -3478,7 +3498,7 @@ export default function LeadPerformanceCalculator() {
                         row a person, everything a tap into a pop. The desk keeps the
                         hero, the focus grid and the role cards. */}
                     {phone ? (
-                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session}
+                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session} query={assocQuery}
                         canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig}
                         onSetRestriction={setRestriction}
                         onCoach={() => { coachAfter.current = true; switchTool("activity"); }} />
@@ -3789,10 +3809,14 @@ function QueueBoard({ storeId, kind }) {
     let channel = null;
     if (supabase) {
       try {
-        channel = supabase.channel(`qb:${table}:${rowId}`)
+        /* With a key, the row's public doorbell (C92); the TV cannot hear
+           postgres_changes once the rows close. */
+        channel = (viaFor(table, rowId)
+          ? supabase.channel(doorbellTopic(table, rowId)).on("broadcast", { event: "changed" }, () => { if (!dead) pull(); })
+          : supabase.channel(`qb:${table}:${rowId}`)
           .on("postgres_changes",
             { event: "*", schema: "public", table, filter: `id=eq.${rowId}` },
-            () => { if (!dead) pull(); })
+            () => { if (!dead) pull(); }))
           .subscribe();
       } catch (e) { /* no realtime: the poll below still carries it */ }
     }
@@ -3843,28 +3867,6 @@ function QueueBoard({ storeId, kind }) {
   const busy = line.filter((p) => p.status !== "waiting" && !isTestId(p.id));
   const next = waiting[0] || null;
 
-  /* The way people actually get in the queue.
-     A printed code goes stale the moment somebody reprints it, and on a wall there
-     is a screen already showing the queue, so the code belongs there. It surfaces
-     on its own every couple of minutes, holds long enough to be scanned from a few
-     feet away, and goes again. Nobody has to be asked to put it up. */
-  const signInUrl = (row && row.token)
-    ? (kind === "floor"
-        ? `${window.location.origin}${window.location.pathname}?f=${encodeURIComponent(storeId)}&d=${today()}&t=${encodeURIComponent(row.token)}`
-        : queueSignInUrl(storeId, today(), row.token, kind === "online" ? "o" : "q"))
-    : "";
-  const [scan, setScan] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  useEffect(() => {
-    if (!signInUrl || pinned) return;
-    let t1 = null, t2 = null;
-    const cycle = () => {
-      setScan(true);
-      t2 = setTimeout(() => setScan(false), 22000);   // long enough to walk over and scan
-    };
-    t1 = setInterval(cycle, 150000);                   // every two and a half minutes
-    return () => { clearInterval(t1); clearTimeout(t2); };
-  }, [signInUrl, pinned]);
   const pod = waiting.slice(1, 4);
   const rest = waiting.slice(4, 9);
 
@@ -3943,25 +3945,6 @@ function QueueBoard({ storeId, kind }) {
             {waiting.length > 9 && <div className="qb-card qb-more">+{waiting.length - 9} more</div>}
           </div>
         </>
-      )}
-
-      {/* Tap or click the screen to hold the code up, tap again to release it. Useful
-          at a shift change, when everybody needs it at once. */}
-      {signInUrl && (
-        <button className="qb-scan-toggle" onClick={() => { setPinned((v) => !v); setScan(!pinned); }}>
-          {pinned ? "Hide the code" : "Show the code"}
-        </button>
-      )}
-
-      {signInUrl && (scan || pinned) && (
-        <div className={"qb-scan" + (pinned ? " qb-scan-pin" : "")}>
-          <div className="qb-scan-card">
-            <div className="qb-scan-cap">{variant.label}</div>
-            <div className="qb-scan-title">Scan to check in</div>
-            <div className="qb-scan-qr"><QueueQR url={signInUrl} cell={9} /></div>
-            <div className="qb-scan-sub">Point a phone camera at the code</div>
-          </div>
-        </div>
       )}
 
       {busy.length > 0 && (
@@ -4084,6 +4067,75 @@ function useBuildWatchdog() {
 function Overlay({ children }) {
   if (typeof document === "undefined") return children;
   return createPortal(children, document.body);
+}
+
+/* ---- Your account, and deleting it (C91) ----------------------------------
+   Apple requires any app with sign-up to let a person delete their account
+   from inside it. Jorge, 23 September: "a little harder to delete, but keep
+   their figures". So it is not a row beside Sign out: "Your account" opens this
+   page, Delete my account sits at its foot, and it asks for DELETE typed.
+   The server checks the word again and decides who may delete what
+   (api/_account-delete.mjs); this only asks. The login goes, the store's
+   records stay, and the sign-in card says it is done (DELETED_KEY). */
+const DELETED_KEY = "lpc:account-deleted";
+function AccountSheet({ name, onClose, onDeleted, desk = false }) {
+  const [email, setEmail] = useState("");
+  const [step, setStep] = useState("page");
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let dead = false;
+    if (supabase) supabase.auth.getSession().then(({ data }) => {
+      if (!dead) setEmail((data && data.session && data.session.user && data.session.user.email) || "");
+    }).catch(() => {});
+    return () => { dead = true; };
+  }, []);
+  const ready = typed.trim() === "DELETE";
+  const remove = async () => {
+    if (!ready || busy) return;
+    setBusy(true); setErr("");
+    const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE" } });
+    if (!out || out.error) { setBusy(false); setErr((out && out.error) || "That did not go through. Try again."); return; }
+    try { sessionStorage.setItem(DELETED_KEY, "1"); } catch (e) {}
+    onDeleted();
+  };
+  const close = () => { if (!busy) onClose(); };
+  return (
+    <Overlay><div className={"mc-ov acct-ov" + (desk ? " acct-desk" : "")} onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="mc-sheet mc-you acct" role="dialog" aria-modal="true" aria-label={step === "page" ? "Your account" : "Delete your account"}>
+        <div className="mc-sheet-head"><b>{step === "page" ? "Your account" : "Delete your account?"}</b>
+          <button type="button" className="mc-x x-close" onClick={close} aria-label="Close"><PixIcon glyph="close" size={15} /></button></div>
+        {step === "page" ? (<>
+          <div className="mc-cap">SIGNED IN AS</div>
+          <div className="mc-card mc-you-card">
+            <div className="mc-set-row">
+              <span className="ic"><PixIcon glyph="user" size={16} /></span>
+              <span>{name || "You"}<span className="hint">{email || " "}</span></span></div>
+          </div>
+          <div className="mc-cap">DELETE</div>
+          <div className="mc-card mc-you-card">
+            <button type="button" className="mc-set-row mc-set-out" onClick={() => { setStep("confirm"); setTyped(""); setErr(""); }}>
+              <span className="ic"><PixIcon glyph="close" size={16} /></span>
+              <span>Delete my account<span className="hint">Your login goes. Your store keeps its figures.</span></span>
+              <span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+          </div>
+        </>) : (<>
+          <div className="acct-say">
+            <p><b>Goes:</b> your login, your email, and Sage's notifications on your phones.</p>
+            <p><b>Stays with your store:</b> your name on past days and your numbers. Ask your manager about those.</p>
+            <p>This can't be undone.</p>
+          </div>
+          <label className="acct-lbl" htmlFor="acct-confirm">Type DELETE to confirm</label>
+          <input id="acct-confirm" className="acct-in" value={typed} autoCapitalize="characters" autoCorrect="off" autoComplete="off" spellCheck={false}
+            onChange={(e) => { setTyped(e.target.value); setErr(""); }} onKeyDown={(e) => e.key === "Enter" && remove()} placeholder="DELETE" />
+          {err && <div className="acct-err">{err}</div>}
+          <button type="button" className="acct-go" disabled={!ready || busy} onClick={remove}>{busy ? "Deleting…" : "Delete my account"}</button>
+          <button type="button" className="acct-keep" disabled={busy} onClick={() => { setStep("page"); setErr(""); }}>Keep it</button>
+        </>)}
+      </div>
+    </div></Overlay>
+  );
 }
 
 /* ---- Floorside helpers ------------------------------------------------- */
@@ -4403,7 +4455,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             <span className="sf-band-txt">
               <span className="sf-band-lbl">{t.label}</span>
               <span className="sf-band-of">
-                {made ? <b>made it</b> : t.target ? `of ${t.target} · ${t.target - t.v} to go` : "no bar set"}
+                {made ? <b>completed</b> : t.target ? `of ${t.target} · ${t.target - t.v} to go` : "no bar set"}
               </span>
               {p != null && <span className={"sf-meter" + (made ? " done" : "")}><i style={{ width: p + "%" }} /></span>}
             </span>
@@ -4908,6 +4960,35 @@ function HelpPanel({ config, who, store, context, figures, onClose, dark = false
 /* Where the phone app lives, once it does. Empty until then, and the Help row
    says the app is coming instead of pointing anywhere. */
 const APP_STORE_LINKS = { ios: "", android: "" };
+/* The salesperson's screens live in the app, never on a website (C103, Jorge,
+   29 September). Off until the App Store release, which is when the app is
+   reachable at all: switching it on sooner would lock out the people using a
+   browser today with nowhere to go. The release turns this on and fills
+   APP_STORE_LINKS.ios in the same change. */
+const SALESPERSON_APP_ONLY = false;
+/* Inside the app the page has the phone's bridge; no browser has it. */
+const inSageApp = () => typeof window !== "undefined" && !!window.ReactNativeWebView;
+
+/* What a browser shows a salesperson instead of their screens (C103, A1 a):
+   where to go, a way there, and their account, so Delete my account still
+   works from a browser. */
+function AppOnlyCard({ name, onSignOut }) {
+  const [acct, setAcct] = useState(false);
+  const link = APP_STORE_LINKS.ios;
+  return (
+    <div className="login"><div className="login-card">
+      <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
+      <h1 className="login-title lf-balance">Sage for salespeople is in the app</h1>
+      <p className="lf-note">Your floor, your line and your numbers are on your phone. Open Sage there, signed in with this same account.</p>
+      {link
+        ? <a className="lf-go lf-solo" href={link} target="_blank" rel="noopener"><span>Get the Sage app</span></a>
+        : <p className="lf-note">The app is on its way to the App Store.</p>}
+      <button className="lf-alt" onClick={() => setAcct(true)}>Your account</button>
+      <button className="lf-alt" onClick={onSignOut}>Sign out</button>
+      {acct && <AccountSheet desk name={name} onClose={() => setAcct(false)} onDeleted={() => { setAcct(false); onSignOut(); }} />}
+    </div></div>
+  );
+}
 
 /* ---------------- Claim your name ----------------
    Which store, and which name on its roster. The roster comes from the store's
@@ -4974,7 +5055,8 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [name, setName] = useState("");
   const [claim, setClaim] = useState({ store: "", person: null, name: "" });
   const [err, setErr] = useState("");
-  const [ok, setOk] = useState("");
+  /* After Delete my account (C91): said once, on the card the person lands on. */
+  const [ok, setOk] = useState(() => { try { if (sessionStorage.getItem(DELETED_KEY)) { sessionStorage.removeItem(DELETED_KEY); return "Your account is deleted."; } } catch (e) {} return ""; });
   const [busy, setBusy] = useState(false);
   /* The card's own 760ms deconstruction is gone with the handover it belonged
      to. The arrival takes the screen apart now, from the press, so there is
@@ -5201,7 +5283,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       {/* The field belongs to this screen and lives as long as it does: held for
           the whole jump, gone with it at the handover, underneath the white. */}
       <SageField />
-      <div className={"login-card " + (busy ? "login-busy" : "")}>
+      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" ? " login-launch" : "") : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         {/* No spinner here any more. Signing in used to swap the wordmark for a
             loading indicator, which is a different object appearing in the place
@@ -5245,6 +5327,10 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
               </span>
             </button>
             <button className="lf-alt" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
+            {/* Apple wants the policy reachable from inside the app (C90). It is
+                our own address, so the app keeps it in view, and the page's
+                Sage mark leads back here. */}
+            <a className="lf-privacy" href="/privacy">Privacy</a>
             {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
           </div>
         )}
@@ -5420,6 +5506,24 @@ function rememberView(v) {
 function settleViewport({ floor = 200, cap = 520 } = {}) {
   return new Promise((resolve) => {
     if (typeof window === "undefined") return resolve();
+    // A known non-touch desktop has no software keyboard to dismiss. Give
+    // the pressed state one frame, not the phone's 240 ms quiet-window wait.
+    // Missing capability information, touch laptops and zoom stay conservative.
+    let desktop = false;
+    try {
+      const vv = window.visualViewport;
+      desktop = navigator.maxTouchPoints === 0
+        && window.matchMedia("(pointer: fine)").matches
+        && !window.matchMedia("(any-pointer: coarse)").matches
+        && (!vv || (vv.scale === 1 && Math.abs(vv.height - window.innerHeight) < 2));
+    } catch (e) {}
+    if (desktop) {
+      let frame = 0, done = false;
+      const finish = () => { if (done) return; done = true; clearTimeout(limit); cancelAnimationFrame(frame); resolve(); };
+      const limit = setTimeout(finish, cap);
+      frame = requestAnimationFrame(finish);
+      return;
+    }
     /* A floor, not just a quiet check. The keyboard does not begin leaving the
        instant it is told to — iOS animates it out over about a quarter of a
        second — so polling for "the height stopped changing" answers yes before
@@ -5461,23 +5565,21 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    not. */
 const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };
 
-/* The jump is for the first sign-in of the day on this phone. Signing in again
-   the same day (a switch, a sign-out and back) lands the short way, the quick
-   fade reduced motion gets: the tunnel is an arrival, not a toll on every
-   return. Decided once, at the press, and read by every beat after it. */
-const JUMP_DAY_KEY = "lpc:jump:day";
+/* Every explicit sign-in gets the existing arrival. Only Reduce Motion takes
+   the short path. Old daily marks are ignored, including on shared computers. */
 let jumpShort = false;
 function arrivalShort() {
   try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true; } catch (e) {}
-  try { return localStorage.getItem(JUMP_DAY_KEY) === today(); } catch (e) { return false; }
+  return false;
 }
-function arrivalTaken() { try { localStorage.setItem(JUMP_DAY_KEY, today()); } catch (e) {} }
 
 /* ---- what the jump is waiting for, and where it is going ----
    Told by the root, read by the engine each frame of the cruise. Module state
    for the same reason lastJumpOrigin is: the engine lives outside React so the
    handover cannot tear it down mid-flight. */
 let arrivalReady = false;
+let arrivalSurfaceReady = false;
+let arrivalFailed = false;
 let arrivalDest = null;   // { name, color } for the travel sign, or null
 /* The engine announces its beats so the root can schedule the expensive work
    into the right one: the dashboard mounts during the CRUISE, which is the
@@ -5492,9 +5594,22 @@ function tellArrivalReady(ready, dest) {
   arrivalReady = !!ready;
   if (dest !== undefined) arrivalDest = dest;
   if (activeEngineSend) {
-    activeEngineSend({ type: "ready", ready: arrivalReady });
     activeEngineSend({ type: "dest", dest: arrivalDest });
+    activeEngineSend({ type: "ready", ready: arrivalReady });
   }
+}
+function ArrivalPrepared({ ready, identity }) {
+  useLayoutEffect(() => {
+    arrivalSurfaceReady = false;
+    activeEngineSend?.({ type: "ready", ready: false });
+    if (!ready) return;
+    const cancel = prepareArrivalSurface(() => {
+      arrivalSurfaceReady = true;
+      activeEngineSend?.({ type: "ready", ready: arrivalReady });
+    });
+    return () => { cancel(); arrivalSurfaceReady = false; activeEngineSend?.({ type: "ready", ready: false }); };
+  }, [ready, identity]);
+  return null;
 }
 /* ---- every time, not once a day ----
    The handoff asked for the first sign-in of the day, like the morning round-up,
@@ -5739,6 +5854,33 @@ function arrivalEngineCore(ctx, world, post) {
   };
 }
 
+/* A pair of frames is not a duration: at 120 Hz it ends before the cover is
+   opaque. Keep the last tunnel frame until opacity reaches one, then allow a
+   paint before swapping. A missing cover must report, not strand sign-in. */
+function waitForArrivalCover(onCovered) {
+  const cover = document.querySelector(".sage-flash");
+  let stopped = false, raf = 0;
+  const finish = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(limit); cancelAnimationFrame(raf);
+    onCovered();
+  };
+  const limit = setTimeout(() => {
+    console.warn("[Sage arrival] Cover did not become opaque; continuing sign-in.");
+    finish();
+  }, 1000);
+  const check = () => {
+    if (stopped) return;
+    const style = cover && getComputedStyle(cover);
+    if (style && style.position === "fixed" && Number(style.opacity) >= 0.999) {
+      raf = requestAnimationFrame(finish);
+    } else raf = requestAnimationFrame(check);
+  };
+  raf = requestAnimationFrame(check);
+  return () => { stopped = true; clearTimeout(limit); cancelAnimationFrame(raf); };
+}
+
 function runJump({ onFlash, onDone, lead = 0 }) {
   /* The driver. Measures the world at the press, hands the drawing to
      arrivalEngineCore — inside a Worker with an OffscreenCanvas wherever the
@@ -5748,15 +5890,28 @@ function runJump({ onFlash, onDone, lead = 0 }) {
      and the flash handover. */
   const root = typeof document === "undefined" ? null : document.documentElement;
   if (!root) { onFlash(); onDone(); return () => {}; }
-  jumpShort = arrivalShort();
-  if (jumpShort) {
-    tellPhase("cruise");
-    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
-    return () => clearTimeout(t);
-  }
-  arrivalTaken();
+  // A repeat or reduced-motion sign-in owns a new handoff too. Never inherit
+  // the previous session's landed latch and expose the app before this one ends.
   jumpOwnsEntrance = true;
   jumpLanded = false;
+  jumpShort = arrivalShort();
+  const arrivalView = openArrivalSurface(jumpShort);
+  if (jumpShort) {
+    tellPhase("cruise");
+    let elapsed = false, complete = false;
+    const finish = () => {
+      if (complete || !elapsed || !arrivalReady || !arrivalSurfaceReady || arrivalFailed) return;
+      complete = true; activeEngineSend = null; arrivalView.landing(); onFlash(); onDone();
+    };
+    activeEngineSend = m => {
+      if (m.type === "recovery") arrivalView.recovery(m.failed);
+      if (m.type === "ready" && m.ready && arrivalSurfaceReady && !arrivalFailed) arrivalView.ready();
+      finish();
+    };
+    const t = setTimeout(() => { elapsed = true; finish(); }, 180);
+    const waiting = setTimeout(() => { if (!complete) arrivalView.wait(arrivalFailed); }, 500);
+    return () => { complete = true; clearTimeout(t); clearTimeout(waiting); activeEngineSend = null; arrivalView.dispose(); jumpOwnsEntrance = false; tellPhase("off"); };
+  }
 
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H / 2;
@@ -5773,7 +5928,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     const ox = mr.left + (mr.width - gWord.w * scale) / 2;
     const oy = mr.top + (mr.height - gWord.h * scale) / 2;
     const gS = sageDots({ word: false });
-    const seatScale = scale * 0.62;
+    const seatScale = scale * 0.46;
     const seats = gS.dots.map((d) => ({
       x: cx + (d.x - gS.w / 2) * seatScale,
       y: cy + (d.y - gS.h / 2) * seatScale,
@@ -5810,34 +5965,17 @@ function runJump({ onFlash, onDone, lead = 0 }) {
       }
   }
 
-  /* ---- the tunnel: seeded mid-life so the sky starts in steady state ---- */
-  const maxR = Math.hypot(W, H) / 2 + 160;
-  const tunnel = [];
-  {
-    const n = Math.round((W * H) / 7800);
-    for (let i = 0; i < n; i++) {
-      const waiting = Math.random() < 0.18;
-      const r = waiting ? 2 : Math.pow(Math.random(), 1.7) * maxR;
-      tunnel.push({
-        ang: Math.random() * Math.PI * 2, r,
-        t: Math.max(0, r - (200 + Math.random() * 160)),
-        wait: waiting ? Math.random() * 0.9 : 0,
-        v: 0.55 + Math.random() * 0.9,
-        size: 1.4 + Math.random() * 2.2,
-        tint: GROUND_TINTS[Math.floor(Math.random() * GROUND_TINTS.length)],
-      });
-    }
-  }
-
-  const cv = document.createElement("canvas");
+  let cv = document.createElement("canvas");
   cv.className = "sage-jump-canvas";
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   cv.style.width = W + "px"; cv.style.height = H + "px";
   document.body.appendChild(cv);
-  root.classList.add("sage-cv");
+  cv.style.opacity = "0";
 
   const card = document.querySelector(".login-card");
+  const fold = card?.getBoundingClientRect();
+  const foldX = fold ? cx-fold.left-fold.width/2 : 0, foldY = fold ? cy-fold.top-fold.height/2 : 0;
   const blobs = Array.from(document.querySelectorAll(".sg-blob")).map((el) => {
     const r = el.getBoundingClientRect();
     const bx = r.left + r.width / 2, by = r.top + r.height / 2;
@@ -5853,70 +5991,90 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     catch (e) { return "sans-serif"; }
   })();
 
-  const world = { W, H, dpr, T: JUMP_T, FP: 0.5, mk, field, tunnel, font: bodyFont, lead };
+  const world = { W, H, dpr, mk, field, lead };
 
   let flashing = false, stopped = false, raf = 0, domRaf = 0;
-  let worker = null, engine = null;
+  let worker = null, engine = null, scheduler = null, cancelCover = () => {}, drawingFailed = false, renderer = "main", painted = false;
 
   const toFlash = () => {
     if (flashing || stopped) return;
     flashing = true;
+    arrivalView.landing();
+    scheduler?.stop();
     activeEngineSend = null;
-    restoreDom();
-    root.classList.add("sage-beat-flash");
-    root.classList.remove("sage-cv");
+    root.classList.add("sage-beat-flash", "sage-cover-active");
     if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
-    if (cv.parentNode) cv.parentNode.removeChild(cv);
     onFlash();
-    let frames = 0;
-    const painted = () => {
+    cancelCover = waitForArrivalCover(() => {
       if (stopped) return;
-      if (++frames < 2) { requestAnimationFrame(painted); return; }
-      setTimeout(() => { if (!stopped) onDone(); }, 20);
-    };
-    requestAnimationFrame(painted);
+      restoreDom();
+      root.classList.remove("sage-cv");
+      if (cv.parentNode) cv.parentNode.removeChild(cv);
+      onDone();
+    });
   };
 
   const onPost = (type, data) => {
     if (stopped) return;
-    if (type === "phase") tellPhase(data);
+    if (type === "paint") { painted = true; cv.style.opacity = "1"; root.classList.add("sage-cv"); }
+    else if (type === "metrics") document.dispatchEvent(new CustomEvent("sage-arrival-metrics", { detail: { ...data, renderer, painted } }));
+    else if (type === "destination") arrivalView.destination(data);
+    else if (type === "phase") { arrivalView.phase(data); tellPhase(data); }
     else if (type === "flash") toFlash();
   };
 
   /* Worker where the browser has one; the same core on the main thread where
      it does not. Either way the maths exists once. */
-  let usingWorker = false;
+  const drawingError = () => {
+    drawingFailed = true;
+    console.warn("[Sage arrival] Canvas unavailable; using the covered handoff.");
+    arrivalView.wait(arrivalFailed);
+    if (arrivalReady && arrivalSurfaceReady && !arrivalFailed) toFlash();
+  };
+  const fallback = () => {
+    if (stopped || flashing || scheduler) return;
+    if (worker) { worker.terminate(); worker = null; }
+    renderer = "main";
+    // An OffscreenCanvas cannot be reclaimed. Replace just that canvas once.
+    const fresh = cv.cloneNode(false); cv.replaceWith(fresh); cv = fresh;
+    try {
+      const ctx = cv.getContext("2d");
+      if (!ctx) { drawingError(); return; }
+      engine = productionArrivalEngine(ctx, world, onPost);
+      scheduler = createArrivalScheduler(engine, requestAnimationFrame, cancelAnimationFrame, drawingError);
+      scheduler.send({ type: "dest", dest: arrivalDest });
+      scheduler.send({ type: "ready", ready: arrivalReady && arrivalSurfaceReady && !arrivalFailed });
+      scheduler.start();
+    } catch (error) { drawingError(); }
+  };
   try {
     if (typeof OffscreenCanvas !== "undefined" && cv.transferControlToOffscreen && typeof Worker !== "undefined") {
       const off = cv.transferControlToOffscreen();
-      const src = "let eng=null;self.onmessage=function(e){var m=e.data;" +
-        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');" +
-        "var core=(" + arrivalEngineCore.toString() + ");" +
-        "eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
-        "var loop=function(now){if(!eng)return;eng.tick(now);requestAnimationFrame(loop);};" +
-        "requestAnimationFrame(loop);}else if(eng){eng.msg(m);}};";
-      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
-      worker.onmessage = (e) => onPost(e.data.type, e.data.data);
+      const src = "let scheduler=null;self.onmessage=function(e){var m=e.data;" +
+        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');if(!ctx)throw Error('Canvas unavailable');" +
+        "var core=(" + productionArrivalEngine.toString() + ");" +
+        "var schedule=(" + createArrivalScheduler.toString() + ");" +
+        "var eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
+        "scheduler=schedule(eng,requestAnimationFrame,cancelAnimationFrame,function(){self.postMessage({type:'renderer-error'});});scheduler.start();" +
+        "}else if(scheduler){if(m.type==='stop')scheduler.stop();else scheduler.send(m);}};";
+      const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      try { worker = new Worker(url); renderer = "worker"; } finally { URL.revokeObjectURL(url); }
+      worker.onmessage = e => { if(e.data.type==="renderer-error")fallback(); else onPost(e.data.type,e.data.data); };
+      worker.onerror = () => { console.warn("[Sage arrival] Worker unavailable; using the main-thread renderer."); fallback(); };
       worker.postMessage({ type: "init", canvas: off, world }, [off]);
-      usingWorker = true;
-    }
-  } catch (e) { try { if (worker) worker.terminate(); } catch (e2) {} worker = null; usingWorker = false; }
-  if (!usingWorker) {
-    const ctx = cv.getContext("2d");
-    engine = arrivalEngineCore(ctx, world, onPost);
-    const loop = (now) => {
-      if (stopped || flashing) return;
-      engine.tick(now);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-  }
-  activeEngineSend = (m) => {
+    } else fallback();
+  } catch (error) { fallback(); }
+  activeEngineSend = m => {
+    if (stopped || flashing) return;
+    if (m.type === "recovery") { arrivalView.recovery(m.failed); return; }
+    if (m.type === "ready") m = { ...m, ready: !!m.ready && arrivalSurfaceReady && !arrivalFailed };
+    if (m.type === "ready" && m.ready) arrivalView.ready();
+    if (drawingFailed && m.type === "ready" && m.ready) { toFlash(); return; }
     if (worker) worker.postMessage(m);
-    else if (engine) engine.msg(m);
+    else scheduler?.send(m);
   };
-  activeEngineSend({ type: "ready", ready: arrivalReady });
   activeEngineSend({ type: "dest", dest: arrivalDest });
+  activeEngineSend({ type: "ready", ready: arrivalReady });
 
   /* ---- the DOM's own choreography, on a matching clock ----
      The card's fade and the clouds' pull and blow-out are DOM work, which a
@@ -5926,15 +6084,15 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   const ease3 = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
   const pw = (p, k) => Math.pow(Math.min(1, Math.max(0, p)), k);
   const domT0 = performance.now() + lead;
-  const R = JUMP_T.ratchet, F = JUMP_T.reform, S = JUMP_T.streaks;
+  const R = 120, F = 720, S = 620;
   const domLoop = (now) => {
     if (stopped || flashing) return;
     const t = now - domT0;
-    if (t >= R && t < R + F) {
-      const k = ease3((t - R) / F);
+    if (t >= 0 && t < R + F) {
+      const k = ease3(t / (R + F));
       if (card) {
-        card.style.opacity = String(Math.max(0, 1 - k * 1.15));
-        card.style.transform = "scale(" + (1 - k * 0.08) + ")";
+        card.style.opacity = String(Math.max(0, 1-k*k));
+        card.style.transform = "translate3d(" + (foldX*k*k) + "px," + (foldY*k*k) + "px,0) scale(" + (1-k*k*.9) + "," + (1-k*k*.96) + ")";
       }
       for (const b of blobs) {
         b.el.style.transform = "translate(" + (-b.ux * k * 150) + "px," + (-b.uy * k * 150) + "px) scale(" + (1 - k * 0.1) + ")";
@@ -5958,14 +6116,16 @@ function runJump({ onFlash, onDone, lead = 0 }) {
   domRaf = requestAnimationFrame(domLoop);
 
   return () => {
-    if (flashing) return;
     stopped = true;
+    cancelCover();
+    scheduler?.stop();
+    arrivalView.dispose();
     activeEngineSend = null;
     cancelAnimationFrame(raf); cancelAnimationFrame(domRaf);
     if (worker) { try { worker.postMessage({ type: "stop" }); worker.terminate(); } catch (e) {} worker = null; }
     if (engine) engine.msg({ type: "stop" });
     restoreDom();
-    root.classList.remove("sage-cv", "sage-beat-flash");
+    root.classList.remove("sage-cv", "sage-beat-flash", "sage-cover-active");
     if (cv.parentNode) cv.parentNode.removeChild(cv);
     jumpOwnsEntrance = false;
     tellPhase("off");   // release the mount gate: this jump is not landing
@@ -6115,7 +6275,7 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
-   and a transform on a handful of blocks — and the dashboard itself has been
+   and a transform on a handful of blocks, and the dashboard itself has been
    mounted and laid out since the hold. So the handover is done here, imperatively,
    rather than by setting state.
 
@@ -6123,21 +6283,36 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
    flash: changing anything on the root re-renders the whole app tree, and this
    tree is very large. The mount had already been moved under the streaks by then,
    so what was left was React reconciling a dashboard that was not changing. Now
-   the frame that reveals it touches four class names and reads the geometry of six
-   blocks, and the state is settled a second and a half later when a re-render
-   costs nothing anyone can see. */
-function landDashboard() {
-  if (typeof document === "undefined") return () => {};
+   the handoff changes classes and reads block geometry under the cover. The first
+   landing pose gets a covered paint before motion starts. React state settles
+   after that motion; it can still cost a frame and must be measured separately. */
+function landDashboard(onStarted = () => {}) {
+  if (typeof document === "undefined") { onStarted(); return () => {}; }
   jumpLanded = true;
   const root = document.documentElement;
+  const prepare = !jumpShort && root.classList.contains("sage-cover-active");
+  if (prepare) root.classList.add("sage-preparing");
   /* One style change: the app comes out of hiding, the sign-in layer goes, and the
      landing rules come on together. */
   root.classList.remove("jump-under", "sage-beat-flash");
   root.classList.add("sage-assemble", "sage-beat-assemble", "signin-gone");
   const undo = jumpShort ? () => {} : radialAssemble();
+  let frame = 0;
+  if (prepare) {
+    // Paint the first landing pose under opaque white before its clock starts.
+    // A second frame puts the release after that paint, not in the mount frame.
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        root.classList.remove("sage-preparing");
+        startArrivalScan();
+        onStarted();
+      });
+    });
+  } else { startArrivalScan(); onStarted(); }
   return () => {
+    cancelAnimationFrame(frame);
     undo();
-    root.classList.remove("sage-assemble", "sage-beat-assemble", "signin-gone");
+    root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-preparing");
   };
 }
 function radialAssemble() {
@@ -6493,7 +6668,6 @@ const QUEUE_TABLE = "queue_public";
    without signing in, which matters: the people most likely to hit a problem are
    salespeople on a sign-in page who have no account at all. A ticket nobody can
    file is a ticket nobody sends. */
-const TICKET_PREFIX = "ticket:";
 
 
 
@@ -6524,9 +6698,12 @@ const isTestId = (id) => id === TEST_ID;
 
 async function saveTicket(t) {
   if (!supabase) return false;
+  /* store and qdate are NOT NULL on queue_public, and this used to send
+     neither, so the table refused every ticket ever filed (C98). */
+  const day = today();
   try {
     const { error } = await supabase.from(QUEUE_TABLE)
-      .upsert({ id: TICKET_PREFIX + t.id, data: t }, { onConflict: "id" });
+      .upsert({ id: TICKET_PREFIX + t.id, store: t.store || "", qdate: day, data: t }, { onConflict: "id" });
     if (error) throw error;
     return true;
   } catch (e) { console.error("saveTicket", e); return false; }
@@ -6591,6 +6768,61 @@ const qMinsSince = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date
 const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`);
 
 /* ---- Supabase access: the per-day line row (queue_public) ---- */
+/* ---- Compare and save, for the day's rows (C89) ----
+   The floor and the line are one JSON document per store per day, and every
+   change is read it, change it, write it back. The page queues its own
+   writes (qChains below), but another phone, the desk, or the server's
+   queue-action landing between this read and this write used to be written
+   over, and nothing noticed. Now the write goes through only if the row still
+   carries the updated_at it was read with, which is the same guard
+   api/queue-action.mjs already keeps; a write that loses the race reads again
+   and reapplies the same change to what is there now. A row that does not
+   exist yet is inserted, never upserted, so two first writers cannot both
+   believe they won. */
+const ROW_TRIES = 5;
+async function readRowStamped(table, id) {
+  const { data, error } = await supabase.from(table).select("data,updated_at").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? { row: data.data, stamp: data.updated_at || null, exists: true } : { row: null, stamp: null, exists: false };
+}
+/* A stamp that always moves: two writes in the same millisecond, or a clock
+   behind the server's, must not leave the row carrying the stamp a racer read. */
+function nextRowStamp(prev) {
+  const p = prev ? Date.parse(prev) : NaN;
+  return new Date(Number.isFinite(p) ? Math.max(Date.now(), p + 1) : Date.now()).toISOString();
+}
+async function mutateRowCAS(table, id, cols, fn, { onWrite, what } = {}) {
+  if (!supabase) throw new Error("No database connection");
+  for (let attempt = 0; attempt < ROW_TRIES; attempt++) {
+    let read;
+    try { read = await readRowStamped(table, id); }
+    catch (e) {
+      await new Promise((z) => setTimeout(z, 400));
+      try { read = await readRowStamped(table, id); }
+      catch (e2) { console.error("read " + table, e2); throw new Error(`The ${what} could not be read just now, so nothing was changed.`); }
+    }
+    const cur = read.row;
+    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+    if (!next) return cur;                       // a change that changes nothing
+    if (onWrite) onWrite(cur, next);
+    const stamp = nextRowStamp(read.stamp);
+    if (read.exists) {
+      let q = supabase.from(table).update({ data: next, updated_at: stamp }).eq("id", id);
+      q = read.stamp ? q.eq("updated_at", read.stamp) : q.is("updated_at", null);
+      const { data: wrote, error } = await q.select("id");
+      if (error) { console.error("write " + table, error); throw new Error(error.message || error.hint || error.code || "write refused"); }
+      if (wrote && wrote.length) return next;
+    } else {
+      const { error } = await supabase.from(table).insert({ id, ...cols, data: next, updated_at: stamp });
+      if (!error) return next;
+      if (String(error.code) !== "23505") { console.error("write " + table, error); throw new Error(error.message || error.hint || error.code || "write refused"); }
+    }
+    /* Somebody else wrote first. Read theirs and do this again on top of it,
+       after a beat with a little spread so two losers do not collide again. */
+    await new Promise((z) => setTimeout(z, 60 * (attempt + 1) + Math.random() * 60));
+  }
+  throw new Error(`The ${what} was busy, so nothing was changed. Try again.`);
+}
 /* A read that FAILED and a row that does not exist are completely different
    things, and treating them the same is what made people vanish from the line:
    one flaky read came back as "nobody is in the queue", the screen emptied, and
@@ -6605,33 +6837,16 @@ async function loadQueueRow(store, date, kind) {
     return data ? data.data : null;
   } catch (e) { console.error("loadQueueRow", e); return undefined; }
 }
-async function saveQueueRow(store, date, data, kind) {
-  if (!supabase) return false;
-  try {
-    const { error } = await supabase.from(QUEUE_TABLE).upsert(
-      { id: queueRowId(store, date, kind), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
-    if (error) throw error;
-    return true;
-  } catch (e) { console.error("saveQueueRow", e); return false; }
-}
-/* Every change to a queue row is read-modify-write against a row with no
-   revision to check, so two writers overlapping means one of them silently
-   loses. That is exactly what made a person added to the line disappear a few
-   seconds later: the roster sync had read the row before the add and wrote its
-   copy back afterwards. Mutations for a given row now queue up behind each
-   other, so each one reads what the one before it wrote. */
+/* Every change to a queue row is read-modify-write, so two writers overlapping
+   used to mean one of them silently lost. That is exactly what made a person
+   added to the line disappear a few seconds later: the roster sync had read the
+   row before the add and wrote its copy back afterwards. Mutations for a given
+   row queue up behind each other in this page, so each one reads what the one
+   before it wrote; mutateRowCAS catches the writers outside this page (C89). */
 const qChains = new Map();
 async function mutateQueueRow(store, date, fn, kind) {
   const key = `${store}|${date}|${kind || "line"}`;
-  const run = async () => {
-    let cur = await loadQueueRow(store, date, kind);
-    if (cur === undefined) { await new Promise((z) => setTimeout(z, 400)); cur = await loadQueueRow(store, date, kind); }
-    if (cur === undefined) throw new Error("The queue could not be read just now, so nothing was changed.");
-    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
-    if (!next) return cur;                       // a mutator that changed nothing
-    if (!(await saveQueueRow(store, date, next, kind))) throw new Error("The change could not be saved just now.");
-    return next;
-  };
+  const run = () => mutateRowCAS(QUEUE_TABLE, queueRowId(store, date, kind), { store, qdate: date }, fn, { what: "queue" });
   const prev = qChains.get(key) || Promise.resolve();
   const p = prev.then(run, run);
   qChains.set(key, p.catch(() => {}));
@@ -6674,40 +6889,6 @@ function qResolveName(typed, roster) {
   return { kind: "none", suggestions: ranked.slice(0, 4) };
 }
 
-/* ---- QR renderer ----
-   The encoder ships with the app. It used to be fetched from a CDN the first
-   time anybody opened a sign-in code, which is a network call at exactly the
-   wrong moment: a dealership that blocks cdnjs, a phone on a bad connection or
-   a slow morning all turned the code into the words "QR unavailable", and the
-   only way onto the floor is that square. Nothing to fetch now. */
-function loadQRCode() {
-  return Promise.resolve(qrcodeGen);
-}
-function queueSignInUrl(storeId, date, token, param = "q", test = false) {
-  const base = window.location.origin + window.location.pathname;
-  return `${base}?${param}=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`
-    + (test ? "&test=1" : "");
-}
-
-
-
-function QueueQR({ url, cell = 6 }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    let dead = false;
-    loadQRCode().then((qrcode) => {
-      if (dead || !ref.current) return;
-      try {
-        const qr = qrcode(0, "M"); qr.addData(url); qr.make();
-        ref.current.innerHTML = qr.createSvgTag({ cellSize: cell, margin: 2, scalable: true });
-        const svg = ref.current.querySelector("svg");
-        if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; svg.removeAttribute("width"); svg.removeAttribute("height"); }
-      } catch (e) { if (ref.current) ref.current.textContent = "QR error"; }
-    }).catch(() => { if (ref.current) ref.current.textContent = "QR unavailable"; });
-    return () => { dead = true; };
-  }, [url, cell]);
-  return <div ref={ref} className="q-qr" aria-label="Sign-in QR code" />;
-}
 
 
 /* =========================================================================
@@ -8461,6 +8642,46 @@ function useTrackLight(ref, key, pipSel) {
     return () => offs.forEach((off) => off && off());
   }, [key]);   // eslint-disable-line
 }
+/* Somebody joining a straight line runs in (C105, Jorge, 29 September, A2 a):
+   the Phone Line cord's arrival, on the line at the top of Home and the one on
+   the Live Floor, where a newcomer used to be drawn in place and simply be
+   there. From behind, fading up, on to the one ahead until they touch, then
+   back to their place, 1.4 s; the one ahead gives a little at contact, as on
+   the cord. `ids` run from the door back. `translate`, not `transform`, so the
+   run rides on top of the transform that places the pip and its glide. Only a
+   newcomer since the last render moves; the first render places everybody. */
+function useLineArrivals(ref, ids, sel) {
+  const seen = useRef(null);
+  useLayoutEffect(() => {
+    const prev = seen.current;
+    seen.current = new Set(ids);
+    const el = ref.current;
+    /* An empty line before is a first sight too: the rail on Home is drawn
+       only once you are on the line, and everybody on it is not arriving. */
+    if (!el || !prev || !prev.size) return;
+    try { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; } catch (e) {}
+    const w = el.getBoundingClientRect().width;
+    if (!w) return;
+    const step = w * 0.13;
+    const byId = {};
+    el.querySelectorAll(sel).forEach((n) => { if (n.dataset && n.dataset.id) byId[n.dataset.id] = n; });
+    const HIT = 560;
+    ids.forEach((id, i) => {
+      if (prev.has(id)) return;
+      const p = byId[id];
+      if (!p || !p.animate) return;
+      const ahead = i > 0 && prev.has(ids[i - 1]) ? byId[ids[i - 1]] : null;
+      p.animate([
+        { translate: `${(-0.6 * step).toFixed(1)}px 0`, opacity: 0, easing: "cubic-bezier(.35,.1,.7,.8)" },
+        { translate: `${((ahead ? 0.5 : 0.2) * step).toFixed(1)}px 0`, opacity: 1, offset: HIT / 1400, easing: "cubic-bezier(.2,.8,.3,1)" },
+        { translate: "0px 0", opacity: 1 }], { duration: 1400 });
+      if (ahead && ahead.animate) ahead.animate([
+        { translate: "0px 0" },
+        { translate: `${(0.22 * step).toFixed(1)}px 0`, offset: .2, easing: "cubic-bezier(.4,.6,.5,1)" },
+        { translate: "0px 0" }], { duration: 1000, delay: HIT - 30, easing: "cubic-bezier(.2,.8,.3,1)" });
+    });
+  });
+}
 function SfCord({ ahead, behind, pos, landed, lit }) {
   const youT = landed ? 0.975 : 0.8 - ahead.length * SF_CORD_STEP;
   const tOf = {};
@@ -9405,7 +9626,16 @@ const rowStamps = new Map();
 async function loadRowIfChanged(table, id, tag) {
   if (!supabase) return undefined;
   const k = tag || (table + "|" + id);
+  const via = viaFor(table, id);
   const read = async () => {
+    /* A TV (C92): the endpoint makes the same bargain, answering "same" for
+       the stamp it was shown, and this writes nothing shared. */
+    if (via) {
+      const out = await readVia(via, rowStamps.get(k));
+      if (out.same) return "same";
+      if (out.row) cachePut("row:" + table + "|" + id, out.row);
+      return { row: out.row || null, stamp: out.row ? (out.stamp || "none") : "missing" };
+    }
     const { data: s, error: e1 } = await supabase.from(table).select("updated_at").eq("id", id).maybeSingle();
     if (e1) throw e1;
     const stamp = s ? (s.updated_at || "none") : "missing";
@@ -9463,11 +9693,18 @@ function useLiveRow(table, id, onChange) {
     if (!supabase || !id) return undefined;
     let ch = null;
     try {
-      ch = supabase.channel(`live:${table}:${id}`)
+      /* A TV cannot hear postgres_changes once the rows close (C92): it
+         listens to the row's public doorbell instead, which carries a time
+         and nothing of the row (the row_doorbell migration). */
+      ch = viaFor(table, id)
+        ? supabase.channel(doorbellTopic(table, id)).on("broadcast", { event: "changed" }, () => {
+            try { cb.current(); } catch (e) {}
+          })
+        : supabase.channel(`live:${table}:${id}`)
         .on("postgres_changes", { event: "*", schema: "public", table, filter: `id=eq.${id}` }, () => {
           try { cb.current(); } catch (e) {}
-        })
-        .subscribe((status) => setLive(status === "SUBSCRIBED"));
+        });
+      ch = ch.subscribe((status) => setLive(status === "SUBSCRIBED"));
     } catch (e) { ch = null; }
     return () => { setLive(false); if (ch) { try { supabase.removeChannel(ch); } catch (e) {} } };
   }, [table, id]);
@@ -9481,34 +9718,13 @@ async function loadFloorRow(store, date) {
     return data ? data.data : null;
   } catch (e) { console.error("loadFloorRow", e); return undefined; }
 }
-/* Same reasoning as the queue write: a refused write that reports success is worse
-   than one that fails loudly, because the screen agrees with you for five seconds
-   and then quietly disagrees. */
-async function saveFloorRow(store, date, data) {
-  if (!supabase) throw new Error("No database connection");
-  const { error } = await supabase.from(FLOOR_TABLE).upsert(
-    { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
-  if (error) {
-    console.error("saveFloorRow", error);
-    throw new Error(error.message || error.hint || error.code || "write refused");
-  }
-  return true;
-}
-/* Serialised for the same reason the queue rows are: overlapping read-modify-
-   writes on a row with no revision lose each other's changes. */
+/* Serialised in this page for the same reason the queue rows are, and guarded
+   against every other writer by mutateRowCAS (C89). */
 async function mutateFloorRow(store, date, fn) {
   const key = `floor|${store}|${date}`;
-  const run = async () => {
-    let cur = await loadFloorRow(store, date);
-    if (cur === undefined) { await new Promise((z) => setTimeout(z, 400)); cur = await loadFloorRow(store, date); }
-    if (cur === undefined) throw new Error("The floor could not be read just now, so nothing was changed.");
-    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
-    if (!next) return cur;
-    // Whoever moved up gets a stamp, so a phone's "last move" means that.
-    stampLineMoves(cur, next, qNowIso());
-    await saveFloorRow(store, date, next);
-    return next;
-  };
+  /* Whoever moved up gets a stamp, so a phone's "last move" means that. */
+  const run = () => mutateRowCAS(FLOOR_TABLE, floorRowId(store, date), { store, fdate: date }, fn,
+    { what: "floor", onWrite: (cur, next) => stampLineMoves(cur, next, qNowIso()) });
   const prev = qChains.get(key) || Promise.resolve();
   const p = prev.then(run, run);
   qChains.set(key, p.catch(() => {}));
@@ -9861,6 +10077,7 @@ function McTrack({ line, meId, roster }) {
   const youL = ahead.length * 15;
   const behindL = (k) => ahead.length * 15 + (k + 1) * 13;
   useTrackLight(ref, waiting.map((p2) => p2.id).join(","), ".mcf-pip, .mcf-you");
+  useLineArrivals(ref, waiting.map((p2) => p2.id), ".mcf-pip, .mcf-you");
   return (
     <div className="mcf-track" ref={ref}>
       <s className="lt" /><s className="lt" />
@@ -9868,12 +10085,12 @@ function McTrack({ line, meId, roster }) {
           40 ms after the one in front, from the door backwards. The delay
           rides every move, which on a join reads as the line making room. */}
       {ahead.map((p2, i) => (
-        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i), transitionDelay: `${i * 40}ms` }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} data-id={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i), transitionDelay: `${i * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
       {behind.map((p2, k) => (
-        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k), transitionDelay: `${(ahead.length + 1 + k) * 40}ms` }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} data-id={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k), transitionDelay: `${(ahead.length + 1 + k) * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
-      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL, transitionDelay: `${ahead.length * 40}ms` }}>{labelOf(meId)}</span>}
+      {meIdx >= 0 && <span data-id={meId} className="mcf-you" style={{ "--p": youL, transitionDelay: `${ahead.length * 40}ms` }}>{labelOf(meId)}</span>}
     </div>
   );
 }
@@ -9948,7 +10165,6 @@ function McSpine({ rows, land = false }) {
   const temp = pct >= 100 ? "made" : pct < 34 ? "cold" : "warm";
   return (
     <div className={"mc-spine " + temp + (land ? " mc-land" : "")} aria-label={pct + " percent of the day"}>
-      <span className="rt">{temp === "made" ? "DAY MADE" : pct + "%"}</span>
       <span className="sp">
         <u style={{ bottom: "33%" }} /><u style={{ bottom: "66%" }} />
         <i style={{ height: pct + "%" }} /><b style={{ bottom: pct + "%" }} />
@@ -10131,6 +10347,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const iAmUp = !!me && me.status === "waiting" && availableAhead === 0;
   const railRef = useRef(null);
   useTrackLight(railRef, me ? (line || []).slice(0, 8).map((p) => p.id).join(",") : "", ".mc-pip");
+  useLineArrivals(railRef, me ? (line || []).slice(0, 8).map((p) => p.id) : [], ".mc-pip");
 
   /* ---- where the month stands against its pace ----
      The goal is set at the start of the month, and the pace to it follows the
@@ -10395,7 +10612,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               const mine2 = p.id === meId;
               const step = Math.min(82, i * 13);   // the head at the rail's end, the rest 13% a step back; the CSS puts it there
               const lbl = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
-              return <i key={p.id || i} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
+              return <i key={p.id || i} data-id={p.id} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
                 style={{ "--p": step,
                   background: mine2 ? undefined
                     : (p.status && p.status !== "waiting"
@@ -10473,7 +10690,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             <span className="mc-tx">
               <b>{r2.label}</b>
               {r2.met
-                ? <span className="mc-made"><PixIcon glyph="check" size={13} /><span>MADE IT</span></span>
+                ? <span className="mc-made"><PixIcon glyph="check" size={13} /><span>COMPLETED</span></span>
                 : <>
                     <span className="st">OF {r2.need}</span>
                     <span className="bar"><i style={{ width: Math.min(100, Math.round(((r2.got || 0) / Math.max(1, r2.need)) * 100)) + "%" }} /></span>
@@ -10511,7 +10728,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               <span className="ck">{it.d && <PixIcon glyph="check" size={12} />}</span><span>{it.l}</span>
             </div>
           ))}
-          <span className="mc-lifoot">Off today&rsquo;s report. Nothing here is ticked by hand.</span>
         </div>
       </div>
 
@@ -10534,7 +10750,6 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                 );
               })}
             </div>
-            <span className="mc-boardsub">{board.meIdx >= 0 ? `you are ${board.all[board.meIdx].rank}${["st", "nd", "rd"][board.all[board.meIdx].rank - 1] || "th"} of ${board.all.length}` : `${board.all.length} on the board`}</span>
           </button>
         </>
       )}
@@ -10619,15 +10834,15 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                     const c = cal.find((x2) => x2 && x2.d === pickDay);
                     const r = c && c.r;
                     const lbl = `${MC_MONTHS[mo - 1]} ${pickDay}`;
-                    if (c && c.isOff) return <><div className="mc-scr"><span>{lbl}</span><i /><span>DAY OFF</span></div><span className="mc-scd-hint">Scheduled off. Your stats stay open.</span></>;
-                    if (!c || !c.past) return <><div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULED</span></div><span className="mc-scd-hint">Ahead of you. On the floor, RockEd by ten.</span></>;
-                    if (!r) return <><div className="mc-scr"><span>{lbl}</span><i /><span>NO REPORT</span></div><span className="mc-scd-hint">Nothing the phone can still read for this day.</span></>;
+                    if (c && c.isOff) return <div className="mc-scr"><span>{lbl}</span><i /><span>DAY OFF</span></div>;
+                    if (!c || !c.past) return <div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULED</span></div>;
+                    if (!r) return <div className="mc-scr"><span>{lbl}</span><i /><span>OFF</span></div>;
                     const pd = pointsForDay(r, std);
                     return (
                       <>
                         <div className="mc-scr"><span>{lbl}{c.d === bestDay ? " \u00b7 BEST DAY" : ""}</span><i /><span>{pd.noData ? "\u00b7" : pd.points === 0 ? "CLEAN" : "+" + pd.points}</span></div>
                         <div className="mc-scr"><span>UNITS</span><i /><span>{r.units || 0}</span></div>
-                        <div className="mc-scr"><span>CALLS \u00b7 VIDEOS</span><i /><span>{r.calls || 0} \u00b7 {r.video || 0}</span></div>
+                        <div className="mc-scr"><span>{"CALLS \u00b7 VIDEOS"}</span><i /><span>{`${r.calls || 0} \u00b7 ${r.video || 0}`}</span></div>
                         <div className="mc-scr"><span>TASKS</span><i /><span>{r.tasks || 0}{r.tasksPosted ? " / " + r.tasksPosted : ""}</span></div>
                         <div className="mc-scr"><span>ROCKED</span><i /><span>{r.rocked === true ? "YES" : r.rocked === false ? "NO" : "\u00b7"}</span></div>
                         {pd.missed.length > 0 && <span className="mc-scd-hint">Slipped on {pd.missed.join(", ")}. That is where the {pd.points === 1 ? "point" : "points"} came from.</span>}
@@ -10762,6 +10977,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [mile, setMile] = useState(null);           // the unit count that just landed
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpPanel, setHelpPanel] = useState(false);
+  const [acctOpen, setAcctOpen] = useState(false);
   const [offState, setOffState] = useState(() => { try { return localStorage.getItem(`lpcf:offday:${store}:${date}`) || ""; } catch { return ""; } });
   /* The bars the browser draws around the page take their colour from this
      tag. The phone screens are the garden's dark ink, so the bars are too, and
@@ -11398,22 +11614,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   /* The salesperson shell: pill, palette and moments. On the line, or through
      the door and about to be. */
   const inShell = (eff === "done" && !!me) || eff === "home";
-  /* ---- dark or light ----
-     Follows the phone unless the person says otherwise in the help sheet. */
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("lpcf:pref:theme") || "auto"; } catch (e) { return "auto"; } });
   const [textSize, setTextSize] = useState(textSizeOf);
   useEffect(() => { applyTextSize(textSize); }, [textSize]);
   const [, prefTick] = useState(0);
   const prefOn = (k) => { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
   const flipPref = (k) => { try { localStorage.setItem(k, prefOn(k) ? "0" : "1"); } catch (e) {} buzz(8); prefTick((n) => n + 1); };
-  const [sysLight, setSysLight] = useState(() => { try { return window.matchMedia("(prefers-color-scheme: light)").matches; } catch (e) { return false; } });
-  useEffect(() => {
-    let mq; try { mq = window.matchMedia("(prefers-color-scheme: light)"); } catch (e) { return; }
-    const on = (e) => setSysLight(e.matches);
-    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
-    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
-  }, []);
-  const lightMode = theme === "light" || (theme === "auto" && sysLight);
+  /* Dark, always (C105, Jorge, 29 September): the corner no longer follows a
+     phone in light mode, and the Look row that offered Light is gone. A Light
+     picked before then is ignored rather than cleared, so nothing reads it. */
+  const lightMode = false;
   /* Remembered for the next cold start, so index.html can paint this ground
      before any of this has run. Without it the first paint is the browser's
      white and the dark shell arrives over the top of it, which is the flash. */
@@ -11963,21 +12172,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <div className="mc-card mc-you-card">
               <div className="mc-set-row">
                 <span className="ic"><PixIcon glyph="search" size={16} /></span>
-                <span>Text size<span className="hint">Every screen here, and the buttons with it</span></span>
+                <span>Text size</span>
                 <span className="mc-seg3 txt" role="radiogroup" aria-label="Text size">
                   {TEXT_SIZES.map(([k, l]) => (
                     <button key={k} type="button" role="radio" aria-checked={textSize === k} aria-label={l} className={textSize === k ? "on" : ""}
                       onClick={() => { try { localStorage.setItem("lpcf:pref:text", k); } catch (e) {} setTextSize(k); buzz(8); }}>A</button>
-                  ))}
-                </span>
-              </div>
-              <div className="mc-set-row stack">
-                <span className="ic"><PixIcon glyph="star" size={16} /></span>
-                <span>Look<span className="hint">{theme === "auto" ? "Follows the phone" : theme === "dark" ? "Dark, always" : "Light, always"}</span></span>
-                <span className="mc-seg3 wide" role="radiogroup" aria-label="Look">
-                  {[["auto", "AUTO"], ["dark", "DARK"], ["light", "LIGHT"]].map(([k, l]) => (
-                    <button key={k} type="button" role="radio" aria-checked={theme === k} className={theme === k ? "on" : ""}
-                      onClick={() => { try { localStorage.setItem("lpcf:pref:theme", k); } catch (e) {} setTheme(k); buzz(8); }}>{l}</button>
                   ))}
                 </span>
               </div>
@@ -11989,7 +12188,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                 return (
                   <div className="mc-set-row stack">
                     <span className="ic"><PixIcon glyph="door" size={16} /></span>
-                    <span>Opens to<span className="hint">{cur === "last" ? "The room you were in last" : cur === "home" ? "Home, every time" : cur === "floor" ? "The Live Floor, every time" : "The Phone Line, every time"}</span></span>
+                    <span>Opens to</span>
                     <span className="mc-seg3 wide" role="radiogroup" aria-label="Opens to">
                       {choices.map(([k, l]) => (
                         <button key={k} type="button" role="radio" aria-checked={cur === k} className={cur === k ? "on" : ""}
@@ -11999,13 +12198,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   </div>
                 );
               })()}
-              {[["lpcf:pref:buzz", "tap", "Haptics", "A buzz on every tap"],
-                ["lpcf:pref:notif", "bolt", "Notifications", "Your turn, and the Live Activity"],
-                ["lpcf:pref:streak", "flame", "Streak warnings", "When a day is about to break the run"],
-                ["lpcf:pref:mile", "trophy", "Milestone moments", "The little celebrations"]].map(([k, g, l, h]) => (
+              {[["lpcf:pref:buzz", "tap", "Haptics"],
+                ["lpcf:pref:notif", "bolt", "Notifications"],
+                ["lpcf:pref:streak", "flame", "Streak warnings"],
+                ["lpcf:pref:mile", "trophy", "Milestone moments"]].map(([k, g, l]) => (
                 <button type="button" className="mc-set-row" key={k} role="switch" aria-checked={prefOn(k)} onClick={() => flipPref(k)}>
                   <span className="ic"><PixIcon glyph={g} size={16} /></span>
-                  <span>{l}<span className="hint">{h}</span></span>
+                  <span>{l}</span>
                   <span className={"mc-sw" + (prefOn(k) ? " on" : "")} aria-hidden="true" />
                 </button>
               ))}
@@ -12018,15 +12217,17 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                 <span>Something looks wrong<span className="hint">Send a number or a ticket back with a note</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
                 <span className="ic"><PixIcon glyph="user" size={16} /></span>
-                <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+                <span>Message {((cfg && cfg.support && cfg.support.name) || "Jorge").split(" ")[0]}</span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               {!inNative && (
                 <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); if (appLink) window.open(appLink, "_blank", "noopener"); else setAppOpen(true); }}>
                   <span className="ic"><PixIcon glyph="phone" size={16} /></span>
                   <span>Get the Sage app<span className="hint">{appLink ? (isIOS ? "On the App Store" : "On Google Play") : "Coming to your phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
               )}
-              <div className="mc-set-row">
+              {/* The QR sign-in went on 28 September (C99), so the hint no longer
+                  offers it; the row opens the account page (C91). */}
+              {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setAcctOpen(true); }}>
                 <span className="ic"><PixIcon glyph="home" size={16} /></span>
-                <span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
+                <span>Your account<span className="hint">{account ? "Linked to your name on this floor" : "Signed in on this phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
             </div>
 
             <div className="mc-cap">THE DAY</div>
@@ -12041,6 +12242,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           </div>
         </div></Overlay>
       )}
+      {acctOpen && <AccountSheet name={meFull || meLabel} onClose={() => setAcctOpen(false)} onDeleted={() => { setAcctOpen(false); onSignOut(); }} />}
       {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`} dark
         figures={mine ? [{ label: "Calls today", value: mine.calls }, { label: "Videos today", value: mine.video }, { label: "Tasks today", value: mine.tasks }, { label: "Units this month", value: myUnits }] : []}
         onClose={() => setHelpPanel(false)} />}
@@ -12619,6 +12821,8 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
          fades into --bg at its own edges anyway, so the bands now continue it.
          The theme-color meta in index.html does the same for Safari's own bar. */
 html, body { margin:0; padding:0; background:var(--bg); }
+html { scrollbar-gutter:stable; }
+html.sage-flight-hover-hold :is(.bloopwin,.fbc-hover,.tr-tip,[role="tooltip"]) { visibility:hidden !important; }
 /* The three grounds, named once. The rooms are genuinely different places and
    the colour is how a person knows which one they are standing in. */
 :root{ --gnd-line:#06090F; --gnd-home:#15211B; --gnd-floor:#070A08; }
@@ -12993,8 +13197,6 @@ html:has(.q-page.sf), body:has(.q-page.sf),
       }
 /* ---- small screens (layout only) ---- */
 @media (max-width: 720px) {
-        /* Navigation lives in the drawer now. */
-        .seg-wrap { display:none !important; }
         /* The tool switcher moved into the drawer; account controls stay but tuck under the logo. */
         .topbar .tool-row { display:none; }
         .topbar { flex-wrap:wrap; gap:10px; }
@@ -13322,39 +13524,6 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         background:rgba(255,255,255,.05); font-size:clamp(11px,1.06vw,19px); color:rgba(234,242,248,.55); }
 .qb-chip i { font-style:normal; font-size:.78em; color:rgba(234,242,248,.3); }
 .qb-empty { margin:auto; font-size:clamp(18px,2.6vw,46px); color:rgba(234,242,248,.4); text-align:center; }
-/* ---- scan to check in ----
-         Arrives with the same overshoot everything else in the tool uses, sits over a
-         dimmed board rather than replacing it, and leaves the same way. */
-.qb-scan { position:absolute; inset:0; z-index:6; display:flex; align-items:center; justify-content:center;
-        background:rgba(6,12,20,.72); backdrop-filter:blur(6px);
-        animation:qbScanIn .34s cubic-bezier(.34,1.4,.64,1) both; }
-@keyframes qbScanIn { from { opacity:0; } to { opacity:1; } }
-.qb-scan-card { background:#fff; color:#101820; border-radius:2vw; padding:3.4vh 3vw;
-        display:flex; flex-direction:column; align-items:center; gap:1.4vh;
-        box-shadow:0 4vh 10vh -3vh rgba(0,0,0,.7);
-        animation:qbScanPop .46s cubic-bezier(.34,1.5,.64,1) both; }
-@keyframes qbScanPop {
-        0%   { transform:scale(.72) translateY(3vh); opacity:0; }
-        60%  { transform:scale(1.035) translateY(0); opacity:1; }
-        100% { transform:scale(1); }
-      }
-.qb-scan-cap { font-size:clamp(11px,1vw,18px); font-weight:800; letter-spacing:.16em;
-        text-transform:uppercase; color:var(--a); }
-.qb-scan-title { font-family:var(--font-display); font-weight:700; letter-spacing:-.02em;
-        font-size:clamp(22px,2.9vw,52px); }
-.qb-scan-qr { width:26vh; max-width:34vw; }
-.qb-scan-qr svg { display:block; width:100%; height:auto; }
-.qb-scan-sub { font-size:clamp(12px,1.15vw,20px); color:#5A6472; }
-/* held open on purpose: no pulse, nothing asking for attention */
-.qb-scan-pin .qb-scan-card { animation-duration:.3s; }
-.qb-scan-toggle { position:absolute; right:1.6vw; bottom:1.6vh; z-index:7; cursor:pointer;
-        font-family:inherit; font-size:clamp(11px,.95vw,17px); font-weight:700;
-        padding:.9vh 1.2vw; border-radius:999px; border:1px solid rgba(255,255,255,.12);
-        background:rgba(255,255,255,.06); color:rgba(234,242,248,.5); }
-.qb-scan-toggle:hover { background:rgba(255,255,255,.12); color:rgba(234,242,248,.85); }
-@media (prefers-reduced-motion: reduce) {
-        .qb-scan, .qb-scan-card { animation:none !important; }
-      }
 .skill-chip.on { background:var(--blue); border-color:var(--blue); color:#fff; }
 .skill-chip.earned { cursor:help; background:rgba(217,164,37,.16); border-color:rgba(217,164,37,.45);
         color:#8A6314; }
@@ -14099,6 +14268,10 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          the engine moves them directly. */
 .sage-jump-canvas { position:fixed; inset:0; z-index:300; pointer-events:none; }
 .sage-cv .sg-field, .sage-cv .login-logo svg { visibility:hidden; }
+/* This element lives in index.html, not JSX. Its rules are part of the
+   handoff even though a search through React markup finds no className. */
+.sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
+        pointer-events:none; z-index:9500; }
 /* ---- the white lasts as long as what it is covering ----
          It used to be a fixed 420ms from the flash beat, and the thing it exists
          to hide is not fixed at all: mounting the dashboard took 680ms, so the
@@ -14110,7 +14283,13 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          actually there — .sage-assemble is added on the frame it mounts. Both
          rules fill forwards and the out starts from full, so the handover
          between them cannot show a seam however long the mount takes. */
+.sage-cover-active.sage-beat-flash .sage-flash, .sage-cover-active.sage-flash-hold .sage-flash {
+        animation: saFlashUp .34s ease-out both; }
 @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+/* Refresh and the short sign-in use assemble too, but did not raise a cover. */
+.sage-assemble.sage-cover-active .sage-flash { animation: saFlashOut .5s ease-in both; }
+.sage-preparing.sage-cover-active .sage-flash { animation:none; opacity:1; }
+.sage-preparing .lpc, .sage-preparing .lpc * { animation-play-state:paused !important; }
 @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
 /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
          Written as animations, with the field's own 28s drift kept first in every
@@ -14264,6 +14443,13 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         opacity:0;
         animation: saRadial .68s cubic-bezier(.16,0,.3,1) both;
         animation-delay: var(--rd, 0ms); }
+/* Keep a page child's mount animation alive underneath the radial landing.
+         Replacing it restarted cardIn at cleanup: the already-landed hero
+         disappeared and faded in again. Only these children have cardIn;
+         putting it on the header would invent another entrance there. */
+.sage-assemble :where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *).sa-radial {
+        animation: cardIn var(--t-settle) var(--ease) both, saRadial .68s cubic-bezier(.16,0,.3,1) both;
+        animation-delay: 0ms, var(--rd, 0ms); }
 /* No shadow while a block is in flight - a scaled shadow re-rasterising at
          the end is the "click" - and a soft bloom the moment it lands. */
 .sage-assemble .sa-radial:not(.sa-shadowin) { box-shadow:none !important; }
@@ -14342,6 +14528,7 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
         .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
         .sage-assemble .sa-radial  { animation-duration:.18s !important; animation-timing-function:linear !important; }
+        .sage-flash { animation:none !important; }
 
       }
 /* ---- the sign-in layer ----
@@ -14435,6 +14622,11 @@ html.signin-gone .signin-over { display:none; }
 .login-busy .login-logo circle {
         animation: markWork 1.15s cubic-bezier(.4,0,.3,1) infinite;
         animation-delay: calc(var(--i) * 11ms); }
+/* Keep the current breath pose until the canvas takes these same dots. The
+   old busy rise and wave were a second start before the approved flight. */
+.login-card.login-launch .login-logo {
+        animation: markBreathe 5.4s ease-in-out infinite; animation-play-state:paused; }
+.login-card.login-launch .login-logo circle { animation:none; }
 @keyframes markWork {
         0%, 62%, 100% { transform: scale(1); }
         24%           { transform: scale(1.34); }
@@ -14499,6 +14691,13 @@ html.signin-gone .signin-over { display:none; }
 .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
         font:inherit; font-size:13px; color:#6E6E76; }
 .lf-alt:hover { color:#2E3A32; }
+/* The app-only card (C103): its pill is a link to the store, dressed as the
+   buttons beside it, and its heading breaks evenly rather than leaving one word. */
+a.lf-go { text-decoration:none; justify-content:center; }
+.login-title.lf-balance { text-wrap:balance; }
+/* The policy (C90): quieter than Create New Account, and centred under it. */
+.lf-privacy { display:block; width:max-content; margin:12px auto 0; font-size:12px; color:#8A8A92; text-decoration:none; }
+.lf-privacy:hover { color:#2E3A32; text-decoration:underline; }
 /* Sign-in puts its label left and the five build dots right, which is what
          the space-between is for. Every other mode has only a label, and a label
          pushed to one edge of a full-width pill reads as a mistake. */
@@ -16932,6 +17131,9 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
    of the ground's own field: Jorge, 18 September. Opaque, so nothing shows
    through it, and a shade under the room's ink so it sits in the page. */
 .mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:#0E1812; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); overflow:hidden; }
+/* The front circle sits right in the rounded end: centred on the end's own
+   radius, 17 px, an even ring round a 30 px circle (C105). */
+.mc-rail{ --edge:17px; }
 /* the light along the line: dots in from the left edge, a stop at every
    person, as far as the head, then again; the phone room's cord's logic */
 .mc-rail > s.lt, .mcf-track > s.lt, .fr-rail > s.lt{ position:absolute; left:-3px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%;
@@ -17360,7 +17562,7 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mcf-track{ height:40px; margin-top:14px; }
 .mcf-pip{ width:26px; height:26px; font-size:9px; }
 .mcf-pip.hd{ width:34px; height:34px; font-size:10.5px; }
-.mcf-track{ --edge:21px; }
+.mcf-track{ --edge:20px; }
 .mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
 .mcf-track > s.lt{ width:8px; height:8px; margin-top:-4px; left:-4px; }
@@ -17435,6 +17637,26 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .mc-you .mc-set-row .ic .pix{ color:inherit; }
 .mc-you .mc-set-row > span:not(.ic):not(.on):not(.mc-sw):not(.mc-seg3){ flex:1; min-width:0; }
 .mc-you .mc-set-out .ic{ color:#f08a80; background:rgba(240,138,128,.12); }
+/* Your account (C91): the corner's own sheet, on the desk as on the phone.
+   The confirm step is the one place here with a typed field, so it borrows the
+   sign-in card's underline rather than a boxed input. */
+.acct-say{ font-size:14px; line-height:1.45; color:#EDF2EA; }
+.acct-say p{ margin:0 0 10px; }
+.acct-say b{ color:#e4c98d; }
+.acct-lbl{ display:block; margin:14px 2px 4px; font-family:var(--sfmono); font-size:10px; font-weight:700; letter-spacing:.14em; color:rgba(237,242,234,.6); text-transform:uppercase; }
+/* Scoped under .acct so it outranks the site's input:hover and input:focus,
+   which paint every field white. */
+.acct .acct-in, .acct .acct-in:hover, .acct .acct-in:focus{ width:100%; box-sizing:border-box; background:transparent; box-shadow:none;
+  border:0; border-bottom:1.5px solid rgba(237,242,234,.3); border-radius:0; color:#EDF2EA; outline:none;
+  font-family:var(--sfmono); font-size:18px; letter-spacing:.12em; padding:8px 2px; }
+.acct .acct-in:focus{ border-bottom-color:#f08a80; }
+.acct .acct-in::placeholder{ color:rgba(237,242,234,.22); }
+.acct-err{ margin-top:8px; font-size:13px; color:#f08a80; }
+.acct-go{ display:block; width:100%; margin-top:18px; min-height:48px; border:0; border-radius:999px; background:#e0685c; color:#fff;
+  font-size:15px; font-weight:700; cursor:pointer; transition:opacity .15s ease; }
+.acct-go:disabled{ opacity:.35; cursor:default; }
+.acct-keep{ display:block; width:100%; margin-top:8px; min-height:44px; border:0; background:none; color:rgba(237,242,234,.75);
+  font-size:14px; font-weight:600; cursor:pointer; }
 .mc-seg3{ margin-left:auto; display:inline-flex; gap:2px; padding:3px; border-radius:10px; background:rgba(255,255,255,.07); flex:0 0 auto; }
 .mc-seg3 button{ border:0; background:none; color:rgba(237,242,234,.6); font-family:var(--sfmono); font-size:10.5px; font-weight:700;
   letter-spacing:.06em; padding:0 9px; min-width:36px; height:30px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
@@ -18695,4 +18917,4 @@ function ensureStyleNamed(id, css) {
 }
 
 /* What the manager's file (Manager.jsx) reads from here. */
-export { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
+export { buzz, MOTION, useNet, AccountSheet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };

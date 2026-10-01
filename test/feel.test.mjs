@@ -62,8 +62,9 @@ test("waiting screens show soon and leave the moment the wait is over", () => {
   assert.ok(Number(m[1]) <= 500, "shown within half a second"); assert.ok(Number(m[2]) <= 300, "held no longer than 300 ms");
 });
 
-test("the jump is once a day; a return the same day lands short", () => {
-  assert.ok(/jumpShort = arrivalShort\(\);/.test(core) && /arrivalTaken\(\);/.test(core), "decided at the press");
+test("every sign-in gets the arrival; only reduced motion lands short", () => {
+  assert.ok(/jumpShort = arrivalShort\(\);/.test(core), "decided at the press");
+  assert.ok(!/JUMP_DAY_KEY|arrivalTaken/.test(core), "no daily read or write suppresses a repeat");
   assert.ok(/reduce \? 320 : ARRIVAL\.assemble/.test(core) && /const reduce = jumpShort;/.test(core), "the landing reads the same decision");
 });
 
@@ -501,16 +502,19 @@ test("five-second pass, items 6 to 12: plain words, one verdict per row, the emp
   assert.ok(/\[QUEUE_TAB, "Rooms", "door"\]/.test(mgr), "the dock's third slot is Rooms");
   assert.ok(/working today\{offToday\.length/.test(mgr) && !/to hit`|to hit<\/span>|to hit<\/button>/.test(mgr), "7 working today; goal, never to hit");
   assert.ok(/Most penalty points this month/.test(mgr) && !/Biggest Loser · most points/.test(mgr), "penalty points say so");
-  assert.ok(/`\$\{behindCount\} not signed in`/.test(mgr) && /"TV link"/.test(mgr) && /"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
+  assert.ok(/`\$\{behindCount\} not signed in`/.test(mgr) && /"TV link"/.test(mgr) && !/"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
   assert.ok(!/"Never ours"|>Never ours</.test(mgr) && /Not this store's/.test(mgr), "not this store's, everywhere");
   assert.ok(!/if \(!l\) return <span className="(?:fr-st pe-noacct|pp-noacct)">no account<\/span>;/.test(mgr), "no account is a count with an action, not a chip on every row");
   assert.ok(/className="tg-hint">Grace days: how long/.test(mgr), "grace days and lead caps explain themselves");
   assert.ok(/className=\{"bp-verdict bp-" \+ worst\}/.test(mgr) && /grid-template-columns:28px minmax\(0,1fr\) 84px 34px;/.test(mgr) && !/<PixIcon glyph="globe" size=\{13\} \/><PixIcon glyph="phone" size=\{13\} \/>/.test(mgr), "one verdict per phone row, with a glyph");
-  assert.ok(/const empty = !nextName && \(waitingNames \|\| \[\]\)\.length === 0;/.test(mgr) && /Nobody has signed in yet/.test(mgr) && /<PixIcon glyph="clipboard" size=\{12\} \/>Send the sign-in code<\/button>/.test(mgr) && (mgr.match(/onEmpty=\{withoutTest\(line\)\.length === 0 \? \(\) => setShowQR\(true\) : null\}/g) || []).length === 2, "an empty room states itself and offers one action");
+  /* The empty room's one action was "Send the sign-in code". The codes went on
+     28 September (C99), so both rooms pass no action and an empty room shows
+     the ordinary "Nobody available" card. */
+  assert.ok(/const empty = !nextName && \(waitingNames \|\| \[\]\)\.length === 0;/.test(mgr) && (mgr.match(/onEmpty=\{null\} \/>/g) || []).length === 2, "an empty room no longer offers a code (C99)");
   assert.ok(!/<div className="f-warn">/.test(mgr) && /className="f-note"><PixIcon glyph="warn"/.test(mgr), "the dealership note lives in settings, one line");
   assert.ok(/occ\.byHour\.filter\(\(b\) => b\.staffed > 0\)\.length < 3 \?/.test(mgr) && /if \(shown < 3\) return <div className="s2-none s2-notyet">/.test(mgr), "grids and charts wait for three points");
   assert.ok(/\.cap-sent\{ font-family:var\(--font-ui\); font-weight:600; letter-spacing:0; text-transform:none; font-size:12\.5px; \}/.test(mgr) && /\.sd-cap, \.bp-fivehead \.bp-lbl, \.stnd-hh[^{]*\{ font-size:11\.5px; \}/.test(mgr) && /@media \(max-width:760px\)\{\n  \.s2-cap,[^{]*\{ font-size:12\.5px; \}/.test(mgr), "the caption floor is 11.5 on the desk and 12.5 on the phone");
-  assert.ok((mgr.match(/className="btn btn-primary" onClick=\{\(\) => setShowQR\(true\)\}>Sign-in code<\/button>/g) || []).length === 2 && (mgr.match(/<div className="q-setup">/g) || []).length === 2, "sign-in code is the filled daily control; set-up is behind one button on both rooms");
+  assert.ok(!/Sign-in code/.test(mgr) && (mgr.match(/<div className="q-setup">/g) || []).length === 2, "the sign-in code is gone from both rooms (C99); set-up is still behind one button on both");
 });
 
 test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on every figure with a target", () => {
@@ -619,16 +623,11 @@ test("one way to say two names are one person: one sentence, one audit line", ()
   assert.ok(!/confirm = false, onPick/.test(mgr), "the picker no longer carries a question of its own");
 });
 
-test("printing opens one window the same way, and the poster takes the room", () => {
+test("printing opens one window the same way; the sign-in poster went with the codes", () => {
   assert.ok(/function printPage\(\{ name, width = 850, height = 1050, title, head = "", css = "", body, warn, delay = 400 \}\) \{/.test(mgr), "one opener");
   assert.equal(mgr.split("window.open(\"\", ").length - 1, 1, "and only it opens a print window");
-  assert.equal(mgr.split("printPage({").length - 1, 5, "all four printed things go through it");
-  assert.ok(!/printQueueSignIn|printFloorSignIn/.test(mgr), "the two posters are one function now");
-  assert.ok(/const SIGN_IN_POSTER = \{\n\s*line: \{[^}]*\},\n\s*floor: \{/.test(mgr), "the rooms are an argument, not a copy");
-  assert.ok(/async function printSignIn\(\{ store, url, date, by, room = "line" \}\) \{/.test(mgr), "one poster takes the room");
-  assert.equal(mgr.split("printSignIn({").length - 1, 5, "four Print buttons and the one function");
-  assert.equal(mgr.split('room: "line" }').length - 1, 2, "two of them are the phone line");
-  assert.equal(mgr.split('room: "floor" }').length - 1, 2, "and two are the floor");
+  assert.equal(mgr.split("printPage({").length - 1, 4, "the three printed things left go through it");
+  assert.ok(!/printQueueSignIn|printFloorSignIn|printSignIn|SIGN_IN_POSTER/.test(mgr), "the sign-in poster is gone with the QR codes (C99)");
   assert.ok(/function printOnePager\(/.test(mgr) && /function printMonthEndRecap\(/.test(mgr), "the coaching sheet and the recap keep their own bodies");
   assert.ok(!/w\.close\(\); toast\("No associates/.test(mgr), "and an empty batch no longer leaves a blank window open");
 });
@@ -665,11 +664,11 @@ test("the phone's own measurements survive a larger text size, and the top of th
 });
 
 test("new and used are counted off the report on every screen that shows them", () => {
-  // One reader, because three screens draw this and three copies of "prefer the
-  // report, else estimate" is three chances to disagree about the same month.
+  // One reader keeps the hero and phone consistent. The unverified browser
+  // digest writer was removed; it must not count as a third monthly reader.
   assert.ok(/const statedSplitOf = \(M\) => \{/.test(mgr), "there is one reader for the stock split");
-  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 3,
-    "and the three screens that show new and used all go through it: the hero, the phone board and the digest");
+  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 2,
+    "the hero and phone board both use the report split; the digest writer is gone");
   assert.ok(/M\.stated = \{ \.\.\.M\.stated, vehicles: stated\.vehicles \};/.test(ing),
     "a roll-up owns how many cars, but the grid still hands over how many were new");
   assert.ok(/vehicles: stated\.vehicles, day, at: nowISO/.test(ing), "and the grid files its own split with the rest");
@@ -1137,4 +1136,53 @@ test("a dropped frame is one the person would feel, not one the runner was slow 
   assert.ok(/row\("swipe: frames dropped while the thumb moved", felt\.length, BAR\.dropped\);/.test(feel), "and that is the row");
   assert.ok(/long frame\(s\) the page rode out at the slop/.test(feel),
     "a long frame that cost the page nothing is still printed, because 'none of them lost ground' is what stops somebody re-running a green check");
+});
+
+test("each engine is held to a bar set from its own history, not from one day of the other's", () => {
+  /* C85. The first bars came from one day of runs, and the table behind them
+     had WebKit two to three times faster than it is. Two WebKit bars sat inside
+     WebKit's own normal range and failed on code that could not have moved
+     them. Read back from 21 runs, they are set just above the highest reading
+     seen; Chromium's table was right and its bars are unchanged. */
+  assert.ok(/const WEBKIT = String\(process\.env\.FEEL_BROWSER \|\| ""\)\.toLowerCase\(\) === "webkit";/.test(feel),
+    "the engine is decided once");
+  assert.ok(/tab: WEBKIT \? 140 : 110,/.test(feel) && /tap: WEBKIT \? 60 : 50,/.test(feel),
+    "WebKit gets its own bars and Chromium keeps the ones that were already right");
+  assert.ok(/Floor to Phone     30 ms         57      62      128/.test(feel),
+    "the table shows what the first one said beside what the history says, so the correction is on the page");
+  assert.ok(/The "four times the median" rule does not survive these numbers/.test(feel),
+    "and it says why the old rule was not simply re-applied");
+  assert.ok(/a room cross that doubled in WebKit alone could\n\s*hide in the same place/.test(feel),
+    "the cost of the tab bar is written down, not left for somebody to discover");
+});
+
+test("a timed row prints its three samples, so a miss can be read instead of guessed at", () => {
+  /* The median of three hid which of two things a miss was. On 22 September one
+     commit failed twice with the two runs swapping which row went over, and
+     nothing on the page could say whether one sample was slow or all three. */
+  assert.ok(/const row3 = \(name, xs, bar\) => row\(name, mid\(xs\), bar, mid\(xs\) <= bar, xs\);/.test(feel));
+  assert.ok(/\$\{r\.xs \? "   \[" \+ r\.xs\.join\(", "\) \+ "\]" : ""\}/.test(feel), "the line carries them");
+  for (const name of ["tap Lunch to shown", "tap Here to shown", "Floor to Phone tab", "Phone to Floor tab"]) {
+    assert.ok(feel.includes(`row3("${name}", `), `${name} is a row of three`);
+  }
+});
+
+test("sign-in timing includes the interaction lock without relaxing the speed bar", () => {
+  const signIn = feel.slice(feel.indexOf("const signIn = async"), feel.indexOf("const first = await signIn()"));
+  assert.ok(signIn.indexOf('classList.contains("sage-flight-lock")') < signIn.indexOf("const elapsed = ms(t0)"));
+  assert.match(signIn, /!document\.getElementById\("root"\)\?\.inert/);
+  assert.match(feel, /returnSignIn: 900 \+ 3 \* LAG/);
+});
+
+test("the FlyBy row waits for the page's own writes before it changes the status under them", () => {
+  /* C87. The harness wrote "waiting" with no lag while the page's send and
+     cancel were still read-then-writes in flight; landing between one read and
+     its write, it was written over, the server read "customer", and the button
+     stayed for good. Reproduced locally by moving that write 150 to 900 ms
+     later: every run left the server on "customer". The timeout is not the fix. */
+  assert.ok(/const before = new Set\(\(await myAssists\(\)\)\.map\(\(a\) => a\.id\)\);\n\s*await p\.locator\('\.fba-go:has-text\("Send the FlyBy"\)'\)\.click\(\);/.test(feel),
+    "the FlyBys already on the row are noted before the send, so an old finished one cannot pass the wait");
+  assert.ok(/await cancelLanded\(before, 8 \* LAG \+ 5000\);\n\s*await setMine\("waiting", null\); await p\.waitForSelector\("\.fba-btn\.fly", \{ state: "detached", timeout: 15000 \}\);/.test(feel),
+    "the status changes only once the cancel is on the server, and the button's wait is still 15 s");
+  assert.ok(/!before\.has\(a\.id\) && a\.doneAt/.test(feel), "the wait is for the new FlyBy, marked done");
 });

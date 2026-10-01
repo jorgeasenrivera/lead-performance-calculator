@@ -31,12 +31,16 @@ test("a browser that goes away mid-run is named, and a missed bar is not", () =>
   assert.match(w.why(new Error("anything")), /went away mid-run/);
 });
 
-test("a page that crashes says so, because memory is the suspicion", () => {
+test("a page that crashes says so, and no longer guesses why", () => {
   const b = fakeBrowser(), p = fakePage();
   const w = lostBrowserWatch(b);
   w.watchPage(p);
   p.emit("crash");
   assert.match(w.why(null), /crashed/);
+  /* It used to add that this is usually memory. The first crash measured said
+     13.4 GB free and nothing killed, so the sentence is gone and the machine
+     line beside it is left to say what it was (C85). */
+  assert.doesNotMatch(w.why(null), /memory/);
 });
 
 test("Playwright's own sentence is the fallback, for a throw that beats its event", () => {
@@ -160,7 +164,7 @@ test("partial screenshot artifacts survive failure and are not described as comp
 test("WebKit diagnostics retain browser stderr and the last screenshot stage", () => {
   assert.match(flow, /name: Measure in WebKit\n\s+env:\n\s+DEBUG: pw:browser/);
   assert.match(flow, /name: Picture the phone in WebKit\n\s+id: picture\n\s+env:\n\s+DEBUG: pw:browser/);
-  assert.match(feel, /row\("tap Lunch to shown", mid\(lunch\), BAR\.tap\)/);
+  assert.match(feel, /row3\("tap Lunch to shown", lunch, BAR\.tap\)/);
   assert.match(shots, /shots: failed during \$\{currentStage\}/);
   assert.match(shots, /await signIn\(page, undefined, \(name\) => stage\(`normal-up: \$\{name\}`\)\)/);
 });

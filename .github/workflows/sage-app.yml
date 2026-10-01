@@ -35,24 +35,29 @@
 # with the build number. Web changes need no build (the app is a shell around
 # the site), so only native/ counts.
 #
-# And it checks before the merge, when asked: a pull request that touches
-# native/ and carries the "build ios" label gets an iOS build with no upload,
-# and the result on the pull request. Builds 18 and 19 failed in Xcode twenty
-# minutes after their merges, with the reason in a log behind a signed link;
-# now the same failure can land on the pull request, and the Xcode log is
-# kept with the run. The label is the switch because Expo's plan allows a
-# fixed number of builds a month, and a check on every push would spend
-# them: add the label when the Swift or the native config changed, leave it
-# off for a README or a workflow comment.
+# And it checks before the merge: every pull request that touches native/
+# is compiled in Xcode on GitHub's own macOS runner, for the simulator and
+# unsigned, and the result goes on the pull request. Builds 18 and 19 failed
+# in Xcode twenty minutes after their merges; the same failure now lands on
+# the pull request, with the Xcode log kept with the run.
+#
+# The check used to be an Expo build behind a "build ios" label, and that was
+# the expensive half: nearly every native change this month cost two Expo
+# builds, one to check and one to merge, and #422 cost three (C95, 24
+# September, the day the plan ran out). GitHub's macOS minutes are free on a
+# public repository, so the check spends nothing and needs no label. What it
+# does not prove is signing: that is the merge's Expo build, as before.
 name: Sage app
 
 on:
   push:
     branches: [main]
-    paths: ['native/**']
+    # A README line is not worth a store build: each merge here spends one.
+    paths: ['native/**', '!native/**/*.md']
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths: ['native/**']
+    # The workflow itself too, so a change to the check is checked by itself
+    # on its own pull request. The merge's build still watches native/ only.
+    paths: ['native/**', '.github/workflows/sage-app.yml']
   workflow_dispatch:
     inputs:
       platform:
@@ -75,11 +80,108 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The pull request's check: the whole app, compiled by Xcode on GitHub's
+  # runner. No Expo build, no signing, no secrets.
+  check:
+    if: github.event_name == 'pull_request'
+    name: Check ios
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the app's packages
+        run: npm ci --no-audit --no-fund
+
+      # The same project Expo would generate on its own machines: the plugins
+      # run here, the Live Activity target included, so a broken config plugin
+      # fails on this page and not twenty minutes into a store build.
+      - name: Generate the Xcode project
+        run: |
+          xcodebuild -version
+          npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install the iOS libraries
+        working-directory: native/ios
+        run: pod install
+
+      # Release, because that is what the store build compiles and where Swift's
+      # optimiser gave up on builds 18 and 19. The JavaScript bundle is skipped:
+      # the app is a shell around the site, and the bundle proves nothing here.
+      - name: Compile
+        id: compile
+        working-directory: native/ios
+        env:
+          SKIP_BUNDLING: "1"
+        run: |
+          ws=$(ls -d *.xcworkspace | head -1)
+          scheme=$(basename "$ws" .xcworkspace)
+          echo "Workspace $ws, scheme $scheme"
+          set +e
+          set -o pipefail
+          xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > ../xcode.log 2>&1
+          code=$?
+          set -e
+          # Apple's App Intents indexer prints "error:" lines on every build
+          # that succeeds; they are not the app's and would read as failures.
+          grep -nE "error:|warning: expression took|\*\* BUILD (SUCCEEDED|FAILED)" ../xcode.log \
+            | grep -v appintentsnltrainingprocessor | head -80 || true
+          [ "$code" = "0" ] || exit $code
+          # The Live Activity is the target that broke builds 18 and 19. A
+          # success that never compiled it would be a check of the wrong thing.
+          if ! grep -q "QueueActivity.swift" ../xcode.log; then
+            echo "::error::Xcode succeeded without compiling the Live Activity (targets/queue). The check is not covering it."
+            exit 1
+          fi
+          echo "The Live Activity target was compiled."
+
+      - name: Keep the Xcode log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-log
+          path: native/xcode.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Tell the pull request
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          COMPILE: ${{ steps.compile.outcome }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const mark = "<!-- sage-app-check -->";
+            const ok = process.env.COMPILE === "success";
+            const body = mark + "\n" + (ok
+              ? "The app compiles from this change, in Xcode on GitHub's runner. No Expo build was spent; the merge's build is the one that signs and uploads."
+              : process.env.COMPILE === "failure"
+                ? `The app does not compile from this change. [The run](${run}) has Xcode's errors, and the full log is kept with it.`
+                : `The app could not be checked: a step before the compile failed. [The run](${run}) says which.`);
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: pr.number, per_page: 100 });
+            const mine = comments.find((c) => c.body && c.body.startsWith(mark));
+            if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+
   build:
-    # A pull request builds only when labelled "build ios"; a merge and a
-    # hand-started run always do.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build ios')
-    name: ${{ github.event_name == 'pull_request' && 'Check ios' || format('Build {0}', github.event_name == 'workflow_dispatch' && inputs.platform || 'ios') }}
+    # A merge and a hand-started run. Pull requests are the check's, above.
+    if: github.event_name != 'pull_request'
+    name: ${{ format('Build {0}', github.event_name == 'workflow_dispatch' && inputs.platform || 'ios') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:

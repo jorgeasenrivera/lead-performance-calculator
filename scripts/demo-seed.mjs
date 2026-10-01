@@ -56,6 +56,18 @@ const CAST = [
    than appearing as a ghost beside eight people who do have one. */
 const DEMO_MANAGER = { name: "Alex Reyner", roleId: "manager" };
 
+/* The reviewer's salesperson (C104). The demo login is a manager, and a manager
+   never sees a salesperson's screens, which are the ones the listing shows and
+   the review notes promise. So the reviewer gets a second login,
+   demo.sales@sageonline.app, linked on this floor to Sam Demo.
+
+   The id is fixed because the link (floor_people.person_id) points at it, and
+   this seed is rewritten every night: with a fresh id Sam would be a stranger to
+   his own account by morning. His days are drawn from their own seed, so adding
+   him left the eight people above with exactly the numbers they had before. */
+export const DEMO_SALES = { id: "demo-sam", name: "Sam Demo", roleId: "sales", tenure: "strong",
+  email: "demo.sales@sageonline.app" };
+
 /* The same three tiers DEFAULT_TIERS carries in the app. Written out rather
    than imported because they live inside the one big component file, and a
    demo script reaching in there would be a worse dependency than a copy. */
@@ -82,14 +94,22 @@ function rng(seed) {
 }
 
 const dayStr = (d) => d.toISOString().slice(0, 10);
-const monthStr = (d) => d.toISOString().slice(0, 7);
+
+/* The store's day, not UTC's: the app keys every row by the dealership's own
+   date (STORE_TZ in the app file), and from 8 PM to midnight Eastern UTC is
+   already on tomorrow. Seeding by UTC put tomorrow's Phone Line row in the
+   mock, the app looked for today's, said "The line isn't open yet", and every
+   feel run in those four hours failed in both engines (C94). */
+const STORE_TZ = "America/New_York";
+export const storeDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d);
 
 /* The last N days the store was open, newest last. Sundays are skipped because
    a dealership that trades seven days a week reads as a data error to anybody
-   who knows the business. */
-function openDays(n, from = new Date()) {
+   who knows the business. Counted back from noon UTC on the store's date, so a
+   clock change can never land two steps on one day or skip one. */
+export function openDays(n, from = new Date()) {
   const out = [];
-  const d = new Date(from);
+  const d = new Date(storeDay(from) + "T12:00:00Z");
   while (out.length < n) {
     if (d.getUTCDay() !== 0) out.push(dayStr(d));
     d.setUTCDate(d.getUTCDate() - 1);
@@ -234,11 +254,11 @@ function queueHistory(r, roster, days) {
 }
 
 /* ---------------- Putting the store together ---------------- */
-export function buildDemo() {
-  const r = rng(20260909);
-  const nowIso = new Date().toISOString();
-  const days = openDays(45);
-  const month = monthStr(new Date());
+export function buildDemo(now = new Date()) {
+  const r = rng(20260909), r0 = r;
+  const nowIso = now.toISOString();
+  const days = openDays(45, now);
+  const month = storeDay(now).slice(0, 7);
   const today = days[days.length - 1];
 
   /* label as well as name: the line and the phone read `label`, the board and
@@ -248,23 +268,31 @@ export function buildDemo() {
     id: uid(), name: p.name, label: p.name, roleId: p.roleId, order: i,
     tenure: p.tenure, updatedAt: nowIso,
   }));
+  const sam = { id: DEMO_SALES.id, name: DEMO_SALES.name, label: DEMO_SALES.name, roleId: DEMO_SALES.roleId,
+    order: roster.length, tenure: DEMO_SALES.tenure, updatedAt: nowIso };
+  roster.push(sam);
+  const rs = rng(20260929);
   roster.push({ id: uid(), name: DEMO_MANAGER.name, label: DEMO_MANAGER.name,
     roleId: DEMO_MANAGER.roleId, order: roster.length, updatedAt: nowIso });
 
   /* Per-day activity, for everybody who is tracked. The manager is not. */
   const tracked = roster.filter((p) => p.roleId !== "manager");
+  const cast = tracked.filter((p) => p !== sam);
   const activity = {};
   for (const day of days) {
     activity[day] = {};
-    for (const p of tracked) {
+    for (const p of cast) {
       /* Not everybody works every day. A roster where nobody is ever off makes
          the schedule and the off-day handling untestable. */
       if (r() < 0.12) continue;
       activity[day][norm(p.name)] = personDay(r, p, day);
     }
+    /* Sam works every open day: the reviewer lands on his corner whatever the
+       date, and an off day would greet them with a Today of zeros. */
+    activity[day][norm(sam.name)] = personDay(rs, sam, day);
   }
 
-  const queue = queueHistory(r, tracked, days);
+  const queue = queueHistory(r, cast, days);
   const floor = {};
   for (const day of Object.keys(queue)) floor[day] = { history: [] };
 
@@ -280,8 +308,9 @@ export function buildDemo() {
      bug report. Deriving it means the store is always a little behind pace,
      whatever day the reviewer opens the app, which is also the more useful
      state to show: it is the one where the coaching pages have a job. */
-  const dim = new Date(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 0).getDate();
-  const elapsed = Math.max(1, new Date().getUTCDate() - 1);
+  const [yy, mm, dd] = storeDay(now).split("-").map(Number);
+  const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const elapsed = Math.max(1, dd - 1);
   const GOAL = 96;
   const storeSoFar = Math.max(1, Math.round(GOAL * (elapsed / dim) * 0.92));
   /* The roster sums higher than the store's own count, because a car credits
@@ -290,9 +319,10 @@ export function buildDemo() {
   const rosterTotal = Math.round(storeSoFar / 0.82);
 
   const weight = { veteran: 1.6, strong: 1.3, steady: 1.0, new: 0.55 };
-  const totalWeight = tracked.reduce((n, p) => n + weight[p.tenure], 0);
+  const totalWeight = cast.reduce((n, p) => n + weight[p.tenure], 0);
   const monthStats = {};
   for (const p of tracked) {
+    const r = p === sam ? rs : r0;
     const mine = Math.max(0, Math.round((rosterTotal * weight[p.tenure]) / totalWeight));
     /* Split across the three channels the dashboard gauges. */
     const showroomUnits = Math.round(mine * (0.45 + r() * 0.1));
@@ -411,12 +441,18 @@ export function buildDemo() {
   }
 
   /* Today's live line and floor. */
-  const line = liveQueue(r, tracked, nowIso);
+  const line = liveQueue(r, cast, nowIso);
   /* queueRowId is `store:date` for the line and `store:date:kind` for the rest;
      floorRowId is `store:date`. Getting these wrong writes rows nothing reads. */
   put("queue_public", { id: `${DEMO_STORE_ID}:${today}`, store: DEMO_STORE_ID, qdate: today, data: line, updated_at: nowIso });
+  /* Three on the floor, all with customers, so the Live Floor has a line to
+     show and nobody is waiting: Sam, getting on, is first up (C104). */
+  const ago = (m) => new Date(now.getTime() - m * 60000).toISOString();
+  const busy = (p, m, table) => ({ id: p.id, label: p.name, name: p.name, status: "customer",
+    statusAt: ago(m), joinedAt: ago(m + 45), movedAt: ago(m), awayReason: "customer", table });
   put("floor_public", { id: `${DEMO_STORE_ID}:${today}`, store: DEMO_STORE_ID, fdate: today,
-    data: { updatedAt: nowIso, line: [], assists: [], checkouts: [], history: [] }, updated_at: nowIso });
+    data: { updatedAt: nowIso, line: [busy(cast[0], 34, 2), busy(cast[2], 19, 5), busy(cast[3], 8, 3)],
+      assists: [], checkouts: [], history: [] }, updated_at: nowIso });
 
   /* The store as the config carries it. The goal is what turns the headline
      from "set a goal" into a pace, and thresholds/graceDays are what the
@@ -428,6 +464,9 @@ export function buildDemo() {
     goal: { units: GOAL, pct: 0, byMonth: { [month]: GOAL } },
     graceDays: 10,
     hours: { open: "09:00", close: "20:00" },
+    /* Both rooms, as on the stores that run the Phone Line. Without it the
+       demo had the Live Floor only and the reviewer never saw the line (C105). */
+    rooms: { floor: true, line: true },
     reportCutoff: "23:00",
   };
 

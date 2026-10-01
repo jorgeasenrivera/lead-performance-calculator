@@ -61,7 +61,7 @@ export default defineConfig({
            lazily by the core), so a salesperson's phone fetches the corner and
            the rooms and not the desk. */
         manualChunks: {
-          vendor: ["react", "react-dom", "@supabase/supabase-js", "qrcode-generator"],
+          vendor: ["react", "react-dom", "@supabase/supabase-js"],
         },
       },
     },

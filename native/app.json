@@ -22,7 +22,6 @@
           "remote-notification",
           "location"
         ],
-        "NSCameraUsageDescription": "Sage uses the camera to scan the daily floor code.",
         "NSLocationWhenInUseUsageDescription": "Sage checks you are at the store when you get on the floor.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
@@ -44,7 +43,6 @@
         "POST_NOTIFICATIONS",
         "VIBRATE",
         "ACCESS_FINE_LOCATION",
-        "CAMERA",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "POST_PROMOTED_NOTIFICATIONS"

@@ -104,9 +104,12 @@ and screenshot after is what produced nine builds and three rounds of the same
 card on 18 September. Nothing here is urgent enough to skip the five minutes;
 a room that is down is fixed on `main` directly and is the one exception.
 Native is the awkward case: the TestFlight build follows the merge, not the
-pull request, so a native change gets the "build ios" label (a compile, no
-upload) before it merges, goes out one at a time, and gets its five minutes
-on TestFlight before the next one merges.
+pull request, so a native change is compiled on the pull request (in Xcode on
+GitHub's runner, which spends no Expo build) before it merges, goes out one
+at a time, and gets its five minutes on TestFlight before the next one
+merges. Every merge that touches `native/` is an Expo build, and the plan
+has a monthly limit, so native changes that are not urgent wait and merge
+together.
 
 ## 5a. Findings from the phone are batched
 

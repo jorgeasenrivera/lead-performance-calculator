@@ -61,12 +61,13 @@ const SESSION = {
     app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() },
 };
 
-/* PostgREST filters, only the two forms the app sends. */
+/* PostgREST filters, only the forms the app sends. */
 function match(rows, params) {
   let out = rows;
   for (const [k, v] of params) {
     if (["select", "order", "limit", "offset", "apikey"].includes(k)) continue;
     if (v.startsWith("eq.")) { const want = v.slice(3); out = out.filter((r) => String(r[k]) === want); }
+    else if (v === "is.null") out = out.filter((r) => r[k] == null);
     else if (v.startsWith("in.")) {
       const set = new Set(v.slice(3).replace(/^\(|\)$/g, "").split(",").map((s) => s.replace(/^"|"$/g, "")));
       out = out.filter((r) => set.has(String(r[k])));
@@ -100,7 +101,23 @@ http.createServer((req, res) => {
   const hold = LAT + extra;
 
   const m = u.pathname.match(/^\/rest\/v1\/([a-z_]+)$/);
-  if (m && TABLES[m[1]] && (req.method === "POST" || req.method === "PATCH")) {
+  /* An update applies to the rows its filters match and hands back the ones it
+     changed, as PostgREST does. The day's rows are written only if they still
+     carry the updated_at the page read (C89), so an update that matches
+     nothing is the answer "somebody else wrote first", not a failure. */
+  if (m && TABLES[m[1]] && req.method === "PATCH") {
+    req.on("end", () => {
+      let patch = {};
+      try { patch = JSON.parse(bodyText || "{}"); } catch (e) {}
+      const table = TABLES[m[1]];
+      const hit = new Set(match(table, [...u.searchParams.entries()]));
+      const out = [];
+      for (let i = 0; i < table.length; i++) if (hit.has(table[i])) { table[i] = { ...table[i], ...patch }; out.push(table[i]); }
+      send(200, out);
+    });
+    return;
+  }
+  if (m && TABLES[m[1]] && req.method === "POST") {
     /* Upsert, keyed the way each table is keyed. Without this a write returns
        200, changes nothing, and the next read hands back the old row — which
        looks exactly like a bug in the app. */
@@ -110,6 +127,12 @@ http.createServer((req, res) => {
       if (!Array.isArray(rows)) rows = [rows];
       const table = TABLES[m[1]];
       const idKey = m[1] === "app_data" ? "key" : "id";
+      /* A plain insert of a row that exists is refused, as the database
+         refuses it; only an upsert (merge-duplicates) merges. */
+      const upsert = /merge-duplicates/.test(String(req.headers.prefer || ""));
+      if (!upsert && rows.some((r) => table.some((x) => x[idKey] === r[idKey]))) {
+        return send(409, { code: "23505", message: "duplicate key value violates unique constraint", details: "", hint: "" });
+      }
       for (const r of rows) {
         const at = table.findIndex((x) => x[idKey] === r[idKey]);
         if (at >= 0) table[at] = { ...table[at], ...r }; else table.push(r);

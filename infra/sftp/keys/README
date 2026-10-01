@@ -1,0 +1,3 @@
+# One file per account, named <account>.pub, holding that account's SSH
+# public keys. The server copies it every five minutes; deleting the file
+# removes the account's access. Public keys only: never a private key.

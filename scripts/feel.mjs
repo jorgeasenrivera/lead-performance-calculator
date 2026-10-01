@@ -6,7 +6,7 @@
  * in the same frame it lands in; a tab has to be the screen the phone already
  * had; the second tap inside a slow lot's round trip has to win, on the screen
  * and on the server; a control has to give under the finger and tick once; a
- * return sign-in has to land in about a second. Every one of those was
+ * reduced-motion return sign-in has to land in about a second. Every one of those was
  * something a person had already felt go wrong on the floor before it was
  * measured here, so this keeps the numbers from drifting back.
  *
@@ -31,6 +31,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
+import { followAssessment, followDetail, groundStep } from "./feel-read.mjs";
+import { verifyManagerPhoneSearch } from "./manager-phone-search.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
@@ -60,28 +62,43 @@ const STORE_TZ = "America/New_York";                 // the app's dealership day
 const day = () => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(new Date());
 
 /* ---- the bar ---- */
-/* The two bars below were set against numbers that were mostly the driver's:
-   the rows used to be timed with a stopwatch outside the browser, and
-   Playwright's click waits for the element to be stable across consecutive
-   frames before it sends anything. Timed on the page's own clock, as the
-   median of three, on the same CI runner and image, 21 September:
+/* Which engine, once, because the two engines get different bars below. */
+const WEBKIT = String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit";
+/* The bars were first set on 21 September from one day of runs, at "roughly
+   four times the slower engine's median", with a note to re-set them once
+   there were a few dozen runs to set them from. That table was wrong for
+   WebKit by two to three times, and the re-set never happened, so for two days
+   two WebKit bars sat inside WebKit's own normal range and failed on runs whose
+   code could not have moved them (C85).
 
-                      Chromium        WebKit
-     tap Lunch        9 to 12 ms      11 ms
-     tap Here         9 to 12 ms      12 ms
-     Floor to Phone   17 to 21 ms     30 ms
-     Phone to Floor   18 to 19 ms     24 ms
+   Read back from 21 CI runs of the WebKit job, 21 and 22 September, each row
+   the median of three on the page's own clock:
 
-   So the bars are set at roughly four times the slower engine's median: tight
-   enough that a real regression cannot hide behind them, loose enough that a
-   loaded shared runner adding a long frame to one of the three samples does
-   not turn the check red for nothing. They are deliberately not set at twice:
-   a bar that flakes teaches everybody to re-run it, which is how a check stops
-   being believed. Tighten them once there are a few dozen runs of history to
-   set them from. */
+                      first table   median   75th   highest seen
+     tap Lunch          11 ms         31      40       54
+     tap Here           12 ms         14      16       33
+     Floor to Phone     30 ms         57      62      128
+     Phone to Floor     24 ms         39      42       44
+
+   Chromium's first table was right, 9 to 21 ms, and its bars are left alone.
+
+   The "four times the median" rule does not survive these numbers: it would
+   put WebKit's tap bar at 124 ms and its tab bar at 228, loose enough to wave
+   through a tap four times slower than it is now. So WebKit's bars are set just
+   above the highest reading in that history instead, which is what "loose
+   enough that the runner cannot turn it red for nothing" meant all along.
+
+   What that costs, said plainly. For taps it costs little: 60 is still under
+   double WebKit's median, so a tap that got twice as slow fails. For tabs it
+   costs more: the runner's slow patches reach 128 on Floor to Phone, about
+   twice its median, so at 140 a room cross that doubled in WebKit alone could
+   hide in the same place. A regression that reaches both engines still fails
+   in Chromium, whose bar is five times its median. The rows now print all
+   three samples, which is what will let a later change tell a slow patch from
+   a slow cross and tighten this, rather than guess. */
 const BAR = {
-  tab: 110,          // a tab is the screen the phone already had
-  tap: 50,           // a tap is drawn in the frame it lands in
+  tab: WEBKIT ? 140 : 110,  // a tab is the screen the phone already had
+  tap: WEBKIT ? 60 : 50,    // a tap is drawn in the frame it lands in
   chip: 100,         // a FlyBy sent is a chip at once
   returnSignIn: 900 + 3 * LAG, // signing in again the same day lands the short way: a few round trips, no jump
   press: 120,        // a control has given under the finger by then
@@ -110,8 +127,26 @@ async function setMine(status, table) {
   const cur = rows.find((r) => r.id === floor.id);
   const d = { ...(cur.data || {}) };
   d.line = (d.line || []).map((x) => (x.id === floor.me.id ? { ...x, status, statusAt: new Date().toISOString(), table } : x));
-  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json" },
+  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
     body: JSON.stringify([{ ...cur, data: d, updated_at: new Date().toISOString() }]) });
+}
+/* My FlyBys on the server, by id, so a wait can tell the one just sent from
+   the finished ones earlier runs leave on the row. */
+async function myAssists() {
+  const rows = await (await fetch(MOCK + "/rest/v1/floor_public?select=*")).json();
+  const cur = rows.find((r) => r.id === floor.id);
+  return ((cur && cur.data && cur.data.assists) || []).filter((a) => a.byId === floor.me.id);
+}
+/* Returns once a FlyBy that was not there before is on the server and marked
+   done, which is the cancel having landed; throws rather than let the next
+   step race it. */
+async function cancelLanded(before, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if ((await myAssists()).some((a) => !before.has(a.id) && a.doneAt)) return;
+    await new Promise((z) => setTimeout(z, 100));
+  }
+  throw new Error(`the FlyBy's Never mind had not reached the server after ${ms} ms`);
 }
 async function prepFloor() {
   const j = async (u) => (await fetch(u)).json();
@@ -122,7 +157,7 @@ async function prepFloor() {
   const cfg = all.find((r) => r.key === "lpc:config:v2");
   if (cfg && cfg.value && Array.isArray(cfg.value.stores)) {
     cfg.value.stores = cfg.value.stores.map((st) => ({ ...st, rooms: { ...(st.rooms || {}), floor: true, line: true } }));
-    await fetch(MOCK + "/rest/v1/app_data", { method: "POST", headers: { "content-type": "application/json" },
+    await fetch(MOCK + "/rest/v1/app_data", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
       body: JSON.stringify([{ key: cfg.key, value: cfg.value, updated_at: new Date().toISOString() }]) });
   }
   const link = (await j(MOCK + "/rest/v1/floor_people?select=*"))[0];
@@ -140,7 +175,7 @@ async function prepFloor() {
   d.roster = [...R, { id: "__lpc_test__", label: "Test", role: "Test", test: true }];
   d.line = [at(rest[0], 52), at(rest[1], 31), at(me, 18)];
   d.assists = []; d.checkouts = d.checkouts || []; d.history = d.history || [];
-  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json" },
+  await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
     body: JSON.stringify([{ ...cur, id, store: STORE, fdate: day(), data: d, updated_at: new Date().toISOString() }]) });
   return { me, id };
 }
@@ -159,7 +194,7 @@ async function launch() {
      WebView is and Chromium at phone width is not the phone: the 18 September
      glitches that reached Jorge were the kind only a phone shows. CI runs both.
      WebKit has no executable fallback; Playwright's own is the only one. */
-  if (String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit") return pw.webkit.launch();
+  if (WEBKIT) return pw.webkit.launch();
   const tries = [process.env.FEEL_CHROME, undefined];
   try { const root = process.env.PLAYWRIGHT_BROWSERS_PATH; if (root) for (const d of fs.readdirSync(root)) if (/^chromium-\d+$/.test(d)) tries.push(path.join(root, d, "chrome-linux", "chrome")); } catch (e) {}
   let last = null;
@@ -186,7 +221,7 @@ async function main() {
      before the browser goes, and a dead browser has already given its
      memory back by the time anybody asks. */
   machine = watchMachine();
-  try { await run(b); }
+  try { await run(b); await verifyManagerPhoneSearch(b, URL_APP); }
   /* Asked here, not in the handler below: the close in the finally fires the
      same disconnect, so a watch read after it calls every failure a lost
      browser. */
@@ -212,20 +247,63 @@ async function run(b) {
   /* Most rows are a time. The swipe's are pixels and a count of frames, the
      ground's a colour step, and a unit that lies is worse than none. */
   const unit = (name) => /px off/.test(name) ? "px" : /frames dropped|change between/.test(name) ? "  " : "ms";
-  const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}`;
-  const row = (name, value, bar, ok = value <= bar) => {
-    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok }; rows.push(r); measured++; console.log(line(r)); };
-  console.log(`feel · ${String(process.env.FEEL_BROWSER || "").toLowerCase() === "webkit" ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
+  /* A median of three hides the three. When one goes over, the question is
+     whether all three were slow, which is the app, or one or two were, which
+     is the runner, and only the samples answer it (C85). */
+  const line = (r) => `  ${r.ok ? "ok  " : "OVER"} ${r.name.padEnd(46)} ${r.bar ? String(r.value).padStart(5) + " " + unit(r.name) + "  bar " + r.bar : ""}${r.xs ? "   [" + r.xs.join(", ") + "]" : ""}`;
+  const row = (name, value, bar, ok = value <= bar, xs = null) => {
+    if (value === -1) { const r = { name, value: null, bar: null, ok: true }; rows.push(r); console.log(`  --   ${name}: the screen already looked like this, so nothing was timed`); return; } const r = { name, value, bar, ok, xs }; rows.push(r); measured++; console.log(line(r)); };
+  const row3 = (name, xs, bar) => row(name, mid(xs), bar, mid(xs) <= bar, xs);
+  console.log(`feel · ${WEBKIT ? "webkit" : "chromium"} · ${LAG} ms on every data request · ${URL_APP}`);
 
-  const signIn = async () => {
+  const signIn = async (full = true) => {
+    await p.evaluate(() => {
+      window.__loginPhases = [];
+      window.__loginPhaseListener = (e) => window.__loginPhases.push(e.detail);
+      document.addEventListener("sage-jump-phase", window.__loginPhaseListener);
+    });
     await p.fill('input[type="email"], input[autocomplete="username"]', "demo@sageonline.app").catch(() => {});
     await p.fill('input[type="password"]', "x");
     const t0 = Date.now(); await p.click('button:has-text("Sign in")');
-    await p.waitForSelector(".ar-bar", { timeout: 40000 }); return ms(t0);
+    try {
+      await p.waitForSelector(".ar-bar", { timeout: 40000 });
+    } catch (e) {
+      /* C102: twice this has never landed, on two branches, and passed on the
+         next run. A timeout alone says nothing, so say what the page was doing
+         at the moment the wait gave up, then fail exactly as before. */
+      const at = await p.evaluate(() => {
+        const vis = (el) => { if (!el) return "absent"; const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+          return cs.visibility === "hidden" || cs.display === "none" || cs.opacity === "0" ? `hidden (${cs.visibility}, ${cs.display}, ${cs.opacity})` : `shown ${Math.round(r.width)}x${Math.round(r.height)}`; };
+        const html = document.documentElement;
+        return {
+          phases: window.__loginPhases || [],
+          html: html.className,
+          signIn: vis(document.querySelector(".signin-over")),
+          bar: `${document.querySelectorAll(".ar-bar").length} in the page`,
+          rootInert: !!document.getElementById("root")?.inert,
+          stall: !!document.querySelector(".boot-stall, .boot-slow"),
+          url: location.pathname + location.search + location.hash,
+          text: (document.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160),
+        };
+      }).catch((err) => ({ unreadable: String(err).slice(0, 120) }));
+      console.log(`feel: the ${full ? "full" : "reduced-motion"} sign-in did not land in 40 s. At that moment: ${JSON.stringify(at)}`);
+      throw e;
+    }
+    // Visible is not interactive while the finishing scan owns the screen.
+    // Include that wait in the same speed bar, never tap through an inert root.
+    await p.waitForFunction(() => !document.getElementById("root")?.inert
+      && !document.documentElement.classList.contains("sage-flight-lock"), null, { timeout: 10000 });
+    const elapsed = ms(t0);
+    const phases = await p.evaluate(() => {
+      document.removeEventListener("sage-jump-phase", window.__loginPhaseListener);
+      return window.__loginPhases;
+    });
+    if (phases.includes("burst") !== full) throw new Error(`sign-in used the wrong arrival: expected ${full ? "full" : "reduced motion"}, saw ${phases.join(", ")}`);
+    return elapsed;
   };
   await p.goto(URL_APP, { waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400); say("page loaded");
   const first = await signIn();
-  console.log(`  first sign-in of the day to the floor  ${first} ms  (the jump; by design)`);
+  console.log(`  full sign-in to the floor  ${first} ms  (the jump; by design)`);
   await p.waitForTimeout(1500); await p.evaluate(() => document.querySelector(".mc-flash-b")?.click()); await p.waitForTimeout(600);
 
   /* tabs: the other room is already mounted. Home and the floor are two panes
@@ -315,8 +393,8 @@ async function run(b) {
     here.push(await clickFelt(ROOM + " .sf-seg-btn", { kind: "classOn", sel: ROOM + " .sf-seg-btn", idx: hereI }));
     await segOn("Here"); await p.waitForTimeout(700);
   }
-  row("tap Lunch to shown", mid(lunch), BAR.tap);
-  row("tap Here to shown", mid(here), BAR.tap);
+  row3("tap Lunch to shown", lunch, BAR.tap);
+  row3("tap Here to shown", here, BAR.tap);
 
   /* the swipe: the page under the thumb, and no frame dropped. Home and Live
      Floor are two pages of the floor page's own scroller (C74), so the thumb
@@ -331,7 +409,8 @@ async function run(b) {
      frame before each step of the thumb, because the step itself reaches the
      browser a frame after this script wrote it down, and reading mid-step
      charged that lag to the page: a first draft of this row said 10 for a
-     scroller that was following exactly. The row is the spread of that gap. */
+     scroller that was following exactly. The row is the spread of sustained
+     gaps, not a single compositor sample. */
   let cdp = null;
   try { cdp = await ctx.newCDPSession(p); } catch (e) { cdp = null; }
   if (cdp) {
@@ -350,11 +429,24 @@ async function run(b) {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await p.waitForTimeout(600);
     const sw = await p.evaluate(() => { window.__swipeOn = false; return window.__sw; });
-    const gaps = [];
+    const gaps = [], at = [];
     let first = -1, lastMove = -1;
-    for (let i = 1; i < sw.track.length; i++) { const [t0, s0] = sw.track[i - 1], [t1, s1] = sw.track[i]; if (first < 0 && s0 > 0) first = i - 1; if (t1 !== t0) { lastMove = i; if (first >= 0) gaps.push(t0 - s0); } }
-    const follow = gaps.length ? Math.max(...gaps) - Math.min(...gaps) : 999;
+    for (let i = 1; i < sw.track.length; i++) { const [t0, s0] = sw.track[i - 1], [t1, s1] = sw.track[i]; if (first < 0 && s0 > 0) first = i - 1; if (t1 !== t0) { lastMove = i; if (first >= 0) { gaps.push(t0 - s0); at.push([i - 1, t0, s0, sw.frames[i - 1] || 0]); } } }
+    const rawFollow = gaps.length ? Math.max(...gaps) - Math.min(...gaps) : 999;
+    const assessment = followAssessment(at);
+    const follow = assessment.spread;
     row("swipe: the page under the thumb, px off between frames", Math.round(follow), BAR.follow);
+    /* C86. The next CI miss was a single 25 px gap that returned to 15 px on
+       the following reading. A blank native scroller, without this app, then
+       produced the same 10 px raw spread in seven of twelve identical CDP
+       swipes. So a solitary scrollLeft sample is not evidence that Sage fell
+       behind. The 2 px bar still applies to gaps held for two readings. Raw
+       misses remain visible here for later comparison, not silently erased. */
+    const detail = followDetail(at);
+    if (detail) console.log("       " + detail);
+    if (rawFollow > follow) console.log(`       raw one-sample spread ${Math.round(rawFollow)} px; sustained ${Math.round(follow)} px (${assessment.reason})`);
+    else if (assessment.reason !== "stable readings") console.log(`       follow assessment: ${assessment.reason}`);
+    say("follow readings [frame, thumb, page, ms]: " + JSON.stringify(at));
     /* Where it ended: 260 less the slop is past the middle of 393, so the
        snap lands on the floor. Any other answer is the scroller not
        following. The frames counted are the ones while the thumb moved: the
@@ -403,23 +495,53 @@ async function run(b) {
     await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   } else {
     console.log("  --   swipe: not run in WebKit (no input channel to move a real thumb)");
+    /* The swipe block ends on Home, and the ground row below taps Live Floor
+       from there. WebKit skips the swipe, so it reached the ground row already
+       on the floor: no travel, no paint, and the row read 0 for that reason
+       (C108: the diagnostic showed the page at scrollLeft 390, the floor,
+       before the tap). Go Home here too, so both engines tap from Home. */
+    await p.locator('.ar-tab[aria-label="Home"]').click(); await paneOn("home"); await p.waitForTimeout(800);
   }
   /* the ground through a tap: no step. The canvas behind the rooms is read at
      one point on every frame for 700 ms after the tap, and the biggest change
      between two frames after the first 80 ms is the row. A blend moves a few
-     points a frame; the step Jorge recorded on 19 September was 30 in one. */
+     points a frame; the step Jorge recorded on 19 September was 30 in one.
+     Every sample also carries how many times the app had painted the ground and
+     when it last did (C88): each paint begins with one setTransform on that
+     canvas, so counting those is the blend's own clock. See groundStep. */
   await p.evaluate(() => { window.__gnd = []; const c = document.querySelector(".ar-gnd"); const g = c.getContext("2d"); const t0 = performance.now();
-    const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2]]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+    const seen = { n: 0, at: t0 }; const proto = CanvasRenderingContext2D.prototype; const was = proto.setTransform;
+    proto.setTransform = function (...a) { if (this.canvas === c) { seen.n++; seen.at = performance.now(); } return was.apply(this, a); };
+    const tick = () => { const d = g.getImageData(Math.round(c.width * 0.95), Math.round(c.height * 0.84), 1, 1).data; window.__gnd.push([performance.now() - t0, d[0], d[1], d[2], seen.n, seen.at]); if (performance.now() - t0 < 700) requestAnimationFrame(tick); else proto.setTransform = was; }; requestAnimationFrame(tick); });
   await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await paneOn("floor"); await p.waitForTimeout(900);
   const gnd = await p.evaluate(() => window.__gnd || []);
-  /* Per frame-time, not per sample: a loaded runner drops frames, and two
-     samples 150 ms apart then span a fifth of the blend, which read as a
-     step on WebKit's first run of this row (46 against 24, on a runner that
-     had every tap three times over). A real step is a big change in one
-     frame however long the frame took. */
-  let stepMax = 0;
-  for (let i = 1; i < gnd.length; i++) { if (gnd[i][0] < 80) continue; const d = Math.abs(gnd[i][1] - gnd[i - 1][1]) + Math.abs(gnd[i][2] - gnd[i - 1][2]) + Math.abs(gnd[i][3] - gnd[i - 1][3]); const frames = Math.max(1, (gnd[i][0] - gnd[i - 1][0]) / 16.7); const r = Math.round(d / frames); if (r > stepMax) stepMax = r; }
-  row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
+  /* Per frame of the blend, not per read: a loaded runner drops frames, and two
+     samples 150 ms apart span a fifth of the blend, which read as a step on
+     WebKit's first run of this row (46 against 24). A real step is a big change
+     in one frame of the blend however long the read took; and a read that came
+     a frame late against the app's paint is not one (C88). */
+  /* Blind is not green: if the paint count never moved, every sample is skipped
+     and the row would read 0. A tab's travel paints the ground on most frames of
+     about 300 ms, so fewer than five paints means the count is not working. */
+  const paints = gnd.length ? gnd[gnd.length - 1][4] - gnd[0][4] : 0;
+  if (paints < 5 && WEBKIT) {
+    /* Not measurable in WebKit on the runner, and not the app's fault (C108).
+       Read in CI on 30 September: the page travels Home to the floor and the
+       ground canvas is drawn on (72 draw calls in the window), but the runner's
+       WebKit gives the page about 3 animation frames a second idle and about 13
+       while it travels. A blend that moves a few points a frame cannot be read
+       from 9 frames; the row would be reading the runner's frame rate. This row
+       had read 0 and passed there since it was written, a measurement that
+       never happened reported as a pass (found by C88's paint count). Said
+       plainly rather than passed or failed, as the swipe row says it cannot
+       run. (The paint counter also reads 0 there although the canvas is drawn
+       on; not explained, and moot while the frames are this few.) */
+    console.log(`  --   ground: not measured in WebKit: the runner gave ${gnd.length} frame(s) in the 700 ms watched (about 13 a second on a tab's travel), too few to read a blend of a few points a frame`);
+  } else {
+    const stepMax = paints >= 5 ? groundStep(gnd) : 999;
+    if (paints < 5) console.log(`       the app painted the ground ${paints} time(s) while it was watched: the row is blind, so it fails rather than reads 0 (C88)`);
+    row("ground: biggest change between two frames of the blend", stepMax, BAR.groundStep);
+  }
   const toPhone = [], toFloor = [];
   for (let k = 0; k < 3; k++) {
     toPhone.push(await clickFelt('.ar-tab[aria-label*="Phone"]', { kind: "visible", sel: ".sfl-title" }));
@@ -427,8 +549,8 @@ async function run(b) {
     toFloor.push(await clickFelt('.ar-tab[aria-label="Live Floor"]', { kind: "visible", sel: ROOM + " .sf-seg-btn" }));
     await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); await p.waitForTimeout(900);
   }
-  row("Floor to Phone tab", mid(toPhone), BAR.tab);
-  row("Phone to Floor tab", mid(toFloor), BAR.tab);
+  row3("Floor to Phone tab", toPhone, BAR.tab);
+  row3("Phone to Floor tab", toFloor, BAR.tab);
   await roomSettled(p);
   await p.waitForTimeout(800);
 
@@ -515,8 +637,17 @@ async function run(b) {
   await setMine("customer", 3); await p.waitForSelector(".fba-btn.fly", { timeout: 15000 });
   /* a FlyBy sent is a chip at once, and taken back at once */
   await p.locator(".fba-btn.fly").click(); await p.waitForSelector(".fba-sheet.ask");
+  const before = new Set((await myAssists()).map((a) => a.id));
   await p.locator('.fba-go:has-text("Send the FlyBy")').click(); t = Date.now(); await p.waitForSelector(".fba-chip", { timeout: 5000 }); row("FlyBy sent to chip", ms(t), BAR.chip);
   await p.waitForTimeout(300); await p.locator(".fba-x").click(); t = Date.now(); await p.waitForSelector(".fba-chip", { state: "detached", timeout: 5000 }); row("Never mind to chip gone", ms(t), BAR.chip);
+  /* The chip goes at once, but the send and the cancel are still on their way
+     to the server as two read-then-writes, the last landing about four LAGs
+     after the send. setMine has no lag, so written now it lands between one of
+     those reads and its write, the page writes "customer" back over it, and the
+     button stays for good. That was C87: the server itself read "customer"
+     when the wait gave up. So wait for the cancel to be on the server, which is
+     the page's last write here, and only then change the status. */
+  await cancelLanded(before, 8 * LAG + 5000);
   await setMine("waiting", null); await p.waitForSelector(".fba-btn.fly", { state: "detached", timeout: 15000 });
   await p.waitForTimeout(600);
 
@@ -562,10 +693,21 @@ async function run(b) {
   const tickOk = vib.length === 1 && vib[0] === 6;
   row(`press: one tick at touch-down (${JSON.stringify(vib)})`, tickOk ? 0 : 1, 0, tickOk);
 
-  /* signing in again the same day lands the short way */
+  /* X5: repeat sign-in deliberately plays the whole arrival. Seed an older
+     version's daily mark so this catches reintroducing the shortcut. */
+  await p.evaluate(() => {
+    localStorage.setItem("lpc:jump:day", new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()));
+    for (const k of Object.keys(localStorage)) if (k === "lpc-auth" || /^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k);
+  });
+  await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400);
+  console.log(`  repeat full sign-in to the floor  ${await signIn()} ms  (the jump; by design)`);
+
+  /* Keep the speed bar for the short path that still exists, not for the
+     full animation Jorge explicitly asked to replay. */
+  await p.emulateMedia({ reducedMotion: "reduce" });
   await p.evaluate(() => { for (const k of Object.keys(localStorage)) if (k === "lpc-auth" || /^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k); });
   await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400);
-  row("return sign-in to floor", await signIn(), BAR.returnSignIn);
+  row("reduced-motion return sign-in to floor", await signIn(false), BAR.returnSignIn);
 
   const bad = rows.filter((r) => !r.ok);
   if (errs.length) console.log("  page errors: " + errs.join(" | "));

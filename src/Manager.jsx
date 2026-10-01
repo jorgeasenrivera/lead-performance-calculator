@@ -13,6 +13,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import { createClient } from "@supabase/supabase-js";
 import { renderLeaderboard } from "./board-loader.mjs";
+import { DAILY_TOTALS_UNAVAILABLE, DIGEST_RETRY_MS, createDigestReader, createDigestSelection, digestIdentity, digestState } from "../api/_digest-integrity.mjs";
 import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED } from "./SageMark.jsx";
 import {
   norm, toNum,
@@ -46,8 +47,7 @@ import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
 import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
-import qrcodeGen from "qrcode-generator";
-import { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
+import { buzz, MOTION, useNet, AccountSheet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
 
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -284,7 +284,12 @@ const statedSplitOf = (M) => {
   if (!v) return null;
   const nw = v.new ?? null, us = v.used ?? null, other = v.other ?? null;
   if (nw == null && us == null) return null;
-  return { nw: nw || 0, us: us || 0, other: other || 0, counted: true };
+  /* The shares come with it. The phone board once took the counts and not the
+     shares, and drew "NaN" for both paces whenever the report carried its own
+     split (Codex, H-X22). */
+  const n = nw || 0, u = us || 0, o = other || 0, known = n + u + o;
+  return { nw: n, us: u, other: o, counted: true, known,
+    newPct: known > 0 ? n / known : null, usedPct: known > 0 ? u / known : null };
 };
 
 /* Whether this month has a goal. There is nothing else to ask: a goal belongs
@@ -928,52 +933,41 @@ function verdictOf(ev, { restricted = false, inGrace = false } = {}) {
   return VERDICT.room;
 }
 
-/* ---- the daily digest, so rates have a yesterday ----
-   The board rates cannot be trended from anything already stored: the Delivery
-   Summary overwrites the month's totals on every import, and data.snapshots is
-   trimmed to a single entry. So one small row a day is kept — counts only, no
-   names, no money — and that is what "up from last week" is measured against.
-
-   The key sits UNDER lpc:store:<id>: on purpose. RLS allows exactly five
-   prefixes, and a new lpc:digest:% would have been refused with the write
-   failing quietly. As lpc:store:<id>:digest:<day> it lands on the existing
-   store policy, gated by has_store(split_part(key,':',3)) — the same rule the
-   split activity rows already ride on, so it needs no SQL change at all. */
-const digestKey = (storeId, day) => `lpc:store:${storeId}:digest:${day}`;
-
-/* The round-up and both delivery charts all want the same rows. One promise per
-   store, so opening a board does not fetch them three times. */
-const digestCache = new Map();
-
-function digestsFor(storeId) {
-  const key = storeId + ":" + today();
-  if (!digestCache.has(key)) digestCache.set(key, loadDigests(storeId).catch(() => ({})));
-  return digestCache.get(key);
-}
-
-function useDigests(storeId) {
-  const [rows, setRows] = useState(null);
-  useEffect(() => {
-    let live = true;
-    if (!storeId) { setRows(null); return; }
-    digestsFor(storeId).then((d) => { if (live) setRows(d); });
-    return () => { live = false; };
-  }, [storeId]);
-  return rows;
-}
-
-async function loadDigests(storeId) {
-  if (!supabase) return {};
+/* ---- the daily digest, held as unverified audit evidence ----
+   Visit-time month snapshots cannot establish a business day's sales. Keep
+   them in storage, but only a verified report source may supply daily values. */
+const digestReader = createDigestReader(async (storeId) => {
+  if (!supabase) throw new Error("Digest source unavailable");
   const prefix = `lpc:store:${storeId}:digest:`;
   const { data, error } = await supabase.from("app_data")
     .select("key,value").like("key", prefix + "%");
   if (error) throw error;
-  const out = {};
-  for (const row of data || []) {
-    const day = row.key.slice(prefix.length);
-    if (day && row.value) out[day] = row.value;
-  }
-  return out;
+  return data;
+});
+
+function useDigestIntegrity(storeId, dataStoreId) {
+  const day = today();
+  const [state, setState] = useState(() => digestState(storeId, day, "loading", "reading_legacy_rows"));
+  const selection = useMemo(() => createDigestSelection(digestReader, setState), []);
+  useEffect(() => {
+    let live = true, retry = null, retryUsed = false;
+    const read = async (force = false) => {
+      const result = await selection.select(storeId, dataStoreId, today(), { force });
+      if (!live) return;
+      if (result.status === "error" && !retryUsed) {
+        retryUsed = true;
+        retry = setTimeout(() => read(true), DIGEST_RETRY_MS);
+      }
+    };
+    const focus = () => { retryUsed = false; clearTimeout(retry); read(true); };
+    read();
+    window.addEventListener("focus", focus);
+    return () => { live = false; clearTimeout(retry); selection.cancel(); window.removeEventListener("focus", focus); };
+  }, [storeId, dataStoreId, day, selection]);
+  /* Effects run after paint. The render itself must reject old-store state. */
+  return digestIdentity(storeId, dataStoreId, day)
+    || (state.storeId === storeId && state.day === day ? state
+      : digestState(storeId, day, "loading", "reading_legacy_rows"));
 }
 
 async function loadPlatesOnly(key) {
@@ -1009,13 +1003,6 @@ async function updateProfile(id, patch) {
   if (!supabase) return false;
   const { error } = await supabase.from("profiles").update(patch).eq("id", id);
   if (error) { console.error("updateProfile", error); return false; }
-  return true;
-}
-
-async function deleteProfile(id) {
-  if (!supabase) return false;
-  const { error } = await supabase.from("profiles").delete().eq("id", id);
-  if (error) { console.error("deleteProfile", error); return false; }
   return true;
 }
 
@@ -1502,6 +1489,7 @@ function BoardScreen({ storeId }) {
    carries the account rather than spending width on a title nobody reads twice. */
 function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onHelp }) {
   const [open, setOpen] = useState(false);
+  const [acct, setAcct] = useState(false);   // Your account, and Delete my account (C91)
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -1535,9 +1523,11 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
           {onReplayIntro && (
             <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
           )}
+          <button className="bm-item" onClick={() => { setOpen(false); setAcct(true); }}>Your account</button>
           <button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
         </div>
       )}
+      {acct && <AccountSheet desk name={session?.name} onClose={() => setAcct(false)} onDeleted={() => { setAcct(false); onSignOut(); }} />}
     </div>
   );
 }
@@ -2186,15 +2176,21 @@ const QUEUE_FLAGS = {
    automatic ones too, because catching an up on the floor IS the opportunity. */
 const UPS_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
 
-/* The test link. Offered only in the manager view, and deliberately never encoded
-   into the QR code that gets held up in front of the floor. */
 /* The wall address for this queue. Copy it once into a screen and leave it. */
 function QueueBoardLink({ storeId, kind }) {
   const [said, setSaid] = useState(false);
-  const url = `${window.location.origin}${window.location.pathname}?qboard=${encodeURIComponent(storeId)}&k=${kind}`;
+  const base = `${window.location.origin}${window.location.pathname}?qboard=${encodeURIComponent(storeId)}&k=${kind}`;
+  /* The link carries this store's key: once the day's rows close to the
+     public key, it is how a TV with nobody signed in reads them (C92,
+     Jorge chose this on 28 September). Asked for at the tap, from the server. */
+  const linkWithKey = async () => {
+    const out = await apiCall("/api/floor-row", { method: "POST", body: { op: "wallkey", store: storeId } });
+    return out && out.key ? `${base}&key=${encodeURIComponent(out.key)}` : base;
+  };
   return (
-    <button className="btn-quiet" title={url}
-      onClick={() => {
+    <button className="btn-quiet" title={base}
+      onClick={async () => {
+        const url = await linkWithKey();
         navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
           () => askCopy("Point a screen at this address", url));
       }}>
@@ -2203,20 +2199,6 @@ function QueueBoardLink({ storeId, kind }) {
   );
 }
 
-function TestLink({ storeId, date, token, param }) {
-  const [said, setSaid] = useState(false);
-  if (!token) return null;
-  const url = queueSignInUrl(storeId, date, token, param, true);
-  return (
-    <button className="btn-quiet" title="Opens this queue as a test person nobody else can see"
-      onClick={() => {
-        navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
-          () => askCopy("Open this on your phone to test the salesperson view", url));
-      }}>
-      {said ? "Copied" : "Salesperson link"}
-    </button>
-  );
-}
 
 /* ---- printing, in one place --------------------------------------------
    Sage opened a print window five ways: the one-pager, the month-end recap,
@@ -2225,7 +2207,8 @@ function TestLink({ storeId, date, token, param }) {
    head and its own call to print — five copies of the same six lines, and a
    blocked pop-up reported five different ways.
 
-   One opener now, one page writer, and one poster that takes the room.
+   One opener now, one page writer, and one poster that takes the room. (The
+   poster went with the QR codes on 28 September, C99.)
 
    What is NOT merged, against what the audit page proposed: the one-pager and
    the month-end recap. Read side by side they are not one page with a
@@ -2244,59 +2227,6 @@ function printPage({ name, width = 850, height = 1050, title, head = "", css = "
   return w;
 }
 
-/* The sign-in poster. Two rooms, one page: everything below was identical in
-   the phone line's copy and the floor's except the colour, the glyph and three
-   lines of words, which is exactly what an argument is for. */
-const SIGN_IN_POSTER = {
-  line: { win: "lpc_qr_", head: "Phone Line", tint: "#4c8bf5", glyph: "phone", banner: "Phone Opportunities",
-    h1: "Get in Line",
-    sub: "Pick your name to claim your spot for the next phone opportunity. No app, no login. This code only works today." },
-  floor: { win: "lpc_floor_", head: "Live Floor", tint: "#0f9d76", glyph: "door", banner: "Live Floor",
-    h1: "Get on the Floor",
-    sub: "Pick your name to claim your spot for the next walk-up. Your spot updates on its own as customers check in and deals happen. No app, no login. This code only works today." },
-};
-async function printSignIn({ store, url, date, by, room = "line" }) {
-  const r = SIGN_IN_POSTER[room] || SIGN_IN_POSTER.line;
-  let svg = "";
-  try {
-    const qrcode = await loadQRCode();
-    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
-    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
-  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
-  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const foot = by ? `Generated ${when} \u00b7 Printed by ${by}` : `Generated ${when}`;
-  printPage({
-    name: r.win + store.id, width: 800, height: 1040,
-    title: `${r.head} \u00b7 ${store.name}`,
-    warn: "Allow pop-ups for this site to print the sign-in code.",
-    head: `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">`,
-    css: `
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
-    .banner{display:inline-flex;align-items:center;gap:10px;background:${r.tint};color:#fff;font-weight:700;
-      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
-    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
-    .store{font-size:22px;font-weight:700;color:#334;}
-    .date{font-size:16px;color:#667;margin-top:6px;}
-    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid ${r.tint};border-radius:24px;}
-    .qr svg{display:block;width:100%;height:auto;}
-    .how{font-size:20px;font-weight:700;margin-top:10px;}
-    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
-    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
-    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}`,
-    body: `
-    <div class="banner">${pixSvgString(r.glyph, 18)} ${r.banner}</div>
-    <h1>${r.h1}</h1>
-    <div class="store">${store.name}</div>
-    <div class="date">${nice}</div>
-    <div class="qr">${svg}</div>
-    <div class="how">Scan with your phone camera to sign in</div>
-    <div class="sub">${r.sub}</div>
-    <div class="foot">${foot}</div>`,
-  });
-}
 
 /* =========================================================================
    queueCoachingStats — roll a person's line history into coaching numbers
@@ -3318,17 +3248,6 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
     );
   };
 
-  const codePop = () => (
-    <div className="qr-pb">
-      <div className="q-qr-box"><QueueQR url={queueSignInUrl(store.id, date, row && row.token, variant.param)} /></div>
-      <p className="qr-pmuted">Salespeople scan it, pick their name, and they are {variant.count}.</p>
-      <div className="qr-pbtns">
-        <button type="button" className="fr-b" onClick={() => printSignIn({ store, url: queueSignInUrl(store.id, date, row && row.token, variant.param), date, by: userName, room: "line" })}>Print</button>
-        <button type="button" className="fr-b" onClick={regenToken}>New code</button>
-      </div>
-    </div>
-  );
-
   const popBody = () => {
     if (!pop) return null;
     switch (pop.k) {
@@ -3336,13 +3255,12 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
       case "person": return personPop(pop.id);
       case "line": return linePop();
       case "day": return dayPop();
-      case "code": return codePop();
       case "opps": return <OppsTally history={row && row.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />;
       default: return null;
     }
   };
   const popTitle = pop ? ({ seat: `Desk ${pop.n}`, person: "In line", line: variant.label,
-    day: "The day so far", code: "Sign-in code", opps: "Opportunities today" })[pop.k] : "";
+    day: "The day so far", opps: "Opportunities today" })[pop.k] : "";
 
   return (
     <div className="fr-page qr">
@@ -3416,9 +3334,6 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "opps" })}>
             <PixIcon glyph="tap" size={16} />Opportunities<em>{upsToday}</em>
-          </button>
-          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}>
-            <PixIcon glyph="clipboard" size={16} />Sign-in code
           </button>
         </div>
       </div>
@@ -3877,7 +3792,6 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
 
 function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
-  const [showQR, setShowQR] = useState(false);
   const [setup, setSetup] = useState(false);
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -4111,7 +4025,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   }
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
-  const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
   // Counts the floor is judged on leave the test identity out.
   const availCount = withoutTest(line).filter((p) => p.status === "waiting").length;
 
@@ -4119,12 +4032,10 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     <div className={`checkout q-tab mf ${variant.mf}`}>
       <div className="q-topline">
         <div className="q-topline-actions">
-          <button className="btn btn-primary" onClick={() => setShowQR(true)}>Sign-in code</button>
           <button className={"btn" + (setup ? " on" : "")} aria-expanded={setup} onClick={() => setSetup((v) => !v)}>Set up</button>
         </div>
         {setup && (
           <div className="q-setup">
-            <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
             <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
           </div>
         )}
@@ -4155,25 +4066,12 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
             accent={variant.accent} kind={variant.kind} metrics={M}
             assignLabel={variant.kind === "online" ? "Assign the lead" : "Assign the call"}
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy}
-            onEmpty={withoutTest(line).length === 0 ? () => setShowQR(true) : null} />
+            onEmpty={null} />
         );
       })()}
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />
 
-      {showQR && (
-        <ToolSheet title="Sign-in code" wide
-          sub={`Post this at the sales desk. It only works today; a fresh code appears each morning.`}
-          onClose={() => setShowQR(false)}>
-          <div className="q-qr-box"><QueueQR url={url} /></div>
-          <p className="ts-note">Salespeople scan it, pick their name, and they're {variant.count}. No login.</p>
-          <div className="q-qr-btns">
-            <button className="btn" onClick={() => printSignIn({ store, url, date, by: userName, room: "line" })}>Print sign-in code</button>
-            <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
-            <button className="btn" onClick={regenToken}>New code</button>
-          </div>
-        </ToolSheet>
-      )}
 
       <div className="mf-lower">
       <div className="mf-main">
@@ -4710,12 +4608,6 @@ function floorApplyEvents(cur, events, store) {
   return cur;
 }
 
-/* ---- printable sign-in poster (SmartFloor branded) ---- */
-
-function floorSignInUrl(storeId, date, token) {
-  const base = window.location.origin + window.location.pathname;
-  return `${base}?f=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
-}
 
 /* One colour per tag, so a manager can look down the line and go straight to
    the blue one. Languages first, then earned strengths, then skills; a custom
@@ -5065,7 +4957,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
   const inButOff = salesRoster.filter((a) => isOff(data, a.id, date) && inLine.has(a.id));
   const offToday = salesRoster.filter((a) => isOff(data, a.id, date) && !inLine.has(a.id));
   const notInLine = salesRoster.filter((a) => !inLine.has(a.id));
-  const url = floorSignInUrl(store.id, date, row.token);
 
   const statusOf = (p) => {
     if (!p) return null;
@@ -5371,17 +5262,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
     );
   };
 
-  const codePop = () => (
-    <>
-      <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Sign-in code</div></div></div>
-      <div className="fr-qr"><QueueQR url={url} cell={5} /></div>
-      <div className="fr-acts">
-        <button type="button" className="fr-b pri" onClick={() => printSignIn({ store, url, date, by: userName, room: "floor" })}>Print</button>
-        <button type="button" className="fr-b" onClick={() => window.open(url, "_blank")}>Open page</button>
-        <button type="button" className="fr-b warn" onClick={regenToken}>New code</button>
-      </div>
-    </>
-  );
 
   const [rosterTab, setRosterTab] = useState("floor");
   const rosterPop = () => (
@@ -5419,12 +5299,11 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
       case "cov": return covPop();
       case "rec": return recPop();
       case "ups": return upsPop();
-      case "code": return codePop();
       case "roster": return rosterPop();
       default: return null;
     }
   };
-  const popTitle = pop ? ({ person: "Person", table: "Table", ask: "Ask", asks: "Asks", line: "In line", cov: "Coverage today", rec: "Record", ups: "Ups today", code: "Sign-in code", roster: "Roster" })[pop.k] : "";
+  const popTitle = pop ? ({ person: "Person", table: "Table", ask: "Ask", asks: "Asks", line: "In line", cov: "Coverage today", rec: "Record", ups: "Ups today", roster: "Roster" })[pop.k] : "";
   const openAsks = (kind) => {
     const list = kind === "to" ? toAsks : flyAsks;
     if (list.length === 1) setPop({ k: "ask", id: list[0].id });
@@ -5493,7 +5372,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           {hours.length > 0 && <div className="fr-scale"><span>{hourLabel(hours[0].h)}</span><span>{hourLabel(hours[hours.length - 1].h + 1)}</span></div>}
         </button>
         <div className="fr-tools">
-          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}><PixIcon glyph="clipboard" size={16} />Sign-in code</button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "rec" })}><PixIcon glyph="clipboard" size={16} />Record</button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "ups" })}><PixIcon glyph="tap" size={16} />Ups today <em>{upsToday}</em></button>
           <button type="button" className={"fr-tool" + (asking > 0 ? " asking" : "")} onClick={() => setPop({ k: "roster" })}><PixIcon glyph="users" size={16} />Roster{asking > 0 && <em>{asking} asking</em>}</button>
@@ -5507,7 +5385,6 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
 
 function FloorBoard({ config, store, data, onData, userName }) {
   const [row, setRow] = useState(undefined);
-  const [showQR, setShowQR] = useState(false);
   const [setup, setSetup] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
   const [asking, setAsking] = useState(0);
@@ -5787,7 +5664,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
-  const url = row ? floorSignInUrl(store.id, date, row.token) : "";
   // Counts the floor is judged on leave the test identity out.
   const availCount = withoutTest(line).filter((p) => p.status === "waiting").length;
   const withCust = line.filter((p) => p.status === "customer").length;
@@ -5813,10 +5689,9 @@ function FloorBoard({ config, store, data, onData, userName }) {
     <div className="checkout q-tab f-tab mf mf-floor">
       <div className="q-topline">
         <div className="q-topline-actions">
-          {/* The daily control first and filled; set-up behind one button
-              (five-second pass, item 11). Phones stays out only while
-              somebody is asking. */}
-          <button className="btn btn-primary" onClick={() => setShowQR(true)}>Sign-in code</button>
+          {/* Set-up behind one button (five-second pass, item 11). Phones
+              stays out only while somebody is asking. The sign-in code that
+              led this row went with the QR codes (C99). */}
           {(asking > 0 || showPhones) && <button className={"btn" + (asking > 0 && !showPhones ? " f-asking" : "")} onClick={() => setShowPhones((v) => !v)}>
             {showPhones ? "Hide phones" : `Phones · ${asking} asking`}</button>}
           {/* Only ever shown when there is something in it. A button that reads
@@ -5840,7 +5715,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
         {setup && (
           <div className="q-setup">
             <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
-            <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
             <QueueBoardLink storeId={store.id} kind="floor" />
           </div>
         )}
@@ -5868,7 +5742,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
             accent="#0FB37E" kind="floor" metrics={M}
             assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "the up")}
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy}
-            onEmpty={withoutTest(line).length === 0 ? () => setShowQR(true) : null} />
+            onEmpty={null} />
         );
       })()}
 
@@ -5902,19 +5776,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
       {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} onClaims={setAsking} />}
 
-      {showQR && (
-        <ToolSheet title="Sign-in code" wide
-          sub="Post this on the showroom floor. It only works today; a fresh code appears each morning."
-          onClose={() => setShowQR(false)}>
-          <div className="q-qr-box"><QueueQR url={url} /></div>
-          <p className="ts-note">Salespeople scan it, pick their name, and they're on the floor. Their spot updates on its own as customers check in and deals happen.</p>
-          <div className="q-qr-btns">
-            <button className="btn" onClick={() => printSignIn({ store, url, date, by: userName, room: "floor" })}>Print sign-in code</button>
-            <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
-            <button className="btn" onClick={regenToken}>New code</button>
-          </div>
-        </ToolSheet>
-      )}
 
       <div className="mf-lower">
       <div className="mf-main">
@@ -11408,58 +11269,6 @@ function ruEvaluate({ config, store, data, M }) {
   return { evaluated, restricted, failBy, verdicts, nearing };
 }
 
-// Counts only. Nothing here is not already on a wall the floor walks past.
-/* The daily row. It carries the standings for the round-up, and now the three
-   channels as raw units and leads so the delivery charts have a per-day series.
-
-   Units and leads rather than the percentage, because a percentage cannot be
-   re-aggregated: the chart recomputes the rate from the two numbers, and can
-   still do so if the roster or the roll-up rule changes later. `data.months`
-   only ever holds a month-to-date total, so this row is the ONLY place a
-   day-by-day delivery figure will ever exist. Thirty days are kept, which is
-   exactly the window the charts draw. */
-function buildDigest(args) {
-  const e = ruEvaluate(args);
-  const { config, store, data, M } = args;
-  const onBoard = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-  const roster = monthRoster(data, M, (data.roster || []).filter((a) => a.roleId && onBoard.has(a.roleId)));
-  const ch = {};
-  for (const c of channelRates(M, roster)) {
-    if (c.seen) ch[c.id] = { u: +c.units.toFixed(3), l: Math.round(c.leads) };
-  }
-  /* Total units and the vehicle split, month-to-date. Stored cumulative rather
-     than daily on purpose: a missed day costs one comparison, not the series,
-     and yesterday's figure is always the difference of two rows. */
-  let u = 0, nu = null, uu = null;
-  for (const a of roster) {
-    const st = M?.stats?.[norm(a.name)];
-    if (!st) continue;
-    u += unitsOf(st);
-    if (st.newUnits != null || st.usedUnits != null) {
-      nu = (nu || 0) + (st.newUnits ?? 0);
-      uu = (uu || 0) + (st.usedUnits ?? 0);
-    }
-  }
-  /* The cumulative series prefers DriveCentric's own count for the same reason
-     the hero does: the day-by-day pace chart is read against the goal, and a
-     series built from double-credited rows overstates every point on it. The
-     stock split keeps the people's figures scaled onto the count, so the two
-     lines of the day detail cannot disagree. */
-  const stated = statedOf(M);
-  const toldSplit = statedSplitOf(M);
-  if (stated) {
-    /* The report's own New and Used rows when it carried them, and the scaled
-       people only when it did not. A digest is what the round-up and the day
-       detail read, so a stock split invented here would be a made-up figure
-       stored day after day. */
-    if (toldSplit) { nu = toldSplit.nw; uu = toldSplit.us; }
-    else if (u > 0 && nu != null) { const f = stated.deliveries / u;
-      nu = Math.round(nu * f * 10) / 10; uu = Math.round(uu * f * 10) / 10; }
-    u = stated.deliveries;
-  }
-  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch, u, nu, uu };
-}
-
 /* The digest closest to `back` days ago, so a missed day degrades to the
    nearest one either side rather than silently dropping the comparison. */
 function nearestDigest(digests, back) {
@@ -11588,12 +11397,7 @@ function buildRoundUp({ config, store, data, M, digests }) {
       d: `${daysOnFile.n} day${daysOnFile.n === 1 ? "" : "s"} of activity on file. Two days of imports and yesterday's comparison starts; two weeks and the weekly one joins it.`,
     });
   else if (!was)
-    aware.push({
-      t: "Standards aren't being compared yet",
-      d: Object.keys(digests || {}).length
-        ? "Nothing close enough to yesterday is on file, so who cleared and who slipped is being left out rather than measured against the wrong day."
-        : "Today is the first day the floor's standing was written down. From tomorrow this also shows who cleared and who slipped.",
-    });
+    aware.push({ t: DAILY_TOTALS_UNAVAILABLE, d: "" });
 
   return { improved, worsened, work, aware, trendable: daysOnFile.enough, days: daysOnFile.n, rated: !!was,
     any: improved.length + worsened.length + work.length + aware.length > 0 };
@@ -11603,9 +11407,7 @@ function buildRoundUp({ config, store, data, M, digests }) {
    first sign-in of the day, because a takeover every morning stops being a
    briefing and becomes a door. "Seen today" is per device, which is the right
    scope: it is about this person's morning, not the store's. */
-const ruWritten = new Set();
-
-// one write per store per day per session
+// Existing digest rows remain available for audit, but are no longer written by the browser.
 
 /* The date chip in the hero opens the round-up. The two belong together — the
    chip says which day it is, the round-up says what that day has done so far —
@@ -11650,7 +11452,8 @@ function RuBodyLock() {
 }
 
 function RoundUp({ config, store, data, M }) {
-  const [digests, setDigests] = useState(null);
+  const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
+  const digests = digestIntegrity.history;
   const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
     [config, store, data, M, digests]);
   const seenKey = `lpc:roundup:${store.id}:${today()}`;
@@ -11681,30 +11484,8 @@ function RoundUp({ config, store, data, M }) {
     setFull(false);
   };
 
-  // Read what's on file, then write today's row if it isn't there. The write is
-  // never allowed to matter: a failure costs tomorrow's comparison and nothing
-  // that is on screen now.
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const got = await loadDigests(store.id);
-        if (!live) return;
-        setDigests(got);
-        const stamp = store.id + ":" + today();
-        if (got[today()] || ruWritten.has(stamp)) return;
-        ruWritten.add(stamp);
-        const row = buildDigest({ config, store, data, M });
-        if (!row.ev) return;                 // nobody evaluated: nothing worth keeping
-        await saveShared(digestKey(store.id, today()), row);
-        if (live) setDigests((d) => ({ ...(d || {}), [today()]: row }));
-      } catch (e) {
-        console.error("round-up digest", e);
-        if (live) setDigests({});
-      }
-    })();
-    return () => { live = false; };
-  }, [store.id]);
+  // A browser visit cannot certify a report day. There is deliberately no
+  // digest writer here, including when an import or store selection changes.
 
   useEffect(() => {
     if (!full) return;
@@ -11802,7 +11583,7 @@ function RoundUp({ config, store, data, M }) {
                         headed with today's date while reporting yesterday's numbers is
                         the kind of small lie that costs trust in all the others. */}
                     <div className="ru-sheet-date">
-                      Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+                      {new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
                     </div>
                   </div>
                 </div>
@@ -11848,6 +11629,8 @@ function RoundUp({ config, store, data, M }) {
                   })()}
                 </div>
               )}
+
+              <div className="ru2-pace" data-daily-unavailable="recap">{DAILY_TOTALS_UNAVAILABLE}</div>
 
               {/* ---- yesterday's business: plain numbers ---- */}
               {(ru2.soldY || ru2.close.length > 0) && (
@@ -16909,7 +16692,7 @@ function flowMarks(days) {
    the daily digests, so the lines rise and fall day by day the way the old card
    did. The viewBox is built at the measured width of the card, so nothing is
    stretched: a pixel of stroke is a pixel of stroke at any size. Falls back to
-   the month documents, dashed, until two daily readings are on file. */
+   the month documents. Unverified daily readings are not used. */
 function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   const wrapRef = useRef(null);
   const [w, setW] = useState(560);
@@ -16937,7 +16720,7 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   /* Three points before there is a line (five-second pass, item 9). A frame
      with two dots stops the eye and says nothing. */
   const shown = daily ? series[0].pts.filter((p) => p.pct != null).length : (moTrail || []).length;
-  if (shown < 3) return <div className="s2-none s2-notyet">The month's line starts once three days have figures.</div>;
+  if (shown < 3) return <div className="s2-none s2-notyet">Monthly history starts once three months have figures.</div>;
 
   const SER = CHANNEL_SERIES;
   const ids = ["internet", "phone", "showroom"];
@@ -17013,7 +16796,7 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
             return <React.Fragment key={id}> · {CHANNELS[id]} {v == null ? "–" : Math.round(v * 10) / 10 + "%"}</React.Fragment>;
           })}</>
         : daily ? "Day by day, last 30 days · faint ticks are Mondays · click a day to see it"
-        : "Month over month until two daily readings are on file · click a month to see it"}
+        : "Month over month · click a month to see it"}
     </div>
   </>);
 }
@@ -17146,7 +16929,7 @@ const bpFirstTag = (a, strengths) => {
   return [...l, ...st, ...sk].filter(Boolean)[0] || null;
 };
 
-function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach }) {
+function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach, query = "" }) {
   const M = data.months?.[ym()];
   const thr = normThresholds(store.thresholds);
   const restrictions = data.restrictions || {};
@@ -17197,11 +16980,12 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     const known = nw + us + other;
     const newPct = known > 0 ? nw / known : null, usedPct = known > 0 ? us / known : null;
     const told = statedSplitOf(M);
-    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, known: told.nw + told.us };
+    if (told) return { seen: true, ...told };
     if (statedM && known > 0) { const f = statedM.deliveries / known; nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10; }
     return { seen, nw, us, known, newPct, usedPct };
   })();
-  const digests = useDigests(store.id);
+  const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
+  const digests = digestIntegrity.history;
   const dayUnits = useMemo(() => {
     if (!digests) return {};
     const keys = Object.keys(digests).sort();
@@ -17304,13 +17088,15 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const [goalDraft, setGoalDraft] = useState("");
   const close = useCallback(() => setPop(null), []);
   const limitCount = people.filter((p) => p.atLimit).length;
+  const q = norm(query);
   const rows = useMemo(() => {
     let list = people.filter((p) => (limitOnly ? p.atLimit : (!roleFilter || p.a.roleId === roleFilter)));
+    if (q) list = list.filter((p) => norm(p.a.name).includes(q));
     if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && (d.state === "bad" || d.state === "warn"); });
     if (drill && drill.kind === "channel") list = list.slice().sort((x, y) => ((y.st?.[drill.id + "Pct"] ?? -1) - (x.st?.[drill.id + "Pct"] ?? -1)));
     else list = list.slice().sort((x, y) => y.units - x.units || x.a.name.localeCompare(y.a.name));
     return list;
-  }, [people, roleFilter, limitOnly, drill]);
+  }, [people, roleFilter, limitOnly, drill, q]);
 
   const goalMonth = goalMonthState(store, ym());
   const saveGoal = async (draft = goalDraft) => {
@@ -17373,7 +17159,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             <div className="bp-lgl"><span>{new Date(pts[0].key + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}</span><span>{new Date(last.key + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}</span></div>
             <div className="bp-lgleg"><span><i style={{ background: col }} />{c.label}</span><span className="bp-dim">dashed = target</span></div>
           </div>
-        ) : <p className="fr-empty">{pctV == null ? "No figures yet this month." : `${fmtPct(c.pct)} so far. The line draws once two days are on file.`}</p>}
+        ) : <p className="fr-empty">{pctV == null ? "No figures yet this month." : `${fmtPct(c.pct)} this month. Daily history unavailable.`}</p>}
         <div className="bp-defn">Units delivered against the {c.label.toLowerCase()} leads worked, month to date.</div>
         <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { setDrill({ kind: "channel", id: c.id, label: c.label + " closing" }); close(); }}>By person</button></div>
       </>);
@@ -17384,6 +17170,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       const need = short != null && pace.daysLeft > 0 ? Math.ceil((short / pace.daysLeft) * 10) / 10 : null;
       return (<>
         {hd("Sold by day", <><span className="fr-st in">{new Date().toLocaleDateString("en-US", { month: "long" })}</span><span className="fr-w">day {mcal.dNow} of {mcal.dim}</span></>)}
+        <p className="fr-empty" data-daily-unavailable="phone-calendar">{DAILY_TOTALS_UNAVAILABLE}</p>
         <div className="bp-swg">
           {Array.from({ length: mcal.off }, (_, i) => <span key={"e" + i} className="bp-e" />)}
           {Array.from({ length: mcal.dim }, (_, i) => {
@@ -17404,11 +17191,11 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           {split.seen && split.known > 0 && !pace.tooEarly && (
             <div className="bp-ln">By stock, at today's mix: new pace <b className="bp-sm">{Math.round(pace.projected * split.newPct)}</b> · used pace <b className="bp-sm">{Math.round(pace.projected * split.usedPct)}</b></div>
           )}
-          <div className="bp-tiny">{pace.daysDone} of {pace.daysAll} days counted · through yesterday</div>
+          <div className="bp-tiny">Pace: {pace.daysDone} of {pace.daysAll} selling days elapsed</div>
         </div>
         {canSetGoal && (
           <div className="fr-acts">
-            <input className="fr-ref" type="number" min="0" inputMode="numeric" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
+            <input className="fr-ref" type="number" min="0" inputMode="numeric" aria-label="Units goal for the month" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
             <button type="button" className="fr-b pri" onClick={() => saveGoal()}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
           </div>
         )}
@@ -17436,6 +17223,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       return (<>
         {hd(new Date().toLocaleDateString("en-US", { month: "long" }) + " at a glance", <><span className="fr-w">{pace.daysLeft} selling {pace.daysLeft === 1 ? "day" : "days"} left</span></>)}
         <div className="bp-cw">
+          <div data-daily-unavailable="phone-best-day">{DAILY_TOTALS_UNAVAILABLE}</div>
           {!pace.tooEarly && pace.goal && pace.short > 0 && pace.daysLeft > 0 && <div><PixIcon glyph="bolt" size={12} style={{ color: "#C98A00" }} /><span>Need <b>{(Math.round(pace.needPerDay * 10) / 10).toFixed(1)}</b> a day the rest of the way</span></div>}
           {mcal.best && <div><PixIcon glyph="trophy" size={12} style={{ color: "#C99700" }} /><span>Best day so far: {new Date(mcal.best.d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <b>{fmtNum(mcal.best.u)}</b> units</span></div>}
           <div><PixIcon glyph="calendar" size={12} style={{ color: "var(--p2)" }} /><span><b>{mcal.satsLeft}</b> {mcal.satsLeft === 1 ? "Saturday" : "Saturdays"} left</span></div>
@@ -17837,10 +17625,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
        only ever a stand-in for a figure the report had all along, and it is the
        thing that put a third of a car on the card. */
     const told = statedSplitOf(M);
-    if (told) return { seen: true, counted: true, nw: told.nw, us: told.us, other: told.other,
-      known: told.nw + told.us + told.other,
-      newPct: (told.nw + told.us + told.other) > 0 ? told.nw / (told.nw + told.us + told.other) : null,
-      usedPct: (told.nw + told.us + told.other) > 0 ? told.us / (told.nw + told.us + told.other) : null };
+    if (told) return { seen: true, ...told };
     if (statedM && known > 0) {
       const f = statedM.deliveries / known;
       nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10;
@@ -17878,7 +17663,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   })();
 
   /* ---- The redesigned hero pulls a few more threads ---- */
-  const digests = useDigests(store.id);
+  const digestIntegrity = useDigestIntegrity(store.id, data.__storeId);
+  const digests = digestIntegrity.history;
   // per-day units out of the cumulative digest trail; a day only appears when
   // both its row and the one before carry a month total to difference
   const dayUnits = useMemo(() => {
@@ -18108,7 +17894,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   {vehicleSplit.seen && vehicleSplit.known > 0 && !storePace.tooEarly && (
                     <div className="bw-desc">By stock, at today's mix: new pace <b>{Math.round(storePace.projected * vehicleSplit.newPct)}</b> · used pace <b>{Math.round(storePace.projected * vehicleSplit.usedPct)}</b></div>
                   )}
-                  <div className="bw-desc">{storePace.daysDone} of {storePace.daysAll} days counted · through yesterday</div>
+                  <div className="bw-desc">Pace: {storePace.daysDone} of {storePace.daysAll} selling days elapsed</div>
                 </BloopWin>
               </div>
             )}
@@ -18119,7 +17905,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   <i className="us" style={{ flex: Math.max(vehicleSplit.us, 0.01) }} />
                 </div>
                 <div className="s2-split-lbl"><span><b>{fmtNum(vehicleSplit.nw)}</b> new</span><span><b>{fmtNum(vehicleSplit.us)}</b> used</span></div>
-                {Object.keys(dayUnits).length > 0 && (
+                {(
                   <BloopWin cls="dn s2-salewin">
                     <div className="bw-title">Sold by day · {new Date().toLocaleDateString("en-US", { month: "long" })}</div>
                     <div className="s2-sw-grid">
@@ -18139,7 +17925,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     </div>
                     <div className="s2-detail">{dayPick && dayUnits[dayPick]
                       ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold{dayUnits[dayPick].nu != null ? <> · {fmtNum(dayUnits[dayPick].nu)} new / {fmtNum(dayUnits[dayPick].uu)} used</> : null}</>
-                      : "Click a day to see it"}</div>
+                      : DAILY_TOTALS_UNAVAILABLE}</div>
                   </BloopWin>
                 )}
               </div>
@@ -18314,11 +18100,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   <div className="s2-cw"><PixIcon glyph="doc" size={11} style={{ color: "#8B93A2" }} />
                     <span>Last import: <b>{new Date(lastImport.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</b></span></div>
                 )}
-                <div className="s2-detail">{dayPick
+                <div className="s2-detail" data-daily-unavailable="desktop-day-detail">{dayPick
                   ? (dayUnits[dayPick] && dayUnits[dayPick].u != null
                     ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold</>
-                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · no day record</>)
-                  : "Click a day dot to see it"}</div>
+                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {DAILY_TOTALS_UNAVAILABLE}</>)
+                  : DAILY_TOTALS_UNAVAILABLE}</div>
               </div>
             </div>
           </div>
@@ -21940,13 +21726,16 @@ function AccessPanel({ config, session, onChange }) {
   const toggleActive = (u) =>
     patch(u.id, { active: !u.active }, { action: u.active ? "Deactivated account" : "Reactivated account", detail: u.email });
 
+  /* Through the server, which removes the login as well as the profile: the
+     profile alone left logins behind (C91, B1). The same rules as deleting
+     your own, including the last admin. */
   const remove = async (u) => {
     if (!(await askConfirm("Delete " + (u.name || u.email) + " permanently?" + String.fromCharCode(10, 10) +
-      "This removes their profile. It does not delete any store data they imported."))) return;
+      "This removes their login and profile. Their figures and any store data they imported stay with the store."))) return;
     setBusy(true);
-    const ok = await deleteProfile(u.id);
+    const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE", user_id: u.id } });
     setBusy(false);
-    if (!ok) { setMsg("Couldn't delete that profile."); return; }
+    if (!out || out.error) { setMsg((out && out.error) || "Couldn't delete that account."); return; }
     await appendAudit({ user: session.name, action: "Deleted account", detail: u.email });
     reload();
   };

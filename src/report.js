@@ -45,8 +45,9 @@ function ignorable(message) {
    a deploy has already retired, never a bug worth showing anybody: React's
    own lazy() caches the rejection, so a "Try again" only throws the same
    error again, and only a reload actually picks up the build that is live
-   now. BoardBoundary and RoomBoundary already catch this when it surfaces
-   inside a render; this catches what they cannot, the same failure escaping
+   now. BoardBoundary reloads for itself when this surfaces inside a render;
+   RoomBoundary did not until C107, and now reloads through here. This also
+   catches what neither can, the same failure escaping
    as a bare window error or an unhandled rejection with no boundary above it
    (app_errors row a125a843d54a9ae2, kind "error", url "/", no board param,
    so nothing in the render tree ever got a chance to catch it). One reload,
@@ -55,8 +56,14 @@ function ignorable(message) {
 const STALE_CHUNK_RE = /dynamically imported module|importing a module script failed/i;
 const STALE_CHUNK_KEY = "lpcf:chunk-reloaded";
 const STALE_CHUNK_COOLDOWN_MS = 60000;
-function healStaleChunk(kind, message) {
-  if (kind !== "error" && kind !== "rejection") return;   // "render" is the boundaries' own catch
+function healStaleChunk(kind, message, extra) {
+  /* A "render" is a boundary's catch, and two of them exist. BoardBoundary (the
+     TV, screen "board") reloads for itself, with a cooldown that schedules its
+     own retry, so it is left to do that. RoomBoundary (everything else) only
+     drew the snag card, whose Try again asks for the same retired file: 7 of
+     the 16 stale-chunk rows in the feed on 28 to 30 September were that card,
+     a manager stuck until they closed the tab (C107). Those reload here. */
+  if (kind !== "error" && kind !== "rejection" && !(kind === "render" && !(extra && extra.screen === "board"))) return;
   if (!STALE_CHUNK_RE.test(message)) return;
   try {
     const since = Date.now() - Number(sessionStorage.getItem(STALE_CHUNK_KEY) || 0);
@@ -70,7 +77,7 @@ export function report(kind, err, extra) {
   try {
     const message = err && err.message ? String(err.message) : String(err == null ? "unknown" : err);
     if (ignorable(message)) return;
-    healStaleChunk(kind, message);
+    healStaleChunk(kind, message, extra);
     const key = kind + "|" + message.slice(0, 120);
     const now = Date.now();
     if (lastAt.has(key) && now - lastAt.get(key) < REPEAT_MS) return;
