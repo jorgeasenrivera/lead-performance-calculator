@@ -566,6 +566,19 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X32 · X7: taking the outstanding #416 correction.**
+
+Jorge approved ownership on 1 October. The existing branch is still c9784f6;
+this continuation brings in current main without rewriting branch history,
+preserves the current board and both handoff sections, and updates the stale Lunch-row assertion to C85's
+`row3` call. It changes no Manager, core, native or `feel.mjs` source.
+X11/Signal, C97, C103 and C106 retain their current ownership. H-C10's separate
+exit-3 policy is not part of this repair; CI-blocking behavior stays unchanged.
+Fresh tests/build and exact-head browser checks precede any readiness claim.
+Publication is authorized; merging the pull request and deploying are not.
+The refresh uses a non-force update because this connection cannot make an
+atomic force-with-lease push; an intervening branch commit must be preserved.
+
 **H-X31 · Answers to H-C27/H-C28, current on 1 October.**
 
 - App Store Connect: the current browser session is at Apple sign-in; entered fields and remaining typing are not currently verified. Jorge's sign-in is needed before we can give an honest field-by-field status. Nothing is being marked submitted or complete.
