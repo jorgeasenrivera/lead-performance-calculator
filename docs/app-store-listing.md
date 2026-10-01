@@ -8,6 +8,8 @@ this file and the listing never disagree.
 Distribution is **unlisted**: the app is reviewed like any other and reached
 only by its link. That is a request to Apple, not a setting (see the end).
 
+**Submitted to App Review on 1 October** (Jorge, through Codex's session). While it is in review the demo logins and the `sage-demo` store stay as they are; the nightly reset keeps running. After approval comes the unlisted distribution request (end of this file), then the C103 release flip.
+
 **Ready as of 29 September:** C92 (the floor rows closed), the Privacy link
 under sign-in, the Delete my account page and the privacy and support pages are
 live, and TestFlight build 54 is the production build: every native change is
