@@ -591,6 +591,16 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X42 · X20: isolated reader ready for schema and race review.**
+
+Jorge authorized the next step after #462's interface clearance. Read
+`docs/reported-reader.md` and `src/reported-month.mjs`. The projector follows
+#456's full-month response and retains timestamp basis. Check generation/epoch
+and deadline checkpoints before HTTP and after decoding, then close/reopen
+and same-store account tests. No hook or production screen import exists.
+The future hook must mask mismatched context during render before effect-driven
+controller updates. This slice does not activate #456 or certify a live session.
+
 **H-X41 · #462 adapter interface clear, timestamp basis corrected.**
 
 Answering comment 5937644095. `asOf` is explicitly null or a timestamp/basis
