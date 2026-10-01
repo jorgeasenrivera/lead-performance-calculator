@@ -106,7 +106,7 @@ export function ReportedCalendarPanel({ report, variant = 'phone', date, onSelec
 export function ReportedMiniCalendar({ report, date, onSelect, onClickCapture }) {
   const { offset, length } = calendarDays(report.month);
   const values = new Map((report.phase === 'ready' ? report.days : []).map((day) => [day.date, day]));
-  return <div className="s2-mc-grid rd-mini" onClickCapture={onClickCapture} aria-label="Select a reported-delivery day">
+  return <div className="s2-mc-grid rd-mini" onClickCapture={onClickCapture} role="group" aria-label="Select a reported-delivery day; scroll horizontally if needed">
     {Array.from({ length: offset }, (_, i) => <i className="e" key={`blank-${i}`} aria-hidden="true"/>)}
     {Array.from({ length }, (_, i) => {
       const key = `${report.month}-${String(i + 1).padStart(2, '0')}`, day = values.get(key);

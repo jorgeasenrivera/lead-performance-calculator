@@ -184,6 +184,14 @@ export async function verifyCalendarProposal(browser, engine = 'chromium') {
         const sizes = text.map((el) => [el, parseFloat(getComputedStyle(el).fontSize)]);
         for (const [el, size] of sizes) el.style.fontSize = `${size * 2}px`;
       });
+      await pausePaint(page);
+      if (width > 700) {
+        const overlap = await page.locator('.rd-mini button').evaluateAll((buttons) => buttons.some((button) => {
+          const b = button.getBoundingClientRect(), text = button.querySelector('span').getBoundingClientRect();
+          return text.left < b.left || text.right > b.right || text.top < b.top || text.bottom > b.bottom;
+        }));
+        assert.equal(overlap, false, 'Large-text calendar labels must fit inside their own day buttons');
+      }
       await capture(page, width, 'large-text-reduced-motion');
       await detail(page, width).scrollIntoViewIfNeeded();
       await assertDetailVisible(page, width);

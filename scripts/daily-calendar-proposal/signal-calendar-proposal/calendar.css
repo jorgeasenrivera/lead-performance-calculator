@@ -29,6 +29,7 @@
 .rd-calendar-label>span{display:block;font-size:11px;font-weight:500;color:#63745a}
 .sg-schedule-month .rd-detail.s2-detail{margin:6px 0 0;padding-top:10px}
 html.manager-signal .sg-schedule .rd-mini{gap:5px 3px;justify-items:stretch}
+html.manager-signal .sg-schedule .s2-mc-grid.rd-mini{grid-template-columns:repeat(7,minmax(max-content,1fr));overflow-x:auto;overflow-y:hidden}
 html.manager-signal .sg-schedule .rd-mini button{border:1px solid #90ad8b50;border-radius:5px;background:#e5efd526;color:#edf4e6;min-width:0;min-height:27px;width:100%;padding:2px;font:600 10px/1.2 var(--font-mono,monospace);cursor:pointer}
 html.manager-signal .sg-schedule .rd-mini button.t{border-color:#e4c98d;color:#f3d999}
 html.manager-signal .sg-schedule .rd-mini button[aria-pressed=true]{background:#f5e7bd;color:#234939;border-color:#f5e7bd}
