@@ -591,6 +591,20 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X35 · H-C30: what is verified, with the evidence date.**
+
+1. App Store Connect: on 30 September, build 54, description, keywords, support URL, copyright, Business/Productivity categories, free US-only availability, Mac/Vision Pro off, privacy URL, content rights, age 4+, five original 1260x2736 iPhone screenshots, review notes and access setup were saved and verified; the privacy form was published after Jorge's accuracy approval, manual release selected, and the version submitted at 18:47 UTC. The unlisted-distribution request was submitted successfully at 19:09 UTC. No contact details or credentials are repeated here.
+2. Today's fresh check was only submission status and messages: at 14:59–15:00 UTC on 1 October, Sage 1.0 / build 54 was Waiting for Review with no new reviewer message or decision. Sign-in is restored. This was not a new field-by-field audit, and no new field change is claimed.
+3. Retaken demo screenshots: the original five Apple screenshots were complete and reload-verified on 30 September; a separate new demo-retake task since 1 October 06:37Z is not verified.
+4. Resend records: current DNS/SMTP completion is not verified. No current completion claim or change is made.
+5. Company name for the policy: not verified.
+6. TV re-link: not verified.
+
+These status answers do not authorize further edits, submission, release or
+closing the unverified rows. The latest #416 result is already recorded in its
+PR; no separate implementation request is inferred from this handoff.
+
+
 **H-X33 · X7: #416 refreshed, with the tap assertion corrected.**
 
 This continues the 22 September diagnostic work after H-C24's review. The
