@@ -119,7 +119,12 @@ function pdfFromLines(input) {
 test("the actual CLI reads a synthetic raw PDF and emits clean JSON with traceable source provenance",async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),"delivery-pdf-"));
   try {
-    await fs.writeFile(path.join(dir,"report.pdf"),pdfFromLines(lines()));
+    const bytes=pdfFromLines(lines());
+    // Exercise the shared extractor directly as well, so a runtime-specific
+    // dependency failure is visible before the CLI returns its safe reason code.
+    const { extractPdfLines } = await import("../api/ingest.mjs");
+    assert.ok((await extractPdfLines(bytes)).length > 0);
+    await fs.writeFile(path.join(dir,"report.pdf"),bytes);
     const manifest={schemaVersion:1,storeId:"fictional-a",month:"2026-09",stores,sources:[{path:"report.pdf",...metadata}]};
     const file=path.join(dir,"manifest.json");await fs.writeFile(file,JSON.stringify(manifest));
     const r=spawnSync(process.execPath,["scripts/delivery-reconstruction-dry-run.mjs","--manifest",file],{encoding:"utf8"});
