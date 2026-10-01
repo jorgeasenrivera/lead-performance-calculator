@@ -21,7 +21,11 @@ organized by their sale date. Nothing in this slice changes the monthly metric.
   writer, replay or write flag. It reuses the existing PDF text extractor
 
 The two new helpers are Node-side evidence tooling, not client imports. No
-application file, `ingest.mjs`, database policy or production row is changed.
+application file, database policy or production row is changed. `ingest.mjs`
+has one import-only compatibility change: PDF.js uses its CommonJS default
+export so the existing shared extractor also runs on Node 22. Node 24 resolves
+the same getDocument and GlobalWorkerOptions objects. Extraction geometry,
+arguments and ingestion write behavior are unchanged.
 The protective UI remains in place. This is not an ingestion rollout or a
 historical application batch, and no owner-notification destination is installed.
 

@@ -553,10 +553,16 @@ provisional/as-received without pretending to be finalized history.
 The store All row stays separate from employee credits and cumulative summaries.
 Missing evidence stays unknown. No browser digest or net cumulative difference
 becomes a daily delivery count. Preserve employee parsing and monthly metric
-semantics. This slice changes neither ingest.mjs nor application UI, writes no
-production data, and configures no notification destination. Public fixtures and
+semantics. This slice changes no application UI or ingestion write behavior,
+writes no production data, and configures no notification destination. Public fixtures and
 documents use fictional data only. Source recovery and any approved application
 batch are separate gates.
+
+Draft #455 exposed one runtime compatibility gap: Node 22 does not expose
+PDF.js getDocument through the legacy namespace import, although Node 24 does.
+X14 also reserves that single import line in api/ingest.mjs to use its CommonJS
+default export. Extraction arguments, geometry and ingestion write behavior stay
+unchanged. The real synthetic-PDF CLI remains a Node 22 regression, not skipped.
 
 X13 is released by #454. X14 reserves no Manager or core lines, leaving C106 and
 C97 free to proceed under their own claims. Reconstruction UI remains a later
