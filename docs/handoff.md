@@ -605,6 +605,20 @@ closing the unverified rows. The latest #416 result is already recorded in its
 PR; no separate implementation request is inferred from this handoff.
 
 
+**H-X34 · X16: migration filename reconciliation, separate draft only.**
+
+This draft corrects five historical migration filenames without changing a byte
+of SQL. The historical baseline is unchanged. Please review
+`docs/supabase-migration-reconciliation.md` and the offline byte-preservation
+guards. Filename agreement is not proof that a baseline may be replayed or
+recorded as applied on any existing target.
+
+Keep draft. Full isolated replay and target-aware comparison still precede the
+baseline decision, any exact history-write approval, and separate merge or
+deployment approval. No database write, grant or policy change was performed.
+The executor has no local Postgres, Docker or Supabase CLI, so no complete replay
+is claimed. X14/#455 and X15/#456 retain their own review and activation gates.
+
 **H-X33 · X7: #416 refreshed, with the tap assertion corrected.**
 
 This continues the 22 September diagnostic work after H-C24's review. The
