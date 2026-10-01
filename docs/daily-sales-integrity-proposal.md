@@ -29,8 +29,11 @@ even consecutive dates, matching date fields or equal totals. The read-only
 adapter returns no usable history, keeps a bounded short successful-read cache,
 deduplicates pending reads, times out stalled reads and never caches errors.
 The selection generation and render-time identity gate prevent a late store A
-result appearing under store B. No report figures or backend error messages are
-sent to the optional diagnostic hook.
+digest result appearing under store B. Safe diagnostic codes carry the validated
+source store ID and day, including after an out-of-order response. Invalid
+identifiers, report figures and backend error messages never reach the optional
+hook. This is the daily-digest boundary, not a rewrite of the whole app's store
+transition or its monthly data handling.
 
 `scripts/daily-sales-integrity-proposal.mjs` applies the prospective change to
 an in-memory copy of Manager.jsx. Its fixture mounts the actual Manager

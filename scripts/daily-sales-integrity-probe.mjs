@@ -72,6 +72,8 @@ export async function verifyDailySalesIntegrity(browser) {
   try {
     const before = active = await fixture(browser, BEFORE);
     await before.page.getByText("New sold yesterday", { exact: true }).waitFor({ state: "visible" });
+    result.beforeDigestMutations = before.mutations.length;
+    assert.ok(result.beforeDigestMutations > 0, "the unmodified before build must exercise the obsolete writer");
     await before.page.screenshot({ path: `${OUT}/before-recap.png`, fullPage: true, animations: "disabled" });
     await closeRecap(before.page);
     result.preservation.beforeMonth = await monthly(before.page, false);
@@ -188,6 +190,7 @@ export async function verifyDailySalesIntegrity(browser) {
     await race.page.locator("#resolve").click();
     assert.equal(await monthly(race.page, false), "83");
     assert.deepEqual(race.mutations, []); assert.deepEqual(race.errors, []);
+    result.mutations = after.mutations.length + race.mutations.length;
     await race.page.screenshot({ path: `${OUT}/after-store-switch.png`, fullPage: true, animations: "disabled" });
     await race.context.close();
     await writeFile(`${OUT}/result.json`, JSON.stringify(result, null, 2));

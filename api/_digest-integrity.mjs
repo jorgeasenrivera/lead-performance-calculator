@@ -68,7 +68,7 @@ export function createDigestReader(load, { now = Date.now, ttlMs = 60000, maxEnt
           cache.set(key, { value, at: now() });
           while (cache.size > capacity) cache.delete(cache.keys().next().value);
         }
-        try { diagnose({ component: "legacy_digest", status: value.status, reason: value.reason }); } catch {}
+        try { diagnose({ component: "legacy_digest", storeId, day, status: value.status, reason: value.reason }); } catch {}
         return value;
       }).finally(() => { clearTimeout(timeout); pending.delete(key); });
       pending.set(key, request);

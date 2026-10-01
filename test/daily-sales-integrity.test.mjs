@@ -56,7 +56,8 @@ test("load failures are not empty success, cached for the day, or disclosed", as
   unavailable(await reader.read("store-a", "2026-10-01"), "incomplete");
   assert.equal(calls, 3);
   assert.ok(!JSON.stringify(diagnostics).includes("PRIVATE"));
-  assert.ok(diagnostics.every((item) => Object.keys(item).sort().join() === "component,reason,status"));
+  assert.ok(diagnostics.every((item) => Object.keys(item).sort().join() === "component,day,reason,status,storeId"));
+  assert.ok(diagnostics.every((item) => item.storeId === "store-a" && item.day === "2026-10-01"));
 });
 
 test("an unavailable backend and rejected identity can both be retried", async () => {
@@ -93,8 +94,9 @@ test("successful reads have bounded store/day caches and pending reads are share
 });
 
 test("uncached A to B rejects A's late completion before it can paint under B", async () => {
-  const a = deferred(), b = deferred(), seen = [];
-  const reader = createDigestReader((store) => store === "store-a" ? a.promise : b.promise);
+  const a = deferred(), b = deferred(), seen = [], diagnostics = [];
+  const reader = createDigestReader((store) => store === "store-a" ? a.promise : b.promise,
+    { diagnose: (event) => diagnostics.push(event) });
   const selection = createDigestSelection(reader, (value) => seen.push(value));
   const pa = selection.select("store-a", "store-a", "2026-10-01");
   const pb = selection.select("store-b", "store-b", "2026-10-01");
@@ -105,6 +107,15 @@ test("uncached A to B rejects A's late completion before it can paint under B", 
   assert.equal(seen.at(-1).storeId, "store-b");
   assert.equal(seen.at(-1).status, "missing");
   assert.ok(!seen.some((v) => v.storeId === "store-a" && v.status !== "loading"));
+  assert.deepEqual(diagnostics.map((event) => event.storeId), ["store-b", "store-a"], "late diagnostics retain their source store, not the current selection");
+});
+
+test("invalid identities never enter the diagnostic sink", async () => {
+  const diagnostics = [];
+  const reader = createDigestReader(() => { throw new Error("must not load"); }, { diagnose: (event) => diagnostics.push(event) });
+  unavailable(await reader.read("bad:private/input", "2026-10-01"), "rejected");
+  unavailable(await reader.read("store-a", "not-a-day"), "rejected");
+  assert.deepEqual(diagnostics, []);
 });
 
 test("negative cache capacity disables retention without looping", async () => {
