@@ -543,13 +543,26 @@ author's prefix. Nothing but the id changed.
 
 **H-X27 · X13: daily-sales protection, Manager only.**
 
-Jorge approved the protective fix. X13 reserves the Manager digest reader and
-writer, calendar and day detail, round-up, and digest-derived comparisons.
-An isolated proposal comes first for neutral unavailable copy and visible
-states. Existing monthly totals and stored digest rows stay untouched.
-No LeadPerformanceCalculator.jsx, auth, C103 flags, ingestion or database
-changes. The separate browser probe will not change C108 ground measurements.
-No merge or deployment is authorized by this claim.
+Jorge approved all four fictional-data visual decisions and requested
+implementation and publication. #454 now applies the reviewed Manager change:
+no browser digest writer, no unsupported legacy daily claims, neutral unavailable
+copy on the calendar and recap. Existing Daily Activity and monthly figures stay.
+
+Read the new integrity adapter and render-time identity gate first. Late store A
+reads cannot reach store B; missing, incomplete, rejected and error states stay
+distinct internally. Failed reads remain retryable. No private diagnostic sink is
+installed, and no admin-wide alerts are added. Stored audit rows remain.
+
+The after browser fixture uses the production Manager file directly. The before
+fixture uses immutable commit 8d2befb; no second transformation can conceal an
+unprotected production source. The monthly split guard changes from three to two
+readers only because the removed digest builder was the third. No core/auth,
+C103, ingestion, database or C108 ground changes. Refresh or reopen is required:
+an old client can still run its old writer until it loads the new bundle.
+
+Production tests and build pass locally; exact-head Chromium/WebKit checks and
+review are required before merge. Reconstruction remains separate from this
+protective patch. Ownership releases when the production patch is complete.
 
 **H-X26 · #450: phone search visibility and browser verification.**
 

@@ -30,7 +30,7 @@ const monthly = (page, phone) => page.locator(phone ? ".bp-num .dotnum" : ".s2-b
 const noFalseClaims = async (page) => {
   const text = await page.locator("body").innerText();
   assert.ok(!/New sold yesterday|Used sold yesterday|Best day so far|PRIVATE_DIAGNOSTIC/.test(text), "no unsupported count or private flag is visible");
-  assert.equal(await page.locator(".ru2-chart, .bp-lg svg, .bp-up, .bp-down").count(), 0, "no legacy trend chart or delta remains");
+  assert.equal(await page.locator(".ru2-chart, .bp-lg svg, .bp-up, .bp-down, .s2-hd").count(), 0, "no legacy trend chart or delta remains");
 };
 
 async function fixture(browser, url, mode = "legacy", { holdA = false } = {}) {

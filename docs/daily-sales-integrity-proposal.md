@@ -1,7 +1,9 @@
-# Daily-sales protection proposal
+# Daily-sales protection
 
-X13 is an isolated approval study. No production application source changes,
-database writes, data deletion, archive backfill or deployment are included.
+Jorge approved all four visual decisions below on 30 September after reviewing
+the fictional-data screenshots, and requested implementation and publication.
+X13 now applies the approved protection to production Manager code. No database
+writes, data deletion, archive backfill or reconstructed daily values are included.
 
 ## Decisions
 
@@ -35,12 +37,14 @@ identifiers, report figures and backend error messages never reach the optional
 hook. This is the daily-digest boundary, not a rewrite of the whole app's store
 transition or its monthly data handling.
 
-`scripts/daily-sales-integrity-proposal.mjs` applies the prospective change to
-an in-memory copy of Manager.jsx. Its fixture mounts the actual Manager
-components with fictional Store A and Store B. The probe pins the clock to
-22 September 2026, checks monthly totals of 61 and 83 respectively, and preserves
-the original Daily Activity display. Both production application files remain
-byte-for-byte unchanged.
+`src/Manager.jsx` now contains the approved protection. The after build in
+`scripts/daily-sales-integrity-proposal.mjs` mounts the checked-in Manager
+components directly, with no after transform. The before fixture reads Manager
+from immutable reviewed commit `8d2befb7db44fb8ab8dcd855a5d09ccd62005906`.
+Both use fictional Store A and Store B. The probe pins the clock to 22 September
+2026, checks monthly totals of 61 and 83 respectively, and preserves the original
+Daily Activity display. Fingerprint guards protect the existing Daily Activity,
+import and monthly stock-split source. LeadPerformanceCalculator.jsx is unchanged.
 
 ## Verification
 
@@ -51,10 +55,11 @@ byte-for-byte unchanged.
   701 and 1280 pixels, including calendar, selected day, channel popup, recap,
   repeated opening, role privacy, failed reads and store switching
 - Browser requests are intercepted locally. Even the unmodified before build
-  cannot write a database. Every proposed digest mutation makes the probe fail
+  cannot write a database. Every protected-build digest mutation makes the probe fail
 - Before/after screenshots and a machine-readable result are CI artifacts
-- Production tests and build remain separate required checks. Browser results
-  and visual decisions must be recorded before this proposal is called approved
+- Production tests and build remain separate required checks. All four visual
+  decisions were approved against the final proposal screenshots. The production
+  patch must pass the same browser assertions before publication is complete
 
 Run `node scripts/daily-sales-integrity-proposal.mjs` to build the two isolated
 bundles. The dedicated workflow serves them and runs
@@ -62,8 +67,18 @@ bundles. The dedicated workflow serves them and runs
 cloud workspace cannot open its required process socket; that is a verification
 limit, not a browser-test pass.
 
-If the visual decisions are approved, apply the reviewed transform to
-Manager.jsx and update the stock-split guard from three readers to two because
-the removed digest builder is no longer a reader. Re-run all checks against
-that exact production patch. Approval of this study does not authorize merge
-or deployment.
+## Rollout and remaining work
+
+The approved Manager change removes the old digest builder and writer. The
+stock-split guard therefore expects the two real monthly readers, the hero and
+phone board, rather than counting the removed builder as a third reader.
+
+Refresh or reopen Sage to load this protection. A client still running the old
+bundle can still execute its old writer until it refreshes; this is not a
+server-enforced write ban. The protected UI rejects those rows regardless. No
+Supabase policies or stored records change. Reconstruction from verified reports
+is separate work, and unknown days remain unknown until supported by evidence.
+
+Private diagnostic delivery is not installed. The optional internal hook carries
+only validated store/day identity and safe reason codes; it does not notify all
+admins or expose investigation details to staff.

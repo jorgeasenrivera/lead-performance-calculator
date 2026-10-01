@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { DAILY_TOTALS_UNAVAILABLE, createDigestReader, createDigestSelection,
   digestIdentity, inspectLegacyDigests } from "../api/_digest-integrity.mjs";
-import { dailyIntegrityTransform, decisions, proposalPage } from "../scripts/daily-sales-integrity-proposal.mjs";
+import { BEFORE_COMMIT, decisions, proposalPage } from "../scripts/daily-sales-integrity-proposal.mjs";
 
 const record = (day, u, rest = {}, store = "store-a") => ({
   key: `lpc:store:${store}:digest:${day}`, value: { d: day, u, nu: u / 2, uu: u / 2, ...rest },
@@ -142,19 +143,38 @@ test("cached A to B to A, mismatched documents and unmount remain isolated", asy
   assert.equal(seen.length, before);
 });
 
-test("the isolated proposal holds every legacy consumer without changing real activity or monthly code", () => {
+test("the shipped Manager holds every legacy consumer without changing real activity or monthly code", () => {
   const source = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
-  const proposed = dailyIntegrityTransform(source);
+  const proposed = source;
   assert.equal(proposed.split("useDigestIntegrity(store.id, data.__storeId)").length - 1, 3);
   assert.ok(!proposed.includes("function buildDigest"));
   assert.ok(!proposed.includes("saveShared(digestKey"));
   assert.ok(!proposed.includes("ruWritten"));
   assert.ok(!proposed.includes("loadDigests("));
-  for (const [start, end] of [["function CheckOutTracker(", "function drawDayReport("],
-    ["function ImportPanel(", "function TrendsPanel("], ["const statedSplitOf =", "\n};"]]) {
+  // Fingerprints of the immutable reviewed-before commit, not a second copy
+  // of the application or a transform that could mask the shipped code.
+  const preserved = [
+  [
+    "function CheckOutTracker(",
+    "function drawDayReport(",
+    "2fb78b31f76376f122f442a57013648b729d9654b5802a6b158b19edb5c64e4d"
+  ],
+  [
+    "function ImportPanel(",
+    "function TrendsPanel(",
+    "3a5dc5255ccd3e5f40f316e815b0b26a4ee8c948ea3a5b3e344c6e532fcde48b"
+  ],
+  [
+    "const statedSplitOf =",
+    "\n};",
+    "c092112ae3cf800cf570b5249be8eeafce8fd73031e3603367d1312dd90d69e9"
+  ]
+];
+  for (const [start, end, expected] of preserved) {
     const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
     assert.ok(a >= 0 && b > a, `preservation anchor: ${start}`);
-    assert.ok(proposed.includes(source.slice(a, b)), `${start} remains byte-for-byte unchanged`);
+    assert.equal(createHash("sha256").update(source.slice(a, b)).digest("hex"), expected,
+      `${start} remains byte-for-byte unchanged from ${BEFORE_COMMIT}`);
   }
   assert.equal(proposed.split("statedSplitOf(M)").length - 1, 2, "the hero and phone still read the same monthly stock split");
   assert.ok(!proposed.includes("From tomorrow this also shows who cleared"));
@@ -165,4 +185,11 @@ test("the isolated proposal holds every legacy consumer without changing real ac
   assert.ok(proposed.includes('Pace: {pace.daysDone} of {pace.daysAll} selling days elapsed'));
   assert.equal(decisions.length, 4);
   assert.equal((proposalPage().match(/data-choice=/g) || []).length, 4);
+});
+
+test("the after browser build uses checked-in Manager, while before uses the immutable reviewed commit", () => {
+  const script = fs.readFileSync(new URL("../scripts/daily-sales-integrity-proposal.mjs", import.meta.url), "utf8");
+  assert.equal(BEFORE_COMMIT, "8d2befb7db44fb8ab8dcd855a5d09ccd62005906");
+  assert.ok(script.includes('if (before && file.endsWith("/src/Manager.jsx")) return beforeManager;'));
+  assert.ok(!script.includes("dailyIntegrityTransform"));
 });
