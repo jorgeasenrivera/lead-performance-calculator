@@ -23,7 +23,9 @@ export function validateProfiles(rows, runs) {
   }
   return rows.map(r => ({ width: r.width, fixture: r.fixture, label: r.label, ordinal: r.ordinal,
     diagnosticOnly: true, metrics: r.metrics, byType: r.summary.byType, hot: r.summary.hot,
-    mainThread: r.summary.mainThread, sampleCount: r.summary.sampleCount }));
+    mainThread: r.summary.mainThread, sampleCount: r.summary.sampleCount,
+    cpuWeighting: r.summary.cpuWeighting, weightedSampleMs: r.summary.weightedSampleMs, unattributedLeadMs: r.summary.unattributedLeadMs,
+    reordered: r.summary.reordered, negativeDeltas: r.summary.negativeDeltas }));
 }
 export async function reportProfiles(directory = 'desktop-profile-evidence', baseline = 'desktop-baseline-evidence/results.json') {
   const files = (await readdir(directory)).filter(n => /^\d+-(demo|60-sales)-\d+-(Performance|associate-open|list-scroll)\.json$/.test(n));

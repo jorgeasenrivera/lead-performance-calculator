@@ -29,11 +29,21 @@ export function sanitizeCpuProfile(profile) {
   assert.ok(Array.isArray(profile.samples) && Array.isArray(profile.timeDeltas) &&
     profile.samples.length === profile.timeDeltas.length && profile.samples.length <= CAP, 'CPU sample cap/shape');
   const ids = new Set(profile.nodes.map(n => n.id));
+  assert.ok([...ids].every(n => Number.isInteger(n) && n > 0), 'invalid CPU node ID');
   assert.equal(ids.size, profile.nodes.length, 'duplicate CPU node');
   assert.ok(profile.samples.every(n => ids.has(n)), 'CPU sample references missing node');
   assert.ok(profile.timeDeltas.every(finite), 'non-finite CPU time delta');
-  assert.ok(profile.timeDeltas.every(n => n >= 0), 'negative CPU time delta');
-  return { startTime: profile.startTime, endTime: profile.endTime, samples: profile.samples, timeDeltas: profile.timeDeltas,
+  // Chrome's sampler can deliver out-of-order timestamps. DevTools sorts the
+  // timestamp/sample pairs, not the deltas, and never clamps a negative delta.
+  let timestamp = profile.startTime;
+  const pairs = profile.samples.map((id, index) => {
+    timestamp += profile.timeDeltas[index];
+    assert.ok(finite(timestamp) && timestamp >= profile.startTime && timestamp <= profile.endTime, 'CPU timestamp outside window');
+    return { id, timestamp, index };
+  }).sort((a, b) => a.timestamp - b.timestamp || a.index - b.index);
+  const chronology = { samples: pairs.map(p => p.id), timestamps: pairs.map(p => p.timestamp),
+    reordered: pairs.some((p, i) => p.index !== i), negativeDeltas: profile.timeDeltas.filter(n => n < 0).length };
+  return { startTime: profile.startTime, endTime: profile.endTime, samples: profile.samples, timeDeltas: profile.timeDeltas, chronology,
     nodes: profile.nodes.map(n => ({ id: n.id, children: (n.children || []).filter(id => ids.has(id)),
       frame: { function: safeName(n.callFrame?.functionName), asset: assetName(n.callFrame?.url),
         line: n.callFrame?.lineNumber ?? -1, column: n.callFrame?.columnNumber ?? -1 } })) };
@@ -63,7 +73,10 @@ export function metricDelta(before, after) {
 }
 export function summarizeProfile(cpu, trace) {
   const times = new Map();
-  cpu.samples.forEach((id, i) => times.set(id, (times.get(id) || 0) + cpu.timeDeltas[i]));
+  const { samples, timestamps } = cpu.chronology;
+  // Approximate self-time from this sample to the next, including the final
+  // stop tail. The interval before the first sample has no observed owner.
+  samples.forEach((id, i) => times.set(id, (times.get(id) || 0) + (timestamps[i + 1] ?? cpu.endTime) - timestamps[i]));
   const hot = cpu.nodes.map(n => ({ ...n.frame, sampledMs: (times.get(n.id) || 0) / 1000 }))
     .filter(n => n.sampledMs > 0).sort((a, b) => b.sampledMs - a.sampledMs).slice(0, 30);
   const main = trace.find(e => e.thread === 'CrRendererMain');
@@ -75,7 +88,12 @@ export function summarizeProfile(cpu, trace) {
     return [name, { count: events.length, unionMs: union / 1000 }];
   }));
   // Categories nest. Their union durations are not additive across categories.
-  return { cpuWindowMs: (cpu.endTime - cpu.startTime) / 1000, sampleCount: cpu.samples.length, hot, mainThread: main || null, byType };
+  return { cpuWindowMs: (cpu.endTime - cpu.startTime) / 1000, sampleCount: cpu.samples.length,
+    cpuWeighting: 'chronological sample-to-next interval, final tail to stop',
+    weightedSampleMs: [...times.values()].reduce((sum, value) => sum + value, 0) / 1000,
+    unattributedLeadMs: ((timestamps[0] ?? cpu.endTime) - cpu.startTime) / 1000,
+    reordered: cpu.chronology.reordered, negativeDeltas: cpu.chronology.negativeDeltas,
+    hot, mainThread: main || null, byType };
 }
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';

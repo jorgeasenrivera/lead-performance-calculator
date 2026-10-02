@@ -47,10 +47,26 @@ test('CPU and trace projections discard URLs, headers, text and arbitrary fields
 test('malformed, missing or oversized CPU evidence is not accepted', () => {
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [] }), /cap\/shape/);
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), samples: [999, 2] }), /missing node/);
-  assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [1000, -1] }), /negative CPU time delta/);
+  assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [-1, 1000] }), /timestamp outside window/);
+  assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [1000, 3000] }), /timestamp outside window/);
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [1000, NaN] }), /non-finite CPU time delta/);
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), samples: Array(CAP + 1).fill(2), timeDeltas: Array(CAP + 1).fill(1) }), /cap\/shape/);
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), endTime: -1 }), /CPU window/);
+});
+test('signed deltas retain original samples and derive ordered timestamp/sample pairs without clamping', () => {
+  const raw = { ...cpu(), samples: [2, 1, 2], timeDeltas: [1000, -500, 1500] };
+  const clean = sanitizeCpuProfile(raw);
+  assert.deepEqual(clean.samples, [2, 1, 2]); assert.deepEqual(clean.timeDeltas, [1000, -500, 1500]);
+  assert.deepEqual(clean.chronology, { samples: [1, 2, 2], timestamps: [500, 1000, 2000], reordered: true, negativeDeltas: 1 });
+  assert.deepEqual(raw.samples, [2, 1, 2]);
+  const summary = summarizeProfile(clean, []);
+  assert.equal(summary.unattributedLeadMs, 0.5); assert.equal(summary.reordered, true);
+  assert.equal(summary.hot.find(n => n.function === 'Board').sampledMs, 2);
+  assert.equal(summary.hot.reduce((sum, n) => sum + n.sampledMs, 0) + summary.unattributedLeadMs, 3);
+  assert.equal(summary.weightedSampleMs + summary.unattributedLeadMs, summary.cpuWindowMs);
+  const tied = sanitizeCpuProfile({ ...cpu(), samples: [2, 1], timeDeltas: [1000, 0] });
+  assert.deepEqual(tied.chronology.samples, [2, 1]); assert.equal(tied.chronology.reordered, false);
+  assert.equal(summarizeProfile(tied, []).hot.find(n => n.function === '(root)').sampledMs, 2);
 });
 test('invalid CPU evidence retains only bounded numeric associations, not raw backend fields', () => {
   const record = cpuFailureEvidence({ ...cpu(), samples: [999, 2], timeDeltas: [1000, -1], secret: 'never retain' });
@@ -71,7 +87,7 @@ test('trace durations union per category on the main thread, not all-thread or n
   const trace = [projectTrace(main), projectTrace(event()), projectTrace({ ...event(), ts: 1000, dur: 5000 }),
     projectTrace({ ...event(), tid: 9, dur: 90000 }), projectTrace({ ...event(), name: 'Paint', dur: 1000 })];
   const summary = summarizeProfile(sanitizeCpuProfile(cpu()), trace);
-  assert.equal(summary.hot[0].sampledMs, 3);
+  assert.equal(summary.hot[0].sampledMs, 2); assert.equal(summary.unattributedLeadMs, 1);
   assert.deepEqual(summary.byType.Layout, { count: 2, unionMs: 6 });
   assert.equal(summary.byType.Paint.unionMs, 1);
   assert.equal(summarizeProfile(sanitizeCpuProfile(cpu()), trace.slice(1)).byType, null);
@@ -148,12 +164,19 @@ test('a failed CPU recorder still drains tracing and detaches after preserving e
   assert.equal(cdp.calls.at(-1), 'detach');
 });
 test('rejected CPU samples remain invalid and retain their numeric failure evidence', async t => {
-  const { cdp, saved, recorder } = await session(t); cdp.profile.timeDeltas = [1000, -1];
+  const { cdp, saved, recorder } = await session(t); cdp.profile.timeDeltas = [-1, 1000];
   await recorder.begin('Performance');
-  await assert.rejects(recorder.finish({}, { usable: true }), /negative CPU time delta/);
+  await assert.rejects(recorder.finish({}, { usable: true }), /timestamp outside window/);
   assert.equal(saved[0].status, 'invalid'); assert.equal(saved[0].cpu, null); assert.equal(saved[0].summary, null);
-  assert.deepEqual(saved[0].cpuFailure.timeDeltas, [1000, -1]); assert.equal(saved[0].cpuFailure.negativeDeltas, 1);
+  assert.deepEqual(saved[0].cpuFailure.timeDeltas, [-1, 1000]); assert.equal(saved[0].cpuFailure.negativeDeltas, 1);
   assert.ok(cdp.calls.includes('Tracing.end')); await recorder.dispose(); assert.equal(cdp.calls.at(-1), 'detach');
+});
+test('out-of-order samples are complete only after bounded chronological interpretation', async t => {
+  const { cdp, saved, recorder } = await session(t); cdp.profile.timeDeltas = [1000, -1];
+  await recorder.begin('Performance'); await recorder.finish({}, { usable: true });
+  assert.equal(saved[0].status, 'complete'); assert.equal(saved[0].cpuFailure, null);
+  assert.deepEqual(saved[0].cpu.timeDeltas, [1000, -1]); assert.equal(saved[0].summary.reordered, true);
+  await recorder.dispose();
 });
 test('trace cap and unusable lifecycle retain invalid evidence instead of silent truncation', async t => {
   const { cdp, saved, recorder } = await session(t); await recorder.begin('list-scroll');

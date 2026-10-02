@@ -620,8 +620,12 @@ records, caps and complete-case reporting. Plain/mapped Signal builds match
 byte-for-byte; actual driver hooks parse/import. PR #466's first run
 `37038369663` failed on a combined CPU sample guard. Regular CI passed. The
 retained trace was complete, but rejected CPU associations were missing.
-Bounded numeric failure evidence and separate validity errors now fill that
-gap without accepting a malformed profile. CI evidence is still pending.
+Bounded numeric failure evidence at `c740bba` isolated 71 negative deltas among
+3,105 samples, with all IDs known and all cumulative timestamps inside the
+profile window. My nonnegative-delta assumption was wrong. The reader now
+preserves original arrays and sorts cumulative timestamp/sample pairs, as
+Chrome DevTools does, with explicit weighting and invalid-window guards.
+See the diagnostic doc for both failed runs. CI evidence is still pending.
 Please examine trace shutdown/invalid-record lifetime, source-map positions and
 the distinction between profiling cost and unprofiled benchmark timing. No
 application cause or improvement is established yet. A later fix remains on

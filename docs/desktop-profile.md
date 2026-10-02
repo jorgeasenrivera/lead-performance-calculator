@@ -18,6 +18,15 @@ WebKit's accepted baseline remains separate, not a fake Chromium substitute.
 ## What this can establish
 
 CPU sampling supplies approximate self-time at generated function positions.
+Original numeric samples/deltas are retained. Chrome can deliver samples out
+of timestamp order; cumulative timestamps are validated against the profile
+window, then timestamp/sample pairs are sorted together, as in
+[Chrome DevTools](https://github.com/ChromeDevTools/devtools-frontend/blob/main/front_end/models/cpu_profile/CPUProfileDataModel.ts).
+No sample is dropped or negative delta clamped. Approximate weights use each
+ordered sample's interval to the next sample, with the last tail to profile
+stop. The unobserved interval before the first sample is reported separately.
+This final-tail estimate is explicit, not a claim to reproduce DevTools' full
+profile model or an exact executing-function duration.
 Hidden local source maps identify original source files and positions. A plain
 build is served; its JavaScript, CSS and HTML must match the mapped build
 byte-for-byte before any profiling. Neither maps nor diagnostics ship.
@@ -59,9 +68,17 @@ samples` on the first Performance recording. Its artifact retained invalid
 status and a complete loss-free trace, but not the rejected numeric CPU
 samples. That observability gap is corrected: failure records now retain
 bounded numeric node IDs, sample IDs and time deltas, with specific validity
-errors. The original acceptance checks are intact. This is evidence collection,
+errors. This is evidence collection,
 not a retry to get green or proof of an app defect. Regular CI at that head
 passed in run `37038369699`.
+
+Run `37039822921` at `c740bba` then isolated the failure: 71 negative
+deltas among 3,105 samples, zero unknown node IDs, zero non-finite deltas and
+zero cumulative timestamps outside the profile window. My nonnegative-delta
+assumption was wrong. The reader now validates and sorts timestamp/sample
+pairs without losing their associations. Missing IDs, non-finite times,
+out-of-window timestamps, caps, incomplete coverage and lost traces still
+fail. Both failed artifacts remain evidence, not accepted profiling results.
 
 Evidence is pending. Board evaluation repeats in ranking, filtering, sorting,
 counts and row construction. That is a source hypothesis, not the established
