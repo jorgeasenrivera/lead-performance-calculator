@@ -4,6 +4,8 @@ import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
 import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
 import { isOldCodeLink } from "./old-links.mjs";
+import { readRecoveryHash } from "./recovery-link.mjs";
+import { createRecoveryGuard, setPasswordAs, LINK_FAILED_NOTICE } from "./recovery-session.mjs";
 import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
 import { createArrivalScheduler } from "./arrival-scheduler.mjs";
 import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
@@ -1324,7 +1326,62 @@ async function authResetPassword(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin,
   });
+  /* Kept on this phone so an expired link opened here can offer a new one
+     without asking for the address again (C97). */
+  if (!error) { try { localStorage.setItem(RESET_EMAIL_KEY, email); } catch (e) {} }
   return { error: error ? error.message : null };
+}
+/* The new password is for the account the reset link was sent to and nobody
+   else's. The write is bound by TOKEN: the PUT carries the access token Supabase
+   issued for this recovery, so it cannot be authorized as anybody else whatever
+   is stored when it lands (updateUser re-reads the stored session at that
+   instant, which no look beforehand can close: second review, 30 September).
+   The look at who is signed in stays, as a refusal to even try when it is
+   already wrong. `lost` says the binding is gone, which the caller turns into
+   the expired-link card. */
+async function authSetPassword(password) {
+  const bound = recoveryGuard.binding();
+  if (!bound) return { error: LINK_FAILED_NOTICE, lost: true };
+  let current = null;
+  try { const { data } = await supabase.auth.getSession(); current = data && data.session && data.session.user ? data.session.user.id : null; } catch (e) {}
+  if (current !== bound.userId || !recoveryGuard.canSave(current)) return { error: LINK_FAILED_NOTICE, lost: true };
+  return setPasswordAs({ url: SUPABASE_URL, apikey: SUPABASE_ANON_KEY, accessToken: bound.accessToken, password });
+}
+/* ---- the reset email's link comes back here (C97) ----
+   It lands on the site's front door with the answer in the address:
+   #...type=recovery when the link is good, #error_code=otp_expired when it has
+   run out or was used. Supabase reads a good one, signs the person in and clears
+   the address, all before any screen asks, so the address is read at load, first.
+   Until C97 nothing read it at all: a good link signed the person in and never
+   asked for a new password, and a bad one did nothing anybody could see.
+
+   The address is INTENT, never proof: the reset form opens on Supabase's own
+   PASSWORD_RECOVERY event and the save is bound to the user it named (see
+   recovery-session.mjs, and why). The subscription is made here, in the same
+   pass that made the client, because Supabase sends the event a tick after it
+   finishes reading the link and a screen that subscribed later could miss it. */
+const RESET_EMAIL_KEY = "lpc:reset-email";
+const recoveryIntent = (() => {
+  try {
+    const got = readRecoveryHash(window.location.hash);
+    if (got === "expired") {
+      /* An error is not consumed by anything else: clear it, or a reload says
+         the link ran out all over again. */
+      try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
+    }
+    return got;
+  } catch (e) {}
+  return null;
+})();
+const recoveryGuard = createRecoveryGuard(recoveryIntent);
+if (supabase) {
+  try {
+    supabase.auth.onAuthStateChange((ev, session) => recoveryGuard.onAuthEvent(ev, session));
+    /* The client is ready once it has read the address; its PASSWORD_RECOVERY
+       comes a tick after that. A second and a half on, a link it has not
+       confirmed is one it was never going to. */
+    supabase.auth.getSession().then(() => setTimeout(() => recoveryGuard.settle(), 1500)).catch(() => {});
+  } catch (e) {}
 }
 /* ---- the link between an account and a person on the floor ----
    Reads and writes both go through /api/link-person, which reads the caller's
@@ -1662,6 +1719,15 @@ export default function LeadPerformanceCalculator() {
      freezes and the most watched beat of the animation stutters. The cruise is
      the loading zone; the heavy work belongs inside it. */
   const [holdMount, setHoldMount] = useState(false);
+  /* The reset link's answer (C97), from Supabase and not from the address:
+     pending while it decides, ready when it has confirmed a link for a user,
+     failed when the link is bad or the account it was for has gone. */
+  const [rec, setRec] = useState(() => recoveryGuard.snapshot());
+  useEffect(() => { setRec(recoveryGuard.snapshot()); return recoveryGuard.subscribe(setRec); }, []);
+  /* Tokens that did not check out stay in the address until somebody removes
+     them, and a reload would try them again. */
+  useEffect(() => { if (rec.status === "failed") { try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {} } }, [rec.status]);
+  const recoveryLayer = rec.status === "ready" || rec.status === "failed";
   useEffect(() => {
     const on = (e) => { if (e.detail === "cruise" || e.detail === "off") setHoldMount(false); };
     document.addEventListener(JUMP_PHASE, on);
@@ -1676,13 +1742,13 @@ export default function LeadPerformanceCalculator() {
        change must not hide it again. See the latch's comment. */
     /* Never on the TV (?qboard=): it has nobody signed in, so this hid the
        whole board, and the TV showed only the ground from 11 September. */
-    const under = !WALL_SCREEN && (!session || (jumpHold && !jumpLanded));
+    const under = !WALL_SCREEN && (!session || recoveryLayer || (jumpHold && !jumpLanded));
     document.documentElement.classList.toggle("jump-under", under);
     // Release only after React has removed the old form, never in the timer
     // that merely schedules its removal. A busy commit can leave a visible gap.
     if (!jumpHold) document.documentElement.classList.remove("signin-gone");
     return () => document.documentElement.classList.remove("jump-under");
-  }, [session, jumpHold]);
+  }, [session, jumpHold, recoveryLayer]);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
@@ -2997,9 +3063,14 @@ export default function LeadPerformanceCalculator() {
      for the beat between the two a returning person saw the sign-in screen
      flash up and vanish under their own arrival. The ground is what shows
      while the answer is on its way; a real sign-out still gets the screen. */
-  const signInLayer = config && authReady && (!session || jumpHold) ? (
+  /* While Supabase is still deciding about a reset link the ground shows, not the
+     sign-in card that would flip to the new-password card a moment later. A
+     failed link shows the card even with somebody signed in, because that is
+     exactly when the notice was hidden (C97, review). */
+  const signInLayer = config && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
     <div className="signin-over" key="signin">
-      <Login config={config}
+      <Login config={config} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
+        onPasswordSaved={() => recoveryGuard.done()} onRecoveryDismissed={() => recoveryGuard.dismiss()}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
           const undo = landDashboard(() => {
@@ -5042,22 +5113,36 @@ function ClaimPicker({ config, value, onChange, onName }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed, onHandover, onJump }) {
+function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false, linkFailed = false, onPasswordSaved, onRecoveryDismissed }) {
   /* The other half of lpcf:boot: a phone that reached the sign-in screen
      opens on the light ground next time, not under a curtain for rooms it
      may not go back to. AssociateRooms writes "rooms" when it mounts. */
   useEffect(() => { try { localStorage.setItem("lpcf:boot", "app"); } catch (e) {} }, []);
-  const [mode, setMode] = useState("signin"); // signin | signup | forgot
+  const [mode, setMode] = useState(resetting ? "reset" : linkFailed ? "forgot" : "signin"); // signin | signup | forgot | reset
   const [kind, setKind] = useState("associate");
-  const [email, setEmail] = useState("");
+  /* A link that did not work opens Forgot with the address this phone last asked for. */
+  const [email, setEmail] = useState(() => {
+    if (!linkFailed) return "";
+    try { return localStorage.getItem(RESET_EMAIL_KEY) || ""; } catch (e) { return ""; }
+  });
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [name, setName] = useState("");
   const [claim, setClaim] = useState({ store: "", person: null, name: "" });
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(linkFailed && !resetting ? LINK_FAILED_NOTICE : "");
   /* After Delete my account (C91): said once, on the card the person lands on. */
   const [ok, setOk] = useState(() => { try { if (sessionStorage.getItem(DELETED_KEY)) { sessionStorage.removeItem(DELETED_KEY); return "Your account is deleted."; } } catch (e) {} return ""; });
   const [busy, setBusy] = useState(false);
+  /* The recovery event can land after this screen is up. */
+  useEffect(() => { if (resetting) { setMode("reset"); setErr(""); setOk(""); } }, [resetting]);
+  /* And the link can fail under a form that is already open: the person signed
+     out, or somebody else signed in, before the save. The typed passwords go
+     with it, and the card says what to do. */
+  useEffect(() => {
+    if (!linkFailed || resetting) return;
+    setMode("forgot"); setErr(LINK_FAILED_NOTICE); setOk(""); setPassword(""); setPassword2("");
+    try { const last = localStorage.getItem(RESET_EMAIL_KEY); if (last) setEmail((cur) => cur || last); } catch (e) {}
+  }, [linkFailed, resetting]);
   /* The card's own 760ms deconstruction is gone with the handover it belonged
      to. The arrival takes the screen apart now, from the press, so there is
      nothing left here to run. */
@@ -5136,9 +5221,13 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   };
   useEffect(() => () => { if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
 
-  const signIn = async () => {
+  /* The press, the flight and the handover. A new password from a reset link
+     (C97) takes this same road with a different call in the middle, so there is
+     one arrival and not two. Called from a button, `authCall` is the click. */
+  const signIn = async (authCall) => {
+    const custom = typeof authCall === "function";
     setErr(""); setOk("");
-    if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
+    if (!custom && (!email.trim() || !password)) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
     /* ---- put the keyboard away BEFORE anything is measured ----
@@ -5208,7 +5297,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
        and no way back. Anything that is not a clean success puts the form back. */
     let res;
     try {
-      res = await authSignIn(email.trim().toLowerCase(), password);
+      res = await (custom ? authCall() : authSignIn(email.trim().toLowerCase(), password));
     } catch (e) {
       res = { error: "Couldn't reach sign-in. Check your connection and try again." };
     }
@@ -5221,6 +5310,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       return;
     }
     authed = true;
+    /* Signing in the ordinary way settles any failed reset link: the person is
+       in, and a notice about an old link must not keep the card up (C97). */
+    if (!custom && onRecoveryDismissed) onRecoveryDismissed();
     document.documentElement.classList.remove("sage-flash-hold");
     /* From here the only thing between the user and the page is the white, so
        nothing on this path is allowed to throw its way out of the handover. */
@@ -5264,7 +5356,21 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     const res = await authResetPassword(e);
     setBusy(false);
     if (res.error) { setErr(res.error); return; }
-    setOk("If that email has an account, a reset link is on its way. Check your inbox.");
+    setOk("If that email has an account, a link is on its way from no-reply@sageonline.io. Not there in a minute? Check junk.");
+  };
+
+  /* The link has already proved the address, so saving goes straight in with
+     the usual arrival (C97, A2). */
+  const saveNewPassword = () => {
+    setErr(""); setOk("");
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (password !== password2) { setErr("The two passwords do not match."); return; }
+    return signIn(async () => {
+      const res = await authSetPassword(password);
+      if (res.lost) recoveryGuard.invalidate();
+      else if (!res.error && onPasswordSaved) onPasswordSaved();
+      return res;
+    });
   };
 
   /* ---- the mark builds as the form is filled ----
@@ -5283,7 +5389,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       {/* The field belongs to this screen and lives as long as it does: held for
           the whole jump, gone with it at the handover, underneath the white. */}
       <SageField />
-      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" ? " login-launch" : "") : "")}>
+      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" || mode === "reset" ? " login-launch" : "") : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         {/* No spinner here any more. Signing in used to swap the wordmark for a
             loading indicator, which is a different object appearing in the place
@@ -5390,6 +5496,22 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
           </div>
         )}
 
+        {mode === "reset" && (
+          <div className="lf-mode" key="reset">
+            <p className="lf-note">Choose a new password</p>
+            <label className="lf-label">New password</label>
+            <input className="lf-in" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+              placeholder="At least 8 characters" autoComplete="new-password" />
+            <label className="lf-label">Confirm password</label>
+            <input className="lf-in" type="password" value={password2} onChange={(e) => { setPassword2(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && saveNewPassword()} placeholder="Repeat it" autoComplete="new-password" />
+            {err && <div className="login-err">{err}</div>}
+            <button className="lf-go lf-solo" onClick={saveNewPassword} disabled={busy}>
+              <span>{busy ? "Saving\u2026" : "Save and sign in"}</span>
+            </button>
+          </div>
+        )}
+
         {mode === "forgot" && (
           <div className="lf-mode" key="forgot">
             <p className="lf-note">Enter your email and we will send a link to set a new password.</p>
@@ -5401,7 +5523,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
             <button className="lf-go lf-solo" onClick={forgot} disabled={busy}>
               <span>{busy ? "Sending\u2026" : "Send reset link"}</span>
             </button>
-            <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
+            <button className="lf-alt" onClick={() => { if (linkFailed && onRecoveryDismissed) onRecoveryDismissed(); setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
           </div>
         )}
       </div>
