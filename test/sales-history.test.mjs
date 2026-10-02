@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readXlsx } from "../scripts/sales-history/xlsx-lite.mjs";
 import { parseSheets, reconcile, missingDays, salesDailySql, resolveMonday, sheetMonth } from "../scripts/sales-history/parse-workbook.mjs";
 import { storeIdFor } from "../scripts/sales-history/stores.mjs";
-import { run, isInsideRepo, canonical } from "../scripts/sales-history/load.mjs";
+import { run, isInsideRepo, canonical, hasDotDot } from "../scripts/sales-history/load.mjs";
 import { buildXlsx, monthSheet } from "./sales-history-xlsx.mjs";
 
 const read = (...sheets) => parseSheets(readXlsx(buildXlsx(sheets)));
@@ -232,6 +232,41 @@ test("the repo boundary is the real path: a folder called '..sales-out', a symli
     fs.symlinkSync(path.join(repo, "package.json"), book);
     assert.throws(() => run({ file: book, out: path.join(dir, "o2"), source: "workbook-2026-10" }), /outside the repository/);
     assert.ok(!fs.existsSync(path.join(dir, "o2")));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a '..' after a symlink is refused as given: the checked path and the opened path cannot differ (re-review of #464)", () => {
+  const repo = path.resolve(import.meta.dirname, "..");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sales-history-"));
+  try {
+    const link = path.join(dir, "link");
+    fs.symlinkSync(path.join(repo, "scripts"), link, "dir");       // dir/link -> repo/scripts
+    // Lexically "dir/link/../book.xlsx" is "dir/book.xlsx", outside the repo; the operating
+    // system follows the link first and would open repo/book.xlsx. The string goes in unchanged.
+    const raw = `${link}/../book.xlsx`;
+    assert.ok(hasDotDot(raw));
+    assert.equal(isInsideRepo(raw), true, "cannot be judged lexically, so it is refused");
+    fs.writeFileSync(path.join(dir, "book.xlsx"), buildXlsx([monthSheet("Sept 2026", [{ nums: [null, 1, 2, 3, 4, 5, 6], stores: { "Holler Honda": [null, 4, 6, 6, 16, 26, 10] } }])]));
+    assert.throws(() => run({ file: raw, out: path.join(dir, "out"), source: "workbook-2026-10" }), /must not contain '\.\.'/);
+    assert.ok(!fs.existsSync(path.join(dir, "out")), "and nothing was written");
+    assert.throws(() => run({ file: path.join(dir, "book.xlsx"), out: `${link}/../out`, source: "workbook-2026-10" }), /must not contain '\.\.'/);
+    assert.throws(() => run({ file: `${dir}/x/../book.xlsx`, out: path.join(dir, "o"), source: "workbook-2026-10" }), /must not contain '\.\.'/, "even where it would be harmless");
+    assert.ok(!fs.existsSync(path.join(repo, "book.xlsx")) && !fs.existsSync(path.join(repo, "out")), "nothing in the repo");
+    assert.equal(hasDotDot("/a/b..c/d"), false, "a name that merely contains two dots is fine");
+    assert.equal(hasDotDot("..sales-out"), false);
+    assert.equal(hasDotDot("a\\..\\b"), true);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the files are read and written at the checked real path, through a link that points outside the repo", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sales-history-"));
+  try {
+    const realParent = path.join(dir, "real-parent"); fs.mkdirSync(realParent);
+    const linkParent = path.join(dir, "link-parent"); fs.symlinkSync(realParent, linkParent, "dir");
+    fs.writeFileSync(path.join(realParent, "book.xlsx"), buildXlsx([monthSheet("Sept 2026", [{ nums: [null, 1, 2, 3, 4, 5, 6], stores: { "Holler Honda": [null, 4, 6, 6, 16, 26, 10] } }])]));
+    const r = run({ file: path.join(linkParent, "book.xlsx"), out: path.join(linkParent, "out"), source: "workbook-2026-10" });
+    assert.match(r.lines.join("\n"), /store-days to load: 6/);
+    assert.ok(fs.existsSync(path.join(realParent, "out", "manifest.json")), "written under the real folder");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

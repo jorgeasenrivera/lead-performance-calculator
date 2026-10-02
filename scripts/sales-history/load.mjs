@@ -35,7 +35,14 @@ export function canonical(p) {
     }
   }
 }
+/* A literal ".." in the string given cannot be judged by looking at it: path.resolve
+   folds it away BEFORE symlinks are followed, so "/tmp/link/../book.xlsx" is
+   checked as "/tmp/book.xlsx" while the operating system, following the link
+   first, opens a file beside the link's target. So such a path is refused
+   outright, and the files are read and written at the checked real path. */
+export const hasDotDot = (p) => String(p).split(/[\\/]+/).includes("..");
 export function isInsideRepo(p) {
+  if (hasDotDot(p)) return true;   // cannot be judged: treated as unsafe
   const rel = path.relative(ROOT, canonical(p));
   return rel === "" || !(rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel));
 }
@@ -44,22 +51,24 @@ const csv = (rows) => rows.map((r) => r.map((c) => /[",\n]/.test(String(c)) ? `"
 
 export function run({ file, out, source }) {
   if (!file || !out || !source) throw new Error("usage: --file workbook.xlsx --out folder --source workbook-YYYY-MM");
-  if (inside(file)) throw new Error("the workbook must live outside the repository");
-  if (inside(out)) throw new Error("write the output outside the repository");
-  const parsed = parseSheets(readXlsx(fs.readFileSync(file)));
+  if (hasDotDot(file) || hasDotDot(out)) throw new Error("paths must not contain '..': give the full path (a '..' after a link would be checked in one place and opened in another)");
+  const realFile = canonical(file), realOut = canonical(out);
+  if (inside(realFile)) throw new Error("the workbook must live outside the repository");
+  if (inside(realOut)) throw new Error("write the output outside the repository");
+  const parsed = parseSheets(readXlsx(fs.readFileSync(realFile)));
   const rec = reconcile(parsed.readings);
   const missing = missingDays(rec.days, rec.ties);
   /* A folder that already has files could still hold chunks from an earlier,
      longer run, and the README says to apply the chunks in order. So the
      folder is new or empty, and manifest.json names exactly this run's files. */
-  if (fs.existsSync(out) && (!fs.statSync(out).isDirectory() || fs.readdirSync(out).length)) throw new Error("the output folder must be new or empty, so an old chunk cannot be applied by mistake");
-  fs.mkdirSync(out, { recursive: true });
-  fs.writeFileSync(path.join(out, "fix-1-sheets-disagree.csv"), csv([["store", "date", "why it is unknown", "what each sheet says"], ...rec.ties.map((t) => [t.store, t.day, t.reason, t.sheets.join(" ; ")])]));
-  fs.writeFileSync(path.join(out, "fix-2-days-in-no-sheet.csv"), csv([["date", "weekday", "stores with no figure"], ...missing.map((m) => [m.day, m.weekday, m.stores.join("; ")])]));
+  if (fs.existsSync(realOut) && (!fs.statSync(realOut).isDirectory() || fs.readdirSync(realOut).length)) throw new Error("the output folder must be new or empty, so an old chunk cannot be applied by mistake");
+  fs.mkdirSync(realOut, { recursive: true });
+  fs.writeFileSync(path.join(realOut, "fix-1-sheets-disagree.csv"), csv([["store", "date", "why it is unknown", "what each sheet says"], ...rec.ties.map((t) => [t.store, t.day, t.reason, t.sheets.join(" ; ")])]));
+  fs.writeFileSync(path.join(realOut, "fix-2-days-in-no-sheet.csv"), csv([["date", "weekday", "stores with no figure"], ...missing.map((m) => [m.day, m.weekday, m.stores.join("; ")])]));
   const sql = salesDailySql(rec.days, source);
-  sql.forEach((s, i) => fs.writeFileSync(path.join(out, `sales_daily-${String(i + 1).padStart(3, "0")}.sql`), s));
+  sql.forEach((s, i) => fs.writeFileSync(path.join(realOut, `sales_daily-${String(i + 1).padStart(3, "0")}.sql`), s));
   const files = sql.map((text, i) => ({ file: `sales_daily-${String(i + 1).padStart(3, "0")}.sql`, rows: text.split("\n").filter((l) => l.startsWith("('")).length, sha256: createHash("sha256").update(text).digest("hex") }));
-  fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify({ source, rows: files.reduce((n, f) => n + f.rows, 0), files }, null, 2) + "\n");
+  fs.writeFileSync(path.join(realOut, "manifest.json"), JSON.stringify({ source, rows: files.reduce((n, f) => n + f.rows, 0), files }, null, 2) + "\n");
   const closed = rec.days.filter((d) => d.closed).length;
   const lines = [
     `sheets read: ${parsed.stats.blocks ? "yes" : "none"}; week blocks ${parsed.stats.blocks} (${parsed.stats.ok} exact, ${parsed.stats.repaired} repaired, ${parsed.stats.ambiguous} ambiguous), skipped ${parsed.skipped.length}`,
@@ -71,7 +80,7 @@ export function run({ file, out, source }) {
     `store names not in Sage, skipped: ${[...rec.unmapped].map(([n, c]) => `${n} (${c})`).join(", ") || "none"}`,
     `sheets whose name is not a month: ${parsed.stats.sheetsSkipped.join(", ") || "none"}`,
   ];
-  fs.writeFileSync(path.join(out, "report.txt"), lines.join("\n") + "\n");
+  fs.writeFileSync(path.join(realOut, "report.txt"), lines.join("\n") + "\n");
   return { lines, parsed, rec, missing };
 }
 
