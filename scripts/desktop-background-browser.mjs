@@ -3,6 +3,17 @@ export function installBackgroundScope({ variant }, env = window) {
   if (!['root', 'backdrop'].includes(variant)) throw new Error('unknown background variant');
   if (env.location.hostname !== '127.0.0.1') return;
   if (env.__desktopBackgroundScope) throw new Error('background override already installed');
+  // Browser init scripts precede the HTML root. Install as soon as it exists,
+  // before deferred app code runs, rather than polling or skipping the hook.
+  if (!env.document.documentElement) {
+    const observer = new env.MutationObserver(() => {
+      if (!env.document.documentElement) return;
+      observer.disconnect();
+      installBackgroundScope({ variant }, env);
+    });
+    observer.observe(env.document, { childList: true });
+    return;
+  }
   const doc = env.document, rootStyle = doc.documentElement.style;
   const prototype = env.CSSStyleDeclaration.prototype, original = prototype.setProperty;
   const state = { variant, calls: 0, rootWrites: 0, backdropWrites: 0, fallbackWrites: 0, lastValue: null };

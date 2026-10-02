@@ -45,6 +45,23 @@ test('remote page cannot install override', () => {
   const original = root.setProperty; installBackgroundScope({ variant: 'backdrop' }, env);
   assert.equal(root.setProperty, original); assert.equal(env.__desktopBackgroundScope, undefined);
 });
+test('early browser init waits for the HTML root and disconnects before installation', () => {
+  const { env, root } = environment(); let callback, observed, disconnected = false;
+  env.document.documentElement = null;
+  env.MutationObserver = class {
+    constructor(fn) { callback = fn; }
+    observe(target, options) { observed = { target, options }; }
+    disconnect() { disconnected = true; }
+  };
+  installBackgroundScope({ variant: 'backdrop' }, env);
+  assert.equal(env.__desktopBackgroundScope, undefined);
+  assert.equal(observed.target, env.document); assert.deepEqual(observed.options, { childList: true });
+  callback(); assert.equal(disconnected, false);
+  env.document.documentElement = { style: root }; callback();
+  assert.equal(disconnected, true);
+  const before = env.__desktopBackgroundScope.snapshot(); root.setProperty('--bgy', '-4px');
+  assert.equal(validateBackgroundSample(before, env.__desktopBackgroundScope.inspect()).backdropWrites, 1);
+});
 for (const count of [0, 2]) test(`unexpected ${count} backdrops preserves behavior but rejects evidence`, () => {
   const { env, root } = environment(count); installBackgroundScope({ variant: 'backdrop' }, env);
   const before = env.__desktopBackgroundScope.snapshot(); root.setProperty('--bgy', '-4px');

@@ -48,6 +48,13 @@ then retained evidence. No credential, Supabase schema, shared mock, data math,
 calendar activation or dependency changes. The existing service stand-in is
 reused unchanged. Supabase guidance reinforces keeping this experiment offline.
 
+The first run stopped before its first selected profile: the init hook read the
+HTML root before the parser created it. That was my diagnostic setup error,
+not an app failure. The hook now observes document children until the root
+exists, disconnects, and installs before deferred app code. A deterministic
+early-document regression covers that ordering. Failed evidence is retained
+in run 37045930890, artifact 11243459607. No result from it is a comparison.
+
 Evidence and review are pending. No application cause or improvement is claimed.
 Any app change remains on X11's sole owned branch. Changed pixels or motion
 need the published proposal required by AGENTS.md.
