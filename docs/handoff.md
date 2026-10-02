@@ -609,6 +609,24 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X46 · Desktop background scope comparison, isolated and not shipped.**
+
+X23 keeps X21's immutable fictional driver and X22's repaired recorder, pinned
+to `abcc33d` and `ec1ca53`. The app is the reviewed Signal `7fdf5ae`, rebuilt
+unchanged with matching hidden source maps. One ordered Chromium dense desktop
+cohort compares root and backdrop writes for exactly the same parallax value.
+No coefficients, motion, colours, reduced-motion rules or application source
+change. Computed value and transform checks occur after each recording, not
+inside the animation loop. Unexpected shells retain root behavior but fail the
+evidence guard. The full original interaction sequence remains intact.
+
+Look first at the prototype interception receiver and pass-through behavior,
+the post-recording parity read, immutable pins, and complete-cohort rejection.
+This is diagnostic evidence, not a field or unprofiled speed improvement. The
+browser run and review are still pending. Any actual app repair stays with
+X11's sole Manager branch and needs unchanged-design verification. X22's final
+trace-end repair passes Jorge's unmodified regression and the full profile CI.
+
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
 Read against X15 `f3af0e0`, X19 `5010753` and X20 `e84e15f` on 2 October.
