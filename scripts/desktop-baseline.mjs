@@ -8,16 +8,21 @@ const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
 export function denseFixture(value, count = 60) {
   const next = structuredClone(value), sales = next.roster.filter(p => p.roleId === 'sales');
   assert.ok(sales.length, 'stress fixture requires sales associates');
-  const clones = Array.from({ length: count }, (_, i) => ({ ...sales[i % sales.length],
-    id: `desktop-fiction-${i}`, name: `Fictional Associate ${String(i + 1).padStart(2, '0')}` }));
-  next.roster = [...next.roster.filter(p => p.roleId !== 'sales'), ...clones];
+  assert.ok(Number.isInteger(count) && count >= sales.length && count <= 500, 'bounded stress roster');
+  const clones = Array.from({ length: count - sales.length }, (_, i) => {
+    const name = `Fictional Associate ${String(i + sales.length + 1).padStart(2, '0')}`;
+    return { ...sales[i % sales.length], id: `desktop-fiction-${i}`, name, label: name };
+  });
+  // Keep the original room identities and non-sales metrics. Extra board rows
+  // stress rendering without turning the rooms' seeded people into strangers.
+  next.roster.push(...clones);
   for (const month of Object.values(next.months || {})) {
     const original = month.stats || {};
-    month.stats = Object.fromEntries(clones.map((p, i) => [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})]));
+    month.stats = { ...original, ...Object.fromEntries(clones.map((p, i) => [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})])) };
   }
   for (const day of Object.keys(next.activity || {})) {
     const original = next.activity[day];
-    next.activity[day] = Object.fromEntries(clones.map((p, i) => [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})]));
+    next.activity[day] = { ...original, ...Object.fromEntries(clones.map((p, i) => [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})])) };
   }
   return next;
 }
@@ -80,6 +85,7 @@ export async function runDesktopBaseline() {
         };
         const button = name => page.getByRole('button', { name, exact: true });
         const results = [];
+        output.runs.push({ width, fixture, rowCount, fixtureReads, results, errors, complete: false });
         for (let cycle = 0; cycle < 3; cycle++) {
           for (const [name, marker] of [['Daily Activity', '.da-page'], ['Live Floor', '.mf-floor .fbc'],
             ['Phone Line', '.mf-line .sd-room'], ['Performance', '.board-page'], ['Summary', '.sm-page'], ['Dashboard', '.board-page']]) {
@@ -88,7 +94,10 @@ export async function runDesktopBaseline() {
           results.push({ cycle, ...await measure('associate-open', '.acard', () => page.locator('.assoc-row .assoc-name').first().click(), false, 'click', '.assoc-row') });
           results.push({ cycle, ...await measure('associate-close', '.acard', () => page.locator('.ac-x').click(), true) });
           results.push({ cycle, ...await measure('schedule-hover', '.sg-schedule-details', () => page.locator('.sg-schedule-trigger').hover(), false, 'pointerover', '.sg-schedule') });
-          await page.locator('.assoc-name').first().hover();
+          stage = `${width}/${fixture}/leave-schedule`;
+          // No need to auto-scroll to a distant row just to exit a hover. On a
+          // dense board that cleanup can fight the sticky header in WebKit.
+          await page.mouse.move(2, (width === 1440 ? 900 : 1080) - 5);
           results.push({ cycle, ...await measure('list-scroll', '.board-page', () => page.evaluate(() => new Promise(resolve => {
             window.__desktopProbe.start('list-scroll', '.board-page', { windowMs: 2200 });
             const start = performance.now(), max = document.documentElement.scrollHeight - innerHeight;
@@ -98,7 +107,7 @@ export async function runDesktopBaseline() {
           await page.evaluate(() => scrollTo(0, 0));
         }
         assert.deepEqual(errors, []);
-        output.runs.push({ width, fixture, rowCount, fixtureReads, results, errors });
+        output.runs.at(-1).complete = true;
         await page.screenshot({ path: `desktop-baseline-evidence/${width}-${fixture}.png` });
       } finally { await context.close(); }
     }

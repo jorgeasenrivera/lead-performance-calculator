@@ -81,6 +81,15 @@ normal-roster observations, not the repeatable matrix or a claimed improvement.
 The prior local origin served an older cached diagnostic HTML page; a fresh
 origin supplied the current probe. CI blocks service workers to avoid that.
 
+The first matrix run `37022828796` stopped in WebKit after it had reached the
+60-sales fixture: an unnecessary hover on the first associate, used only to
+leave the schedule, fought auto-scroll and sticky/overlapping elements. It is
+not a performance pass or a diagnosed application defect. Cleanup now moves
+the pointer off the schedule without auto-scrolling a row. Partial cycles are
+retained immediately rather than discarded until the whole fixture finishes.
+The stress fixture also now adds to, rather than replaces, the original sales
+roster so the seeded room identities and non-sales metrics remain intact.
+
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's

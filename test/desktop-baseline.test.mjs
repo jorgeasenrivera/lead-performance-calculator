@@ -85,4 +85,7 @@ test('stress roster preserves the original fixture and maps monthly/daily stats 
   assert.equal(result.months['2026-10'].stats['fictional associate 60'].unitsDelivered, 9);
   assert.equal(result.activity['2026-10-01']['fictional associate 60'].calls, 10);
   assert.deepEqual(source, before); assert.deepEqual(result.months['2026-10'].stated, before.months['2026-10'].stated);
+  assert.deepEqual(result.roster[0], before.roster[0]);
+  assert.equal(result.months['2026-10'].stats['source person'].unitsDelivered, 9);
+  assert.equal(result.roster.at(-1).label, result.roster.at(-1).name);
 });
