@@ -83,6 +83,9 @@ export function summarizeProfile(cpu, trace) {
   const render = main ? trace.filter(e => e.ph === 'X' && e.pid === main.pid && e.tid === main.tid) : null;
   const byType = render && Object.fromEntries([...TRACE_NAMES].map(name => {
     const events = render.filter(e => e.name === name).sort((a, b) => a.ts - b.ts);
+    // An absent event may mean this category was not enabled by Chromium.
+    // It does not establish zero work in the application's renderer.
+    if (!events.length) return [name, null];
     let end = -Infinity, union = 0;
     for (const e of events) { union += Math.max(0, e.ts + e.dur - Math.max(end, e.ts)); end = Math.max(end, e.ts + e.dur); }
     return [name, { count: events.length, unionMs: union / 1000 }];

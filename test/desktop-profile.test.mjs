@@ -90,6 +90,8 @@ test('trace durations union per category on the main thread, not all-thread or n
   assert.equal(summary.hot[0].sampledMs, 2); assert.equal(summary.unattributedLeadMs, 1);
   assert.deepEqual(summary.byType.Layout, { count: 2, unionMs: 6 });
   assert.equal(summary.byType.Paint.unionMs, 1);
+  assert.equal(summary.byType.RunTask, null); assert.equal(summary.byType.CompositeLayers, null);
+  assert.equal(summarizeProfile(sanitizeCpuProfile(cpu()), [projectTrace(main)]).byType.Layout, null);
   assert.equal(summarizeProfile(sanitizeCpuProfile(cpu()), trace.slice(1)).byType, null);
 });
 test('source maps retain cross-line deltas and use the nearest generated segment', () => {
@@ -202,6 +204,8 @@ test('final profile coverage requires every original case and all three selected
   assert.throws(() => validateProfiles(rows, runs.map((r, i) => i ? r : { ...r, splitValueReads: 0 })), /isolated baseline/);
   assert.throws(() => validateProfiles(rows, [...runs.slice(0, 3), runs[0]]), /unique expected cases/);
   assert.throws(() => validateProfiles(rows.map((r, i) => i ? r : { ...r, ordinal: 1 }), runs), /unique profile ordinals/);
+  assert.equal(validateProfiles(rows.map(r => ({ ...r, summary: { ...r.summary, byType: { Layout: null } } })), runs).length, 36);
+  assert.throws(() => validateProfiles(rows.map((r, i) => i ? r : { ...r, summary: { ...r.summary, byType: null } }), runs), /valid trace/);
 });
 test('workflow pins source and harness without installing or exposing production instrumentation', async () => {
   const flow = await readFile(new URL('../.github/workflows/desktop-profile.yml', import.meta.url), 'utf8');

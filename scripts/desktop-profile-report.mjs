@@ -19,7 +19,7 @@ export function validateProfiles(rows, runs) {
       assert.equal(selected.filter(r => r.label === label).length, 3, 'three cycles per action');
     }
     assert.ok(selected.every(r => r.status === 'complete' && r.sample?.usable && !r.dropped && !r.traceDataLoss &&
-      !r.failure && r.cpu?.samples.length > 0 && r.summary?.mainThread && r.summary?.byType?.Layout), 'valid trace and CPU evidence');
+      !r.failure && r.cpu?.samples.length > 0 && r.summary?.mainThread && r.summary?.byType), 'valid trace and CPU evidence');
   }
   return rows.map(r => ({ width: r.width, fixture: r.fixture, label: r.label, ordinal: r.ordinal,
     diagnosticOnly: true, metrics: r.metrics, byType: r.summary.byType, hot: r.summary.hot,

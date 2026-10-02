@@ -41,6 +41,9 @@ No real store, login or live service is accessed. Trace/event and CPU caps are
 Per-category timeline durations union overlapping events on the renderer main
 thread. Categories nest, so their totals must not be added together. A missing
 main-thread marker means unavailable evidence, never zero paint/layout cost.
+An event category absent from a recording is null, not zero work. The chosen
+timeline category may omit event families; this profile does not establish
+cost for a family that was not observed. This addresses Claude's PR review.
 Performance counters are deltas; absent or reset counters are null.
 Duration counters retain the protocol's seconds; timeline and CPU summaries
 are explicitly milliseconds.
