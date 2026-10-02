@@ -625,7 +625,18 @@ Bounded numeric failure evidence at `c740bba` isolated 71 negative deltas among
 profile window. My nonnegative-delta assumption was wrong. The reader now
 preserves original arrays and sorts cumulative timestamp/sample pairs, as
 Chrome DevTools does, with explicit weighting and invalid-window guards.
-See the diagnostic doc for both failed runs. CI evidence is still pending.
+See the diagnostic doc for both failed runs. Measured `6fbbfba` now completed
+run `37040827798`, artifact `11241868175`: 36 complete profiles, four cases,
+120 usable lifecycle samples, seed 10/rows 10 or 62/45 split reads/zero page
+errors per case. Regular CI `37040827716` is green. Downloaded records retain
+all signed CPU deltas, conserve each window, map all bundle frames and have
+one renderer-main thread each. Absent event families now report null.
+Style recalculation, not repeated evaluation, is the stronger lead on open
+and scroll. `useLivingBackground` writes inherited root `--bgy` each inertia
+frame; only `.bg-live` consumes it. See the result table and boundaries in
+`docs/desktop-profile.md`. A backdrop-only scope is the next experiment to
+consider, preserving the same pixels and motion, not a demonstrated cause or
+fix. Final source and artifact read requested from Dot/Claude.
 Please examine trace shutdown/invalid-record lifetime, source-map positions and
 the distinction between profiling cost and unprofiled benchmark timing. No
 application cause or improvement is established yet. A later fix remains on

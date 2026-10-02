@@ -83,11 +83,49 @@ pairs without losing their associations. Missing IDs, non-finite times,
 out-of-window timestamps, caps, incomplete coverage and lost traces still
 fail. Both failed artifacts remain evidence, not accepted profiling results.
 
-Evidence is pending. Board evaluation repeats in ranking, filtering, sorting,
-counts and row construction. That is a source hypothesis, not the established
-cause of the measured desktop delay. Profiles distinguish script cost from
-layout and paint before a fix is chosen. No app performance improvement is
-claimed by this diagnostic PR.
+Measured head `6fbbfbabf4b43a833cd2966bab1ffd1badd9453a` completed
+[run 37040827798](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37040827798),
+[artifact 11241868175](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37040827798/artifacts/11241868175).
+Regular CI `37040827716` passed tests/build, both feel engines and screenshots.
+Local guards: 20 targeted tests, 887 full tests and build passed.
+
+The downloaded artifact was independently revalidated with this reader: 36
+complete profiles, four complete original cases and 120 usable lifecycle
+samples. Each case has seed 10, expected row count 10/62, 45 completed split
+reads and zero page errors. No lost buffers or dropped trace events. All
+2,511 signed deltas retain their sample association; timestamps are in-window
+and full interval accounting differs by at most 4.55e-13 ms. All 2,814 local
+bundle frames map to source, none are unmapped, and each profile has exactly
+one renderer-main thread. Source positions remain leads, not causal proof.
+
+For the 1920 x 1080, 60-sales fixture, mean counter deltas over three cycles,
+converted from seconds to milliseconds:
+
+| Interaction | Script | Style recalculation |
+|---|---:|---:|
+| Performance | 168.4 | 249.1 |
+| Associate open | 12.6 | 1730.1 |
+| Scripted scroll | 16.1 | 1950.2 |
+
+Other widths/rosters also put style cost well ahead of script on opening and
+scrolling. These are diagnostic counters including preparation and overhead,
+not app latency or a before/after speed comparison. Native scrolling, probe
+geometry reads and backdrop blur remain possible contributors.
+
+This changes the initial target. Repeated Board evaluation exists, but is not
+established as the main cause. The scroll profile maps to
+`LeadPerformanceCalculator.jsx:740`, inside `useLivingBackground`. It writes
+inherited root `--bgy` every inertia frame at 736/738, while its only consumer
+is `.bg-live`'s transform at 13006. The first controlled experiment to consider
+is to scope the same value to the backdrop node, preserving coefficients,
+timing, colours and reduced-motion behavior. Inheritance scope could explain
+broad style invalidation, but this profile has not proved that or measured an
+improvement. `TubeGlass`'s map generation also appears on board navigation,
+but it is not selected as the first change.
+
+Final source and terminal-artifact review was requested from Dot/Claude.
+This documentation-only follow-up does not replace the measured head. No app
+performance improvement is claimed by this diagnostic PR.
 
 Any later application change stays on X11's sole owned Manager branch. A
 pixel-identical internal refactor can proceed through review; different pixels,
