@@ -609,6 +609,49 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X45 · Desktop profiling is diagnostic, not a second app writer.**
+
+Jorge's stalled trace-end regression failed unchanged at `555e576`: my deadline
+did not bound a stalled request acknowledgement. The request and terminal
+buffer now race one shared five-second deadline together. The supplied test
+passes unchanged, and repository guards also cover missing-terminal delivery,
+early terminal with stalled acknowledgement, delayed success, immediate request
+rejection and late rejection after timeout. No increased deadline or retry.
+Invalid evidence is saved, listeners/timer removed and session detached.
+Final timeout-fix CI and independent cleanup review are pending. The measured
+profiling evidence below is unchanged; this is not an app speed improvement.
+
+Jorge authorized the next step after Dot accepted X21. X22 pins the accepted
+driver at `abcc33d` and actual Signal at `7fdf5ae`, then adds five in-memory
+driver hooks for Chromium CPU/timeline evidence. App source stays untouched.
+See `docs/desktop-profile.md` for units, overhead and boundaries. Local guards
+cover projections, source mapping, terminal trace drain, retained invalid
+records, caps and complete-case reporting. Plain/mapped Signal builds match
+byte-for-byte; actual driver hooks parse/import. PR #466's first run
+`37038369663` failed on a combined CPU sample guard. Regular CI passed. The
+retained trace was complete, but rejected CPU associations were missing.
+Bounded numeric failure evidence at `c740bba` isolated 71 negative deltas among
+3,105 samples, with all IDs known and all cumulative timestamps inside the
+profile window. My nonnegative-delta assumption was wrong. The reader now
+preserves original arrays and sorts cumulative timestamp/sample pairs, as
+Chrome DevTools does, with explicit weighting and invalid-window guards.
+See the diagnostic doc for both failed runs. Measured `6fbbfba` now completed
+run `37040827798`, artifact `11241868175`: 36 complete profiles, four cases,
+120 usable lifecycle samples, seed 10/rows 10 or 62/45 split reads/zero page
+errors per case. Regular CI `37040827716` is green. Downloaded records retain
+all signed CPU deltas, conserve each window, map all bundle frames and have
+one renderer-main thread each. Absent event families now report null.
+Style recalculation, not repeated evaluation, is the stronger lead on open
+and scroll. `useLivingBackground` writes inherited root `--bgy` each inertia
+frame; only `.bg-live` consumes it. See the result table and boundaries in
+`docs/desktop-profile.md`. A backdrop-only scope is the next experiment to
+consider, preserving the same pixels and motion, not a demonstrated cause or
+fix. Final source and artifact read requested from Dot/Claude.
+Please examine trace shutdown/invalid-record lifetime, source-map positions and
+the distinction between profiling cost and unprofiled benchmark timing. No
+application cause or improvement is established yet. A later fix remains on
+X11's sole owned branch; changed pixels or motion need a proposal.
+
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
 Read against X15 `f3af0e0`, X19 `5010753` and X20 `e84e15f` on 2 October.
