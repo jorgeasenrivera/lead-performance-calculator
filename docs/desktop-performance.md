@@ -33,8 +33,9 @@ at 10.2 seconds and fails the flow, not a performance score.
 
 The browser APIs have different coverage. Long tasks alone do not account for
 all rendering work. See the [W3C long animation frame specification](https://www.w3.org/TR/long-animation-frames/).
-The harness itself reads one destination box per frame and can add measurement
-cost. Use the same harness for before/after comparisons; do not treat these
+The harness reads the destination box only until the lifecycle settles, then
+records timestamps without further box/style reads. Those initial checks can
+still add measurement cost. Use the same harness for before/after comparisons; do not treat these
 numbers as field telemetry or a guarantee on Jorge's work computer.
 
 Samples from a hidden tab, interrupted interaction, watchdog or incomplete
@@ -89,6 +90,14 @@ the pointer off the schedule without auto-scrolling a row. Partial cycles are
 retained immediately rather than discarded until the whole fixture finishes.
 The stress fixture also now adds to, rather than replaces, the original sales
 roster so the seeded room identities and non-sales metrics remain intact.
+
+The first Chromium matrix completed, but its long-frame attribution exposed
+another measurement limitation: repeated destination box reads can charge
+pending layout to the probe itself, especially during hover and scripted
+scrolling. Readiness checks now stop after the marker settles, covered by a
+unit test. The early samples above and first matrix are exploratory only,
+not the accepted baseline or evidence for an application fix. The corrected
+matrix must complete and be reviewed before selecting a cause.
 
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be

@@ -28,13 +28,19 @@ test('hidden and interrupted recordings cannot be baseline evidence', () => {
   assert.equal(summarizeSample(sample({ hidden: true })).usable, false);
   assert.equal(summarizeSample(sample({ status: 'interrupted' })).usable, false);
 });
+test('incomplete lifecycle, missing frames and capped entries cannot look like a usable baseline', () => {
+  assert.equal(summarizeSample(sample({ frames: [16, 16] })).usable, true);
+  for (const override of [{ contentMs: null }, { settledMs: null }, { droppedEntries: 1 }, { frames: [] }]) {
+    assert.equal(summarizeSample(sample({ frames: [16, 16], ...override })).usable, false);
+  }
+});
 
 function harness() {
-  let now = 0, frame, deadline, hidden = false, busy = false, exists = true;
+  let now = 0, frame, deadline, hidden = false, busy = false, exists = true, reads = 0;
   const listeners = new Map();
   const doc = { get hidden() { return hidden; }, createElement: () => ({}), body: { appendChild() {} },
     documentElement: { matches: () => busy },
-    querySelector: selector => selector === '.acard' ? null : exists ? { getClientRects: () => [1] } : null,
+    querySelector: selector => selector === '.acard' ? null : exists ? { getClientRects: () => { reads++; return [1]; } } : null,
     addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) };
   const env = { document: doc, performance: { now: () => now }, innerWidth: 1440, innerHeight: 900,
     getComputedStyle: () => ({ visibility: 'visible' }),
@@ -43,7 +49,7 @@ function harness() {
   installDesktopProbe(env);
   return { api: env.__desktopProbe, listeners, tick(t) { now = t; const cb = frame; frame = null; cb(t); },
     hide() { hidden = true; listeners.get('visibilitychange')(); },
-    busy(v) { busy = v; }, exists(v) { exists = v; }, timeout() { now = 4200; deadline(); } };
+    busy(v) { busy = v; }, exists(v) { exists = v; }, reads: () => reads, timeout() { now = 4200; deadline(); } };
 }
 test('two ready frames are distinct from content arrival and navigation settling', () => {
   const h = harness(); h.api.start('nav', '.target', { windowMs: 100 });
@@ -75,6 +81,11 @@ test('armed capture starts on the in-page event, not automation preparation', ()
   h.listeners.get('click')({ target: { closest: () => ({}) } });
   h.tick(16); h.api.finish('complete'); assert.equal(h.api.samples[0].contentMs, 16);
   assert.equal(h.listeners.has('click'), false);
+});
+test('settled samples collect frame timestamps without repeatedly forcing layout', () => {
+  const h = harness(); h.api.start('nav', '.target', { windowMs: 100 });
+  h.tick(16); h.tick(32); h.tick(48); h.tick(64); h.tick(110);
+  assert.equal(h.reads(), 2); assert.equal(h.api.samples[0].frames.length, 4);
 });
 test('stress roster preserves the original fixture and maps monthly/daily stats by name', () => {
   const source = { roster: [{ id: 'a', name: 'Source Person', roleId: 'sales' }, { id: 'm', roleId: 'manager' }],

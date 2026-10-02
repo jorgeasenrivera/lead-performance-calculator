@@ -4,7 +4,9 @@ export function summarizeSample(sample) {
   const percentile = p => frames.length ? frames[Math.max(0, Math.ceil(frames.length * p) - 1)] : null;
   const overlap = e => Math.max(0, Math.min(e.startTime + e.duration, sample.end) - Math.max(e.startTime, sample.start));
   return {
-    label: sample.label, status: sample.status, usable: !sample.hidden && sample.status === 'complete',
+    label: sample.label, status: sample.status, usable: !sample.hidden && sample.status === 'complete'
+      && Number.isFinite(sample.contentMs) && Number.isFinite(sample.settledMs)
+      && frames.length >= 2 && sample.droppedEntries === 0,
     contentMs: sample.contentMs, settledMs: sample.settledMs,
     durationMs: sample.end - sample.start, frameCount: frames.length,
     frameMedianMs: percentile(.5), frameP95Ms: percentile(.95), frameMaxMs: percentile(1),
@@ -65,15 +67,20 @@ export function installDesktopProbe(env = window) {
     if (!active) return;
     if (active.lastFrame != null) cap(active.frames, t - active.lastFrame);
     active.lastFrame = t;
-    const ready = active.absent ? !doc.querySelector(active.selector) : visible(active.selector);
-    if (ready && active.contentMs == null) active.contentMs = env.performance.now() - active.start;
-    const rootBusy = doc.documentElement.matches('.tab-move,.tool-move,.jump-under,.refresh-hold');
-    const card = doc.querySelector('.acard');
-    const cardBusy = card && ['opening', 'closing'].includes(card.dataset.signalCardMotion);
-    if (ready && !rootBusy && !cardBusy) {
-      active.readyFrames++;
-      if (active.readyFrames === 2 && active.settledMs == null) active.settledMs = env.performance.now() - active.start;
-    } else active.readyFrames = 0;
+    let ready = active.settledMs != null;
+    if (!ready) {
+      ready = active.absent ? !doc.querySelector(active.selector) : visible(active.selector);
+      if (ready && active.contentMs == null) active.contentMs = env.performance.now() - active.start;
+      const rootBusy = doc.documentElement.matches('.tab-move,.tool-move,.jump-under,.refresh-hold');
+      const card = doc.querySelector('.acard');
+      const cardBusy = card && ['opening', 'closing'].includes(card.dataset.signalCardMotion);
+      if (ready && !rootBusy && !cardBusy) {
+        active.readyFrames++;
+        if (active.readyFrames === 2) active.settledMs = env.performance.now() - active.start;
+      } else active.readyFrames = 0;
+    }
+    // Once the lifecycle marker settles, only record rAF timestamps. Repeated
+    // box reads can make the probe itself pay the page's pending layout cost.
     if (env.performance.now() - active.start >= active.windowMs && ready && active.settledMs != null) { finish('complete'); return; }
     raf = env.requestAnimationFrame(tick);
   }
