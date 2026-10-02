@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installDesktopProbe, summarizeSample } from '../scripts/desktop-baseline-metrics.mjs';
-import { denseFixture, denseDay } from '../scripts/desktop-baseline.mjs';
+import { denseFixture, denseDay, splitStampRows } from '../scripts/desktop-baseline.mjs';
 import { isolatedMockSource } from '../scripts/desktop-baseline-mock.mjs';
 import fs from 'node:fs';
 
@@ -124,4 +124,12 @@ test('authoritative split activity keeps stress identities and the newer daily f
   loaded['2026-10-01']['fictional associate 60'].calls = 99;
   assert.deepEqual(separate, before);
   assert.equal(loaded['2026-10-01']['source person'].calls, 22);
+});
+
+test('activity stamp query excludes the shared mock\'s unrelated rows', () => {
+  const rows = [{ key: 'lpc:store:sage-demo:v2' }, { key: 'lpc:store:sage-demo:act:2026-10-01' },
+    { key: 'lpc:board:sage-demo:act:2026-10-01' }, { key: 'lpc:store:other:act:2026-10-01' }];
+  assert.deepEqual(splitStampRows(rows, 'like.lpc:store:sage-demo:act:%'), [rows[1]]);
+  assert.equal(splitStampRows(rows, 'eq.lpc:store:sage-demo:v2'), rows);
+  assert.equal(rows.length, 4);
 });

@@ -116,6 +116,16 @@ A unit test pins that exact overlay order, and the browser matrix requires
 split value reads in every stress case. Runs before this fix are exploratory
 even when their row-count checks passed.
 
+Run `37028525203` exposed an incorrect precondition in that new guard. Initial
+boot reads and caches the store with `loadStrict`; screen switches do not
+necessarily call `loadStore` or read split days. Before timed cycles, the harness
+now changes only the fictional store's timestamp and dispatches the existing
+focus refresh event, then requires the split value read to complete. This
+untimed preflight does not mutate React state or the app cache. The adapter also
+honors the exact activity-prefix LIKE query, which the shared mock ignores.
+Both normal and dense cases exercise the same refresh path. These samples do
+not represent a manager who has never received a background refresh.
+
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's

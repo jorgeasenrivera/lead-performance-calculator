@@ -6,6 +6,12 @@ import { startIsolatedMock } from './desktop-baseline-mock.mjs';
 
 export const SIGNAL_SOURCE = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
 const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
+export function splitStampRows(rows, filter) {
+  // The shared mock ignores LIKE. Narrow only the exact prefix this app reads,
+  // so unrelated store/board/config rows cannot masquerade as activity days.
+  return filter === 'like.lpc:store:sage-demo:act:%'
+    ? rows.filter(r => r.key?.startsWith('lpc:store:sage-demo:act:')) : rows;
+}
 function stressPeople(roster, count) {
   const sales = roster.filter(p => p.roleId === 'sales');
   assert.ok(sales.length, 'stress fixture requires sales associates');
@@ -68,18 +74,19 @@ export async function runDesktopBaseline() {
           if (![target.origin, 'http://127.0.0.1:5433'].includes(u.origin)) { await route.abort(); return; }
           if (u.origin === 'http://127.0.0.1:5433') {
             const response = await route.fetch({ url: mock.origin + u.pathname + u.search });
-            if (fixture !== '60-sales' || u.pathname !== '/rest/v1/app_data' || route.request().method() !== 'GET') {
+            if (u.pathname !== '/rest/v1/app_data' || route.request().method() !== 'GET') {
               await route.fulfill({ response }); return;
             }
-            const rows = await response.json();
+            const rawRows = await response.json();
+            const rows = Array.isArray(rawRows) ? splitStampRows(rawRows, u.searchParams.get('key')) : rawRows;
             const patch = r => {
               if (!r.value) return r;
-              if (r.key === 'lpc:store:sage-demo:v2') { fixtureReads++; return { ...r, value: denseFixture(r.value) }; }
+              if (r.key === 'lpc:store:sage-demo:v2' && fixture === '60-sales') { fixtureReads++; return { ...r, value: denseFixture(r.value) }; }
               // Split days win over the embedded copy in loadStore. Both must
               // carry the same fictional identities, even when read separately.
               if (r.key?.startsWith('lpc:store:sage-demo:act:')) {
                 if (u.searchParams.get('select')?.split(',').includes('value')) splitValueReads++;
-                return { ...r, value: denseDay(r.value, seedRows[0].value.roster) };
+                return fixture === '60-sales' ? { ...r, value: denseDay(r.value, seedRows[0].value.roster) } : r;
               }
               return r;
             };
@@ -96,6 +103,19 @@ export async function runDesktopBaseline() {
         await page.locator('.assoc-card .assoc-name').first().waitFor({ state: 'visible', timeout: 40000 });
         await page.getByRole('button', { name: 'Close the round-up', exact: true }).click();
         await page.getByRole('dialog', { name: 'Your round-up', exact: true }).waitFor({ state: 'hidden' });
+        stage = `${width}/${fixture} untimed split-day refresh`;
+        const update = await fetch(mock.origin + '/rest/v1/app_data?key=eq.lpc:store:sage-demo:v2', {
+          method: 'PATCH', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ updated_at: new Date(Date.now() + 1000).toISOString() }),
+          signal: AbortSignal.timeout(1000),
+        });
+        assert.ok(update.ok, 'fictional background stamp update must succeed');
+        // Initial boot uses its cached store, not loadStore. Exercise the app's
+        // existing focus refresh before timing, without mutating React/cache.
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        for (let n = 0; n < 150 && splitValueReads === 0; n++) await new Promise(resolve => setTimeout(resolve, 100));
+        assert.ok(splitValueReads > 0, 'preflight must exercise authoritative split activity reads');
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         await page.waitForFunction(() => !document.documentElement.matches('.jump-under,.refresh-hold,.tool-move,.tab-move'));
         await page.evaluate(() => document.fonts.ready);
         const rowCount = await page.locator('.assoc-card').count();
@@ -138,7 +158,7 @@ export async function runDesktopBaseline() {
         }
         assert.deepEqual(errors, []);
         output.runs.at(-1).splitValueReads = splitValueReads;
-        if (fixture === '60-sales') assert.ok(splitValueReads > 0, 'stress fixture must reach the authoritative split activity reads');
+        assert.ok(splitValueReads > 0, 'every fixture must reach the authoritative split activity reads');
         output.runs.at(-1).complete = true;
         await page.screenshot({ path: `desktop-baseline-evidence/${width}-${fixture}.png` });
       } catch (error) {

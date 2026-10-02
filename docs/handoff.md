@@ -628,6 +628,11 @@ the embedded activity. The stress response now copies both storage shapes,
 using the split day's figures, with an overlay-order test and a required
 split-value-read count in every dense case. Earlier row-count-only passes
 were not sufficient evidence of populated daily rows.
+The split-read guard then correctly stopped the run: initial boot caches a
+`loadStrict` document and screen switches need not visit `loadStore`. Preflight
+now exercises the existing focus refresh after a fictional timestamp-only
+update, before any clocks start. It also narrows the exact activity stamp LIKE
+query locally because the shared mock ignores LIKE. The guard stays in place.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
