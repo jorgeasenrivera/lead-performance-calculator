@@ -5,6 +5,16 @@ import { summarizeSample } from './desktop-baseline-metrics.mjs';
 import { startIsolatedMock } from './desktop-baseline-mock.mjs';
 
 export const SIGNAL_SOURCE = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
+export async function closeDesktopContext(context, mock) {
+  try {
+    // Block new requests while the in-flight local response handlers drain.
+    // Disposing the context first invalidates their APIResponse in WebKit.
+    for (const page of context.pages()) {
+      await page.route('**/*', route => route.abort().catch(error => { if (!page.isClosed()) throw error; }));
+    }
+    await context.unrouteAll({ behavior: 'wait' });
+  } finally { try { await context.close(); } finally { await mock.stop(); } }
+}
 const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
 export function mockKeyRows(rows, filter) {
   if (!filter?.startsWith('like.')) return rows;
@@ -183,7 +193,7 @@ export async function runDesktopBaseline() {
         };
         if (page && !page.isClosed()) await page.screenshot({ path: 'desktop-baseline-evidence/failure.png' }).catch(() => {});
         throw error;
-      } finally { try { await context.close(); } finally { await mock.stop(); } }
+      } finally { await closeDesktopContext(context, mock); }
     }
     console.log(JSON.stringify(output.runs.map(r => ({ width: r.width, fixture: r.fixture, seedCount: r.seedCount,
       rowCount: r.rowCount, fixtureReads: r.fixtureReads, splitValueReads: r.splitValueReads,

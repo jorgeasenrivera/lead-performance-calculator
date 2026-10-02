@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installDesktopProbe, summarizeSample } from '../scripts/desktop-baseline-metrics.mjs';
-import { denseFixture, denseDay, mockKeyRows } from '../scripts/desktop-baseline.mjs';
+import { denseFixture, denseDay, mockKeyRows, closeDesktopContext } from '../scripts/desktop-baseline.mjs';
 import { isolatedMockSource } from '../scripts/desktop-baseline-mock.mjs';
 import fs from 'node:fs';
 
@@ -143,4 +143,25 @@ test('automatic backup pruning cannot see or clear mock activity keys', () => {
   assert.deepEqual(rows[0].value, { calls: 22 });
   assert.equal(rows[1].value, null); assert.equal(rows[2].value, null);
   assert.throws(() => mockKeyRows(rows, 'like.%act%'), /unsupported/);
+});
+
+test('context shutdown blocks new traffic and drains responses before disposal', async () => {
+  const events = [];
+  const page = { route: async (pattern, handler) => {
+    assert.equal(pattern, '**/*'); events.push('block-new');
+    await handler({ abort: async () => events.push('abort-new') });
+  }, isClosed: () => false };
+  const context = { pages: () => [page], unrouteAll: async options => {
+    assert.deepEqual(options, { behavior: 'wait' }); events.push('drain');
+  }, close: async () => events.push('close') };
+  await closeDesktopContext(context, { stop: async () => events.push('stop') });
+  assert.deepEqual(events, ['block-new', 'abort-new', 'drain', 'close', 'stop']);
+});
+
+test('failed response draining still closes the context and its private mock', async () => {
+  const events = [];
+  const context = { pages: () => [], unrouteAll: async () => { throw new Error('drain failed'); },
+    close: async () => events.push('close') };
+  await assert.rejects(closeDesktopContext(context, { stop: async () => events.push('stop') }), /drain failed/);
+  assert.deepEqual(events, ['close', 'stop']);
 });

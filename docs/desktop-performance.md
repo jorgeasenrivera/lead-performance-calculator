@@ -139,6 +139,16 @@ unsupported wildcard shapes fail explicitly. A prune simulation guards day
 preservation. Split-read counters advance only after response fulfilment.
 Neither the save-wait hypothesis nor these failures demonstrate an app defect.
 
+Run `37031453471` completed Chromium. WebKit progressed past refresh but failed
+between cases: a still-running local route tried to fulfil a response after
+its context disposed that response. Teardown now blocks new page traffic,
+waits for existing route handlers, then closes the context and mock. Order and
+failure cleanup are unit guarded. The full current matrix is still required.
+Separate unchanged phone feel run `37031453274` reported zero bars exceeded but
+two WebKit page errors on local floor/queue stamp requests. No feel limit or
+existing check is altered to hide that failure; it is not a diagnosed live
+regression or evidence that this benchmark changed app behavior.
+
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's

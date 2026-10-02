@@ -611,34 +611,20 @@ author's prefix. Nothing but the id changed.
 
 **H-X44 · Desktop baseline is isolated from X11 and the calendar.**
 
-Jorge selected desktop first and authorized continuation on 2 October.
-X21 owns only new probe/tests/workflow/docs. It pins the actual reviewed Signal
-production source, normal motion, two desktop sizes and demo/60-sales fixtures.
-No Manager/core writer, shipped instrumentation, data path, calendar activation
-or visual decision changes. Measurements are pending, not claimed improved.
-Review `docs/desktop-performance.md` for metric meaning and limits, particularly
-in-page event clock starts and unsupported/browser-background handling.
-Draft #465 also fixes two measurement boundaries found in review: every
-context has a fresh fictional mock because room history can save in the
-background, and failure evidence is collected before the page closes. Earlier
-matrices are exploratory. Please review these boundaries on the current head
-before using the next completed matrix to select an app change.
-Dot correctly found a remaining overlay problem: split daily records replace
-the embedded activity. The stress response now copies both storage shapes,
-using the split day's figures, with an overlay-order test and a required
-split-value-read count in every dense case. Earlier row-count-only passes
-were not sufficient evidence of populated daily rows.
-The split-read guard then correctly stopped the run: initial boot caches a
-`loadStrict` document and screen switches need not visit `loadStore`. Preflight
-now exercises the existing focus refresh after a fictional timestamp-only
-update, before any clocks start. It also narrows the exact activity stamp LIKE
-query locally because the shared mock ignores LIKE. The guard stays in place.
-The retained trace then disproved a missing-focus explanation: refresh did
-request stamps and values. Automatic backup pruning had already nulled the
-activity because both backup LIKE queries also returned all mock keys. The
-adapter now filters every supported key-prefix LIKE query, guards against
-unsupported shapes and counts split reads after fulfilment. A prune simulation
-protects activity keys. Current matrix, not those failed runs, must be reviewed.
+Jorge selected desktop first on 2 October. X21's draft #465 pins the actual
+Signal production source, normal motion, two desktop sizes and demo/60-sales
+fixtures. No app files, approved pixels/motion or calendar activation change.
+Review `docs/desktop-performance.md` for metric limits and evidence history.
+Current boundaries needing review: private per-context mocks, embedded/split
+day mapping, post-refresh preflight, faithful key-prefix LIKE filtering,
+completed response counts and route-draining teardown. Twenty unit guards
+cover these; local tests/build pass. The backup-prune replay loses all45 day
+values with ignored filters and preserves all45 with corrected filters.
+Chromium run37031453471 completed; WebKit failed during context teardown.
+The current full matrix and its artifacts must pass review before this is an
+accepted baseline. An unchanged phone feel run also reported local WebKit
+fetch errors with zero bars exceeded; no existing check is loosened. No app
+performance improvement, physical-device approval or release is claimed.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
