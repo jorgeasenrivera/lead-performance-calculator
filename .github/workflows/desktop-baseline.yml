@@ -1,0 +1,61 @@
+name: desktop-baseline
+on:
+  push:
+    branches: [codex/desktop-baseline]
+  pull_request:
+    paths:
+      - scripts/desktop-baseline*.mjs
+      - test/desktop-baseline.test.mjs
+      - .github/workflows/desktop-baseline.yml
+permissions:
+  contents: read
+jobs:
+  measure:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the immutable actual Signal source
+        uses: actions/checkout@v4
+        with:
+          ref: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
+          path: .desktop-signal
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - run: node --test test/desktop-baseline.test.mjs
+      - name: Build the pinned app against fictional local data
+        working-directory: .desktop-signal
+        run: node ../node_modules/vite/bin/vite.js build
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:5433
+          VITE_SUPABASE_ANON_KEY: mock-anon-key
+      - name: Measure desktop interactions, not the automation channel
+        shell: bash
+        env:
+          FEEL_BROWSER: ${{ matrix.browser }}
+          DESKTOP_SOURCE_SHA: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
+        run: |
+          test "$(git -C .desktop-signal rev-parse HEAD)" = "$DESKTOP_SOURCE_SHA"
+          node scripts/desktop-baseline-server.mjs .desktop-signal/dist 49218 > desktop-server.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:49218/ > /dev/null && break; sleep 0.2; done
+          node scripts/desktop-baseline.mjs
+      - name: Keep baseline evidence even when the probe fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-baseline-${{ matrix.browser }}
+          path: |
+            desktop-baseline-evidence/
+            desktop-server.log
+          if-no-files-found: error

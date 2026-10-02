@@ -1,0 +1,189 @@
+# Desktop performance baseline
+
+X21 measures the actual polished Manager production source at
+`7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5`, not the old comparison study.
+No application source, pixels, controls, timings, data math or dependencies
+change. Nothing is wired into production or collected from real managers.
+
+## What the probe records
+
+At 1440 x 900 and 1920 x 1080, normal motion, three consecutive cycles:
+Daily Activity, Live Floor, Phone Line, Performance, Summary, Dashboard,
+associate card open/close, schedule/calendar hover and a scripted long-list scroll.
+Each width uses both the normal local demo and a response-only fixture with
+60 fictional sales associates. Reported store totals stay unchanged; the
+larger roster is a stress fixture, not a truthful store report.
+
+The clock starts inside the page's capture-phase click or pointer event,
+not before Playwright finishes finding, scrolling to and clicking a control.
+Scrolling starts its own clock in the same page callback. No external sampler
+polls the loaded page for frames. Each sample lasts at least 2200 ms, extending
+until the destination lifecycle settles. A watchdog bounds missing completion
+at 10.2 seconds and fails the flow, not a performance score.
+
+- `contentMs`: first rAF observation of the destination marker having a box.
+- `settledMs`: two frames with that marker present, the existing navigation
+  classes cleared and the associate card not opening/closing. This is a
+  conservative DOM lifecycle milestone, not proof of physical presentation.
+- Frame median, p95, maximum and gaps over 34 ms: rAF scheduling intervals,
+  not literal FPS or GPU dropped frames.
+- Long tasks: clipped to the measurement window, unsupported means null.
+- Long animation frames, when supported: duration, blocking time and script
+  layout time, with bundle filename only. No URLs, tokens or names.
+
+The browser APIs have different coverage. Long tasks alone do not account for
+all rendering work. See the [W3C long animation frame specification](https://www.w3.org/TR/long-animation-frames/).
+The harness reads the destination box only until the lifecycle settles, then
+records timestamps without further box/style reads. Those initial checks can
+still add measurement cost. Use the same harness for before/after comparisons; do not treat these
+numbers as field telemetry or a guarantee on Jorge's work computer.
+
+Samples from a hidden tab, interrupted interaction, watchdog or incomplete
+transition are unusable. No invented performance pass thresholds, no retries,
+no lowered existing feel bars. Cold first-navigation and warm cycles remain
+separate in the raw results. Browser context, viewport and fixture are recorded.
+The scripted scroll is repeatable, but not a wheel/trackpad latency test.
+
+## Running it
+
+CI checks out the exact Signal commit in a second directory, builds it against
+the in-memory mock and runs Chromium and WebKit. Service workers are blocked
+for fixture isolation; cache/update behavior is not measured. All browser HTTP
+requests are limited to the local app and mock origins. No live credentials.
+
+The workflow keeps `results.json`, screenshots and server logs on success or
+failure. Unit tests guard percentiles, overlapping task windows, unsupported
+APIs, event-clock start, readiness, interruption, background tabs, cleanup and
+fictional roster mapping.
+
+For a local manual check, build the pinned source against a separate local mock
+on 5434 if 5433 is already occupied, then serve that directory with:
+
+```text
+node scripts/desktop-baseline-server.mjs <mock-build-directory> 49218 --clicks
+```
+
+The server refuses a production-connected build. The in-page samples are in
+`window.__desktopProbe.samples`. Manual clicks capture a 2200 ms window.
+This is diagnostic, never a shipped app script.
+
+## Evidence and next decision
+
+The bounded synthetic baseline at harness commit
+`abcc33dc7e9ad97f93f0517b6d0d41104b9fe111` is accepted by
+[independent source and terminal-artifact review](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/465#issuecomment-5956162821).
+[PR run 37033106008](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37033106008)
+completed both engines: four cases and 120 usable samples per engine, 240 total,
+fresh seed count 10, expected rendered row counts 10/62, 45 completed split-value
+reads per case, no page errors, hidden flags or dropped probe entries.
+Artifacts: [Chromium](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37033106008/artifacts/11238662633)
+and [WebKit](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37033106008/artifacts/11238807793).
+Regular CI `37033106962` passed 887 tests, build, both feel engines and screenshots.
+The same-head push matrix also passed; it is a separate run, not extra samples
+in the PR's 240-sample set.
+
+Performance board lifecycle medians over three cycles, milliseconds:
+
+| Viewport | Roster | Chromium | WebKit |
+|---|---|---:|---:|
+| 1440 x 900 | Demo | 1244 | 1588 |
+| 1440 x 900 | 60 sales | 1302 | 2668 |
+| 1920 x 1080 | Demo | 1240 | 1817 |
+| 1920 x 1080 | 60 sales | 1312 | 2705 |
+
+These lifecycle times include existing motion. They select board rendering,
+especially with larger rosters, as the first profiling target, followed by
+associate opening and scroll. They do not isolate an application cause or
+justify shortening approved animations. WebKit does not expose long-task or
+long-animation-frame entries here; those metrics remain null. The preflight
+proves completed split responses, not directly that refreshed values committed
+to the rendered DOM. A rendered fictional-value assertion remains optional
+evidence hardening, not a demonstrated failure.
+
+No app performance improvement, physical-device certification, merge or
+deployment is claimed. Local Playwright is not installed on Jorge's work
+computer; no download is attempted. The connected browser supplied local spot
+checks, and CI supplied the repeatable browser matrix. The history below retains
+the failures and exploratory samples that led to the accepted harness.
+
+Local foreground spot samples at 1440 x 900 on 2 October: Daily Activity
+content marker at 578 ms, lifecycle at 1279 ms, largest rAF gap 100 ms,
+three long tasks; first Floor visit content at 1952 ms, lifecycle at 1992 ms,
+largest gap 250 ms, five long tasks. No hidden-tab flag. These are single
+normal-roster observations, not the repeatable matrix or a claimed improvement.
+The prior local origin served an older cached diagnostic HTML page; a fresh
+origin supplied the current probe. CI blocks service workers to avoid that.
+
+The first matrix run `37022828796` stopped in WebKit after it had reached the
+60-sales fixture: an unnecessary hover on the first associate, used only to
+leave the schedule, fought auto-scroll and sticky/overlapping elements. It is
+not a performance pass or a diagnosed application defect. Cleanup now moves
+the pointer off the schedule without auto-scrolling a row. Partial cycles are
+retained immediately rather than discarded until the whole fixture finishes.
+The stress fixture also now adds to, rather than replaces, the original sales
+roster so the seeded room identities and non-sales metrics remain intact.
+
+The first Chromium matrix completed, but its long-frame attribution exposed
+another measurement limitation: repeated destination box reads can charge
+pending layout to the probe itself, especially during hover and scripted
+scrolling. Readiness checks now stop after the marker settles, covered by a
+unit test. The early samples above and first matrix are exploratory only,
+not the accepted baseline or evidence for an application fix. The corrected
+matrix must complete and be reviewed before selecting a cause.
+
+Review also exposed a fixture boundary problem: the actual room code can mirror
+history into the store in the background. A response-only stress roster could
+therefore be written into a shared mock and survive into another case. Each
+context now starts and stops its own fictional mock, with a fresh normal roster
+asserted before loading the page. No existing local service is stopped. Failure
+screenshots and raw samples, including an unfinished recording, are saved before
+the failed browser context closes. Earlier runs do not establish fixture
+independence and remain exploratory.
+
+Dot's remaining finding was valid: `loadStore` overlays authoritative split
+activity rows onto the embedded daily copy, erasing the cloned daily figures.
+The response fixture now duplicates both shapes by the same original-person
+mapping, using each split day's newer figures rather than the embedded day.
+A unit test pins that exact overlay order, and the browser matrix requires
+split value reads in every stress case. Runs before this fix are exploratory
+even when their row-count checks passed.
+
+Run `37028525203` exposed an incorrect precondition in that new guard. Initial
+boot reads and caches the store with `loadStrict`; screen switches do not
+necessarily call `loadStore` or read split days. Before timed cycles, the harness
+now changes only the fictional store's timestamp and dispatches the existing
+focus refresh event, then requires the split value read to complete. This
+untimed preflight does not mutate React state or the app cache. The adapter also
+honors the exact activity-prefix LIKE query, which the shared mock ignores.
+Both normal and dense cases exercise the same refresh path. These samples do
+not represent a manager who has never received a background refresh.
+Preflight waits for the app's saving indicator to disappear because the focus
+refresh intentionally stands down during saves. Failed preflights retain a
+bounded trace of local data-read shapes, with no headers or credentials, so a
+missed guard is diagnosed rather than retried blindly.
+
+The retained request trace from `37030743013` established the real mock cause:
+the refresh did request stamps and split values, but the admin's earlier
+automatic backup prune had received all keys because LIKE was ignored. It
+therefore nulled unrelated activity values. The adapter now narrows all key
+prefix LIKE queries used by this fixture, including both backup prefixes;
+unsupported wildcard shapes fail explicitly. A prune simulation guards day
+preservation. Split-read counters advance only after response fulfilment.
+Neither the save-wait hypothesis nor these failures demonstrate an app defect.
+
+Run `37031453471` completed Chromium. WebKit progressed past refresh but failed
+between cases: a still-running local route tried to fulfil a response after
+its context disposed that response. Teardown now blocks new page traffic,
+waits for existing route handlers, then closes the context and mock. Order and
+failure cleanup are unit guarded. The corrected matrix passed as recorded above.
+Separate unchanged phone feel run `37031453274` reported zero bars exceeded but
+two WebKit page errors on local floor/queue stamp requests. No feel limit or
+existing check is altered to hide that failure; it is not a diagnosed live
+regression or evidence that this benchmark changed app behavior.
+
+With the baseline verified, profile the measured board-rendering target before
+choosing a fix. Any fix in
+Manager stays on its sole owned branch. Pixel-identical internal work can be
+reviewed directly; changed motion or presentation still needs the project's
+published proposal. Calendar activation and phone visual release gates stay
+separate.

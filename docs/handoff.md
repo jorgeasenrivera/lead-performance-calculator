@@ -609,6 +609,23 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X44 · Desktop baseline accepted; next target is board rendering, not changed motion.**
+
+Jorge selected desktop first on 2 October. X21's draft #465 pins the actual
+Signal production source, normal motion, two desktop sizes and demo/60-sales
+fixtures. No app files, approved pixels/motion or calendar activation change.
+Review `docs/desktop-performance.md` for metric limits and evidence history.
+Dot's independent source/artifact review accepts `abcc33d` within its declared
+synthetic scope: [verdict](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/465#issuecomment-5956162821).
+PR run `37033106008` has 240 usable samples, eight complete cases and no page
+errors. Regular CI `37033106962` passes all checks. Twenty targeted guards
+cover isolation, mapping, read counting and teardown. Earlier failures remain
+recorded. Completed reads plus two frames do not prove refreshed DOM commitment.
+Next profiling target: Performance board rendering with larger rosters, then
+associate opening and scroll. This is a measured target, not a diagnosed cause.
+Any app fix stays on X11's sole owned branch; pixels or motion changes need a
+proposal. No improvement, physical-device approval, merge or release is claimed.
+
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
 Read against X15 `f3af0e0`, X19 `5010753` and X20 `e84e15f` on 2 October.
