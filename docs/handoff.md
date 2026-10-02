@@ -611,6 +611,16 @@ author's prefix. Nothing but the id changed.
 
 **H-X45 · Desktop profiling is diagnostic, not a second app writer.**
 
+Jorge's stalled trace-end regression failed unchanged at `555e576`: my deadline
+did not bound a stalled request acknowledgement. The request and terminal
+buffer now race one shared five-second deadline together. The supplied test
+passes unchanged, and repository guards also cover missing-terminal delivery,
+early terminal with stalled acknowledgement, delayed success, immediate request
+rejection and late rejection after timeout. No increased deadline or retry.
+Invalid evidence is saved, listeners/timer removed and session detached.
+Final timeout-fix CI and independent cleanup review are pending. The measured
+profiling evidence below is unchanged; this is not an app speed improvement.
+
 Jorge authorized the next step after Dot accepted X21. X22 pins the accepted
 driver at `abcc33d` and actual Signal at `7fdf5ae`, then adds five in-memory
 driver hooks for Chromium CPU/timeline evidence. App source stays untouched.

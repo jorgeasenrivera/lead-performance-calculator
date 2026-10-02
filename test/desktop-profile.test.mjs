@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { readFile, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -118,11 +119,12 @@ test('hidden-map builds must have identical JS, CSS and HTML before profiling', 
 });
 
 class CDP extends EventEmitter {
-  calls = []; held = false; lose = false; failCpu = false; profile = cpu();
+  calls = []; held = false; lose = false; failCpu = false; profile = cpu(); endCommand = null;
   async send(method) {
     this.calls.push(method);
     if (method === 'Performance.getMetrics') return { metrics: [{ name: 'LayoutCount', value: this.calls.length }] };
     if (method === 'Profiler.stop') { if (this.failCpu) throw new Error('CPU failed'); return { profile: this.profile }; }
+    if (method === 'Tracing.end' && this.endCommand) return this.endCommand();
     if (method === 'Tracing.end' && !this.held) queueMicrotask(() => this.emit('Tracing.tracingComplete', { dataLossOccurred: this.lose }));
     return {};
   }
@@ -144,6 +146,55 @@ test('trace terminal delivery is awaited before recording or detaching', async t
   cdp.emit('Tracing.tracingComplete', {}); await pending;
   assert.equal(saved[0].trace.length, 2); assert.equal(saved[0].status, 'complete');
   await recorder.dispose(); assert.equal(cdp.calls.at(-1), 'detach'); assert.equal(cdp.listenerCount('Tracing.dataCollected'), 0);
+});
+test('an acknowledged end request without terminal delivery times out and preserves invalid evidence', async t => {
+  const { cdp, saved, recorder } = await session(t); cdp.held = true;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await recorder.begin('Performance');
+  const pending = assert.rejects(recorder.finish({}, { usable: true }), /trace completion deadline/);
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(4999); await new Promise(resolve => setImmediate(resolve)); assert.equal(saved.length, 0);
+  t.mock.timers.tick(1); await pending;
+  assert.equal(saved[0].status, 'invalid'); assert.equal(saved[0].traceDataLoss, null);
+  assert.equal(cdp.listenerCount('Tracing.tracingComplete'), 0); await recorder.dispose();
+  assert.equal(cdp.calls.at(-1), 'detach'); assert.equal(cdp.listenerCount('Tracing.dataCollected'), 0);
+});
+test('terminal delivery cannot hide a stalled end acknowledgement and its late rejection is handled', async t => {
+  const { cdp, saved, recorder } = await session(t); let rejectEnd;
+  cdp.endCommand = () => new Promise((_, reject) => { rejectEnd = reject; });
+  t.mock.timers.enable({ apis: ['setTimeout'] }); await recorder.begin('Performance');
+  const pending = assert.rejects(recorder.finish({}, { usable: true }), /trace completion deadline/);
+  await new Promise(resolve => setImmediate(resolve));
+  cdp.emit('Tracing.dataCollected', { value: [main, event()] }); cdp.emit('Tracing.tracingComplete', {});
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(saved.length, 0);
+  t.mock.timers.tick(5000); await pending;
+  assert.equal(saved[0].status, 'invalid'); assert.equal(saved[0].trace.length, 2);
+  await recorder.dispose(); rejectEnd(new Error('late end failure'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(saved.length, 1); assert.equal(cdp.listenerCount('Tracing.tracingComplete'), 0);
+  assert.equal(cdp.listenerCount('Tracing.dataCollected'), 0);
+});
+test('terminal delivery before a delayed acknowledgement succeeds only once both complete', async t => {
+  const { cdp, saved, recorder } = await session(t); let resolveEnd;
+  cdp.endCommand = () => new Promise(resolve => { resolveEnd = resolve; });
+  t.mock.timers.enable({ apis: ['setTimeout'] }); await recorder.begin('Performance');
+  const pending = recorder.finish({}, { usable: true }); await new Promise(resolve => setImmediate(resolve));
+  cdp.emit('Tracing.dataCollected', { value: [main, event()] }); cdp.emit('Tracing.tracingComplete', {});
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(saved.length, 0);
+  t.mock.timers.tick(4999); resolveEnd({}); await pending;
+  assert.equal(saved[0].status, 'complete'); t.mock.timers.tick(5000);
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(saved.length, 1);
+  await recorder.dispose(); assert.equal(cdp.listenerCount('Tracing.tracingComplete'), 0);
+});
+test('a rejected end request clears its timer and listener, then saves invalid evidence', async t => {
+  const { cdp, saved, recorder } = await session(t);
+  cdp.endCommand = () => { throw new Error('end request refused'); };
+  t.mock.timers.enable({ apis: ['setTimeout'] }); await recorder.begin('Performance');
+  await assert.rejects(recorder.finish({}, { usable: true }), /end request refused/);
+  assert.equal(saved[0].status, 'invalid'); t.mock.timers.tick(5000);
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(saved.length, 1);
+  await recorder.dispose(); assert.equal(cdp.listenerCount('Tracing.tracingComplete'), 0);
+  assert.equal(cdp.listenerCount('Tracing.dataCollected'), 0);
 });
 test('unselected interactions attach no active CPU/trace and do not create evidence', async t => {
   const { cdp, saved, recorder } = await session(t);
@@ -212,4 +263,46 @@ test('workflow pins source and harness without installing or exposing production
   assert.ok(flow.includes(BASELINE_COMMIT)); assert.match(flow, /7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5/);
   assert.match(flow, /--sourcemap hidden/); assert.match(flow, /if: always\(\)/);
   assert.ok(!flow.includes('continue-on-error') && !flow.includes('retry'));
+});
+test('a stalled Tracing.end preserves invalid evidence and permits disposal', () => {
+  const moduleUrl = new URL('../scripts/desktop-profile-session.mjs', import.meta.url).href;
+  const source = `
+    import assert from 'node:assert/strict';
+    import { EventEmitter } from 'node:events';
+    import { mkdtemp, rm } from 'node:fs/promises';
+    import os from 'node:os';
+    import path from 'node:path';
+    import { createProfileSession } from ${JSON.stringify(moduleUrl)};
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'stalled-trace-end-'));
+    const cdp = new EventEmitter();
+    let saved, detached = false;
+    cdp.send = async method => {
+      if (method === 'Performance.getMetrics') return { metrics: [] };
+      if (method === 'Profiler.stop') return { profile: {
+        startTime: 0, endTime: 1000, nodes: [{ id: 1 }], samples: [1], timeDeltas: [0]
+      } };
+      if (method === 'Tracing.end') return new Promise(() => {});
+      return {};
+    };
+    cdp.detach = async () => { detached = true; };
+    const recorder = await createProfileSession(cdp, { width: 1440, fixture: 'demo', directory },
+      async (_file, json) => { saved = JSON.parse(json); });
+    try {
+      await recorder.begin('Performance');
+      await assert.rejects(recorder.finish({}, { usable: true }), /trace completion deadline/);
+    } finally {
+      await recorder.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+    assert.equal(saved?.status, 'invalid');
+    assert.match(saved.failure, /trace completion deadline/);
+    assert.equal(detached, true);
+    assert.equal(cdp.listenerCount('Tracing.tracingComplete'), 0);
+    assert.equal(cdp.listenerCount('Tracing.dataCollected'), 0);
+    console.log('PASS: invalid evidence saved, listeners removed, session detached');
+  `;
+  const child = spawnSync(process.execPath, ['--unhandled-rejections=strict', '--input-type=module', '-e', source],
+    { encoding: 'utf8', timeout: 8000 });
+  assert.equal(child.status, 0, child.stderr || child.error?.message || 'child did not finish');
+  assert.match(child.stdout, /PASS: invalid evidence saved/);
 });

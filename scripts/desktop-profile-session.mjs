@@ -21,14 +21,22 @@ export async function createProfileSession(cdp, { width, fixture, directory = 'd
   cdp.on('Tracing.dataCollected', receive);
   async function stopTrace() {
     if (!active.tracing) return {};
-    // Wait for the final buffer, not just acknowledgement of Tracing.end.
+    // Both the end request and final buffer must finish within one deadline.
+    // Waiting for the request first leaves the deadline rejection unhandled
+    // when the browser never acknowledges it.
     let timer, listener;
-    const complete = new Promise((resolve, reject) => {
+    const complete = new Promise(resolve => {
       listener = result => resolve(result);
       cdp.once('Tracing.tracingComplete', listener);
+    });
+    const deadline = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error('trace completion deadline')), 5000);
     });
-    try { await cdp.send('Tracing.end'); return await complete; }
+    try {
+      const end = Promise.resolve().then(() => cdp.send('Tracing.end'));
+      const [, result] = await Promise.race([Promise.all([end, complete]), deadline]);
+      return result;
+    }
     finally { clearTimeout(timer); cdp.off('Tracing.tracingComplete', listener); active.tracing = false; }
   }
   async function mapFrames(cpu) {

@@ -60,6 +60,23 @@ or aborted diagnostics remain in the artifact alongside the driver's partial
 samples, failures and screenshots. The final report requires all 36 valid
 profiles and all four original driver cases before drawing a target conclusion.
 
+Jorge supplied a stalled `Tracing.end` regression after the completed profiles.
+It failed unchanged at `555e576`: the deadline rejected while shutdown still
+awaited the request acknowledgement, terminating the strict subprocess before
+invalid evidence or cleanup. My shutdown bound covered terminal delivery but
+not a stalled request. Shutdown now awaits acknowledgement and terminal delivery
+together, racing both against the same unchanged five-second deadline. Promise
+handlers are installed before awaiting either. A timeout still fails the
+recording, saves invalid evidence, clears the terminal listener/timer, and
+permits disposal to remove the data listener and detach the session. No retry,
+timeout increase, dropped sample or acceptance bar change.
+
+The original downloaded regression passes unchanged. Its strict subprocess is
+also in the existing profiling test file, alongside missing-terminal, delayed
+acknowledgement, request rejection and post-timeout rejection guards. Successful
+shutdown still requires both acknowledgement and the final buffer. This fixes
+diagnostic cleanup only, not any live app behavior or performance result.
+
 Protocol references: [CPU profile](https://chromedevtools.github.io/devtools-protocol/tot/Profiler/),
 [tracing](https://chromedevtools.github.io/devtools-protocol/tot/Tracing/),
 [performance counters](https://chromedevtools.github.io/devtools-protocol/tot/Performance/).
