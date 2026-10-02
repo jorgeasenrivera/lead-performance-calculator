@@ -633,6 +633,12 @@ The split-read guard then correctly stopped the run: initial boot caches a
 now exercises the existing focus refresh after a fictional timestamp-only
 update, before any clocks start. It also narrows the exact activity stamp LIKE
 query locally because the shared mock ignores LIKE. The guard stays in place.
+The retained trace then disproved a missing-focus explanation: refresh did
+request stamps and values. Automatic backup pruning had already nulled the
+activity because both backup LIKE queries also returned all mock keys. The
+adapter now filters every supported key-prefix LIKE query, guards against
+unsupported shapes and counts split reads after fulfilment. A prune simulation
+protects activity keys. Current matrix, not those failed runs, must be reviewed.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 

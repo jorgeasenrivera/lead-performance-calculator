@@ -6,11 +6,13 @@ import { startIsolatedMock } from './desktop-baseline-mock.mjs';
 
 export const SIGNAL_SOURCE = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
 const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
-export function splitStampRows(rows, filter) {
-  // The shared mock ignores LIKE. Narrow only the exact prefix this app reads,
-  // so unrelated store/board/config rows cannot masquerade as activity days.
-  return filter === 'like.lpc:store:sage-demo:act:%'
-    ? rows.filter(r => r.key?.startsWith('lpc:store:sage-demo:act:')) : rows;
+export function mockKeyRows(rows, filter) {
+  if (!filter?.startsWith('like.')) return rows;
+  // Every key LIKE used here is a literal prefix followed by one %. Ignoring
+  // backup filters lets the admin's automatic prune erase activity rows.
+  const pattern = filter.slice(5), prefix = pattern.slice(0, -1);
+  assert.ok(pattern.endsWith('%') && !/[%_]/.test(prefix), 'unsupported mock key LIKE shape');
+  return rows.filter(r => typeof r.key === 'string' && r.key.startsWith(prefix));
 }
 function stressPeople(roster, count) {
   const sales = roster.filter(p => p.roleId === 'sales');
@@ -82,19 +84,21 @@ export async function runDesktopBaseline() {
               await route.fulfill({ response }); return;
             }
             const rawRows = await response.json();
-            const rows = Array.isArray(rawRows) ? splitStampRows(rawRows, u.searchParams.get('key')) : rawRows;
+            const rows = Array.isArray(rawRows) ? mockKeyRows(rawRows, u.searchParams.get('key')) : rawRows;
+            let completedSplitRows = 0;
             const patch = r => {
               if (!r.value) return r;
               if (r.key === 'lpc:store:sage-demo:v2' && fixture === '60-sales') { fixtureReads++; return { ...r, value: denseFixture(r.value) }; }
               // Split days win over the embedded copy in loadStore. Both must
               // carry the same fictional identities, even when read separately.
               if (r.key?.startsWith('lpc:store:sage-demo:act:')) {
-                if (u.searchParams.get('select')?.split(',').includes('value')) splitValueReads++;
+                if (u.searchParams.get('select')?.split(',').includes('value')) completedSplitRows++;
                 return fixture === '60-sales' ? { ...r, value: denseDay(r.value, seedRows[0].value.roster) } : r;
               }
               return r;
             };
-            await route.fulfill({ response, json: Array.isArray(rows) ? rows.map(patch) : patch(rows) }); return;
+            await route.fulfill({ response, json: Array.isArray(rows) ? rows.map(patch) : patch(rows) });
+            splitValueReads += completedSplitRows; return;
           }
           await route.continue();
         });

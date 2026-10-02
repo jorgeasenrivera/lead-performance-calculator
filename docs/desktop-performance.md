@@ -130,6 +130,15 @@ refresh intentionally stands down during saves. Failed preflights retain a
 bounded trace of local data-read shapes, with no headers or credentials, so a
 missed guard is diagnosed rather than retried blindly.
 
+The retained request trace from `37030743013` established the real mock cause:
+the refresh did request stamps and split values, but the admin's earlier
+automatic backup prune had received all keys because LIKE was ignored. It
+therefore nulled unrelated activity values. The adapter now narrows all key
+prefix LIKE queries used by this fixture, including both backup prefixes;
+unsupported wildcard shapes fail explicitly. A prune simulation guards day
+preservation. Split-read counters advance only after response fulfilment.
+Neither the save-wait hypothesis nor these failures demonstrate an app defect.
+
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's

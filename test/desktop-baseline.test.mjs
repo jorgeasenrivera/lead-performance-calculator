@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installDesktopProbe, summarizeSample } from '../scripts/desktop-baseline-metrics.mjs';
-import { denseFixture, denseDay, splitStampRows } from '../scripts/desktop-baseline.mjs';
+import { denseFixture, denseDay, mockKeyRows } from '../scripts/desktop-baseline.mjs';
 import { isolatedMockSource } from '../scripts/desktop-baseline-mock.mjs';
 import fs from 'node:fs';
 
@@ -129,7 +129,18 @@ test('authoritative split activity keeps stress identities and the newer daily f
 test('activity stamp query excludes the shared mock\'s unrelated rows', () => {
   const rows = [{ key: 'lpc:store:sage-demo:v2' }, { key: 'lpc:store:sage-demo:act:2026-10-01' },
     { key: 'lpc:board:sage-demo:act:2026-10-01' }, { key: 'lpc:store:other:act:2026-10-01' }];
-  assert.deepEqual(splitStampRows(rows, 'like.lpc:store:sage-demo:act:%'), [rows[1]]);
-  assert.equal(splitStampRows(rows, 'eq.lpc:store:sage-demo:v2'), rows);
+  assert.deepEqual(mockKeyRows(rows, 'like.lpc:store:sage-demo:act:%'), [rows[1]]);
+  assert.equal(mockKeyRows(rows, 'eq.lpc:store:sage-demo:v2'), rows);
   assert.equal(rows.length, 4);
+});
+
+test('automatic backup pruning cannot see or clear mock activity keys', () => {
+  const rows = [{ key: 'lpc:store:sage-demo:act:2026-10-01', value: { calls: 22 } },
+    { key: 'lpc:backup:sage-demo:old:v2', value: {} }, { key: 'lpc:config:backup:sage-demo:old', value: {} }];
+  for (const filter of ['like.lpc:backup:%', 'like.lpc:config:backup:%']) {
+    for (const row of mockKeyRows(rows, filter)) row.value = null;
+  }
+  assert.deepEqual(rows[0].value, { calls: 22 });
+  assert.equal(rows[1].value, null); assert.equal(rows[2].value, null);
+  assert.throws(() => mockKeyRows(rows, 'like.%act%'), /unsupported/);
 });
