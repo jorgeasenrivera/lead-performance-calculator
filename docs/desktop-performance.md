@@ -125,6 +125,10 @@ untimed preflight does not mutate React state or the app cache. The adapter also
 honors the exact activity-prefix LIKE query, which the shared mock ignores.
 Both normal and dense cases exercise the same refresh path. These samples do
 not represent a manager who has never received a background refresh.
+Preflight waits for the app's saving indicator to disappear because the focus
+refresh intentionally stands down during saves. Failed preflights retain a
+bounded trace of local data-read shapes, with no headers or credentials, so a
+missed guard is diagnosed rather than retried blindly.
 
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be

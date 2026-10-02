@@ -61,7 +61,7 @@ export async function runDesktopBaseline() {
       const mock = await startIsolatedMock();
       const context = await browser.newContext({ viewport: { width, height: width === 1440 ? 900 : 1080 },
         reducedMotion: 'no-preference', serviceWorkers: 'block' }).catch(async error => { await mock.stop(); throw error; });
-      const errors = []; let fixtureReads = 0, splitValueReads = 0;
+      const errors = [], dataReads = []; let fixtureReads = 0, splitValueReads = 0;
       try {
         const seedRows = await (await fetch(mock.origin + '/rest/v1/app_data?key=eq.lpc:store:sage-demo:v2',
           { signal: AbortSignal.timeout(1000) })).json();
@@ -73,6 +73,10 @@ export async function runDesktopBaseline() {
           const u = new URL(route.request().url());
           if (![target.origin, 'http://127.0.0.1:5433'].includes(u.origin)) { await route.abort(); return; }
           if (u.origin === 'http://127.0.0.1:5433') {
+            if (u.pathname === '/rest/v1/app_data' && route.request().method() === 'GET') {
+              if (dataReads.length === 200) dataReads.shift();
+              dataReads.push({ stage, select: u.searchParams.get('select'), keyFilter: u.searchParams.get('key')?.slice(0, 160) });
+            }
             const response = await route.fetch({ url: mock.origin + u.pathname + u.search });
             if (u.pathname !== '/rest/v1/app_data' || route.request().method() !== 'GET') {
               await route.fulfill({ response }); return;
@@ -104,6 +108,9 @@ export async function runDesktopBaseline() {
         await page.getByRole('button', { name: 'Close the round-up', exact: true }).click();
         await page.getByRole('dialog', { name: 'Your round-up', exact: true }).waitFor({ state: 'hidden' });
         stage = `${width}/${fixture} untimed split-day refresh`;
+        // Focus refresh deliberately stands down during a save. Wait for the
+        // actual saving indicator, not an assumed timeout, before sending it.
+        await page.locator('.save-dot').waitFor({ state: 'hidden', timeout: 12000 });
         const update = await fetch(mock.origin + '/rest/v1/app_data?key=eq.lpc:store:sage-demo:v2', {
           method: 'PATCH', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ updated_at: new Date(Date.now() + 1000).toISOString() }),
@@ -165,7 +172,7 @@ export async function runDesktopBaseline() {
         // This must happen while the failed page still exists. The outer catch
         // runs after this context's finally, when screenshots are already lost.
         output.failureEvidence = {
-          stage, mockLog: mock.log(), errors,
+          stage, mockLog: mock.log(), errors, dataReads,
           probe: page && !page.isClosed() ? await page.evaluate(() => ({
             samples: window.__desktopProbe?.samples || [], active: window.__desktopProbe?.getActive(),
           })).catch(() => null) : null,
