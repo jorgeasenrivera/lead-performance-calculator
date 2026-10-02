@@ -609,6 +609,16 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X44 · Desktop baseline is isolated from X11 and the calendar.**
+
+Jorge selected desktop first and authorized continuation on 2 October.
+X21 owns only new probe/tests/workflow/docs. It pins the actual reviewed Signal
+production source, normal motion, two desktop sizes and demo/60-sales fixtures.
+No Manager/core writer, shipped instrumentation, data path, calendar activation
+or visual decision changes. Measurements are pending, not claimed improved.
+Review `docs/desktop-performance.md` for metric meaning and limits, particularly
+in-page event clock starts and unsupported/browser-background handling.
+
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
 Read against X15 `f3af0e0`, X19 `5010753` and X20 `e84e15f` on 2 October.
