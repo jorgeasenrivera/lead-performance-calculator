@@ -6,24 +6,36 @@ import { startIsolatedMock } from './desktop-baseline-mock.mjs';
 
 export const SIGNAL_SOURCE = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
 const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
-export function denseFixture(value, count = 60) {
-  const next = structuredClone(value), sales = next.roster.filter(p => p.roleId === 'sales');
+function stressPeople(roster, count) {
+  const sales = roster.filter(p => p.roleId === 'sales');
   assert.ok(sales.length, 'stress fixture requires sales associates');
   assert.ok(Number.isInteger(count) && count >= sales.length && count <= 500, 'bounded stress roster');
   const clones = Array.from({ length: count - sales.length }, (_, i) => {
     const name = `Fictional Associate ${String(i + sales.length + 1).padStart(2, '0')}`;
     return { ...sales[i % sales.length], id: `desktop-fiction-${i}`, name, label: name };
   });
+  return { sales, clones };
+}
+function copyPeopleMetrics(original, sales, clones) {
+  return { ...original, ...Object.fromEntries(clones.map((p, i) =>
+    [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})])) };
+}
+export function denseDay(value, roster, count = 60) {
+  const { sales, clones } = stressPeople(roster, count);
+  return copyPeopleMetrics(value, sales, clones);
+}
+export function denseFixture(value, count = 60) {
+  const next = structuredClone(value), { sales, clones } = stressPeople(next.roster, count);
   // Keep the original room identities and non-sales metrics. Extra board rows
   // stress rendering without turning the rooms' seeded people into strangers.
   next.roster.push(...clones);
   for (const month of Object.values(next.months || {})) {
     const original = month.stats || {};
-    month.stats = { ...original, ...Object.fromEntries(clones.map((p, i) => [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})])) };
+    month.stats = copyPeopleMetrics(original, sales, clones);
   }
   for (const day of Object.keys(next.activity || {})) {
     const original = next.activity[day];
-    next.activity[day] = { ...original, ...Object.fromEntries(clones.map((p, i) => [norm(p.name), structuredClone(original[norm(sales[i % sales.length].name)] || {})])) };
+    next.activity[day] = copyPeopleMetrics(original, sales, clones);
   }
   return next;
 }
@@ -43,7 +55,7 @@ export async function runDesktopBaseline() {
       const mock = await startIsolatedMock();
       const context = await browser.newContext({ viewport: { width, height: width === 1440 ? 900 : 1080 },
         reducedMotion: 'no-preference', serviceWorkers: 'block' }).catch(async error => { await mock.stop(); throw error; });
-      const errors = []; let fixtureReads = 0;
+      const errors = []; let fixtureReads = 0, splitValueReads = 0;
       try {
         const seedRows = await (await fetch(mock.origin + '/rest/v1/app_data?key=eq.lpc:store:sage-demo:v2',
           { signal: AbortSignal.timeout(1000) })).json();
@@ -61,7 +73,14 @@ export async function runDesktopBaseline() {
             }
             const rows = await response.json();
             const patch = r => {
+              if (!r.value) return r;
               if (r.key === 'lpc:store:sage-demo:v2') { fixtureReads++; return { ...r, value: denseFixture(r.value) }; }
+              // Split days win over the embedded copy in loadStore. Both must
+              // carry the same fictional identities, even when read separately.
+              if (r.key?.startsWith('lpc:store:sage-demo:act:')) {
+                if (u.searchParams.get('select')?.split(',').includes('value')) splitValueReads++;
+                return { ...r, value: denseDay(r.value, seedRows[0].value.roster) };
+              }
               return r;
             };
             await route.fulfill({ response, json: Array.isArray(rows) ? rows.map(patch) : patch(rows) }); return;
@@ -118,6 +137,8 @@ export async function runDesktopBaseline() {
           await page.evaluate(() => scrollTo(0, 0));
         }
         assert.deepEqual(errors, []);
+        output.runs.at(-1).splitValueReads = splitValueReads;
+        if (fixture === '60-sales') assert.ok(splitValueReads > 0, 'stress fixture must reach the authoritative split activity reads');
         output.runs.at(-1).complete = true;
         await page.screenshot({ path: `desktop-baseline-evidence/${width}-${fixture}.png` });
       } catch (error) {
@@ -133,7 +154,8 @@ export async function runDesktopBaseline() {
         throw error;
       } finally { try { await context.close(); } finally { await mock.stop(); } }
     }
-    console.log(JSON.stringify(output.runs.map(r => ({ width: r.width, fixture: r.fixture, rowCount: r.rowCount,
+    console.log(JSON.stringify(output.runs.map(r => ({ width: r.width, fixture: r.fixture, seedCount: r.seedCount,
+      rowCount: r.rowCount, fixtureReads: r.fixtureReads, splitValueReads: r.splitValueReads,
       samples: r.results.map(s => s.summary) })), null, 2));
   } catch (error) {
     output.failure = { stage, message: error.message };

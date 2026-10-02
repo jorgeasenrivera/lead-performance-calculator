@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installDesktopProbe, summarizeSample } from '../scripts/desktop-baseline-metrics.mjs';
-import { denseFixture } from '../scripts/desktop-baseline.mjs';
+import { denseFixture, denseDay } from '../scripts/desktop-baseline.mjs';
 import { isolatedMockSource } from '../scripts/desktop-baseline-mock.mjs';
 import fs from 'node:fs';
 
@@ -108,4 +108,20 @@ test('each context can launch an isolated seed without changing the shared mock 
   assert.ok(transformed.includes('.listen(5434,')); assert.ok(source.includes('.listen(5433,'));
   assert.ok(transformed.includes('"file:///fictional/demo-seed.mjs"'));
   assert.throws(() => isolatedMockSource('unexpected', 'file:///fixture.mjs'), /shape changed/);
+});
+
+test('authoritative split activity keeps stress identities and the newer daily figures', () => {
+  const roster = [{ id: 'a', name: 'Source Person', roleId: 'sales' }, { id: 'm', roleId: 'manager' }];
+  const embedded = denseFixture({ roster, activity: { '2026-10-01': { 'source person': { calls: 10 } } } });
+  const separate = { 'source person': { calls: 22, units: 3 }, 'original manager': { calls: 1 } };
+  const before = structuredClone(separate);
+  // This is loadStore's exact overlay order, which previously erased the clones.
+  const loaded = { ...embedded.activity, '2026-10-01': denseDay(separate, roster) };
+  assert.equal(Object.keys(loaded['2026-10-01']).length, 61);
+  assert.deepEqual(loaded['2026-10-01']['fictional associate 60'], { calls: 22, units: 3 });
+  assert.deepEqual(loaded['2026-10-01']['source person'], before['source person']);
+  assert.deepEqual(loaded['2026-10-01']['original manager'], before['original manager']);
+  loaded['2026-10-01']['fictional associate 60'].calls = 99;
+  assert.deepEqual(separate, before);
+  assert.equal(loaded['2026-10-01']['source person'].calls, 22);
 });

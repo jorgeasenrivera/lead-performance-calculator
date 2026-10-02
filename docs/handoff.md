@@ -623,6 +623,11 @@ context has a fresh fictional mock because room history can save in the
 background, and failure evidence is collected before the page closes. Earlier
 matrices are exploratory. Please review these boundaries on the current head
 before using the next completed matrix to select an app change.
+Dot correctly found a remaining overlay problem: split daily records replace
+the embedded activity. The stress response now copies both storage shapes,
+using the split day's figures, with an overlay-order test and a required
+split-value-read count in every dense case. Earlier row-count-only passes
+were not sufficient evidence of populated daily rows.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 

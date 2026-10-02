@@ -108,6 +108,14 @@ screenshots and raw samples, including an unfinished recording, are saved before
 the failed browser context closes. Earlier runs do not establish fixture
 independence and remain exploratory.
 
+Dot's remaining finding was valid: `loadStore` overlays authoritative split
+activity rows onto the embedded daily copy, erasing the cloned daily figures.
+The response fixture now duplicates both shapes by the same original-person
+mapping, using each split day's newer figures rather than the embedded day.
+A unit test pins that exact overlay order, and the browser matrix requires
+split value reads in every stress case. Runs before this fix are exploratory
+even when their row-count checks passed.
+
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's
