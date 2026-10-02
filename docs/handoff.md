@@ -609,6 +609,20 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X45 · Desktop profiling is diagnostic, not a second app writer.**
+
+Jorge authorized the next step after Dot accepted X21. X22 pins the accepted
+driver at `abcc33d` and actual Signal at `7fdf5ae`, then adds five in-memory
+driver hooks for Chromium CPU/timeline evidence. App source stays untouched.
+See `docs/desktop-profile.md` for units, overhead and boundaries. Local guards
+cover projections, source mapping, terminal trace drain, retained invalid
+records, caps and complete-case reporting. Plain/mapped Signal builds match
+byte-for-byte; actual driver hooks parse/import. CI evidence is still pending.
+Please examine trace shutdown/invalid-record lifetime, source-map positions and
+the distinction between profiling cost and unprofiled benchmark timing. No
+application cause or improvement is established yet. A later fix remains on
+X11's sole owned branch; changed pixels or motion need a proposal.
+
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
 Read against X15 `f3af0e0`, X19 `5010753` and X20 `e84e15f` on 2 October.
