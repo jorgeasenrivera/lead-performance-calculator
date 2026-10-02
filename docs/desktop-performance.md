@@ -69,10 +69,42 @@ This is diagnostic, never a shipped app script.
 
 ## Evidence and next decision
 
-Measurement results are pending. A probe being written or a source review is
-not a measured improvement. Local Playwright is not installed on Jorge's work
-computer; no download is attempted. The connected browser supplies local spot
-checks, and CI supplies the repeatable browser matrix.
+The bounded synthetic baseline at harness commit
+`abcc33dc7e9ad97f93f0517b6d0d41104b9fe111` is accepted by
+[independent source and terminal-artifact review](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/465#issuecomment-5956162821).
+[PR run 37033106008](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37033106008)
+completed both engines: four cases and 120 usable samples per engine, 240 total,
+fresh seed count 10, expected rendered row counts 10/62, 45 completed split-value
+reads per case, no page errors, hidden flags or dropped probe entries.
+Artifacts: [Chromium](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37033106008/artifacts/11238662633)
+and [WebKit](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/37033106008/artifacts/11238807793).
+Regular CI `37033106962` passed 887 tests, build, both feel engines and screenshots.
+The same-head push matrix also passed; it is a separate run, not extra samples
+in the PR's 240-sample set.
+
+Performance board lifecycle medians over three cycles, milliseconds:
+
+| Viewport | Roster | Chromium | WebKit |
+|---|---|---:|---:|
+| 1440 x 900 | Demo | 1244 | 1588 |
+| 1440 x 900 | 60 sales | 1302 | 2668 |
+| 1920 x 1080 | Demo | 1240 | 1817 |
+| 1920 x 1080 | 60 sales | 1312 | 2705 |
+
+These lifecycle times include existing motion. They select board rendering,
+especially with larger rosters, as the first profiling target, followed by
+associate opening and scroll. They do not isolate an application cause or
+justify shortening approved animations. WebKit does not expose long-task or
+long-animation-frame entries here; those metrics remain null. The preflight
+proves completed split responses, not directly that refreshed values committed
+to the rendered DOM. A rendered fictional-value assertion remains optional
+evidence hardening, not a demonstrated failure.
+
+No app performance improvement, physical-device certification, merge or
+deployment is claimed. Local Playwright is not installed on Jorge's work
+computer; no download is attempted. The connected browser supplied local spot
+checks, and CI supplied the repeatable browser matrix. The history below retains
+the failures and exploratory samples that led to the accepted harness.
 
 Local foreground spot samples at 1440 x 900 on 2 October: Daily Activity
 content marker at 578 ms, lifecycle at 1279 ms, largest rAF gap 100 ms,
@@ -143,13 +175,14 @@ Run `37031453471` completed Chromium. WebKit progressed past refresh but failed
 between cases: a still-running local route tried to fulfil a response after
 its context disposed that response. Teardown now blocks new page traffic,
 waits for existing route handlers, then closes the context and mock. Order and
-failure cleanup are unit guarded. The full current matrix is still required.
+failure cleanup are unit guarded. The corrected matrix passed as recorded above.
 Separate unchanged phone feel run `37031453274` reported zero bars exceeded but
 two WebKit page errors on local floor/queue stamp requests. No feel limit or
 existing check is altered to hide that failure; it is not a diagnosed live
 regression or evidence that this benchmark changed app behavior.
 
-After the baseline is verified, select the biggest measured cause. Any fix in
+With the baseline verified, profile the measured board-rendering target before
+choosing a fix. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's
 published proposal. Calendar activation and phone visual release gates stay

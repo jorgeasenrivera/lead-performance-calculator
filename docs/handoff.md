@@ -609,22 +609,22 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
-**H-X44 · Desktop baseline is isolated from X11 and the calendar.**
+**H-X44 · Desktop baseline accepted; next target is board rendering, not changed motion.**
 
 Jorge selected desktop first on 2 October. X21's draft #465 pins the actual
 Signal production source, normal motion, two desktop sizes and demo/60-sales
 fixtures. No app files, approved pixels/motion or calendar activation change.
 Review `docs/desktop-performance.md` for metric limits and evidence history.
-Current boundaries needing review: private per-context mocks, embedded/split
-day mapping, post-refresh preflight, faithful key-prefix LIKE filtering,
-completed response counts and route-draining teardown. Twenty unit guards
-cover these; local tests/build pass. The backup-prune replay loses all45 day
-values with ignored filters and preserves all45 with corrected filters.
-Chromium run37031453471 completed; WebKit failed during context teardown.
-The current full matrix and its artifacts must pass review before this is an
-accepted baseline. An unchanged phone feel run also reported local WebKit
-fetch errors with zero bars exceeded; no existing check is loosened. No app
-performance improvement, physical-device approval or release is claimed.
+Dot's independent source/artifact review accepts `abcc33d` within its declared
+synthetic scope: [verdict](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/465#issuecomment-5956162821).
+PR run `37033106008` has 240 usable samples, eight complete cases and no page
+errors. Regular CI `37033106962` passes all checks. Twenty targeted guards
+cover isolation, mapping, read counting and teardown. Earlier failures remain
+recorded. Completed reads plus two frames do not prove refreshed DOM commitment.
+Next profiling target: Performance board rendering with larger rosters, then
+associate opening and scroll. This is a measured target, not a diagnosed cause.
+Any app fix stays on X11's sole owned branch; pixels or motion changes need a
+proposal. No improvement, physical-device approval, merge or release is claimed.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
