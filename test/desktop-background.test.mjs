@@ -12,7 +12,12 @@ function environment(count = 1, hostname = '127.0.0.1') {
     getPropertyValue(name) { return this.values[name] || ''; }
   }
   const root = new Style(), targets = Array.from({ length: count }, () => ({ style: new Style() }));
+  const observers = [];
   const env = { location: { hostname }, CSSStyleDeclaration: Style,
+    MutationObserver: class {
+      constructor(fn) { this.callback = fn; observers.push(this); }
+      observe() {} disconnect() {}
+    },
     document: { documentElement: { style: root }, querySelectorAll: () => targets },
     getComputedStyle: target => ({ getPropertyValue: name => target.style.getPropertyValue(name) || root.getPropertyValue(name),
       transform: target.style.getPropertyValue('--bgy') || root.getPropertyValue('--bgy') || '0px' }),
@@ -22,7 +27,7 @@ function environment(count = 1, hostname = '127.0.0.1') {
         this.m42 = parseFloat(value);
       }
     } };
-  return { env, root, targets, Style };
+  return { env, root, targets, Style, observers };
 }
 for (const variant of ['root', 'backdrop']) {
   test(`${variant}: preserve exact parallax and priority, leave other writes alone`, () => {
@@ -78,6 +83,19 @@ test('counter loss, reset, variant drift and transform drift invalidate evidence
     assert.throws(() => validateBackgroundSample(before, { ...after, ...change }));
   }
 });
+for (const variant of ['root', 'backdrop']) test(`${variant}: replacement shell retains the exact prior value and priority`, () => {
+  const { env, root, targets, Style, observers } = environment();
+  installBackgroundScope({ variant }, env);
+  root.setProperty('--bgy', '-12.37px', 'important');
+  const before = env.__desktopBackgroundScope.snapshot();
+  targets[0].isConnected = false;
+  const replacement = { style: new Style(), isConnected: true }; targets.splice(0, 1, replacement);
+  observers[0].callback();
+  const delta = validateBackgroundSample(before, env.__desktopBackgroundScope.inspect());
+  assert.equal(delta.calls, 0); assert.equal(delta.shellRestores, variant === 'backdrop' ? 1 : 0);
+  if (variant === 'backdrop') assert.deepEqual(replacement.style.writes, [['--bgy', '-12.37px', 'important']]);
+  observers[0].callback(); assert.equal(env.__desktopBackgroundScope.snapshot().shellRestores, delta.shellRestores);
+});
 const anchor = "for (const width of [1440, 1920]) for (const fixture of ['demo', '60-sales']) {";
 test('narrow only cohort and evidence directory, reject anchor drift', () => {
   const source = `${anchor}\n await mkdir('desktop-baseline-evidence', {});\n unchanged();\n}`;
@@ -97,7 +115,7 @@ function cohort(variant = 'backdrop') {
     sample: { usable: true }, dropped: 0, traceDataLoss: false, cpu: { samples: [1] },
     summary: { mainThread: {}, byType: {} }, metrics: { ScriptDuration: 0.01, RecalcStyleDuration: 0.02, LayoutDuration: 0 } }));
   const background = labels.map((label, ordinal) => {
-    const before = { variant, calls: 0, rootWrites: 0, backdropWrites: 0, fallbackWrites: 0, lastValue: null };
+    const before = { variant, calls: 0, rootWrites: 0, backdropWrites: 0, fallbackWrites: 0, shellRestores: 0, lastValue: null };
     const after = { ...before, calls: 1, [variant === 'root' ? 'rootWrites' : 'backdropWrites']: 1,
       lastValue: '-4px', effectiveValue: '-4px', identityExceptY: true, translateY: -4 };
     return { label, ordinal, variant, before, after, writes: validateBackgroundSample(before, after), sample: { usable: true }, failure: null };

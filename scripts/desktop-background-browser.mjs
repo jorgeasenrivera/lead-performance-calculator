@@ -16,15 +16,32 @@ export function installBackgroundScope({ variant }, env = window) {
   }
   const doc = env.document, rootStyle = doc.documentElement.style;
   const prototype = env.CSSStyleDeclaration.prototype, original = prototype.setProperty;
-  const state = { variant, calls: 0, rootWrites: 0, backdropWrites: 0, fallbackWrites: 0, lastValue: null };
+  const state = { variant, calls: 0, rootWrites: 0, backdropWrites: 0, fallbackWrites: 0,
+    shellRestores: 0, lastValue: null };
+  let current = null;
   const snapshot = () => ({ ...state });
+  // The app can replace its shell between screens. The root retains its last
+  // value, so the candidate must carry that exact value to a replacement too.
+  // Both variants observe the same child-list changes for comparable overhead.
+  const shells = new env.MutationObserver(() => {
+    if (current?.isConnected) return;
+    const targets = doc.querySelectorAll('.bg-live');
+    if (targets.length !== 1) return;
+    current = targets[0];
+    if (variant === 'backdrop' && state.lastValue != null) {
+      original.call(current.style, '--bgy', state.lastValue, state.lastPriority);
+      state.shellRestores++;
+    }
+  });
+  shells.observe(doc.documentElement, { childList: true, subtree: true });
   prototype.setProperty = function(name, value, priority) {
     if (this !== rootStyle || name !== '--bgy') return Reflect.apply(original, this, arguments);
     if (typeof value !== 'string' || !/^-?\d+(\.\d+)?px$/.test(value)) throw new Error('unexpected parallax value');
-    state.calls++; state.lastValue = value;
+    state.calls++; state.lastValue = value; state.lastPriority = priority;
     if (variant === 'backdrop') {
       const targets = doc.querySelectorAll('.bg-live');
       if (targets.length === 1) {
+        current = targets[0];
         state.backdropWrites++;
         return original.call(targets[0].style, name, value, priority);
       }
@@ -50,13 +67,13 @@ export function installBackgroundScope({ variant }, env = window) {
 export function validateBackgroundSample(before, after) {
   const fail = message => { throw new Error(message); };
   if (!before || !after || before.variant !== after.variant) fail('background snapshot variant changed');
-  const delta = Object.fromEntries(['calls', 'rootWrites', 'backdropWrites', 'fallbackWrites'].map(name => {
+  const delta = Object.fromEntries(['calls', 'rootWrites', 'backdropWrites', 'fallbackWrites', 'shellRestores'].map(name => {
     if (!Number.isInteger(before[name]) || !Number.isInteger(after[name]) || before[name] < 0 || after[name] < before[name]) fail('invalid background counters');
     return [name, after[name] - before[name]];
   }));
   if (delta.calls !== delta.rootWrites + delta.backdropWrites) fail('background writes lost');
   if (after.variant === 'root') {
-    if (delta.backdropWrites || delta.fallbackWrites) fail('control was scoped unexpectedly');
+    if (delta.backdropWrites || delta.fallbackWrites || delta.shellRestores) fail('control was scoped unexpectedly');
   } else if (after.variant === 'backdrop') {
     if (delta.rootWrites || delta.fallbackWrites) fail('backdrop experiment used root fallback');
   } else fail('unknown background variant');

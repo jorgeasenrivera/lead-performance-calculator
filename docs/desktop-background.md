@@ -55,6 +55,20 @@ exists, disconnects, and installs before deferred app code. A deterministic
 early-document regression covers that ordering. Failed evidence is retained
 in run 37045930890, artifact 11243459607. No result from it is a comparison.
 
+The corrected startup run completed all nine root profiles but rejected backdrop
+profile 3: the next Performance screen's replacement backdrop lost the prior
+`0.0px` value. Its CSS fallback was zero, but the exact retention guard correctly
+rejected the candidate. Source comments confirm the root was chosen to survive
+shell replacement. Run 37046651010 and artifact 11244896168 retain the mismatch.
+No complete comparison or speed result is accepted from it.
+
+Both diagnostic variants now observe child-list changes, not style attributes.
+The candidate transfers the exact last value and priority to a replacement
+before paint, counting those restorations separately from app frame writes.
+An already-connected backdrop skips the query and write. Deterministic guards
+cover replacement and stable-shell behavior. This extra diagnostic observer
+cost is included, and is not a proposed shipped implementation.
+
 Evidence and review are pending. No application cause or improvement is claimed.
 Any app change remains on X11's sole owned branch. Changed pixels or motion
 need the published proposal required by AGENTS.md.
