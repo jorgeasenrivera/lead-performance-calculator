@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readXlsx } from "../scripts/sales-history/xlsx-lite.mjs";
 import { parseSheets, reconcile, missingDays, salesDailySql, resolveMonday, sheetMonth } from "../scripts/sales-history/parse-workbook.mjs";
 import { storeIdFor } from "../scripts/sales-history/stores.mjs";
-import { run } from "../scripts/sales-history/load.mjs";
+import { run, isInsideRepo, canonical } from "../scripts/sales-history/load.mjs";
 import { buildXlsx, monthSheet } from "./sales-history-xlsx.mjs";
 
 const read = (...sheets) => parseSheets(readXlsx(buildXlsx(sheets)));
@@ -149,6 +149,92 @@ test("the load writes its lists and SQL outside the repo, and refuses to read or
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("an empty or blank cached value is unknown, an explicit zero is a zero (Number('') is 0)", () => {
+  const [s] = readXlsx(buildXlsx([{ name: "A", rows: [[{ xml: "<v></v>" }, { xml: "<v>   </v>" }, { xml: "<v>0</v>" }, { xml: "<v/>" }, { xml: "<v>7</v>" }, { xml: '<v>0.0</v>' }]] }]));
+  assert.deepEqual(s.rows[0], [null, null, 0, null, 7, 0]);
+  // and the parser: a blank cell gives no reading at all, a zero gives one
+  const p = read(monthSheet("Sept 2026", [{ nums: [null, 1, 2, 3, 4, 5, 6], stores: { "Holler Honda": [null, { xml: "<v></v>" }, { xml: "<v>0</v>" }, "  ", "NA", 3, 4] } }]));
+  assert.equal(get(p, "Holler Honda", "2026-09-01").length, 0, "empty cache: unknown");
+  assert.equal(get(p, "Holler Honda", "2026-09-02")[0].value, 0, "explicit zero: zero");
+  assert.equal(get(p, "Holler Honda", "2026-09-03").length, 0, "whitespace text: unknown");
+  assert.equal(get(p, "Holler Honda", "2026-09-04")[0].value, "NA");
+});
+
+test("a count needs MORE THAN HALF of the sheets that show the day, counted once per sheet", () => {
+  const rd = (pairs) => pairs.map(([sheet, value]) => ({ sheet, store: "Holler Honda", date: "2026-09-01", value }));
+  const one = (pairs) => reconcile(rd(pairs));
+  // a plurality is not a majority: 4,4,5,6,7 has two of five
+  let r = one([["A", 4], ["B", 4], ["C", 5], ["D", 6], ["E", 7]]);
+  assert.equal(r.days.length, 0); assert.equal(r.ties[0].reason, "no count has more than half the sheets");
+  // three of five is
+  assert.equal(one([["A", 4], ["B", 4], ["C", 4], ["D", 6], ["E", 7]]).days[0].units, 4);
+  // exactly half is not
+  assert.equal(one([["A", 4], ["B", 4], ["C", 5], ["D", 5]]).days.length, 0);
+  // one sheet showing the same count twice is one sheet: 5 five times from A cannot outvote B and C
+  r = one([["A", 5], ["A", 5], ["A", 5], ["B", 4], ["C", 4]]);
+  assert.equal(r.days[0].units, 4); assert.equal(r.days[0].sheets, 3);
+  // a sheet that shows two different counts votes for neither, and the day is unknown and listed
+  r = one([["A", 4], ["A", 5], ["B", 4], ["C", 4]]);
+  assert.equal(r.days.length, 0);
+  assert.equal(r.ties[0].reason, "one sheet shows two different counts");
+  assert.deepEqual(r.ties[0].sheets, ["A=4|5", "B=4", "C=4"]);
+  // NA is a value too: two sheets say closed, one says 3
+  assert.equal(one([["A", "NA"], ["B", "NA"], ["C", 3]]).days[0].closed, true);
+  // a lone sheet is its own majority
+  assert.equal(one([["A", 9]]).days[0].units, 9);
+});
+
+test("the output folder is new or empty, so a chunk from an older run cannot be applied; a manifest names this run's files", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sales-history-"));
+  try {
+    const file = path.join(dir, "book.xlsx"), out = path.join(dir, "out");
+    const stores = {}; for (let i = 0; i < 1; i++) stores["Holler Honda"] = [null, 4, 6, 6, 16, 26, 10];
+    fs.writeFileSync(file, buildXlsx([monthSheet("Sept 2026", [{ nums: [null, 1, 2, 3, 4, 5, 6], stores }])]));
+    run({ file, out, source: "workbook-2026-10" });
+    const manifest = JSON.parse(fs.readFileSync(path.join(out, "manifest.json"), "utf8"));
+    assert.equal(manifest.source, "workbook-2026-10");
+    assert.equal(manifest.rows, 6);
+    assert.deepEqual(manifest.files.map((f) => f.file), ["sales_daily-001.sql"]);
+    assert.match(manifest.files[0].sha256, /^[0-9a-f]{64}$/);
+    // a second run into the same folder is refused, and an old extra chunk would be caught the same way
+    fs.writeFileSync(path.join(out, "sales_daily-002.sql"), "-- left over from an older, longer run\n");
+    assert.throws(() => run({ file, out, source: "workbook-2026-10" }), /new or empty/);
+    // an empty folder is fine
+    const empty = path.join(dir, "empty"); fs.mkdirSync(empty);
+    run({ file, out: empty, source: "workbook-2026-10" });
+    assert.deepEqual(fs.readdirSync(empty).filter((f) => f.endsWith(".sql")), ["sales_daily-001.sql"]);
+    // a file where the folder should be is refused
+    fs.writeFileSync(path.join(dir, "afile"), "x");
+    assert.throws(() => run({ file, out: path.join(dir, "afile"), source: "workbook-2026-10" }), /new or empty/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the repo boundary is the real path: a folder called '..sales-out', a symlink into the repo, a symlinked parent", () => {
+  const repo = path.resolve(import.meta.dirname, "..");
+  assert.equal(isInsideRepo(path.join(repo, "..sales-out")), true, "a child whose name starts with two dots is still a child");
+  assert.equal(isInsideRepo(path.join(repo, "..sales-out", "x.sql")), true);
+  assert.equal(isInsideRepo(repo), true);
+  assert.equal(isInsideRepo(path.join(repo, "scripts")), true);
+  assert.equal(isInsideRepo(path.join(repo, "..")), false, "the parent of the repo is outside");
+  assert.equal(isInsideRepo(path.join(os.tmpdir(), "somewhere-else", "out")), false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sales-history-"));
+  try {
+    const link = path.join(dir, "link");
+    fs.symlinkSync(path.join(repo, "scripts"), link, "dir");
+    assert.equal(isInsideRepo(link), true, "a symlink into the repo is inside it");
+    assert.equal(isInsideRepo(path.join(link, "sales-out")), true, "and so is a folder that does not exist yet beneath it");
+    assert.equal(canonical(path.join(link, "a", "b")), path.join(fs.realpathSync(path.join(repo, "scripts")), "a", "b"));
+    const file = path.join(dir, "book.xlsx");
+    fs.writeFileSync(file, buildXlsx([monthSheet("Sept 2026", [{ nums: [null, 1, 2, 3, 4, 5, 6], stores: { "Holler Honda": [null, 4, 6, 6, 16, 26, 10] } }])]));
+    assert.throws(() => run({ file, out: path.join(link, "sales-out"), source: "workbook-2026-10" }), /outside the repository/);
+    assert.ok(!fs.existsSync(path.join(repo, "scripts", "sales-out")), "and nothing was created in the repo");
+    const book = path.join(dir, "linked.xlsx");
+    fs.symlinkSync(path.join(repo, "package.json"), book);
+    assert.throws(() => run({ file: book, out: path.join(dir, "o2"), source: "workbook-2026-10" }), /outside the repository/);
+    assert.ok(!fs.existsSync(path.join(dir, "o2")));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("the real workbook cannot be committed by accident", () => {
   const root = path.resolve(import.meta.dirname, "..");
   assert.match(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), /^\*\.xlsx$/m);
@@ -166,5 +252,11 @@ test("the table SQL is the shape Jorge decided on 2 October (T1 a, T2 a)", () =>
   assert.match(sql, /grant select on public\.sales_daily, public\.schedule_rules to authenticated;/);
   assert.ok(!/create policy [^\n]*\bfor (insert|update|delete|all)\b/i.test(sql), "no policy lets anyone but the server write");
   assert.ok(!/can_use_store/.test(sql.replace(/--[^\n]*/g, "")), "a salesperson linked through the floor does not read the history");
+  const policies = sql.replace(/--[^\n]*/g, "").match(/create policy [\s\S]*?;/g);
+  assert.equal(policies.length, 2);
+  for (const pol of policies) {
+    assert.match(pol, /p\.active and not p\.pending\s+and \(p\.role = 'admin' or \w+\.store = any\(p\.stores\)\)/, "approved profiles only, admin or the store: a pending admin reads nothing, as in #456's mayReadDaily");
+    assert.ok(!/or \(not p\.pending/.test(pol), "pending is not exempted for admins");
+  }
   assert.ok(!/create (or replace )?function/i.test(sql.replace(/--[^\n]*/g, "")), "no new function, so no new advisor line");
 });

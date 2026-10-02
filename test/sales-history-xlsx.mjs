@@ -29,13 +29,15 @@ export function zip(entries) {
 }
 
 /* sheets: [{ name, rows: [[cell, ...], ...] }]; strings go through the shared
-   string table, numbers are numbers, null/undefined leave the cell out. */
+   string table, numbers are numbers, null/undefined leave the cell out, and
+   { xml: '<v></v>' } writes the cell's inner XML as given (an empty cache, say). */
 export function buildXlsx(sheets) {
   const shared = [], idx = new Map();
   const sst = (s) => { if (!idx.has(s)) { idx.set(s, shared.length); shared.push(s); } return idx.get(s); };
   const sheetXml = sheets.map((sh) => `<?xml version="1.0"?><worksheet><sheetData>${sh.rows.map((row, r) =>
     `<row r="${r + 1}">${row.map((c, i) => c == null ? "" : typeof c === "number"
-      ? `<c r="${colName(i)}${r + 1}"><v>${c}</v></c>` : `<c r="${colName(i)}${r + 1}" t="s"><v>${sst(c)}</v></c>`).join("")}</row>`).join("")}</sheetData></worksheet>`);
+      ? `<c r="${colName(i)}${r + 1}"><v>${c}</v></c>` : typeof c === "object" ? `<c r="${colName(i)}${r + 1}">${c.xml}</c>`
+        : `<c r="${colName(i)}${r + 1}" t="s"><v>${sst(c)}</v></c>`).join("")}</row>`).join("")}</sheetData></worksheet>`);
   return zip([
     ["[Content_Types].xml", `<?xml version="1.0"?><Types/>`],
     ["xl/workbook.xml", `<?xml version="1.0"?><workbook><sheets>${sheets.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>`],

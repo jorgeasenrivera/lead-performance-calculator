@@ -83,7 +83,11 @@ export function readXlsx(buf) {
           if (type === "s") val = strings[parseInt(raw, 10)] ?? null;
           else if (type === "str" || type === "e") val = raw;
           else if (type === "b") val = raw === "1" ? "TRUE" : "FALSE";
-          else { const n = Number(raw); val = Number.isFinite(n) ? n : raw; }
+          else {
+            // an empty or blank cache is a missing value, not a zero (Number("") is 0)
+            const t = raw.trim(), n = t === "" ? NaN : Number(t);
+            val = t === "" ? null : Number.isFinite(n) ? n : raw;
+          }
         }
         if (val !== null && val !== "") row[colIndex(ref[1])] = val;
       }

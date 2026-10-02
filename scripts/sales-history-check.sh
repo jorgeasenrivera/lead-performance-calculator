@@ -20,13 +20,15 @@ trap '"$BIN/pg_ctl" -D "$DIR" -m immediate stop >/dev/null 2>&1 || true; rm -rf 
 q() { psql -X -q -v ON_ERROR_STOP=1 -h "$DIR" -p "$PORT" -U postgres -d postgres "$@"; }
 
 q <<'SQL'
-create role anon nologin; create role authenticated nologin;
+create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
 create schema auth;
 create table auth.users (id uuid primary key);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 grant usage on schema auth to anon, authenticated;
 grant execute on function auth.uid() to anon, authenticated;
-grant usage on schema public to anon, authenticated;
+grant usage on schema public to anon, authenticated, service_role;
+-- what Supabase does for every table the project's owner creates in public:
+alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;
 SQL
 # The baseline's own profiles table and its read policy, lifted from the file
 # rather than retyped. is_admin() is the project's own, written out here.
@@ -42,7 +44,7 @@ print("grant select on public.profiles to authenticated;")
 PY
 q -f "$DIR/base.sql"
 q <<'SQL'
-insert into auth.users select ('00000000-0000-0000-0000-0000000000' || x)::uuid from unnest(array['0a','a1','a2','a3','a4','a5','a6']) x;
+insert into auth.users select ('00000000-0000-0000-0000-0000000000' || x)::uuid from unnest(array['0a','a1','a2','a3','a4','a5','a6','a7']) x;
 insert into public.profiles (id, role, stores, active, pending) values
   ('00000000-0000-0000-0000-00000000000a', 'admin',    '{}',       true, false),
   ('00000000-0000-0000-0000-0000000000a1', 'manager',  '{dm}',     true, false),
@@ -50,7 +52,8 @@ insert into public.profiles (id, role, stores, active, pending) values
   ('00000000-0000-0000-0000-0000000000a3', 'manager',  '{}',       true, true),
   ('00000000-0000-0000-0000-0000000000a4', 'manager',  '{dm}',     true, true),
   ('00000000-0000-0000-0000-0000000000a5', 'manager',  '{dm}',     false, false),
-  ('00000000-0000-0000-0000-0000000000a6', 'overseer', '{dm,xx}',  true, false);
+  ('00000000-0000-0000-0000-0000000000a6', 'overseer', '{dm,xx}',  true, false),
+  ('00000000-0000-0000-0000-0000000000a7', 'admin',    '{}',       true, true);
 SQL
 
 fails=0
@@ -66,19 +69,35 @@ ok "the file applies cleanly"
 A=00000000-0000-0000-0000-00000000000a M=00000000-0000-0000-0000-0000000000a1 O=00000000-0000-0000-0000-0000000000a2
 L=00000000-0000-0000-0000-0000000000a3 P=00000000-0000-0000-0000-0000000000a4 I=00000000-0000-0000-0000-0000000000a5 V=00000000-0000-0000-0000-0000000000a6
 
-# The server writes (the service role bypasses row security; here, the owner).
-q <<'SQL'
-insert into sales_daily (store, day, units, closed, source) values
+# The server writes: as service_role, which bypasses row security and keeps
+# Supabase's default grants (the migration revokes only anon and authenticated).
+as service_role '' "insert into sales_daily (store, day, units, closed, source) values
   ('dm', '2026-09-26', 12, false, 'workbook-2026-10'),
   ('dm', '2026-09-27', null, true, 'workbook-2026-10'),
   ('dm', '2026-09-28', 0, false, 'workbook-2026-10'),
   ('xx', '2026-09-26', 7, false, 'workbook-2026-10');
 insert into schedule_rules (store, effective_from, rules, set_by) values
-  ('dm', '2026-01-01', '{"minPeople":{"sat":6}}', '00000000-0000-0000-0000-0000000000a1'),
-  ('xx', '2026-01-01', '{"minPeople":{"sat":4}}', '00000000-0000-0000-0000-0000000000a2');
-SQL
-ok "the server's writes land"
+  ('dm', '2026-01-01', '{\"minPeople\":{\"sat\":6}}', '00000000-0000-0000-0000-0000000000a1'),
+  ('xx', '2026-01-01', '{\"minPeople\":{\"sat\":4}}', '00000000-0000-0000-0000-0000000000a2');" >/dev/null
+expect 4 "$(as service_role '' "select count(*) from sales_daily")" "the service role writes and reads every row, past row security"
+expect 2 "$(as service_role '' "select count(*) from schedule_rules")" "and the rules"
+expect UPDATE "$(as service_role '' "update sales_daily set units = 13 where store='xx' returning 'UPDATE'")" "and updates a row"
+as service_role '' "update sales_daily set units = 7 where store='xx'" >/dev/null
 expect 3 "$(as postgres '' "select count(*) from sales_daily where store='dm'")" "a day of zero, a closed day and a counted day are three different rows"
+
+# The loader's own SQL, as the loader writes it, run as the service role: a workbook
+# row is corrected by a newer workbook, and a row from the daily report is never overwritten.
+node --input-type=module -e '
+  import { salesDailySql } from "'"$HERE"'/scripts/sales-history/parse-workbook.mjs";
+  const days = [{ store: "dm", day: "2026-09-26", units: 11, closed: false }, { store: "dm", day: "2026-09-29", units: 4, closed: false }];
+  process.stdout.write(salesDailySql(days, "workbook-2026-11").join("\n"));' > "$DIR/load.sql"
+as service_role '' "insert into sales_daily (store, day, units, source) values ('dm','2026-09-29',9,'daily-report')" >/dev/null
+q -c "set role service_role" -f "$DIR/load.sql" >/dev/null 2>"$DIR/err" || { cat "$DIR/err"; fail "the loader's SQL did not run as the service role"; }
+expect 11 "$(as service_role '' "select units from sales_daily where store='dm' and day='2026-09-26'")" "a newer workbook corrects a workbook row"
+expect workbook-2026-11 "$(as service_role '' "select source from sales_daily where store='dm' and day='2026-09-26'")" "and records where it came from now"
+expect 9 "$(as service_role '' "select units from sales_daily where store='dm' and day='2026-09-29'")" "but a row from the daily report is left as it was"
+as service_role '' "delete from sales_daily where store='dm' and day='2026-09-29'" >/dev/null
+as service_role '' "update sales_daily set units = 12, source = 'workbook-2026-10' where store='dm' and day='2026-09-26'" >/dev/null
 
 # Who reads.
 expect 3 "$(as authenticated $M "select count(*) from sales_daily where store='dm'")" "a manager of dm reads dm's history"
@@ -87,6 +106,8 @@ expect 4 "$(as authenticated $A "select count(*) from sales_daily")" "an admin r
 expect 4 "$(as authenticated $V "select count(*) from sales_daily")" "an overseer reads the stores on their profile"
 expect 0 "$(as authenticated $O "select count(*) from sales_daily where store='dm'")" "a manager of another store sees none of dm"
 expect 0 "$(as authenticated $L "select count(*) from sales_daily")" "an unapproved account with no store: nothing"
+expect 0 "$(as authenticated 00000000-0000-0000-0000-0000000000a7 "select count(*) from sales_daily")" "a PENDING admin reads nothing (the same rule as the daily reader, #456)"
+expect 0 "$(as authenticated 00000000-0000-0000-0000-0000000000a7 "select count(*) from schedule_rules")" "nor the rules"
 expect 0 "$(as authenticated $P "select count(*) from sales_daily")" "a salesperson's pending account that names dm: nothing"
 expect 0 "$(as authenticated $I "select count(*) from sales_daily")" "an inactive account: nothing"
 expect 0 "$(as authenticated '' "select count(*) from sales_daily")" "signed in with no user: nothing"

@@ -11,12 +11,35 @@
    be committed, and this refuses to read it from, or write beside, the repo. */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { readXlsx } from "./xlsx-lite.mjs";
 import { parseSheets, reconcile, missingDays, salesDailySql } from "./parse-workbook.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const inside = (p) => { const r = path.relative(ROOT, path.resolve(p)); return r === "" || (!r.startsWith("..") && !path.isAbsolute(r)); };
+const ROOT = fs.realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."));
+
+/* The real path of p, following symlinks, even where the end of it does not
+   exist yet: the deepest part that does exist is resolved, and the rest is
+   put back on. (A lexical test cannot see a link into the repo, and
+   startsWith("..") also mistakes a folder named "..sales-out" for outside.) */
+export function canonical(p) {
+  let at = path.resolve(p);
+  const tail = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync(at), ...tail.reverse()); }
+    catch {
+      const up = path.dirname(at);
+      if (up === at) return at;
+      tail.push(path.basename(at));
+      at = up;
+    }
+  }
+}
+export function isInsideRepo(p) {
+  const rel = path.relative(ROOT, canonical(p));
+  return rel === "" || !(rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel));
+}
+const inside = isInsideRepo;
 const csv = (rows) => rows.map((r) => r.map((c) => /[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c).join(",")).join("\n") + "\n";
 
 export function run({ file, out, source }) {
@@ -26,11 +49,17 @@ export function run({ file, out, source }) {
   const parsed = parseSheets(readXlsx(fs.readFileSync(file)));
   const rec = reconcile(parsed.readings);
   const missing = missingDays(rec.days, rec.ties);
+  /* A folder that already has files could still hold chunks from an earlier,
+     longer run, and the README says to apply the chunks in order. So the
+     folder is new or empty, and manifest.json names exactly this run's files. */
+  if (fs.existsSync(out) && (!fs.statSync(out).isDirectory() || fs.readdirSync(out).length)) throw new Error("the output folder must be new or empty, so an old chunk cannot be applied by mistake");
   fs.mkdirSync(out, { recursive: true });
-  fs.writeFileSync(path.join(out, "fix-1-sheets-disagree.csv"), csv([["store", "date", "what each sheet says"], ...rec.ties.map((t) => [t.store, t.day, t.sheets.join(" ; ")])]));
+  fs.writeFileSync(path.join(out, "fix-1-sheets-disagree.csv"), csv([["store", "date", "why it is unknown", "what each sheet says"], ...rec.ties.map((t) => [t.store, t.day, t.reason, t.sheets.join(" ; ")])]));
   fs.writeFileSync(path.join(out, "fix-2-days-in-no-sheet.csv"), csv([["date", "weekday", "stores with no figure"], ...missing.map((m) => [m.day, m.weekday, m.stores.join("; ")])]));
   const sql = salesDailySql(rec.days, source);
   sql.forEach((s, i) => fs.writeFileSync(path.join(out, `sales_daily-${String(i + 1).padStart(3, "0")}.sql`), s));
+  const files = sql.map((text, i) => ({ file: `sales_daily-${String(i + 1).padStart(3, "0")}.sql`, rows: text.split("\n").filter((l) => l.startsWith("('")).length, sha256: createHash("sha256").update(text).digest("hex") }));
+  fs.writeFileSync(path.join(out, "manifest.json"), JSON.stringify({ source, rows: files.reduce((n, f) => n + f.rows, 0), files }, null, 2) + "\n");
   const closed = rec.days.filter((d) => d.closed).length;
   const lines = [
     `sheets read: ${parsed.stats.blocks ? "yes" : "none"}; week blocks ${parsed.stats.blocks} (${parsed.stats.ok} exact, ${parsed.stats.repaired} repaired, ${parsed.stats.ambiguous} ambiguous), skipped ${parsed.skipped.length}`,

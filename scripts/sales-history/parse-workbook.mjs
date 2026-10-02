@@ -57,6 +57,7 @@ const cellValue = (v) => {
   if (v == null || v === "") return { skip: true };
   if (typeof v === "number") return { value: v };
   const s = String(v).trim();
+  if (s === "") return { skip: true };
   if (/^n\/?a$/i.test(s)) return { value: "NA" };
   if (/^-?\d+(\.\d+)?$/.test(s)) return { value: Number(s) };
   return { odd: s };
@@ -102,8 +103,10 @@ export function parseSheets(sheets) {
   return { readings, skipped, odd, stats };
 }
 
-/* One value per store per day: the one most sheets agree on. A tie, or a
-   count that is not a whole number, is left out as unknown and listed. */
+/* One value per store per day: the one MORE THAN HALF of the sheets showing
+   that day agree on. A plurality is not enough (4,4,5,6,7 has no answer), a
+   sheet that contradicts itself votes for nothing, and a count that is not a
+   whole number is not rounded; each is left out as unknown and listed. */
 export function reconcile(readings, map = WORKBOOK_STORES) {
   const groups = new Map(), unmapped = new Map();
   for (const r of readings) {
@@ -115,14 +118,20 @@ export function reconcile(readings, map = WORKBOOK_STORES) {
   const days = [], ties = [], fractional = [];
   for (const [key, rs] of groups) {
     const [store, day] = key.split("\t");
+    // evidence is per SHEET: a sheet that shows a day twice with the same value is one vote;
+    // a sheet that shows it with two values gives no vote and leaves the day unknown
+    const bySheet = new Map();
+    for (const r of rs) (bySheet.get(r.sheet) || bySheet.set(r.sheet, new Set()).get(r.sheet)).add(r.value);
+    const sheetSays = [...bySheet].map(([sh, vs]) => `${sh}=${[...vs].join("|")}`);
+    if ([...bySheet.values()].some((vs) => vs.size > 1)) { ties.push({ store, day, sheets: sheetSays, reason: "one sheet shows two different counts" }); continue; }
     const votes = new Map();
-    for (const r of rs) votes.set(r.value, (votes.get(r.value) || 0) + 1);
-    const ranked = [...votes].sort((a, b) => b[1] - a[1]);
-    if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) { ties.push({ store, day, sheets: rs.map((r) => `${r.sheet}=${r.value}`) }); continue; }
-    const v = ranked[0][0];
-    if (v === "NA") days.push({ store, day, closed: true, units: null, sheets: rs.length });
-    else if (Number.isInteger(v) && v >= 0 && v <= 1000) days.push({ store, day, closed: false, units: v, sheets: rs.length });
-    else fractional.push({ store, day, value: v });
+    for (const vs of bySheet.values()) { const v = [...vs][0]; votes.set(v, (votes.get(v) || 0) + 1); }
+    const [top, topVotes] = [...votes].sort((a, b) => b[1] - a[1])[0];
+    // more than half of the sheets that show the day, not the largest minority
+    if (topVotes * 2 <= bySheet.size) { ties.push({ store, day, sheets: sheetSays, reason: "no count has more than half the sheets" }); continue; }
+    if (top === "NA") days.push({ store, day, closed: true, units: null, sheets: bySheet.size });
+    else if (Number.isInteger(top) && top >= 0 && top <= 1000) days.push({ store, day, closed: false, units: top, sheets: bySheet.size });
+    else fractional.push({ store, day, value: top });
   }
   days.sort((a, b) => a.store.localeCompare(b.store) || a.day.localeCompare(b.day));
   ties.sort((a, b) => a.day.localeCompare(b.day) || a.store.localeCompare(b.store));

@@ -16,10 +16,15 @@
 --   what the rules were on any past day can be read back. The history is not
 --   learned from: the rules have changed too much over the years.
 --
--- Who reads: an admin, or an approved profile that names the store. Not a
--- salesperson linked through the floor (can_use_store lets those in; this does
--- not, on purpose). Who writes: the service role only, from the server. No
--- insert, update or delete policy exists, and the grants are select only.
+-- Who reads: an ACTIVE, APPROVED profile (not pending) that is an admin or
+-- names the store. A pending profile reads nothing, admin or not: the same rule
+-- as mayReadDaily in api/daily-deliveries.mjs (#456), so the table and the
+-- endpoint that will read it cannot disagree. This is stricter than
+-- can_use_store, which lets an active admin in while pending, and it leaves out
+-- the salesperson linked through the floor, on purpose. Who writes: the service
+-- role only, from the server. No insert, update or delete policy exists, and the
+-- grants to the signed-in and public roles are select only (the service role
+-- bypasses row security and keeps Supabase's default grants).
 -- No new function, so the advisors gain no new line.
 
 create table public.sales_daily (
@@ -51,11 +56,11 @@ grant select on public.sales_daily, public.schedule_rules to authenticated;
 create policy sales_daily_read on public.sales_daily for select to authenticated
   using (exists (
     select 1 from public.profiles p
-    where p.id = (select auth.uid()) and p.active
-      and (p.role = 'admin' or (not p.pending and sales_daily.store = any(p.stores)))));
+    where p.id = (select auth.uid()) and p.active and not p.pending
+      and (p.role = 'admin' or sales_daily.store = any(p.stores))));
 
 create policy schedule_rules_read on public.schedule_rules for select to authenticated
   using (exists (
     select 1 from public.profiles p
-    where p.id = (select auth.uid()) and p.active
-      and (p.role = 'admin' or (not p.pending and schedule_rules.store = any(p.stores)))));
+    where p.id = (select auth.uid()) and p.active and not p.pending
+      and (p.role = 'admin' or schedule_rules.store = any(p.stores))));
