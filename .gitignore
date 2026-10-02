@@ -5,3 +5,5 @@ dist-harness
 .env.local
 .DS_Store
 shots/
+*.xlsx
+sales-history-out/
