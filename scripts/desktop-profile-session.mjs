@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { CAP, projectTrace, sanitizeCpuProfile, metricDelta, summarizeProfile, decodeMappings, sourceLocation } from './desktop-profile-read.mjs';
+import { CAP, projectTrace, sanitizeCpuProfile, cpuFailureEvidence, metricDelta, summarizeProfile, decodeMappings, sourceLocation } from './desktop-profile-read.mjs';
 
 export const PROFILE_LABELS = new Set(['Performance', 'associate-open', 'list-scroll']);
 export async function createProfileSession(cdp, { width, fixture, directory = 'desktop-profile-evidence', mapDirectory }, save = writeFile) {
@@ -47,9 +47,13 @@ export async function createProfileSession(cdp, { width, fixture, directory = 'd
   }
   async function finish(raw, sample, status = 'complete') {
     if (!active) return;
-    let cpu, metrics, traceComplete, failure;
+    let cpu, cpuFailure, metrics, traceComplete, failure;
     try {
-      if (active.cpu) { const result = await cdp.send('Profiler.stop'); active.cpu = false; cpu = sanitizeCpuProfile(result.profile); }
+      if (active.cpu) {
+        const result = await cdp.send('Profiler.stop'); active.cpu = false;
+        try { cpu = sanitizeCpuProfile(result.profile); }
+        catch (error) { cpuFailure = cpuFailureEvidence(result.profile); throw error; }
+      }
     } catch (error) { failure = error; }
     // One failed recorder must not prevent the other from draining its buffer.
     try { traceComplete = await stopTrace(); } catch (error) { failure ||= error; }
@@ -63,7 +67,7 @@ export async function createProfileSession(cdp, { width, fixture, directory = 'd
     } catch (error) { failure ||= error; }
     const row = { width, fixture, ordinal: ordinal++, label: active.label, status: failure ? 'invalid' : status,
       diagnosticOnly: true, includesAutomationPreparation: true, dropped, traceDataLoss: traceComplete ? !!traceComplete.dataLossOccurred : null,
-      sample: sample || null, cpu: cpu || null, trace: active.trace,
+      sample: sample || null, cpu: cpu || null, cpuFailure: cpuFailure || null, trace: active.trace,
       metrics: metrics ? metricDelta(active.before.metrics, metrics.metrics) : null,
       summary: cpu ? summarizeProfile(cpu, active.trace) : null, failure: failure?.message || null };
     const file = `${width}-${fixture}-${String(row.ordinal).padStart(2, '0')}-${row.label}.json`;

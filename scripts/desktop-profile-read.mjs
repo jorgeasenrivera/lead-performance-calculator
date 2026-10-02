@@ -30,11 +30,31 @@ export function sanitizeCpuProfile(profile) {
     profile.samples.length === profile.timeDeltas.length && profile.samples.length <= CAP, 'CPU sample cap/shape');
   const ids = new Set(profile.nodes.map(n => n.id));
   assert.equal(ids.size, profile.nodes.length, 'duplicate CPU node');
-  assert.ok(profile.samples.every(n => ids.has(n)) && profile.timeDeltas.every(n => finite(n) && n >= 0), 'invalid CPU samples');
+  assert.ok(profile.samples.every(n => ids.has(n)), 'CPU sample references missing node');
+  assert.ok(profile.timeDeltas.every(finite), 'non-finite CPU time delta');
+  assert.ok(profile.timeDeltas.every(n => n >= 0), 'negative CPU time delta');
   return { startTime: profile.startTime, endTime: profile.endTime, samples: profile.samples, timeDeltas: profile.timeDeltas,
     nodes: profile.nodes.map(n => ({ id: n.id, children: (n.children || []).filter(id => ids.has(id)),
       frame: { function: safeName(n.callFrame?.functionName), asset: assetName(n.callFrame?.url),
         line: n.callFrame?.lineNumber ?? -1, column: n.callFrame?.columnNumber ?? -1 } })) };
+}
+export function cpuFailureEvidence(profile) {
+  // Keep numeric sample associations even when validation fails. Never keep
+  // raw frames, URLs or arbitrary backend fields in failure evidence.
+  const array = value => Array.isArray(value) && value.length <= CAP ? value : null;
+  const nodes = array(profile?.nodes), samples = array(profile?.samples), deltas = array(profile?.timeDeltas);
+  const ids = new Set(nodes?.map(n => n?.id));
+  const count = value => Array.isArray(value) ? value.length : null;
+  return { startTime: finite(profile?.startTime) ? profile.startTime : null,
+    endTime: finite(profile?.endTime) ? profile.endTime : null,
+    nodeCount: count(profile?.nodes), sampleCount: count(profile?.samples), deltaCount: count(profile?.timeDeltas),
+    omittedOverCap: [profile?.nodes, profile?.samples, profile?.timeDeltas].some(a => Array.isArray(a) && a.length > CAP),
+    unknownNodeSamples: samples && nodes ? samples.filter(id => !ids.has(id)).length : null,
+    nonFiniteDeltas: deltas ? deltas.filter(n => !finite(n)).length : null,
+    negativeDeltas: deltas ? deltas.filter(n => finite(n) && n < 0).length : null,
+    nodeIds: nodes?.map(n => finite(n?.id) ? n.id : null) || null,
+    samples: samples?.map(n => finite(n) ? n : null) || null,
+    timeDeltas: deltas?.map(n => finite(n) ? n : null) || null };
 }
 export function metricDelta(before, after) {
   const a = new Map(before.map(m => [m.name, m.value])), b = new Map(after.map(m => [m.name, m.value]));

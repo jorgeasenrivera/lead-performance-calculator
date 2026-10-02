@@ -617,7 +617,11 @@ driver hooks for Chromium CPU/timeline evidence. App source stays untouched.
 See `docs/desktop-profile.md` for units, overhead and boundaries. Local guards
 cover projections, source mapping, terminal trace drain, retained invalid
 records, caps and complete-case reporting. Plain/mapped Signal builds match
-byte-for-byte; actual driver hooks parse/import. CI evidence is still pending.
+byte-for-byte; actual driver hooks parse/import. PR #466's first run
+`37038369663` failed on a combined CPU sample guard. Regular CI passed. The
+retained trace was complete, but rejected CPU associations were missing.
+Bounded numeric failure evidence and separate validity errors now fill that
+gap without accepting a malformed profile. CI evidence is still pending.
 Please examine trace shutdown/invalid-record lifetime, source-map positions and
 the distinction between profiling cost and unprofiled benchmark timing. No
 application cause or improvement is established yet. A later fix remains on

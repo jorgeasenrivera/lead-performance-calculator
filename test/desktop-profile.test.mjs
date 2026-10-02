@@ -5,7 +5,7 @@ import { readFile, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { instrumentBaseline, BASELINE_COMMIT, BASELINE_HASH } from '../scripts/desktop-profile.mjs';
-import { assetName, projectTrace, sanitizeCpuProfile, metricDelta, summarizeProfile, decodeMappings,
+import { assetName, projectTrace, sanitizeCpuProfile, cpuFailureEvidence, metricDelta, summarizeProfile, decodeMappings,
   sourceLocation, verifyMappedBuild, CAP } from '../scripts/desktop-profile-read.mjs';
 import { createProfileSession } from '../scripts/desktop-profile-session.mjs';
 import { validateProfiles } from '../scripts/desktop-profile-report.mjs';
@@ -29,6 +29,7 @@ test('profiling hooks are bounded to five unique driver anchors and absolute imp
   assert.match(transformed, /await profiler.finish\(raw, summary\)/);
   assert.match(transformed, /await profiler.abort\(\)/);
   assert.match(transformed, /finally \{ await closeDesktopContext\(context, mock\)/);
+  assert.match(transformed, /sourceURL=desktop-profile-driver.mjs/);
   assert.throws(() => instrumentBaseline(fixture.replace('page = await context.newPage();', ''), 'file:///a', 'file:///b'), /anchor changed/);
   assert.throws(() => instrumentBaseline(fixture + 'return { summary, raw };', 'file:///a', 'file:///b'), /anchor changed/);
   assert.equal(BASELINE_COMMIT.length, 40); assert.equal(BASELINE_HASH.length, 64);
@@ -45,9 +46,21 @@ test('CPU and trace projections discard URLs, headers, text and arbitrary fields
 });
 test('malformed, missing or oversized CPU evidence is not accepted', () => {
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [] }), /cap\/shape/);
-  assert.throws(() => sanitizeCpuProfile({ ...cpu(), samples: [999, 2] }), /invalid CPU samples/);
+  assert.throws(() => sanitizeCpuProfile({ ...cpu(), samples: [999, 2] }), /missing node/);
+  assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [1000, -1] }), /negative CPU time delta/);
+  assert.throws(() => sanitizeCpuProfile({ ...cpu(), timeDeltas: [1000, NaN] }), /non-finite CPU time delta/);
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), samples: Array(CAP + 1).fill(2), timeDeltas: Array(CAP + 1).fill(1) }), /cap\/shape/);
   assert.throws(() => sanitizeCpuProfile({ ...cpu(), endTime: -1 }), /CPU window/);
+});
+test('invalid CPU evidence retains only bounded numeric associations, not raw backend fields', () => {
+  const record = cpuFailureEvidence({ ...cpu(), samples: [999, 2], timeDeltas: [1000, -1], secret: 'never retain' });
+  assert.equal(record.unknownNodeSamples, 1); assert.equal(record.negativeDeltas, 1);
+  assert.deepEqual(record.samples, [999, 2]); assert.deepEqual(record.timeDeltas, [1000, -1]);
+  assert.ok(!JSON.stringify(record).includes('secret'));
+  assert.ok(!JSON.stringify(record).includes('Manager-abc.js'));
+  const over = cpuFailureEvidence({ ...cpu(), samples: Array(CAP + 1).fill(2) });
+  assert.equal(over.omittedOverCap, true); assert.equal(over.samples, null); assert.equal(over.sampleCount, CAP + 1);
+  assert.equal(cpuFailureEvidence(null).samples, null);
 });
 test('missing or reset performance metrics are null, never zero', () => {
   const delta = metricDelta([{ name: 'LayoutCount', value: 3 }, { name: 'TaskDuration', value: 4 }],
@@ -87,11 +100,11 @@ test('hidden-map builds must have identical JS, CSS and HTML before profiling', 
 });
 
 class CDP extends EventEmitter {
-  calls = []; held = false; lose = false; failCpu = false;
+  calls = []; held = false; lose = false; failCpu = false; profile = cpu();
   async send(method) {
     this.calls.push(method);
     if (method === 'Performance.getMetrics') return { metrics: [{ name: 'LayoutCount', value: this.calls.length }] };
-    if (method === 'Profiler.stop') { if (this.failCpu) throw new Error('CPU failed'); return { profile: cpu() }; }
+    if (method === 'Profiler.stop') { if (this.failCpu) throw new Error('CPU failed'); return { profile: this.profile }; }
     if (method === 'Tracing.end' && !this.held) queueMicrotask(() => this.emit('Tracing.tracingComplete', { dataLossOccurred: this.lose }));
     return {};
   }
@@ -133,6 +146,14 @@ test('a failed CPU recorder still drains tracing and detaches after preserving e
   await assert.rejects(recorder.finish({}, { usable: true }), /CPU failed/);
   assert.ok(cdp.calls.includes('Tracing.end')); assert.equal(saved[0].status, 'invalid'); await recorder.dispose();
   assert.equal(cdp.calls.at(-1), 'detach');
+});
+test('rejected CPU samples remain invalid and retain their numeric failure evidence', async t => {
+  const { cdp, saved, recorder } = await session(t); cdp.profile.timeDeltas = [1000, -1];
+  await recorder.begin('Performance');
+  await assert.rejects(recorder.finish({}, { usable: true }), /negative CPU time delta/);
+  assert.equal(saved[0].status, 'invalid'); assert.equal(saved[0].cpu, null); assert.equal(saved[0].summary, null);
+  assert.deepEqual(saved[0].cpuFailure.timeDeltas, [1000, -1]); assert.equal(saved[0].cpuFailure.negativeDeltas, 1);
+  assert.ok(cdp.calls.includes('Tracing.end')); await recorder.dispose(); assert.equal(cdp.calls.at(-1), 'detach');
 });
 test('trace cap and unusable lifecycle retain invalid evidence instead of silent truncation', async t => {
   const { cdp, saved, recorder } = await session(t); await recorder.begin('list-scroll');

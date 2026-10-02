@@ -54,6 +54,15 @@ Protocol references: [CPU profile](https://chromedevtools.github.io/devtools-pro
 
 ## Result and next decision
 
+The first profiling run, `37038369663` at `d59ff02`, failed with `invalid CPU
+samples` on the first Performance recording. Its artifact retained invalid
+status and a complete loss-free trace, but not the rejected numeric CPU
+samples. That observability gap is corrected: failure records now retain
+bounded numeric node IDs, sample IDs and time deltas, with specific validity
+errors. The original acceptance checks are intact. This is evidence collection,
+not a retry to get green or proof of an app defect. Regular CI at that head
+passed in run `37038369699`.
+
 Evidence is pending. Board evaluation repeats in ranking, filtering, sorting,
 counts and row construction. That is a source hypothesis, not the established
 cause of the measured desktop delay. Profiles distinguish script cost from

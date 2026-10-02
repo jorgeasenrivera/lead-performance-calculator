@@ -18,7 +18,7 @@ export function instrumentBaseline(source, runnerUrl, hookUrl) {
   replace('return { summary, raw };', 'await profiler.finish(raw, summary); return { summary, raw }; } catch(error) { await profiler.abort(); throw error; }');
   replace('} finally { await closeDesktopContext(context, mock); }', '} finally { try { await profiler?.dispose(); } finally { await closeDesktopContext(context, mock); } }');
   source = source.replace(/from '(\.\/[^']+)'/g, (_, relative) => `from '${new URL(relative, runnerUrl).href}'`);
-  return `import { attachDesktopProfile } from ${JSON.stringify(hookUrl)};\n` + source;
+  return `import { attachDesktopProfile } from ${JSON.stringify(hookUrl)};\n` + source + '\n//# sourceURL=desktop-profile-driver.mjs\n';
 }
 export async function runDesktopProfile() {
   assert.equal(process.env.FEEL_BROWSER || 'chromium', 'chromium', 'CDP profiling supports Chromium only, not WebKit');
