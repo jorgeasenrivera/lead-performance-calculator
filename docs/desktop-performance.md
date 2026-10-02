@@ -99,6 +99,15 @@ unit test. The early samples above and first matrix are exploratory only,
 not the accepted baseline or evidence for an application fix. The corrected
 matrix must complete and be reviewed before selecting a cause.
 
+Review also exposed a fixture boundary problem: the actual room code can mirror
+history into the store in the background. A response-only stress roster could
+therefore be written into a shared mock and survive into another case. Each
+context now starts and stops its own fictional mock, with a fresh normal roster
+asserted before loading the page. No existing local service is stopped. Failure
+screenshots and raw samples, including an unfinished recording, are saved before
+the failed browser context closes. Earlier runs do not establish fixture
+independence and remain exploratory.
+
 After the baseline is verified, select the biggest measured cause. Any fix in
 Manager stays on its sole owned branch. Pixel-identical internal work can be
 reviewed directly; changed motion or presentation still needs the project's

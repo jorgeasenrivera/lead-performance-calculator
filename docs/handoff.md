@@ -618,6 +618,11 @@ No Manager/core writer, shipped instrumentation, data path, calendar activation
 or visual decision changes. Measurements are pending, not claimed improved.
 Review `docs/desktop-performance.md` for metric meaning and limits, particularly
 in-page event clock starts and unsupported/browser-background handling.
+Draft #465 also fixes two measurement boundaries found in review: every
+context has a fresh fictional mock because room history can save in the
+background, and failure evidence is collected before the page closes. Earlier
+matrices are exploratory. Please review these boundaries on the current head
+before using the next completed matrix to select an app change.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 

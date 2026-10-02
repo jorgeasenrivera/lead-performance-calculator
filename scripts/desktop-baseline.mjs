@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { launch } from './probe-kit.mjs';
 import { summarizeSample } from './desktop-baseline-metrics.mjs';
+import { startIsolatedMock } from './desktop-baseline-mock.mjs';
 
 export const SIGNAL_SOURCE = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
 const norm = s => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -38,25 +39,35 @@ export async function runDesktopBaseline() {
   let page, stage = 'launch';
   try {
     for (const width of [1440, 1920]) for (const fixture of ['demo', '60-sales']) {
+      stage = `${width}/${fixture} isolated mock`;
+      const mock = await startIsolatedMock();
       const context = await browser.newContext({ viewport: { width, height: width === 1440 ? 900 : 1080 },
-        reducedMotion: 'no-preference', serviceWorkers: 'block' });
+        reducedMotion: 'no-preference', serviceWorkers: 'block' }).catch(async error => { await mock.stop(); throw error; });
       const errors = []; let fixtureReads = 0;
-      // Every request is bounded to the two local services. A misbuilt app
-      // cannot send a demo login, telemetry or data read to a real service.
-      await context.route('**/*', async route => {
-        const u = new URL(route.request().url());
-        if (![target.origin, 'http://127.0.0.1:5433'].includes(u.origin)) { await route.abort(); return; }
-        if (fixture === '60-sales' && u.pathname === '/rest/v1/app_data' && route.request().method() === 'GET') {
-          const response = await route.fetch(); const rows = await response.json();
-          const patch = r => {
-            if (r.key === 'lpc:store:sage-demo:v2') { fixtureReads++; return { ...r, value: denseFixture(r.value) }; }
-            return r;
-          };
-          await route.fulfill({ response, json: Array.isArray(rows) ? rows.map(patch) : patch(rows) }); return;
-        }
-        await route.continue();
-      });
       try {
+        const seedRows = await (await fetch(mock.origin + '/rest/v1/app_data?key=eq.lpc:store:sage-demo:v2',
+          { signal: AbortSignal.timeout(1000) })).json();
+        const seedCount = seedRows[0]?.value?.roster?.length;
+        assert.ok(seedCount > 0 && seedCount < 60, 'every context must start from a fresh normal roster');
+        // Every request is bounded to the two local services. A misbuilt app
+        // cannot send a demo login, telemetry or data read to a real service.
+        await context.route('**/*', async route => {
+          const u = new URL(route.request().url());
+          if (![target.origin, 'http://127.0.0.1:5433'].includes(u.origin)) { await route.abort(); return; }
+          if (u.origin === 'http://127.0.0.1:5433') {
+            const response = await route.fetch({ url: mock.origin + u.pathname + u.search });
+            if (fixture !== '60-sales' || u.pathname !== '/rest/v1/app_data' || route.request().method() !== 'GET') {
+              await route.fulfill({ response }); return;
+            }
+            const rows = await response.json();
+            const patch = r => {
+              if (r.key === 'lpc:store:sage-demo:v2') { fixtureReads++; return { ...r, value: denseFixture(r.value) }; }
+              return r;
+            };
+            await route.fulfill({ response, json: Array.isArray(rows) ? rows.map(patch) : patch(rows) }); return;
+          }
+          await route.continue();
+        });
         page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
         stage = `${width}/${fixture} sign in`;
         await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -85,7 +96,7 @@ export async function runDesktopBaseline() {
         };
         const button = name => page.getByRole('button', { name, exact: true });
         const results = [];
-        output.runs.push({ width, fixture, rowCount, fixtureReads, results, errors, complete: false });
+        output.runs.push({ width, fixture, seedCount, rowCount, fixtureReads, results, errors, complete: false });
         for (let cycle = 0; cycle < 3; cycle++) {
           for (const [name, marker] of [['Daily Activity', '.da-page'], ['Live Floor', '.mf-floor .fbc'],
             ['Phone Line', '.mf-line .sd-room'], ['Performance', '.board-page'], ['Summary', '.sm-page'], ['Dashboard', '.board-page']]) {
@@ -109,7 +120,18 @@ export async function runDesktopBaseline() {
         assert.deepEqual(errors, []);
         output.runs.at(-1).complete = true;
         await page.screenshot({ path: `desktop-baseline-evidence/${width}-${fixture}.png` });
-      } finally { await context.close(); }
+      } catch (error) {
+        // This must happen while the failed page still exists. The outer catch
+        // runs after this context's finally, when screenshots are already lost.
+        output.failureEvidence = {
+          stage, mockLog: mock.log(), errors,
+          probe: page && !page.isClosed() ? await page.evaluate(() => ({
+            samples: window.__desktopProbe?.samples || [], active: window.__desktopProbe?.getActive(),
+          })).catch(() => null) : null,
+        };
+        if (page && !page.isClosed()) await page.screenshot({ path: 'desktop-baseline-evidence/failure.png' }).catch(() => {});
+        throw error;
+      } finally { try { await context.close(); } finally { await mock.stop(); } }
     }
     console.log(JSON.stringify(output.runs.map(r => ({ width: r.width, fixture: r.fixture, rowCount: r.rowCount,
       samples: r.results.map(s => s.summary) })), null, 2));

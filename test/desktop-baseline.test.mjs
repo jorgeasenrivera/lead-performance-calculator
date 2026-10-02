@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installDesktopProbe, summarizeSample } from '../scripts/desktop-baseline-metrics.mjs';
 import { denseFixture } from '../scripts/desktop-baseline.mjs';
+import { isolatedMockSource } from '../scripts/desktop-baseline-mock.mjs';
+import fs from 'node:fs';
 
 const sample = overrides => ({ label: 'test', status: 'complete', start: 100, end: 200,
   frames: [], tasks: [], longFrames: [], contentMs: 10, settledMs: 20,
@@ -99,4 +101,11 @@ test('stress roster preserves the original fixture and maps monthly/daily stats 
   assert.deepEqual(result.roster[0], before.roster[0]);
   assert.equal(result.months['2026-10'].stats['source person'].unitsDelivered, 9);
   assert.equal(result.roster.at(-1).label, result.roster.at(-1).name);
+});
+test('each context can launch an isolated seed without changing the shared mock source', () => {
+  const source = fs.readFileSync(new URL('../scripts/mock-supabase.mjs', import.meta.url), 'utf8');
+  const transformed = isolatedMockSource(source, 'file:///fictional/demo-seed.mjs');
+  assert.ok(transformed.includes('.listen(5434,')); assert.ok(source.includes('.listen(5433,'));
+  assert.ok(transformed.includes('"file:///fictional/demo-seed.mjs"'));
+  assert.throws(() => isolatedMockSource('unexpected', 'file:///fixture.mjs'), /shape changed/);
 });

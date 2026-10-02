@@ -122,7 +122,8 @@ export function installDesktopProbe(env = window) {
   };
   // Only local probe serving enables automatic click capture. Playwright starts
   // samples explicitly so named runs cannot be accidentally overwritten.
-  env.__desktopProbe = { samples, start, arm, finish, enableClicks() { doc.addEventListener('click', navigation, true); },
+  env.__desktopProbe = { samples, start, arm, finish, getActive: () => active,
+    enableClicks() { doc.addEventListener('click', navigation, true); },
     dispose() { disarm(); finish('disposed'); observers.forEach(([, o]) => o.disconnect());
       doc.removeEventListener('click', navigation, true); doc.removeEventListener('visibilitychange', visibility); } };
 }
