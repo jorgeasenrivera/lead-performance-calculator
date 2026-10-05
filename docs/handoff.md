@@ -609,6 +609,30 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X46 · Desktop background scope comparison, isolated and not shipped.**
+
+X23 keeps X21's immutable fictional driver and X22's repaired recorder, pinned
+to `abcc33d` and `ec1ca53`. The app is the reviewed Signal `7fdf5ae`, rebuilt
+unchanged with matching hidden source maps. One ordered Chromium dense desktop
+cohort compares root and backdrop writes for exactly the same parallax value.
+No coefficients, motion, colours, reduced-motion rules or application source
+change. Computed value and transform checks occur after each recording, not
+inside the animation loop. Unexpected shells retain root behavior but fail the
+evidence guard. The full original interaction sequence remains intact.
+
+Look first at the prototype interception receiver and pass-through behavior,
+the post-recording parity read, immutable pins, and complete-cohort rejection.
+This is diagnostic evidence, not a field or unprofiled speed improvement. The
+browser run and final diagnostic review now pass at `6f365d4`: see the completed
+evidence and implementation boundary in `docs/desktop-background.md`. X22's
+trace-end fix is also independently cleared at `ec1ca53`. The next X23 phase is
+unprofiled Chromium/WebKit in both variant orders, retaining all original
+interactions and exact parity guards. Its browser evidence is pending. No
+production patch, merge or release is certified. Before any actual repair on
+X11, reconcile the core `useLivingBackground`/shell ownership with C103 on the
+board. The diagnostic observer/prototype override is not a proposed shipped
+implementation. Read the no-CDP branch and complete-cohort rejection first.
+
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
 Read against X15 `f3af0e0`, X19 `5010753` and X20 `e84e15f` on 2 October.
