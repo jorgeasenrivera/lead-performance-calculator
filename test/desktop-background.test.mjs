@@ -204,7 +204,11 @@ test('unprofiled session never opens CDP and retains background parity evidence'
   const directory = await mkdtemp(path.join(os.tmpdir(), 'background-no-cdp-'));
   const source = `
     import assert from 'node:assert/strict';
-    import { attachDesktopProfile } from ${JSON.stringify(new URL('../scripts/desktop-background-session.mjs', import.meta.url).href)};
+    import { fileURLToPath } from 'node:url';
+    // Model a real CLI entry waiting on its dynamically imported driver hook.
+    // The hook must not import and auto-start that entry again.
+    process.argv[1] = fileURLToPath(${JSON.stringify(new URL('../scripts/desktop-background.mjs', import.meta.url).href)});
+    const { attachDesktopProfile } = await import(${JSON.stringify(new URL('../scripts/desktop-background-session.mjs', import.meta.url).href)});
     const before = {variant:'backdrop',calls:0,rootWrites:0,backdropWrites:0,fallbackWrites:0,shellRestores:0,lastValue:null};
     const after = {...before,calls:1,backdropWrites:1,lastValue:'-4px',effectiveValue:'-4px',translateY:-4,identityExceptY:true};
     let reads = 0, installed = false;

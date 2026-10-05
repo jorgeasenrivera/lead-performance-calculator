@@ -113,6 +113,13 @@ stays null, not zero. rAF measures main-thread scheduling, not literal GPU FPS.
 Automation, lifecycle probes, setter interception and matched shell observers
 remain included, so this is not a real-device or field-latency claim.
 
+The first unprofiled workflow at `8aaa14a` stopped before browser measurement
+with exit 13, unsettled top-level await. My hook imported configuration from
+the CLI that was awaiting its driver, creating an asynchronous import cycle.
+The stricter fake-context regression reproduces the accidental CLI activation;
+configuration now lives in an inert module. No timing evidence is accepted
+from run 37377538659. The existing completed `6f365d4` comparison is unaffected.
+
 The existing Supabase service stand-in stays unchanged and isolated. Fetching
 the skill's changelog index was unavailable through the documentation tool.
 No Supabase API, auth, schema or production feature is being implemented here.

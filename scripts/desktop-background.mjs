@@ -3,28 +3,13 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { backgroundConfig } from './desktop-background-config.mjs';
+export { backgroundConfig } from './desktop-background-config.mjs';
 
 export const PROFILER_SHA = 'ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4';
 export const DRIVER_SHA = 'abcc33dc7e9ad97f93f0517b6d0d41104b9fe111';
 export const DRIVER_HASH = '6de1f4d49a57e555f0ffcde435578bedbe1147856e2d811d1f83855f10c17f20';
 export const SIGNAL_SHA = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
-export function backgroundConfig(env = process.env) {
-  const variant = env.DESKTOP_BACKGROUND_VARIANT;
-  const recording = env.DESKTOP_BACKGROUND_RECORDING || 'profile';
-  const browser = env.FEEL_BROWSER || 'chromium';
-  const order = env.DESKTOP_BACKGROUND_ORDER || 'root-first';
-  assert.ok(['root', 'backdrop'].includes(variant));
-  assert.ok(['profile', 'unprofiled'].includes(recording));
-  assert.ok(['chromium', 'webkit'].includes(browser));
-  assert.ok(['root-first', 'backdrop-first'].includes(order));
-  if (recording === 'profile') {
-    assert.equal(browser, 'chromium', 'CDP experiment is Chromium only');
-    assert.equal(order, 'root-first');
-  }
-  const directory = recording === 'profile' ? `desktop-background-evidence/${variant}`
-    : `desktop-background-evidence/unprofiled/${browser}/${order}/${variant}`;
-  return { variant, recording, browser, order, directory };
-}
 export function narrowExperiment(source, variant, directory = `desktop-background-evidence/${variant}`) {
   assert.ok(['root', 'backdrop'].includes(variant));
   const cohort = "for (const width of [1440, 1920]) for (const fixture of ['demo', '60-sales']) {";

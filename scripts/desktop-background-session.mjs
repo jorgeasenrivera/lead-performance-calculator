@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installBackgroundScope, validateBackgroundSample } from './desktop-background-browser.mjs';
-import { backgroundConfig } from './desktop-background.mjs';
+import { backgroundConfig } from './desktop-background-config.mjs';
 
 export async function attachDesktopProfile(context, page, options) {
   const { variant, recording, directory } = backgroundConfig();
