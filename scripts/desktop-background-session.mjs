@@ -1,19 +1,22 @@
-import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installBackgroundScope, validateBackgroundSample } from './desktop-background-browser.mjs';
+import { backgroundConfig } from './desktop-background.mjs';
 
 export async function attachDesktopProfile(context, page, options) {
-  const variant = process.env.DESKTOP_BACKGROUND_VARIANT;
-  assert.ok(['root', 'backdrop'].includes(variant));
+  const { variant, recording, directory } = backgroundConfig();
   const root = process.env.DESKTOP_PROFILER_ROOT || '.desktop-profiler';
-  const { createProfileSession, PROFILE_LABELS } = await import(pathToFileURL(path.resolve(root, 'scripts/desktop-profile-session.mjs')).href);
-  const directory = `desktop-background-evidence/${variant}`;
+  const PROFILE_LABELS = new Set(['Performance', 'associate-open', 'list-scroll']);
   await mkdir(directory, { recursive: true });
   await page.addInitScript(installBackgroundScope, { variant });
-  const recorder = await createProfileSession(await context.newCDPSession(page), { ...options,
-    directory: directory + '/profiles', mapDirectory: '.desktop-signal/dist-mapped' });
+  // Unprofiled runs never open CDP or start CPU, timeline or counter recording.
+  let recorder = { begin() {}, finish() {}, abort() {}, dispose() {} };
+  if (recording === 'profile') {
+    const { createProfileSession } = await import(pathToFileURL(path.resolve(root, 'scripts/desktop-profile-session.mjs')).href);
+    recorder = await createProfileSession(await context.newCDPSession(page), { ...options,
+      directory: directory + '/profiles', mapDirectory: '.desktop-signal/dist-mapped' });
+  }
   const rows = []; let before, label;
   return {
     async begin(next) {
@@ -26,7 +29,7 @@ export async function attachDesktopProfile(context, page, options) {
       if (!label) return;
       // Read computed style only after profiling and the lifecycle recording
       // finish. Reading it every frame would measure our own layout flushes.
-      const row = { label, ordinal: rows.length, variant, before, after: null, sample,
+      const row = { label, ordinal: rows.length, variant, recording, before, after: null, sample,
         writes: null, failure: null };
       rows.push(row);
       try {

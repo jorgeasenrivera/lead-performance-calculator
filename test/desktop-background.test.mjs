@@ -2,8 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { installBackgroundScope, validateBackgroundSample } from '../scripts/desktop-background-browser.mjs';
-import { narrowExperiment, SIGNAL_SHA, DRIVER_SHA, PROFILER_SHA } from '../scripts/desktop-background.mjs';
+import { narrowExperiment, backgroundConfig, SIGNAL_SHA, DRIVER_SHA, PROFILER_SHA } from '../scripts/desktop-background.mjs';
 import { validateCohort } from '../scripts/desktop-background-report.mjs';
+import { validateUnprofiled, summarizeUnprofiled, INTERACTIONS } from '../scripts/desktop-background-unprofiled.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 function environment(count = 1, hostname = '127.0.0.1') {
   class Style {
@@ -145,4 +150,76 @@ test('CI pins accepted driver, repaired recorder and unchanged Signal source', a
   const browser = await readFile(new URL('../scripts/desktop-background-browser.mjs', import.meta.url), 'utf8');
   assert.ok(!browser.includes('requestAnimationFrame('));
   assert.ok(!browser.includes('scrollY'));
+});
+test('recording configuration separates both browsers and orders from accepted profile paths', () => {
+  assert.equal(backgroundConfig({ DESKTOP_BACKGROUND_VARIANT: 'root' }).directory, 'desktop-background-evidence/root');
+  for (const browser of ['chromium', 'webkit']) for (const order of ['root-first', 'backdrop-first']) {
+    assert.equal(backgroundConfig({ DESKTOP_BACKGROUND_VARIANT: 'backdrop', DESKTOP_BACKGROUND_RECORDING: 'unprofiled',
+      FEEL_BROWSER: browser, DESKTOP_BACKGROUND_ORDER: order }).directory,
+    `desktop-background-evidence/unprofiled/${browser}/${order}/backdrop`);
+  }
+  for (const change of [{ FEEL_BROWSER: 'webkit' }, { DESKTOP_BACKGROUND_ORDER: 'backdrop-first' },
+    { DESKTOP_BACKGROUND_VARIANT: '../wrong' }, { DESKTOP_BACKGROUND_RECORDING: 'wrong' }]) {
+    assert.throws(() => backgroundConfig({ DESKTOP_BACKGROUND_VARIANT: 'root', ...change }));
+  }
+});
+function unprofiledCohort(browser = 'chromium') {
+  const c = cohort();
+  c.baseline.browser = browser;
+  c.baseline.runs[0].results = Array.from({ length: 3 }, (_, cycle) => INTERACTIONS.map(label => ({ cycle,
+    summary: { label, usable: true, status: 'complete', hidden: false, droppedEntries: 0, viewport: [1920, 1080],
+      contentMs: 10, settledMs: 20, durationMs: 2200, frameCount: 100, frameMedianMs: 16.7,
+      frameP95Ms: 20, frameMaxMs: 30, gapsOver34Ms: 0, longTaskOverlapMs: null, longFrames: null } }))).flat();
+  for (const row of c.background) {
+    row.recording = 'unprofiled';
+    row.sample = c.baseline.runs[0].results[Math.floor(row.ordinal / 3) * 10 + INTERACTIONS.indexOf(row.label)].summary;
+  }
+  return c;
+}
+for (const browser of ['chromium', 'webkit']) test(`${browser} unprofiled cohort retains unknown API evidence and all 30 interactions`, () => {
+  const c = unprofiledCohort(browser);
+  const result = validateUnprofiled('backdrop', browser, c.baseline, c.background);
+  assert.equal(result.length, 30); assert.equal(result[0].summary.longFrames, null);
+});
+test('unprofiled comparison rejects order, label, browser, viewport, lifecycle and recording drift', () => {
+  const changes = [c => c.baseline.browser = 'webkit', c => c.baseline.runs[0].results.reverse(),
+    c => c.baseline.runs[0].results[0].summary.viewport = [1440, 900],
+    c => c.baseline.runs[0].results[0].summary.settledMs = null, c => c.background[0].recording = 'profile',
+    c => c.background[0].sample = { ...c.background[0].sample, contentMs: 11 },
+    c => c.background[0].after.effectiveValue = '', c => c.background.pop()];
+  for (const change of changes) {
+    const c = unprofiledCohort(); change(c);
+    assert.throws(() => validateUnprofiled('backdrop', 'chromium', c.baseline, c.background));
+  }
+});
+test('unprofiled report retains six raw timing values per label, not profiler counters', () => {
+  const samples = unprofiledCohort().baseline.runs[0].results;
+  const rows = summarizeUnprofiled([...samples, ...samples]);
+  assert.equal(rows.length, 10); assert.equal(rows[0].samples, 6);
+  assert.deepEqual(rows[0].contentMs.values, [10, 10, 10, 10, 10, 10]);
+  assert.equal(rows[0].contentMs.median, 10); assert.equal(rows[0].RecalcStyleDuration, undefined);
+  assert.throws(() => summarizeUnprofiled(samples));
+});
+test('unprofiled session never opens CDP and retains background parity evidence', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'background-no-cdp-'));
+  const source = `
+    import assert from 'node:assert/strict';
+    import { attachDesktopProfile } from ${JSON.stringify(new URL('../scripts/desktop-background-session.mjs', import.meta.url).href)};
+    const before = {variant:'backdrop',calls:0,rootWrites:0,backdropWrites:0,fallbackWrites:0,shellRestores:0,lastValue:null};
+    const after = {...before,calls:1,backdropWrites:1,lastValue:'-4px',effectiveValue:'-4px',translateY:-4,identityExceptY:true};
+    let reads = 0, installed = false;
+    const page = {addInitScript(){installed=true;},evaluate(){return reads++ ? after : before;}};
+    const context = {newCDPSession(){throw new Error('CDP must not open');}};
+    const session = await attachDesktopProfile(context,page,{width:1920,fixture:'60-sales'});
+    await session.begin('list-scroll'); await session.finish({}, {usable:true}); await session.dispose();
+    assert.equal(installed,true); assert.equal(reads,2);
+  `;
+  try {
+    const child = spawnSync(process.execPath, ['--unhandled-rejections=strict', '--input-type=module', '-e', source], {
+      cwd: directory, encoding: 'utf8', timeout: 5000, env: { ...process.env, DESKTOP_BACKGROUND_VARIANT: 'backdrop',
+        DESKTOP_BACKGROUND_RECORDING: 'unprofiled', FEEL_BROWSER: 'webkit', DESKTOP_BACKGROUND_ORDER: 'backdrop-first' } });
+    assert.equal(child.status, 0, child.stderr || child.error?.message);
+    const rows = JSON.parse(await readFile(path.join(directory, 'desktop-background-evidence/unprofiled/webkit/backdrop-first/backdrop/background.json')));
+    assert.equal(rows[0].recording, 'unprofiled'); assert.equal(rows[0].writes.calls, 1);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

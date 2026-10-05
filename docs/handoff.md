@@ -623,9 +623,15 @@ evidence guard. The full original interaction sequence remains intact.
 Look first at the prototype interception receiver and pass-through behavior,
 the post-recording parity read, immutable pins, and complete-cohort rejection.
 This is diagnostic evidence, not a field or unprofiled speed improvement. The
-browser run and review are still pending. Any actual app repair stays with
-X11's sole Manager branch and needs unchanged-design verification. X22's final
-trace-end repair passes Jorge's unmodified regression and the full profile CI.
+browser run and final diagnostic review now pass at `6f365d4`: see the completed
+evidence and implementation boundary in `docs/desktop-background.md`. X22's
+trace-end fix is also independently cleared at `ec1ca53`. The next X23 phase is
+unprofiled Chromium/WebKit in both variant orders, retaining all original
+interactions and exact parity guards. Its browser evidence is pending. No
+production patch, merge or release is certified. Before any actual repair on
+X11, reconcile the core `useLivingBackground`/shell ownership with C103 on the
+board. The diagnostic observer/prototype override is not a proposed shipped
+implementation. Read the no-CDP branch and complete-cohort rejection first.
 
 **H-X43 · H-C31: reuse the daily reader boundary, keep workbook provenance separate.**
 
