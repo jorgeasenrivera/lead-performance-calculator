@@ -15,7 +15,7 @@ const context = await browser.newContext({ viewport: { width: 390, height: 667 }
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
 await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
   const response = await route.fetch(); const data = await response.json();
-  const manager = p => ({ ...p, role: 'manager', wants: 'manager', onboarded: true,
+  const manager = p => ({ ...p, role: 'admin', wants: 'manager', onboarded: true,
     stores:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
@@ -26,6 +26,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
   await route.fulfill({response,json:Array.isArray(data)?data.map(addStore):addStore(data)});
 });
 const page = await context.newPage(), errors = [], results = [];
+await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
 page.on('pageerror', e => errors.push(e.message));
 await mkdir('manager-spacing', { recursive: true });
 try {

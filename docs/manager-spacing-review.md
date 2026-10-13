@@ -23,8 +23,11 @@ manager stylesheet for its immutable production version at
 5bf65105003b3e01227c774ea82e08d5d595bb68. After restores the candidate stylesheet.
 Application JSX, handlers and data are identical for the comparison.
 
-The fixture exposes two fictional dealerships, the actual dealer selector and
-all five manager section tabs. Coverage includes 320/360/375/390/393/414/430,
+The fictional admin fixture exposes two fictional dealerships, the actual dealer
+selector and all five section tabs, including Targets. An ordinary manager has
+four visible tabs because Import is in the dock; the first expanded fixture
+correctly failed its five-tab assertion until this role mismatch was corrected.
+No real permission changes are involved. Coverage includes 320/360/375/390/393/414/430,
 640/641/700/701/760/761, landscape 844 by 390, 667px short viewports and 34px
 safe-area cases at 390 and 700. It captures the scrolled roster bottom and filter
 header, logs exact geometry, checks shared column centers, intentional wrapping,
