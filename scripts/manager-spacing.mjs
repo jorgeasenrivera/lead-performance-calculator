@@ -191,6 +191,15 @@ try {
         }
       }
     }
+    if(phase==='before') {
+      for(const label of ['Dashboard','History','Targets','People','Dashboard']) {
+        const tab=page.locator('.sect-chip').filter({hasText:new RegExp(`^${label}$`)});
+        await tab.focus();await tab.evaluate(n=>window.spacingFocusNode=n);
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(label=>[...document.querySelectorAll('.sect-chip')].some(n=>n.textContent===label && n.classList.contains('on')),label);
+        results.push({baselineFocus:label,...await page.evaluate(()=>({originalConnected:window.spacingFocusNode.isConnected,activeTag:document.activeElement?.tagName}))});
+      }
+    }
   }
   await page.setViewportSize({width:320,height:667});
   await page.evaluate(()=>document.documentElement.style.setProperty('--shell-inset-bottom','34px'));
@@ -221,8 +230,8 @@ try {
   for(const label of await page.locator('.sect-chip').allTextContents()) {
     const tab=page.locator('.sect-chip').filter({hasText:new RegExp(`^${label}$`)});
     await tab.focus();
-    // Establish keyboard modality before checking the visible focus indicator.
-    await page.keyboard.press('Shift');
+    // Real sequential navigation establishes keyboard modality in WebKit too.
+    await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
     const focusBefore=await tab.evaluate(n=>({active:n===document.activeElement,visible:n.matches(':focus-visible'),outline:getComputedStyle(n).outlineWidth}));
     results.push({tab:label,focusBefore});
     assert.ok(focusBefore.active && focusBefore.visible && parseFloat(focusBefore.outline)>=2,'keyboard focus is visible before activation');
@@ -319,6 +328,7 @@ try {
   await page.evaluate(()=>{for(const s of window.spacingTextRestore) {if(s.style===null)s.node.removeAttribute('style');else s.node.setAttribute('style',s.style);}delete window.spacingTextRestore;});
   async function sharedHeader(name,count) {
     await page.waitForFunction(count=>document.querySelectorAll('.sect-chip').length===count,count);
+    await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
     for(const width of [320,390]) {
       await page.setViewportSize({width,height:667});
       await pillGeometry('.sect-strip');
