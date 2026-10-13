@@ -30,7 +30,9 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
   await route.fulfill({response,json:Array.isArray(data)?data.map(addStore):addStore(data)});
 });
-const page = await context.newPage(), errors = [], results = [], pillFailures=[];
+const page = await context.newPage(), errors = [], results = [], pillFailures=[], keyboardFailures=[];
+page.setDefaultTimeout(20000);
+page.setDefaultNavigationTimeout(30000);
 await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
 page.on('pageerror', e => errors.push(e.message));
 await mkdir('manager-spacing', { recursive: true });
@@ -107,6 +109,17 @@ async function pillGeometry(selector, enforce=true) {
   return evidence;
 }
 try {
+  for(const mobile of [true,false]) {
+    const control=await browser.newContext({isMobile:mobile,hasTouch:mobile,viewport:{width:320,height:667}});
+    const probe=await control.newPage();
+    await probe.setContent('<button id="first">First</button><button id="second">Second</button><input id="input">');
+    await probe.locator('#first').focus();await probe.keyboard.press('Tab');
+    const next=await probe.evaluate(()=>document.activeElement.id);
+    await probe.keyboard.press('Shift+Tab');
+    const previous=await probe.evaluate(()=>document.activeElement.id);
+    results.push({nativeKeyboardControl:{mobile,next,previous}});
+    await control.close();
+  }
   await page.goto(url);
   await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');
   await page.locator('input[type="password"]').fill('x');
@@ -248,9 +261,10 @@ try {
     await tab.focus();
     // Real sequential navigation establishes keyboard modality in WebKit too.
     await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
-    const focusBefore=await tab.evaluate(n=>({active:n===document.activeElement,visible:n.matches(':focus-visible'),outline:getComputedStyle(n).outlineWidth}));
+    const focusBefore=await tab.evaluate(n=>({active:n===document.activeElement,visible:n.matches(':focus-visible'),outline:getComputedStyle(n).outlineWidth,activeTag:document.activeElement?.tagName,activeClass:document.activeElement?.className}));
     results.push({tab:label,focusBefore});
-    assert.ok(focusBefore.active && focusBefore.visible && parseFloat(focusBefore.outline)>=2,'keyboard focus is visible before activation');
+    if(!(focusBefore.active && focusBefore.visible && parseFloat(focusBefore.outline)>=2)) keyboardFailures.push({label,focusBefore});
+    await tab.focus();
     await page.keyboard.press('Enter');
     await page.waitForFunction(label=>[...document.querySelectorAll('.sect-chip')].some(n=>n.textContent===label && n.classList.contains('on')),label);
     await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
@@ -351,9 +365,9 @@ try {
     }
     const first=page.locator('.sect-chip').first(),last=page.locator('.sect-chip').last();
     await first.focus();await page.keyboard.press('Tab');
-    assert.ok(await page.locator('.sect-chip').nth(1).evaluate(n=>n===document.activeElement),'Tab reaches next section');
+    if(!await page.locator('.sect-chip').nth(1).evaluate(n=>n===document.activeElement)) keyboardFailures.push({name,key:'Tab'});
     await page.keyboard.press('Shift+Tab');
-    assert.ok(await first.evaluate(n=>n===document.activeElement),'Shift-Tab returns to previous section');
+    if(!await first.evaluate(n=>n===document.activeElement)) keyboardFailures.push({name,key:'Shift-Tab'});
     await last.focus();await page.keyboard.press('Space');
     await page.waitForFunction(()=>document.querySelector('.sect-chip:last-child')?.classList.contains('on'));
     await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
@@ -380,6 +394,8 @@ try {
   await sharedHeader('overseer-three',3);
   await page.locator('.view-select').selectOption('combined');
   await sharedHeader('combined-two',2);
+  results.push({keyboardFailures});
+  assert.deepEqual(keyboardFailures,[],'keyboard requirements are retained, not waived');
   assert.deepEqual(pillFailures,[],'all fixed-header checks pass; retained failures are not waived');
   assert.deepEqual(errors,[]);
   console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');
