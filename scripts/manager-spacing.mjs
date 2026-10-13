@@ -16,7 +16,7 @@ const url = 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 390, height: 667 },
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
-let fixtureRole='admin';
+let fixtureRole='admin', dockFixture=null;
 await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
   const response = await route.fetch(); const data = await response.json();
   const manager = p => ({ ...p, role: fixtureRole, wants: 'manager', onboarded: true,
@@ -31,7 +31,18 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     stores:[...row.value.stores,{...row.value.stores[0],id:'spacing-demo-2',name:'Second Fictional Store'}],
     standards:{...row.value.standards,'spacing-demo-2':row.value.standards?.['sage-demo']}}}
     :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
-  await route.fulfill({response,json:Array.isArray(data)?data.map(addStore):addStore(data)});
+  const fixture=row=>{
+    row=addStore(row);
+    if(!dockFixture || !row?.value)return row;
+    if(row.value.stores)return {...row,value:{...row.value,stores:row.value.stores.map(st=>({...st,rooms:{floor:true,line:dockFixture.rooms===2}}))}};
+    if(row.value.months){
+      const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date()), month=day.slice(0,7);
+      const m=row.value.months[month]||{};
+      return {...row,value:{...row.value,months:{...row.value.months,[month]:{...m,imports:{...m.imports,[day]:dockFixture.done===2?{appointment:true,video:true,activity:true}:dockFixture.done===1?{appointment:true}:{}}}}}};
+    }
+    return row;
+  };
+  await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
 });
 const page = await context.newPage(), errors = [], results = [], pillFailures=[], keyboardFailures=[];
 page.setDefaultTimeout(20000);
@@ -135,7 +146,8 @@ try {
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);
-  const dockBefore=(await import('node:child_process')).execFileSync('git',['show','4d050292aea1904d1b6dc35a07116dc9137e9f4f:src/manager-signal.css'],{encoding:'utf8'});
+  const dockBefore=await readFile('.dock-baseline/src/manager-signal.css','utf8');
+  assert.equal(createHash('sha256').update(dockBefore).digest('hex'),'8cf478b56e8066b6bd1262980428311ad76c9ab88aacbd16f5d09f652a8c1704','immutable dock baseline');
   for(const size of [{width:320,height:667},{width:390,height:667},{width:667,height:320}]) for(const inset of [0,34]) for(const scale of [1,1.5]) {
     await page.setViewportSize(size);
     for(const [phase,css] of [['before',dockBefore],['after',after]]) {
@@ -199,6 +211,15 @@ try {
   results.push({dailyReport:{label:await page.locator('.botnav-fablbl').textContent(),ring:await page.locator('.bh-arc').getAttribute('stroke-dashoffset')}});
   await page.locator('.botnav-btn').filter({hasText:/^Performance$/}).click();
   await page.locator('.bp-row').first().waitFor();
+  for(const mode of [{rooms:1,done:1},{rooms:2,done:2}]) {
+    dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();
+    assert.equal(await page.locator('.botnav-btn[aria-haspopup]').count(),mode.rooms===1?0:1,'single room goes directly, multiple rooms retain menu');
+    const label=await page.locator('.botnav-fablbl').textContent();
+    assert.equal(label,mode.done===2?'Imported':'Import 1/2');
+    results.push({importVariant:{...mode,label,ring:await page.locator('.bh-arc').getAttribute('stroke-dashoffset')}});
+    for(const width of [320,390]){await page.setViewportSize({width,height:667});await page.screenshot({path:`manager-spacing/dock-variant-${mode.rooms}-rooms-${mode.done}-done-${width}.png`});}
+  }
+  dockFixture=null;await page.reload();await page.locator('.bp-row').first().waitFor();
   for(const width of [320,390]) {
     await page.setViewportSize({width,height:667});
     for(const [version,css] of [['previous',previousHeader],['candidate',after]]) {
