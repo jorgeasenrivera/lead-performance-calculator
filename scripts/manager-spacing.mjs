@@ -135,6 +135,70 @@ try {
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);
+  const dockBefore=(await import('node:child_process')).execFileSync('git',['show','4d050292aea1904d1b6dc35a07116dc9137e9f4f:src/manager-signal.css'],{encoding:'utf8'});
+  for(const size of [{width:320,height:667},{width:390,height:667},{width:667,height:320}]) for(const inset of [0,34]) for(const scale of [1,1.5]) {
+    await page.setViewportSize(size);
+    for(const [phase,css] of [['before',dockBefore],['after',after]]) {
+      await page.evaluate(async({css,inset,scale})=>{
+        [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
+        document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
+        const nodes=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl,.search-top input')];
+        window.dockRestore=nodes.map(n=>({n,style:n.getAttribute('style'),font:parseFloat(getComputedStyle(n).fontSize)}));
+        window.dockRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.font*scale}px`,'important'));
+        scrollTo({top:0,behavior:'instant'});
+        for(let i=0;i<12;i++)await new Promise(requestAnimationFrame);
+      },{css,inset,scale});
+      const geometry=await page.evaluate(()=>{
+        const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+        const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
+        const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
+        const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
+        const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
+        return {dock,search,band,targets,labels,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
+      });
+      results.push({dockSearch:{phase,...size,inset,scale,...geometry}});
+      await page.screenshot({path:`manager-spacing/dock-search-${phase}-${size.width}x${size.height}-inset${inset}-text${scale*100}.png`});
+      if(phase==='after') {
+        assert.ok(geometry.targets.every(t=>t.width>=44 && t.height>=44),'dock and help retain 44px targets');
+        assert.ok(geometry.targets.every(t=>t.x>=0 && t.right<=size.width && t.bottom<=size.height-inset),'dock targets clear viewport and safe area');
+        for(let i=0;i<geometry.targets.length;i++)for(let j=i+1;j<geometry.targets.length;j++){const a=geometry.targets[i],b=geometry.targets[j];assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,'dock targets do not overlap');}
+        assert.ok(geometry.labels.every(l=>l.rects.every(r=>r.x>=l.box.x-1 && r.right<=l.box.right+1 && r.y>=l.box.y-1 && r.bottom<=l.box.bottom+1)),'dock labels fully fit');
+        assert.ok(geometry.search.height>=44 && geometry.documentWidth<=size.width,'search target and document fit');
+      }
+      await page.evaluate(()=>{for(const s of window.dockRestore){if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.dockRestore;});
+    }
+  }
+  await page.setViewportSize({width:390,height:667});
+  await page.evaluate(()=>document.documentElement.style.setProperty('--shell-inset-bottom','0px'));
+  const dockSearch=page.getByPlaceholder('Search associates',{exact:true});
+  await dockSearch.focus();await page.keyboard.type('no-such-fictional-associate');
+  await page.locator('.bp-stand .fr-empty').waitFor();
+  await page.keyboard.press('Tab');
+  assert.ok(await page.locator('.search-clear').evaluate(n=>n===document.activeElement),'keyboard reaches search clear');
+  await page.keyboard.press('Enter');await page.locator('.bp-row').first().waitFor();
+  assert.equal(await dockSearch.inputValue(),'','clear resets query');
+  results.push({searchClearFocus:await page.evaluate(()=>({tag:document.activeElement.tagName,className:document.activeElement.className}))});
+  await dockSearch.focus();await page.keyboard.type('Alex');await page.keyboard.press('ControlOrMeta+A');await page.keyboard.press('Backspace');
+  await page.locator('.bp-row').first().waitFor();
+  const rooms=page.locator('.botnav-btn[aria-haspopup]');
+  if(await rooms.count()) {
+    await rooms.click();await page.locator('.qpick').waitFor();
+    const popup=await page.locator('.qpick').boundingBox(),dock=await page.locator('.botnav').boundingBox();
+    assert.ok(popup.y+popup.height<=dock.y-7,'Rooms menu anchors above dock');
+    await page.screenshot({path:'manager-spacing/dock-rooms-open.png'});
+    await page.keyboard.press('Escape');await page.locator('.qpick').waitFor({state:'hidden'});
+  }
+
+  await page.locator('.botnav-btn').filter({hasText:/^More$/}).click();
+  await page.getByRole('button',{name:'Close menu',exact:true}).click();
+  await page.locator('.help-fab:not(.inline)').click();
+  await page.getByRole('dialog',{name:'Help',exact:true}).getByRole('button',{name:'Close',exact:true}).click();
+  await page.locator('.botnav-btn').filter({hasText:/^Activity$/}).click();
+  await page.getByRole('button',{name:'Open the daily report',exact:true}).waitFor();
+  await page.screenshot({path:'manager-spacing/dock-daily-report.png'});
+  results.push({dailyReport:{label:await page.locator('.botnav-fablbl').textContent(),ring:await page.locator('.bh-arc').getAttribute('stroke-dashoffset')}});
+  await page.locator('.botnav-btn').filter({hasText:/^Performance$/}).click();
+  await page.locator('.bp-row').first().waitFor();
   for(const width of [320,390]) {
     await page.setViewportSize({width,height:667});
     for(const [version,css] of [['previous',previousHeader],['candidate',after]]) {
