@@ -30,7 +30,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
   await route.fulfill({response,json:Array.isArray(data)?data.map(addStore):addStore(data)});
 });
-const page = await context.newPage(), errors = [], results = [];
+const page = await context.newPage(), errors = [], results = [], pillFailures=[];
 await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
 page.on('pageerror', e => errors.push(e.message));
 await mkdir('manager-spacing', { recursive: true });
@@ -76,6 +76,7 @@ async function pillGeometry(selector, enforce=true) {
   });
   results.push({phase:enforce?'after':'before',pillHeader:selector,width:page.viewportSize().width,...evidence});
   if(enforce) {
+    try {
     assert.ok(evidence.ancestors.every(a=>a.positive===0 && a.negative===0),`${selector}: neither container nor ancestor scrolls sideways`);
     // A visible-overflow page wrapper may include the existing card's 4px
     // negative gutter without being scrollable. Require exact fit for the
@@ -87,6 +88,21 @@ async function pillGeometry(selector, enforce=true) {
       assert.ok(b.textRects.every(r=>r.x>=b.box.x-1 && r.right<=b.box.right+1 && r.y>=b.box.y-1 && r.bottom<=b.box.bottom+1),`${selector}: complete label stays inside its button`);
     }
     if(selector==='.sect-strip') assert.ok(evidence.buttons.filter(b=>b.selected).every(b=>b.background==='rgb(35, 73, 57)'), 'selected fill follows the actual button');
+    } catch(error) {
+      const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(n=>{
+        const r=n.getBoundingClientRect();return r.width && r.right>innerWidth+1 && getComputedStyle(n).position!=='fixed';
+      }).slice(0,25).map(n=>({tag:n.tagName,className:n.className,width:n.getBoundingClientRect().width,right:n.getBoundingClientRect().right})));
+      const baselineWidth=await page.evaluate(async css=>{
+        const sheet=[...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch'));
+        const original=sheet.textContent;sheet.textContent=css;
+        await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+        const width=document.documentElement.scrollWidth;sheet.textContent=original;
+        await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+        return width;
+      },before);
+      const failure={selector,message:error.message,overflow,baselineWidth};
+      pillFailures.push(failure);results.push({pillFailure:failure});
+    }
   }
   return evidence;
 }
@@ -364,6 +380,7 @@ try {
   await sharedHeader('overseer-three',3);
   await page.locator('.view-select').selectOption('combined');
   await sharedHeader('combined-two',2);
+  assert.deepEqual(pillFailures,[],'all fixed-header checks pass; retained failures are not waived');
   assert.deepEqual(errors,[]);
   console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');
 } finally {
