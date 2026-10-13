@@ -111,6 +111,22 @@ try {
     await page.locator('.brand-menu').waitFor();
     await page.keyboard.press('Escape');
     await page.locator('.brand-menu').waitFor({ state: 'hidden' });
+    await more.click();
+    await page.locator('.drawer').getByRole('button', { name: 'Summary', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await page.locator('.sm-phone').waitFor();
+    await more.click();
+    await page.locator('.drawer').getByRole('button', { name: 'Dashboard', exact: true }).click();
+    await page.locator('.bp-row').first().waitFor();
+    await page.waitForFunction(() => !document.documentElement.matches('.tool-move,.tab-move'));
+    // Keep the app's existing interruption policy. A burst must settle, then
+    // another deliberate selection must still work without a stuck overlay.
+    await page.locator('.sect-chip').filter({ hasText: /^Summary$/ }).dispatchEvent('click');
+    await page.locator('.sect-chip').filter({ hasText: /^Dashboard$/ }).dispatchEvent('click');
+    await page.waitForFunction(() => !document.documentElement.matches('.tool-move,.tab-move'));
+    await page.locator('.sect-chip').filter({ hasText: /^Dashboard$/ }).click();
+    await page.locator('.bp-row').first().waitFor();
+    assert.equal(await page.locator('.drawer-root.open,.qpick').count(), 0, 'navigation leaves no menu overlay');
     evidence.cases.push({ name: 'keyboard, repeated open/close and interrupted menus', reduced });
   }
   // Diagnostic screenshots only. These do not assert that the reported spacing
