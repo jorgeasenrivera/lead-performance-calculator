@@ -500,12 +500,12 @@ test("consistency pass, items 10 and 11: the app asks in its own voice, and a se
 
 test("five-second pass, items 6 to 12: plain words, one verdict per row, the empty room speaks, grids wait, type grows, set-up steps back, Rooms", () => {
   assert.ok(/\[QUEUE_TAB, "Rooms", "door"\]/.test(mgr), "the dock's third slot is Rooms");
-  assert.ok(/working today\{offToday\.length/.test(mgr) && !/to hit`|to hit<\/span>|to hit<\/button>/.test(mgr), "7 working today; goal, never to hit");
+  assert.ok(/<SignalCopy full=\{" working today"\} short=\{" on today"\} \/>\{offToday\.length/.test(mgr) && !/to hit`|to hit<\/span>|to hit<\/button>/.test(mgr), "approved on-today copy retains the off count; goal, never to hit");
   assert.ok(/Most penalty points this month/.test(mgr) && !/Biggest Loser · most points/.test(mgr), "penalty points say so");
   assert.ok(/`\$\{behindCount\} not signed in`/.test(mgr) && /"TV link"/.test(mgr) && !/"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
   assert.ok(!/"Never ours"|>Never ours</.test(mgr) && /Not this store's/.test(mgr), "not this store's, everywhere");
   assert.ok(!/if \(!l\) return <span className="(?:fr-st pe-noacct|pp-noacct)">no account<\/span>;/.test(mgr), "no account is a count with an action, not a chip on every row");
-  assert.ok(/className="tg-hint">Grace days: how long/.test(mgr), "grace days and lead caps explain themselves");
+  assert.ok(/Monthly grace: colours stay off during the first days of each month\./.test(mgr), "monthly grace explains the actual monthly rule");
   assert.ok(/className=\{"bp-verdict bp-" \+ worst\}/.test(mgr) && /grid-template-columns:28px minmax\(0,1fr\) 84px 34px;/.test(mgr) && !/<PixIcon glyph="globe" size=\{13\} \/><PixIcon glyph="phone" size=\{13\} \/>/.test(mgr), "one verdict per phone row, with a glyph");
   /* The empty room's one action was "Send the sign-in code". The codes went on
      28 September (C99), so both rooms pass no action and an empty room shows
