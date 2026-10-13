@@ -260,7 +260,10 @@ try {
     const tab=page.locator('.sect-chip').filter({hasText:new RegExp(`^${label}$`)});
     await tab.focus();
     // Real sequential navigation establishes keyboard modality in WebKit too.
-    await page.keyboard.press('Shift+Tab');await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.evaluate(()=>new Promise(requestAnimationFrame));
+    await page.keyboard.press('Shift+Tab');
+    await page.evaluate(()=>new Promise(requestAnimationFrame));
     const focusBefore=await tab.evaluate(n=>({active:n===document.activeElement,visible:n.matches(':focus-visible'),outline:getComputedStyle(n).outlineWidth,activeTag:document.activeElement?.tagName,activeClass:document.activeElement?.className}));
     results.push({tab:label,focusBefore});
     if(!(focusBefore.active && focusBefore.visible && parseFloat(focusBefore.outline)>=2)) keyboardFailures.push({label,focusBefore});
