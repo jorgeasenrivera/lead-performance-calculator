@@ -373,6 +373,28 @@ try {
         return {className:n.className,text:n.textContent,readable:[...range.getClientRects()].filter(r=>r.width).every(r=>r.x>=card.x && r.right<=card.right && r.y>=card.y && r.bottom<=card.bottom)};
       })}));
   }
+  async function captureAdminCards(label) {
+    const original=page.viewportSize();
+    // Keep the narrow 320px layout. A taller inspection viewport lets the
+    // actual cards clear both the sticky header and fixed bottom controls.
+    await page.setViewportSize({width:320,height:1000});
+    const framing=await page.evaluate(async()=>{
+      const card=document.querySelector('.gv-card');
+      for(let i=0;i<8;i++) {
+        const sticky=document.querySelector('.topstack').getBoundingClientRect();
+        scrollTo({left:0,top:Math.max(0,scrollY+card.getBoundingClientRect().y-sticky.bottom-12),behavior:'instant'});
+        await new Promise(requestAnimationFrame);
+      }
+      const r=card.getBoundingClientRect(),sticky=document.querySelector('.topstack').getBoundingClientRect();
+      return {viewport:{width:innerWidth,height:innerHeight},scrollX,scrollY,
+        card:{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height},stickyBottom:sticky.bottom,
+        text:card.textContent,documentWidth:document.documentElement.scrollWidth};
+    });
+    results.push({adminCardCapture:label,...framing});
+    assert.ok(framing.text.trim() && framing.card.y>=framing.stickyBottom+8 && framing.card.bottom<900,'actual admin card is fully framed below sticky header');
+    await page.screenshot({path:`manager-spacing/${label}-admin-cards-320x1000.png`});
+    await page.setViewportSize(original);
+  }
   async function sharedHeader(name,count) {
     await page.waitForFunction(count=>document.querySelectorAll('.sect-chip').length===count,count);
     await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
@@ -387,6 +409,7 @@ try {
           },css);
           const geometry=await contentBounds();results.push({sharedContent:name,phase,...geometry});
           await page.screenshot({path:`manager-spacing/${phase}-${name}-${width}-content.png`});
+          if(name==='admin-seven' && width===320) await captureAdminCards(phase);
           if(phase==='after') {
             assert.ok(geometry.scrollWidth<=width+1,'shared phone content fits viewport');
             assert.ok(geometry.text.length && geometry.text.every(t=>t.readable),'shared phone content remains inside its card');
@@ -402,6 +425,7 @@ try {
           });
           const geometry=await contentBounds();results.push({sharedContent:name,stress:'150-percent-text',sizes,...geometry});
           await page.screenshot({path:`manager-spacing/after-${name}-content-text150.png`});
+          if(name==='admin-seven') await captureAdminCards('after-text150');
           assert.ok(sizes.every(s=>Math.abs(s.after-s.before*1.5)<.01),'shared content genuinely enlarged');
           assert.ok(geometry.scrollWidth<=width+1 && geometry.text.every(t=>t.readable),'enlarged shared content fits without clipping');
           await page.evaluate(()=>{for(const s of window.contentTextRestore) {if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.contentTextRestore;});
