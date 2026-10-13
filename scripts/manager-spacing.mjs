@@ -65,7 +65,7 @@ async function pillGeometry(selector, enforce=true) {
       p.scrollTo({left:10000,behavior:'instant'});const positive=p.scrollLeft;
       p.scrollTo({left:-10000,behavior:'instant'});const negative=p.scrollLeft;
       p.scrollTo({left:initial,behavior:'instant'});
-      ancestors.push({className:p.className,clientWidth:p.clientWidth,scrollWidth:p.scrollWidth,positive,negative});
+      ancestors.push({className:p.className,clientWidth:p.clientWidth,scrollWidth:p.scrollWidth,overflowX:getComputedStyle(p).overflowX,positive,negative});
     }
     return {box:rect(n),ancestors,buttons:[...n.querySelectorAll('button')].map(b=>{
       const range=document.createRange();range.selectNodeContents(b);
@@ -76,7 +76,12 @@ async function pillGeometry(selector, enforce=true) {
   });
   results.push({phase:enforce?'after':'before',pillHeader:selector,width:page.viewportSize().width,...evidence});
   if(enforce) {
-    assert.ok(evidence.ancestors.every(a=>a.scrollWidth<=a.clientWidth+1 && a.positive===0 && a.negative===0),`${selector}: neither container nor ancestor scrolls sideways`);
+    assert.ok(evidence.ancestors.every(a=>a.positive===0 && a.negative===0),`${selector}: neither container nor ancestor scrolls sideways`);
+    // A visible-overflow page wrapper may include the existing card's 4px
+    // negative gutter without being scrollable. Require exact fit for the
+    // pill container, actual overflow containers, and document viewport.
+    assert.ok(evidence.ancestors.every((a,i)=>i!==0 && a.overflowX==='visible' || a.scrollWidth<=a.clientWidth+1),`${selector}: pill and scrolling containers have no horizontal overflow`);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'document fits the viewport');
     for(const b of evidence.buttons) {
       assert.ok(b.box.x>=evidence.box.x && b.box.right<=evidence.box.right+1 && b.box.height>=44,`${selector}: every control fits and keeps a touch target`);
       assert.ok(b.textRects.every(r=>r.x>=b.box.x-1 && r.right<=b.box.right+1 && r.y>=b.box.y-1 && r.bottom<=b.box.bottom+1),`${selector}: complete label stays inside its button`);
