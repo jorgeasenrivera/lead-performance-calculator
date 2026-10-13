@@ -102,6 +102,35 @@ html.manager-signal :is(.qpick,.drawer) {
 }
 @keyframes sagePolishOut { from {opacity:1;transform:none} to {opacity:0;transform:translateX(var(--tabx-out,var(--tx-out,0px)))} }
 @keyframes sagePolishIn { from {opacity:1;transform:translateX(var(--tabx-in,var(--tx-in,0px)))} to {opacity:1;transform:none} }
+/* Phone roster spacing follows the same columns in its heading and rows.
+   A full final filter row is intentional, rather than a stranded pill. */
+@media(max-width:700px) {
+  html.manager-signal .bp-filt { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  html.manager-signal .bp-filt button {
+    min-width:0; min-height:44px; padding:8px 10px; white-space:normal;
+    text-align:center; justify-content:center; overflow-wrap:anywhere;
+  }
+  html.manager-signal .bp-filt button:last-child:nth-child(odd) { grid-column:1 / -1; }
+  html.manager-signal :is(.bp-fivehead,.bp-row) {
+    grid-template-columns:28px minmax(0,1fr) 84px 40px;
+    padding-left:12px; padding-right:12px;
+  }
+  html.manager-signal .bp-row { height:auto; min-height:56px; padding-top:8px; padding-bottom:8px; }
+  html.manager-signal .bp-row .bp-lim { flex-wrap:wrap; white-space:normal; overflow:visible; row-gap:3px; }
+  html.manager-signal .bp-row .bp-pb { flex:1 1 28px; min-width:28px; max-width:70px; }
+  html.manager-signal .bp-row .bp-lim b { white-space:nowrap; }
+  html.manager-signal .bp-verdict { max-width:100%; height:auto; min-height:26px; white-space:normal; flex-wrap:wrap; justify-content:center; }
+  html.manager-signal .bp-fivehead .bp-lbl { min-width:0; overflow-wrap:anywhere; }
+  /* Help stands 122px above the safe-area edge; leave a readable gap above it.
+     Import keeps its raised treatment. Every roster row can clear both. */
+  html.manager-signal .board-page:has(> .bp-page) { padding-bottom:calc(136px + var(--sab,0px)); }
+  html.manager-signal:has(.board-page > .bp-page) { scroll-padding-bottom:calc(136px + var(--sab,0px)); }
+}
+/* The phone card keeps its negative margin through 700px, but the outer page
+   gutter ends at 640px. Carry that gutter across the intervening range. */
+@media(min-width:641px) and (max-width:700px) {
+  html.manager-signal .board-page:has(> .bp-page) { padding-left:14px; padding-right:14px; }
+}
 @media(max-width:600px) {
   /* The units column is narrower than the digits plus an inline goal. Keep
      the goal below, and let real SVG digits shrink together without clipping. */

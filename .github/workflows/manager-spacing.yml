@@ -1,0 +1,49 @@
+name: manager-spacing
+on:
+  push:
+    branches: [codex/signal-phone-spacing]
+  pull_request:
+    paths:
+      - src/manager-signal.css
+      - scripts/manager-spacing.mjs
+      - .github/workflows/manager-spacing.yml
+jobs:
+  spacing:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+      - uses: actions/checkout@v4
+        with:
+          ref: 5bf65105003b3e01227c774ea82e08d5d595bb68
+          path: .spacing-baseline
+          persist-credentials: false
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Build fictional app
+        run: |
+          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          npm run build
+      - name: Measure before and after
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+        run: |
+          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          node scripts/manager-spacing.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: manager-spacing-${{ matrix.engine }}
+          path: manager-spacing/
+          retention-days: 14
