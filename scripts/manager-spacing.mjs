@@ -198,12 +198,12 @@ try {
   await page.locator('.bp-row').first().waitFor();
   // Explicit text-only stress, not a production scaling rule or a substitute
   // for a physical phone's accessibility text setting.
-  const textSamples=await page.evaluate(()=>{
+  const textMeasurement=await page.evaluate(async()=>{
     const nodes=[...document.querySelectorAll('.bp-nmx,.bp-lim b,.bp-stnd,.bp-filt button,.bp-fivehead .bp-lbl,.bp-un,.bp-verdict')];
     const samples=nodes.map(n=>({node:n,before:parseFloat(getComputedStyle(n).fontSize),style:n.getAttribute('style')}));
     window.spacingTextRestore=samples;
     for(const s of samples) s.node.style.setProperty('font-size',`${s.before*1.5}px`,'important');
-    return samples.map((s,index)=>{
+    const measure=()=>samples.map((s,index)=>{
       const computed=getComputedStyle(s.node),rect=s.node.getBoundingClientRect();
       return {index,className:s.node.className,text:s.node.textContent,before:s.before,
         requested:s.before*1.5,after:parseFloat(computed.fontSize),connected:s.node.isConnected,
@@ -211,12 +211,24 @@ try {
         textSizeAdjust:computed.getPropertyValue('-webkit-text-size-adjust'),
         transition:computed.transition,animation:computed.animation,width:rect.width,height:rect.height};
     });
+    const immediate=measure(),frames=[],start=performance.now();
+    // WebKit can report a transition's starting value in the mutation turn,
+    // even with the existing reduced-motion duration of one microsecond.
+    // Wait for rendered values, preserving every sample and the exact target.
+    let settled;
+    do {
+      await new Promise(requestAnimationFrame);
+      settled=measure();
+      frames.push({elapsed:performance.now()-start,sizes:settled.map(s=>s.after),connected:settled.map(s=>s.connected)});
+    } while(!settled.every(s=>s.connected && Math.abs(s.after-s.requested)<.01) && performance.now()-start<1000);
+    return {immediate,frames,textSamples:settled};
   });
+  const {textSamples}=textMeasurement;
   // Keep failed enlargement evidence too, before any requirement can abort.
-  results.push({phase:'after',stress:'150-percent-text-measurement',textSamples});
-  await writeFile('manager-spacing/text-measurement.json',JSON.stringify({engine,textSamples},null,2));
+  results.push({phase:'after',stress:'150-percent-text-measurement',...textMeasurement});
+  await writeFile('manager-spacing/text-measurement.json',JSON.stringify({engine,...textMeasurement},null,2));
   await page.screenshot({path:'manager-spacing/text-measurement.png'});
-  assert.ok(textSamples.every(s=>Math.abs(s.after-s.before*1.5)<.01),'every selected text element is actually enlarged 150%');
+  assert.ok(textSamples.every(s=>s.connected && Math.abs(s.after-s.before*1.5)<.01),'every selected text element is actually enlarged 150%');
   await settleScroll('filters');
   const enlargedUnitsLines=await page.locator('.bp-fivehead .bp-lbl').last().evaluate(n=>{
     const range=document.createRange();range.selectNodeContents(n);
