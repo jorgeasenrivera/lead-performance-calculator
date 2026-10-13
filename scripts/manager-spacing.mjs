@@ -56,7 +56,7 @@ try {
       if (await page.getByRole('button',{name:'Close the round-up',exact:true}).isVisible()) {
         await page.getByRole('button',{name:'Close the round-up',exact:true}).click();
       }
-      await page.evaluate(() => window.scrollTo(0,document.documentElement.scrollHeight));
+      await page.evaluate(() => window.scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'}));
       // html owns smooth scrolling even under the app's reduced-motion rule.
       // A requested bottom is not a reached bottom, especially in WebKit.
       await page.waitForFunction(() => {
@@ -88,7 +88,22 @@ try {
       results.push({phase,...c,...geometry});
       await page.screenshot({path:`manager-spacing/${key}-bottom.png`});
       if(c.width<=700) {
-        await page.locator('.bp-filt').scrollIntoViewIfNeeded();
+        const target=await page.evaluate(()=>{
+          const filter=document.querySelector('.bp-filt').getBoundingClientRect();
+          const sticky=document.querySelector('.topstack')?.getBoundingClientRect().bottom || 0;
+          const s=document.scrollingElement;
+          const top=Math.max(0,Math.min(s.scrollHeight-s.clientHeight,scrollY+filter.y-sticky-12));
+          window.scrollTo({top,behavior:'instant'}); return top;
+        });
+        await page.waitForFunction(top=>Math.abs(scrollY-top)<1,target);
+        const capture=await page.evaluate(()=>({
+          filterTop:document.querySelector('.bp-filt').getBoundingClientRect().y,
+          headerBottom:document.querySelector('.bp-fivehead').getBoundingClientRect().bottom,
+          stickyBottom:document.querySelector('.topstack')?.getBoundingClientRect().bottom || 0,
+          scrollTop:scrollY,
+        }));
+        results.at(-1).filterCapture=capture;
+        assert.ok(capture.filterTop>=capture.stickyBottom+8,`${key}: filter screenshot clears sticky header`);
         await page.screenshot({path:`manager-spacing/${key}-filters.png`});
       }
       if(phase==='after') {
