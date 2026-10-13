@@ -146,11 +146,13 @@ try {
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);
+  const compactBefore=await readFile('.rail-baseline/src/manager-signal.css','utf8');
+  assert.equal(createHash('sha256').update(compactBefore).digest('hex'),'df61b077ae859454022425873637eed87df18a98348fcbf05aa49e590017071a','immutable compact dock baseline');
   const dockBefore=await readFile('.dock-baseline/src/manager-signal.css','utf8');
   assert.equal(createHash('sha256').update(dockBefore).digest('hex'),'8cf478b56e8066b6bd1262980428311ad76c9ab88aacbd16f5d09f652a8c1704','immutable dock baseline');
   for(const size of [{width:320,height:667},{width:390,height:667},{width:667,height:320}]) for(const inset of [0,34]) for(const scale of [1,1.5]) {
     await page.setViewportSize(size);
-    for(const [phase,css] of [['before',dockBefore],['after',after]]) {
+    for(const [phase,css] of [['before',dockBefore],['compact',compactBefore],['after',after]]) {
       await page.evaluate(async({css,inset,scale})=>{
         [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
         document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
@@ -184,6 +186,15 @@ try {
   }
   await page.setViewportSize({width:390,height:667});
   await page.evaluate(()=>document.documentElement.style.setProperty('--shell-inset-bottom','0px'));
+  const railStyle=await page.evaluate(()=>{
+    const style=s=>{const n=document.querySelector(s),c=getComputedStyle(n);return {background:c.backgroundColor,color:c.color,radius:c.borderRadius,display:c.display};};
+    return {rail:style('.botnav'),thumb:style('.botnav-thumb'),help:style('.help-fab:not(.inline)'),selected:style('.botnav-btn.on'),marker:getComputedStyle(document.querySelector('.botnav-btn.on'),'::after').backgroundColor};
+  });
+  results.push({railStyle});
+  assert.equal(railStyle.rail.background,'rgb(255, 253, 244)');
+  assert.equal(railStyle.rail.radius,'0px');
+  assert.equal(railStyle.thumb.display,'none');
+  assert.equal(railStyle.marker,'rgb(35, 73, 57)');
   const dockSearch=page.getByPlaceholder('Search associates',{exact:true});
   await dockSearch.focus();await page.keyboard.type('no-such-fictional-associate');
   await page.locator('.bp-stand .fr-empty').waitFor();

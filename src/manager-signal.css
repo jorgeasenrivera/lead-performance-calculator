@@ -843,16 +843,24 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
 
 /* Keep every phone tool within one low dock, including Import and help. */
 @media(max-width:760px){
-  html.manager-signal .botnav{left:6px;right:6px;bottom:calc(6px + var(--sab));padding:3px 48px 3px 3px;align-items:stretch;border-radius:18px}
-  html.manager-signal .botnav-btn{flex:1 1 0;min-width:44px;min-height:52px;padding:4px 1px;gap:2px;justify-content:center}
+  html.manager-signal .botnav{left:0;right:0;bottom:0;padding:3px 48px calc(3px + var(--sab)) 3px;align-items:stretch;border-radius:0;border:0;border-top:1px solid #71866b;background:#fffdf4;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none}
+  html.manager-signal .botnav-btn{flex:1 1 0;min-width:44px;min-height:52px;padding:4px 1px;gap:2px;justify-content:center;border-radius:2px;color:#53664f}
   html.manager-signal .botnav-btn:first-of-type{min-width:64px}
   html.manager-signal .botnav-lbl{font-size:10px;line-height:1.4;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
   html.manager-signal .botnav-slot{flex:1 1 0;min-width:59px;min-height:52px;display:flex;align-items:flex-end;justify-content:center}
-  html.manager-signal .botnav-fab{inset:0;width:100%;height:100%;transform:none;border-radius:12px;background:#e8efdf;color:#234939;box-shadow:none;align-items:flex-start;padding:4px 0 0}
+  html.manager-signal .botnav-fab{inset:0;width:100%;height:100%;transform:none;border-radius:3px;background:#234939;color:#fffdf4;box-shadow:none;align-items:flex-start;padding:4px 0 0}
   html.manager-signal .botnav-halo{top:0;width:29px;height:29px;z-index:3}
-  html.manager-signal .botnav-fablbl{position:relative;inset:auto;padding:28px 1px 4px;font-size:10px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;z-index:3}
-  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){right:10px;bottom:calc(11px + var(--sab));top:auto;width:44px;height:44px;border-radius:12px;box-shadow:none}
-  html.manager-signal .qpick{bottom:calc(100% + 8px)}
+  html.manager-signal .botnav-fablbl{position:relative;inset:auto;padding:28px 1px 4px;font-size:10px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;z-index:3;color:#fffdf4}
+  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){right:3px;bottom:calc(7px + var(--sab));top:auto;width:44px;height:44px;border-radius:3px;box-shadow:none;background:#fffdf4;color:#53664f;border:1px solid #cbd3c5}
+  html.manager-signal .botnav-thumb{display:none}
+  html.manager-signal .botnav-btn.on{color:#173d2b;background:#e8efdf}
+  html.manager-signal .botnav-btn.on::after{content:"";position:absolute;bottom:0;left:8px;right:8px;height:3px;background:#234939}
+  html.manager-signal .botnav-btn.on .botnav-lbl{font-weight:800}
+  html.manager-signal .botnav-halo .bh-trk{stroke:#ffffff55}
+  html.manager-signal .botnav-halo .bh-arc{stroke:#e4c98d}
+  html.manager-signal .qpick{bottom:calc(100% + 8px);border-radius:6px;background:#fffdf4;border:1px solid #a9bba0;backdrop-filter:none;-webkit-backdrop-filter:none}
+  html.manager-signal .qpick-btn{border-radius:3px;color:#234939}
+  html.manager-signal .qpick-ico{border-radius:3px;background:#e8efdf;color:#234939}
   html.manager-signal .seg-wrap:has(>.search-top){padding:2px 12px;gap:0}
   html.manager-signal .seg-wrap>.search-top{margin:0;max-width:none;min-width:0;flex:1 1 auto}
   html.manager-signal .search-top .search-input{min-height:44px;padding:7px 44px;font-size:16px}

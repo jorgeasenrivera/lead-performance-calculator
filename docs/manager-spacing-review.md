@@ -120,8 +120,9 @@ text, in addition to the shared-context and keyboard checks.
 ## Compact dock and search, 13 October phone feedback
 
 Jorge requested a redesign of the lower selection and search because they take
-up too much screen space. Parent's independent screenshot review identified the
-persistent Tools dock and Search associates, not the roster's role/cap filters.
+up too much screen space. Parent's initial screenshot review suggested the persistent Tools dock. That
+interpretation was provisional: Jorge confirmed the fixed Performance/Activity
+navigation only in his subsequent clarification, after c4d5c03 was prepared.
 The single-row top tabs and roster choices remain intact.
 
 The phone stylesheet places Import inside the dock and retains its SVG progress
@@ -150,3 +151,26 @@ visual review surface when a later probe-only head skips deployment.
 Independent screenshot review, Jorge's actual-phone production-build preview
 trial, and the informed release decision remain mandatory. Browser emulation is
 not physical-device evidence. Production remains held.
+
+
+## Confirmed rail direction, subsequent 13 October clarification
+
+Jorge confirmed Performance, Activity and the other fixed destinations, and
+asked for a treatment distinctive to Sage. No example image of the other
+selector was supplied, inspected or copied. This revision uses the existing
+Signal cream, forest green and pixel glyphs: a flat edge-to-edge rail, crisp
+corners, fixed selected marker, inset Import with its live progress ring, and
+secondary help. The menu uses the same palette. No animation is introduced.
+
+This pass is rail-only. Search remains exactly as c4d5c03; its 48px idle band
+has not met the requested space saving. The proposed search/header patch remains
+unapplied because C97 and other open core-file work conflict with the repository's
+two-large-file writer rule. Parent is obtaining a bounded exception from Jorge.
+No claims are renewed, transferred or modified. The proposed Escape action
+preserves the query and returns focus to a trigger displaying the active query;
+clearing is explicit and returns focus to the input.
+
+The browser comparison now includes three pinned stylesheets: original dock
+4d050292, compact trial c4d5c03, and this Signal rail. The same safe-area, label,
+target, variant and full prior spacing/navigation checks remain. This is a
+protected review candidate, not production or physical-phone approval.
