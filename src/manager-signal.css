@@ -845,11 +845,12 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
 @media(max-width:760px){
   html.manager-signal .botnav{left:6px;right:6px;bottom:calc(6px + var(--sab));padding:3px 48px 3px 3px;align-items:stretch;border-radius:18px}
   html.manager-signal .botnav-btn{flex:1 1 0;min-width:44px;min-height:52px;padding:4px 1px;gap:2px;justify-content:center}
-  html.manager-signal .botnav-lbl{font-size:10px;line-height:1.2;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
-  html.manager-signal .botnav-slot{flex:1 1 0;min-width:44px;min-height:52px;display:flex;align-items:flex-end;justify-content:center}
+  html.manager-signal .botnav-btn:first-of-type{min-width:64px}
+  html.manager-signal .botnav-lbl{font-size:10px;line-height:1.4;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
+  html.manager-signal .botnav-slot{flex:1 1 0;min-width:59px;min-height:52px;display:flex;align-items:flex-end;justify-content:center}
   html.manager-signal .botnav-fab{inset:0;width:100%;height:100%;transform:none;border-radius:12px;background:#e8efdf;color:#234939;box-shadow:none;align-items:flex-start;padding:4px 0 0}
   html.manager-signal .botnav-halo{top:0;width:29px;height:29px;z-index:3}
-  html.manager-signal .botnav-fablbl{position:relative;inset:auto;padding:28px 1px 4px;font-size:10px;line-height:1.2;white-space:normal;overflow-wrap:anywhere;z-index:3}
+  html.manager-signal .botnav-fablbl{position:relative;inset:auto;padding:28px 1px 4px;font-size:10px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;z-index:3}
   html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){right:10px;bottom:calc(11px + var(--sab));top:auto;width:44px;height:44px;border-radius:12px;box-shadow:none}
   html.manager-signal .qpick{bottom:calc(100% + 8px)}
   html.manager-signal .seg-wrap:has(>.search-top){padding:2px 12px;gap:0}

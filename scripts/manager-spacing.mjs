@@ -154,6 +154,7 @@ try {
       await page.evaluate(async({css,inset,scale})=>{
         [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
         document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
+        for(let i=0;i<4;i++)await new Promise(requestAnimationFrame);
         const nodes=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl,.search-top input')];
         window.dockRestore=nodes.map(n=>({n,style:n.getAttribute('style'),font:parseFloat(getComputedStyle(n).fontSize)}));
         window.dockRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.font*scale}px`,'important'));
@@ -163,7 +164,7 @@ try {
       const geometry=await page.evaluate(()=>{
         const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
         const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
-        const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
+        const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
         const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
         const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
         return {dock,search,band,targets,labels,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
@@ -174,6 +175,7 @@ try {
         assert.ok(geometry.targets.every(t=>t.width>=44 && t.height>=44),'dock and help retain 44px targets');
         assert.ok(geometry.targets.every(t=>t.x>=0 && t.right<=size.width && t.bottom<=size.height-inset),'dock targets clear viewport and safe area');
         for(let i=0;i<geometry.targets.length;i++)for(let j=i+1;j<geometry.targets.length;j++){const a=geometry.targets[i],b=geometry.targets[j];assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,'dock targets do not overlap');}
+        assert.ok(geometry.labels.every(l=>Math.abs(parseFloat(l.fontSize)-10*scale)<.01),'dock label text is genuinely enlarged');
         assert.ok(geometry.labels.every(l=>l.rects.every(r=>r.x>=l.box.x-1 && r.right<=l.box.right+1 && r.y>=l.box.y-1 && r.bottom<=l.box.bottom+1)),'dock labels fully fit');
         assert.ok(geometry.search.height>=44 && geometry.documentWidth<=size.width,'search target and document fit');
       }

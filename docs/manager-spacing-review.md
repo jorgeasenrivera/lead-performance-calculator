@@ -1,8 +1,7 @@
-# Phone roster spacing
+# Phone spacing and compact tools
 
 This correction is separate from motion PR #468. It starts from main's X25
-claim and changes only phone layout in manager-signal.css. No motion, font-size,
-viewport, zoom, data, auth, native or backend change is included.
+claim and changes only phone layout in manager-signal.css. The later dock/search revision below supersedes the initial typography and raised-Import scope. No viewport scaling, data, auth, native or backend change is included.
 
 The original screenshot was not accessible in this environment. Parent and
 reviewer own comparison with its actual pixels. Independent fictional browser
@@ -19,7 +18,7 @@ instead of disappearing inside an overflow-hidden line. Rows can grow above
 their unchanged 56px minimum, including when text is enlarged. Bottom content
 space and scroll padding account for the
 fixed help button's 122px extent plus a 14px gap and the safe-area inset.
-Import's raised treatment and all controls remain unchanged.
+This describes the first roster correction. The subsequent dock/search revision below replaces Import's raised treatment.
 
 The manager-spacing workflow renders before/after in Chromium and WebKit using
 the actual built app and fictional local data. Before swaps only the mounted
@@ -116,3 +115,38 @@ No global text reduction, hidden destination or sideways scrolling is used.
 Card and roster corrections remain unchanged. The probe compares2024e009's
 multiple-row header with the candidate at320/390px and measured100/150%
 text, in addition to the shared-context and keyboard checks.
+
+
+## Compact dock and search, 13 October phone feedback
+
+Jorge requested a redesign of the lower selection and search because they take
+up too much screen space. Parent's independent screenshot review identified the
+persistent Tools dock and Search associates, not the roster's role/cap filters.
+The single-row top tabs and roster choices remain intact.
+
+The phone stylesheet places Import inside the dock and retains its SVG progress
+ring, ready state, action and Daily report variant. Help has a dedicated 44px
+space at the right of the dock. Every dock destination remains visible, with
+wrapping labels and a 44px minimum target. The Rooms menu anchors 8px above the
+dock instead of leaving room for the former raised Import button. Search stays
+visible, with a 44px field and clear target, 16px input text, and tighter wrapper
+padding. No application handlers or data paths are changed.
+
+The spacing probe pins the immediately preceding single-row candidate
+4d050292aea1904d1b6dc35a07116dc9137e9f4f for this comparison. It captures
+320x667, 390x667 and 667x320 at scrollY 0, safe-area insets 0 and 34, and actual
+100%/150% text. It measures the topmost dock, Import/ring and help geometry,
+search band height, and remaining content space. It verifies target overlap,
+complete labels, keyboard search clearing, Rooms/Escape, More, help, partial
+and completed import state, Daily report, and single/multiple-room layouts.
+The existing full roster/header/navigation checks still run afterward.
+
+The first run stopped because a runtime git command encountered the CI
+container's repository ownership guard. The probe now reads a separate pinned
+checkout and validates its stylesheet hash. No ownership, permission or browser
+security setting was changed. Runtime-identical preview bf9f08b remains the
+visual review surface when a later probe-only head skips deployment.
+
+Independent screenshot review, Jorge's actual-phone production-build preview
+trial, and the informed release decision remain mandatory. Browser emulation is
+not physical-device evidence. Production remains held.
