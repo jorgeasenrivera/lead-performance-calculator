@@ -120,6 +120,11 @@ html.manager-signal :is(.qpick,.drawer) {
   html.manager-signal .board-page:has(> .bp-page) { padding-bottom:calc(136px + var(--sab,0px)); }
   html.manager-signal:has(.board-page > .bp-page) { scroll-padding-bottom:calc(136px + var(--sab,0px)); }
 }
+/* The phone card keeps its negative margin through 700px, but the outer page
+   gutter ends at 640px. Carry that gutter across the intervening range. */
+@media(min-width:641px) and (max-width:700px) {
+  html.manager-signal .board-page:has(> .bp-page) { padding-left:14px; padding-right:14px; }
+}
 @media(max-width:600px) {
   /* The units column is narrower than the digits plus an inline goal. Keep
      the goal below, and let real SVG digits shrink together without clipping. */

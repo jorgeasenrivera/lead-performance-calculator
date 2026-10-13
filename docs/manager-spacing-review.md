@@ -49,3 +49,11 @@ container's ownership check. The workflow now checks out the pinned baseline
 separately and verifies the stylesheet SHA-256 before reading it. It does not
 change Git's ownership checks. Locally SPACING_BEFORE_CSS can name that same
 verified stylesheet file.
+
+The first rendered run exposed a 4px horizontal overflow at 641 through 700px:
+the phone card's negative margin continued beyond the outer page's 640px gutter
+breakpoint. The correction carries those gutters through 700px. WebKit also
+reported overlap while its smooth scroll was still approaching the bottom.
+The probe now waits for and logs the actual scroll endpoint before applying
+the unchanged clearance threshold; it does not infer a completed scroll from
+two animation frames. A failed endpoint or clearance assertion still fails CI.

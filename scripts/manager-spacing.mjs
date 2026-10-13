@@ -57,6 +57,12 @@ try {
         await page.getByRole('button',{name:'Close the round-up',exact:true}).click();
       }
       await page.evaluate(() => window.scrollTo(0,document.documentElement.scrollHeight));
+      // html owns smooth scrolling even under the app's reduced-motion rule.
+      // A requested bottom is not a reached bottom, especially in WebKit.
+      await page.waitForFunction(() => {
+        const s=document.scrollingElement;
+        return Math.abs(s.scrollHeight-s.clientHeight-s.scrollTop)<1;
+      },null,{timeout:5000});
       await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
       const geometry = await page.evaluate(() => {
         const box = el => { if(!el) return null; const r=el.getBoundingClientRect(); return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}; };
@@ -64,7 +70,10 @@ try {
         const h=document.querySelector('.bp-fivehead');
         const last=rows.at(-1);
         const visible = selector => [...document.querySelectorAll(selector)].filter(n=>n.getBoundingClientRect().width && getComputedStyle(n).display!=='none').map(box);
+        const scroll=document.scrollingElement;
         return {viewport:{w:innerWidth,h:innerHeight},scrollWidth:document.documentElement.scrollWidth,
+          scroll:{top:scroll.scrollTop,height:scroll.scrollHeight,clientHeight:scroll.clientHeight,
+            remaining:scroll.scrollHeight-scroll.clientHeight-scroll.scrollTop},
           filter:box(document.querySelector('.bp-filt')),
           filters:[...document.querySelectorAll('.bp-filt button')].map(n=>({...box(n),text:n.textContent})),
           header:h ? [...h.children].map(box):[],
