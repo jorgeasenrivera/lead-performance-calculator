@@ -1,0 +1,747 @@
+
+/* The hierarchy changes. The store's colour, artwork and data stay Sage's. */
+.manager-signal .s2-hero { border:1px solid rgba(255,255,255,.22); box-shadow:0 14px 28px -18px rgba(18,34,26,.5); }
+.manager-signal .s2-store { font-size:26px; letter-spacing:-.035em; }
+.manager-signal .s2-head { padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,.22); }
+.manager-signal .s2-right { padding-left:22px; border-left:1px solid rgba(255,255,255,.22); }
+.manager-signal .bp-hero { border:1px solid rgba(255,255,255,.22); box-shadow:0 12px 22px -15px rgba(18,34,26,.55); }
+.manager-signal .sage-bp-store { font:700 12px/1.25 var(--font-display); color:#fff; margin:0 110px 16px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.manager-signal .bp-five { padding-top:10px; }
+.manager-signal .bp-upd i { animation:none; background:#E4C98D; box-shadow:none; }
+.manager-signal .bp-goal, .manager-signal .bp-left, .manager-signal .bp-tl { color:rgba(255,255,255,.87); }
+.manager-signal .s2-scap { color:var(--ink); }
+.manager-signal .s2-hero .s2-cap, .manager-signal .s2-hero .s2-scap { color:rgba(255,255,255,.88); }
+.manager-signal .s2-hero .s2-tube { filter:none; }
+.manager-signal .sec-cap { color:var(--ink); letter-spacing:.10em; }
+.manager-signal .page .card { box-shadow:0 3px 10px -7px rgba(18,34,26,.25); }
+.manager-signal .page button { transition:transform 130ms cubic-bezier(.2,.8,.2,1), background-color 160ms ease, color 160ms ease; }
+.manager-signal .page button:active { transform:translateY(1px); }
+.manager-signal button:focus-visible, .manager-signal input:focus-visible { outline:3px solid #267D62; outline-offset:3px; }
+.manager-signal .co-upd i, .manager-signal .s2-imp::after { animation:none; }
+.manager-signal .sage-perf-actions { box-sizing:border-box; min-width:0; width:100%; flex:0 1 auto; justify-content:stretch; }
+.manager-signal .sage-perf-actions .fr-b { box-sizing:border-box; min-width:0; white-space:normal; border:2px solid #D4DFD3; background:#fff; color:#15211B; }
+.manager-signal .sage-perf-actions .fr-b.pri { background:#567D61; border-color:#567D61; color:#fff; }
+.manager-signal .sage-perf-actions .fr-b.warnpri { background:#B8332B; border-color:#B8332B; color:#fff; }
+.manager-signal .tg-in input { min-height:44px; width:64px; box-sizing:border-box; font-size:16px; font-weight:700; }
+.manager-signal .grace-label input { min-height:44px; font-size:16px; }
+.manager-signal .tg-row { min-height:64px; }
+.manager-signal .tg-hint { color:rgba(255,255,255,.9); font-size:12px; line-height:1.5; }
+/* The longest heading gets a real column, shared with its figures. */
+.manager-signal :is(.hs-head,.hs-row) { grid-template-columns:minmax(72px,1fr) minmax(0,1fr) minmax(0,.8fr) minmax(52px,1fr) repeat(2,minmax(0,1fr)); column-gap:5px; }
+.manager-signal .hs-head > span:not(:first-child) { font:700 10px/1.25 var(--font-ui); text-align:center; overflow-wrap:normal; color:#15211B !important; }
+/* Compact phones cannot fit names plus five readable metric headings in one
+   line. Keep the metrics aligned, with the person's name above them. */
+@media(max-width:380px) {
+  .manager-signal :is(.hs-head,.hs-row) { grid-template-columns:repeat(2,minmax(0,1fr)) minmax(52px,1fr) repeat(2,minmax(0,1fr)); padding-left:8px !important; padding-right:8px !important; }
+  .manager-signal .hs-head > span:first-child { display:none; }
+  .manager-signal .hs-row { row-gap:8px; }
+  .manager-signal .hs-who { grid-column:1 / -1; }
+  .manager-signal .hs-nf { grid-column:1 / -1; text-align:left; }
+  /* Keep channel bars together, then video dials. Six cramped columns make
+     neighbouring percentages read like one number on a compact card. */
+  .manager-signal .acard .ac-gauges .mstrip { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 10px; }
+}
+/* Keep scroll containment. Anchor pointer explanations to the whole gauge
+   area, not a narrow dial whose centred popup crosses the card's edge.
+   Touch retains Sage's existing body-level explanation overlay. */
+@media(hover:hover) {
+  .manager-signal .acard .ac-gauges { position:relative; }
+  .manager-signal .acard .ac-gauges :is(.mclust,.bloop-host) { position:static; }
+  .manager-signal .acard .ac-gauges .bloopwin { box-sizing:border-box; width:min(272px,calc(100% - 8px)); left:50%; right:auto; bottom:calc(100% + 9px); transform:translate(-50%,6px) scale(.5); transform-origin:50% calc(100% + 26px); }
+  .manager-signal .acard .ac-gauges .bloop-host:is(:hover,:focus-within) > .bloopwin { transform:translate(-50%,0) scale(1); }
+}
+/* Tablet has room for the figures, not every fixed desktop column in one
+   line. Keep name and points together, then give the actions their own line. */
+@media(min-width:641px) and (max-width:900px) {
+  .manager-signal .da-row { flex-wrap:wrap; row-gap:8px; }
+  .manager-signal .da-row::after { content:""; width:100%; order:2; }
+  .manager-signal .da-name { width:auto; flex:1 1 calc(100% - 110px); order:0; }
+  .manager-signal .da-flex { display:none; }
+  .manager-signal .da-cell { order:3; flex:1 1 70px; }
+  .manager-signal .da-qualcell { order:4; flex:0 0 auto; }
+  .manager-signal .da-markoff { order:5; }
+  .manager-signal .da-ptcell { order:1; flex:0 0 auto; margin-left:auto; }
+}
+/* The app owns exit, swap and entry. Hold mount effects off for this page's
+   whole life, including nested sections, so cleanup cannot start them again.
+   Login keeps its own approved choreography. */
+.manager-signal.manager-signal-switch:where(:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold)) :is(.page,.board-page,.tab-page),.manager-signal.manager-signal-switch:where(:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold)) :is(.page,.board-page,.tab-page) > *,.manager-signal.manager-signal-switch:where(:not(.sage-assemble):not(.jump-under):not(.sage-preparing):not(.refresh-hold)) .page :is(.hero,.co-gon,.s2-hero) { animation:none !important; }
+/* Move only the outer foreground, never both it and its nested sections.
+   Direction and the swap still come from Sage's actual tool/tab state. */
+@media(prefers-reduced-motion:no-preference) {
+.manager-signal.manager-signal-switch:not(.manager-signal-reduce):is(.tool-exit,.tab-exit) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
+  animation:sagePolishOut .14s cubic-bezier(.4,0,.9,.3) both !important;
+}
+.manager-signal.manager-signal-switch:not(.manager-signal-reduce):is(.tool-enter,.tab-enter) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
+  animation:sagePolishIn .34s cubic-bezier(.16,.78,.24,1) both !important;
+}
+}
+@keyframes sagePolishOut { from {opacity:1;transform:none} to {opacity:0;transform:translateX(var(--tabx-out,var(--tx-out,0px)))} }
+@keyframes sagePolishIn { from {opacity:1;transform:translateX(var(--tabx-in,var(--tx-in,0px)))} to {opacity:1;transform:none} }
+@media(max-width:600px) {
+  /* The units column is narrower than the digits plus an inline goal. Keep
+     the goal below, and let real SVG digits shrink together without clipping. */
+  .manager-signal .bp-page .bp-l1 { flex-direction:column; align-items:flex-start; gap:8px; }
+  .manager-signal .bp-page .bp-num { max-width:100%; line-height:0; }
+  .manager-signal .bp-page .bp-num .dotnum { max-width:100%; }
+  .manager-signal .bp-page .bp-num .dotnum > svg { min-width:0; height:auto; }
+  .manager-signal .s2-store { font-size:22px; }
+  .manager-signal .s2-right { padding-left:0; border-left:0; }
+  .manager-signal .tg-in input { width:64px; }
+  .manager-signal .tg-row { row-gap:10px; }
+  .manager-signal .hs-c { min-width:0; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .manager-signal .page button { transition:none; }
+  .manager-signal .page button:active { transform:none; }
+}
+.manager-signal.manager-signal-reduce .page button { transition:none; }
+.manager-signal.manager-signal-reduce .page button:active { transform:none; }
+.manager-signal.manager-signal-reduce.manager-signal-switch :is(.page,.board-page,.tab-page) { animation:none !important; }
+@media(prefers-reduced-motion:reduce) {
+  .manager-signal.manager-signal-switch :is(.page,.board-page,.tab-page) { animation:none !important; }
+}
+
+/* All variants style the same real manager tree. Do not conceal information
+   to win density, and do not restyle the login, native or salesperson views. */
+html.manager-signal :is(.s2-store,.bp-store,.co-store){overflow-wrap:anywhere}
+html.manager-signal .s2-hero{box-sizing:border-box}
+html.manager-signal .s2-idtx{min-width:0;flex:1 1 180px}
+html.manager-signal :is(.s2-left,.s2-right,.s2-rail,.s2-group){min-width:0}
+html.manager-signal .s2-hbars{gap:12px}
+html.manager-signal .s2-marks{gap:10px}
+html.manager-signal :is(.s2-mklbl,.s2-an-cap,.s2-an-sub,.s2-pwhy){font-size:12px;line-height:1.4}
+html.manager-signal :is(.s2-pace-lbl,.s2-split-lbl){font-size:12px;gap:8px;flex-wrap:wrap}
+html.manager-signal .s2-mc-sub{white-space:normal;text-align:right;line-height:1.4}
+html.manager-signal .s2-vitals{line-height:1.55}
+html.manager-signal :is(.co-std,.tg-row){min-width:0}
+html.manager-signal .co-std>button{min-width:0}
+html.manager-signal .co-std>button>span{white-space:normal;line-height:1.35}
+html.manager-signal .sage-bp-store{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.4}
+html.manager-signal .bp-five{column-gap:7px}
+html.manager-signal .bp-t5{font-size:10px;white-space:normal;line-height:1.4;text-align:center}
+html.manager-signal .bp-t5 .bp-tl{font-size:10px;white-space:normal;line-height:1.35;letter-spacing:.02em}
+html.manager-signal .bp-dial .bp-dl{font-size:10px;white-space:normal;line-height:1.35;max-width:none;min-height:27px;letter-spacing:.02em}
+
+/* 01. A consistent rhythm, retaining the familiar instruments and shapes. */
+
+/* 02. One instrument panel: result, closing and video side by side, with
+   the existing calendar and store controls in their own lower rail. */
+
+/* 03. Fewer competing containers. The same instrument surfaces are deeper
+   green; the surrounding reports use fine rules and a warm paper ground. */
+html.manager-signal :is(.page,.board-page,.tab-page){--card:#fffef8;--line:#cdd5c8}
+html.manager-signal :is(.s2-hero,.bp-hero,.targets.tg-ph>.tg-hero-ph,.co-page>.co-hero,.bp-page.cx-page>.cx-hero){background:#234939;border-radius:10px;box-shadow:none;border:1px solid #3c5f49}
+html.manager-signal .s2-hero{padding:25px 28px}
+html.manager-signal .s2-hero::before{background:repeating-linear-gradient(0deg,#ffffff04 0 1px,transparent 1px 4px)}
+html.manager-signal .s2-store{font-size:30px;letter-spacing:-.04em}
+html.manager-signal .s2-head{padding-bottom:18px;border-bottom:1px solid #ffffff3d}
+html.manager-signal .s2-hero.s2-hasrail{grid-template-columns:minmax(0,1fr) 200px;gap:28px}
+html.manager-signal .s2-body{display:grid;grid-template-columns:minmax(190px,.85fr) minmax(0,1.4fr);align-items:start;gap:28px}
+html.manager-signal .s2-left{max-width:none;padding-top:8px}
+html.manager-signal .s2-right{gap:22px;padding-left:24px}
+html.manager-signal .s2-hbars{height:98px}
+html.manager-signal .s2-hcol{border-radius:3px}
+html.manager-signal .s2-hcol i{border-radius:3px;filter:none}
+html.manager-signal .s2-focusgrid{grid-template-columns:minmax(235px,.8fr) minmax(0,1.6fr);gap:0;border-bottom:1px solid #c5cec0;padding-bottom:15px}
+html.manager-signal .s2-ansq{border-radius:8px 0 0 8px;box-shadow:none}
+html.manager-signal .s2-spot{border-radius:0 8px 8px 0;border-left:0}
+html.manager-signal .page .card{box-shadow:none;border-radius:9px}
+html.manager-signal :is(.s2-pod,.da-row){box-shadow:none}
+html.manager-signal .sec-cap{letter-spacing:.07em;margin-top:22px}
+
+/* Keep all facts and form fields. Shared phone hero classes are scoped by
+   page so a coaching rule cannot silently change history or targets. */
+html.manager-signal :is(.history>.hist-hero,.targets>.tg-hero,.pp-hero,.checkout.da-page>.da-hero){height:auto}
+html.manager-signal :is(.hist-herobody,.tg-herobody,.pp-herobody){gap:18px}
+html.manager-signal :is(.hist-herobody,.tg-herobody,.pp-herobody){display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));border-top:1px solid #ffffff38;padding-top:18px}
+html.manager-signal :is(.pp-card,.coach-list-card,.coach-detail){border-radius:9px;box-shadow:none}
+html.manager-signal .coaching .cx-bench{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))!important;gap:16px}
+html.manager-signal :is(.pp-bar,.pe-tools,.co-tools){flex-wrap:wrap;gap:8px}
+/* Only these standalone, redundant brand words are removed. Their account
+   opener, room names, store identities and every action stay untouched. */
+html.manager-signal .fr-page>.fr-top .fr-brand>.fr-cap,
+html.manager-signal .brand-menu>.bm-app{display:none}
+
+@media(min-width:701px) and (max-width:1080px){
+  html.manager-signal .s2-hero.s2-hasrail{grid-template-columns:1fr;gap:18px}
+  html.manager-signal .s2-hero.s2-hasrail>.s2-rail{grid-column:1;grid-row:2}
+  html.manager-signal .s2-rail .s2-chips{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  html.manager-signal .s2-rail .s2-chip-state{margin-top:0;flex-direction:row;align-items:center;gap:16px}
+  html.manager-signal .s2-mcal{display:flex}
+  html.manager-signal .s2-body{display:grid;grid-template-columns:minmax(195px,.75fr) minmax(0,1fr);gap:24px}
+  html.manager-signal .s2-right{display:flex;flex-direction:column;border-left:1px solid #ffffff35;padding-left:20px}
+  html.manager-signal .s2-group+.s2-group{border-left:0;padding-left:0}
+  html.manager-signal .s2-focusgrid{grid-template-columns:minmax(200px,.8fr) minmax(0,1.4fr)}
+}
+@media(max-width:700px){
+  html.manager-signal .s2-hero{padding:20px 18px}
+  html.manager-signal .s2-store{font-size:22px}
+  html.manager-signal .s2-body{display:flex;flex-direction:column;align-items:stretch;gap:20px}
+  html.manager-signal .s2-right{display:flex;flex-direction:column;border-left:0;padding-left:0;gap:22px}
+  html.manager-signal .s2-group+.s2-group{border-left:0;padding-left:0}
+  html.manager-signal .s2-focusgrid{grid-template-columns:1fr;gap:12px}
+  html.manager-signal :is(.s2-ansq,.s2-spot){border-radius:12px}
+  html.manager-signal .s2-spot{border:1px solid var(--line)}
+  html.manager-signal .s2-rail .s2-chips{display:flex}
+  html.manager-signal .s2-rail .s2-chip-state{flex-wrap:wrap;justify-content:flex-start}
+  html.manager-signal .bp-hero{padding:20px 18px}
+  html.manager-signal .sage-bp-store{margin:0 0 6px}
+  html.manager-signal .bp-upd{position:static;justify-content:flex-end;margin-bottom:16px}
+  html.manager-signal .bp-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 8px}
+  html.manager-signal .bp-five .bp-sep{grid-column:1/-1;height:1px;width:100%}
+  html.manager-signal .co-std{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  html.manager-signal .co-std>button>span{font-size:11px}
+  html.manager-signal :is(.hs-head,.hs-row){grid-template-columns:repeat(2,minmax(0,1fr)) minmax(52px,1fr) repeat(2,minmax(0,1fr));padding-left:10px!important;padding-right:10px!important}
+  html.manager-signal .hs-head>span:first-child{grid-column:1/-1}
+  html.manager-signal .hs-who{grid-column:1/-1;margin-bottom:8px}
+  html.manager-signal .hs-nm{white-space:normal;overflow:visible;text-overflow:clip}
+  html.manager-signal .hs-nf{grid-column:1/-1;text-align:left}
+  html.manager-signal .hs-c b{font-size:12px}
+  html.manager-signal .hs-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  html.manager-signal .hs-five span{font-size:10px;line-height:1.35}
+  html.manager-signal .tg-ph .tg-in{display:grid!important;grid-template-columns:64px 12px;align-items:center;gap:6px 4px}
+  html.manager-signal .tg-ph .tg-in::before{grid-column:1/-1;font-size:10px;line-height:1.4}
+}
+@media(min-width:701px) and (max-width:900px){
+  html.manager-signal .tg-row .tg-in{display:grid;grid-template-columns:64px 12px;align-items:center;gap:6px 4px}
+  html.manager-signal .tg-row .tg-in::before{grid-column:1/-1;font:600 11px/1.4 var(--font-ui);color:var(--ink-2)}
+  html.manager-signal .tg-row .tg-in:has(input[aria-label*=", green threshold,"])::before{content:"Green at"}
+  html.manager-signal .tg-row .tg-in:has(input[aria-label*=", yellow threshold,"])::before{content:"Yellow at"}
+}
+@media(max-width:380px){
+  html.manager-signal .bp-h5{grid-template-columns:minmax(0,1fr) 102px;column-gap:10px}
+  html.manager-signal .sage-bp-store{margin-right:0;padding-right:0}
+  html.manager-signal .bp-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 9px}
+  html.manager-signal .bp-five .bp-sep{grid-column:1/-1;height:1px;width:100%}
+  html.manager-signal .bp-t5{font-size:11px}
+  html.manager-signal .bp-upd{font-size:9px}
+  html.manager-signal :is(.s2-mklbl,.s2-gcap){font-size:10px;white-space:normal}
+  html.manager-signal .hs-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 8px}
+}
+
+/* Signal, second pass. This layer belongs only to the disposable manager study.
+   Keep the dot instruments and room identities, but give controls one material. */
+html.manager-signal{--sg-ink:#234939;--sg-paper:#fffdf4;--sg-rule:#cbd3c5;--sg-press:cubic-bezier(.2,.8,.25,1)}
+html.manager-signal .topbar{background:#fffdf4;border-bottom:1px solid #d6dece;box-shadow:none;backdrop-filter:none}
+html.manager-signal .tool-switch{padding:3px;background:#e7ebdf;border:1px solid #ccd5c3;border-radius:14px}
+html.manager-signal .tool-thumb{background:#234939;border-radius:11px;box-shadow:0 1px 2px #132d2328}
+html.manager-signal .tool-btn{min-height:36px;border-radius:11px;color:#425544;padding:8px 13px}
+html.manager-signal .tool-btn.on{color:#fffdf4}
+html.manager-signal .qsel{gap:7px}
+html.manager-signal .qsel-pill{min-height:40px;padding:0 13px;border-radius:999px;box-shadow:0 1px 0 #ffffffb0 inset,0 1px 2px #17302312;filter:none;font-size:12px;gap:8px}
+html.manager-signal .qsel-pill[aria-selected=false]{background:#fffdf4!important;border-color:#cbd3c5!important;color:#234939}
+html.manager-signal .qsel-pill:nth-child(1){--sg-room:#157a56}
+html.manager-signal .qsel-pill:nth-child(2){--sg-room:#4958bb}
+html.manager-signal .qsel-pill:nth-child(3){--sg-room:#8150ab}
+html.manager-signal .qsel-pill[aria-selected=false] .qsel-ico{color:var(--sg-room)}
+html.manager-signal .qsel-pill.on{box-shadow:0 0 0 2px #fffdf4,0 0 0 3px var(--sg-room)}
+html.manager-signal .qsel-pill::before{animation:none}
+html.manager-signal .view-select{min-height:40px;background-color:#fffdf4;border:1px solid #cbd3c5;border-radius:11px;color:#234939;box-shadow:none}
+html.manager-signal .seg{padding:4px;background:#e1e8dc;border:1px solid #c8d3bf;border-radius:14px;box-shadow:none}
+html.manager-signal .seg-thumb{background:#fffdf4;border-radius:10px;box-shadow:0 1px 3px #142e221f}
+html.manager-signal .seg-btn{min-height:40px;color:#596a56;border-radius:10px;padding:8px 15px}
+html.manager-signal .seg-btn.active{color:#1b3e2c;font-weight:700}
+html.manager-signal .lpc .sect-strip{background:#e7ebdf;border:1px solid #d1dac8}
+html.manager-signal .lpc .sect-strip .sect-pill{background:#234939;box-shadow:none}
+html.manager-signal .lpc .sect-strip .sect-chip{box-sizing:border-box;min-height:44px;color:#53664f}
+html.manager-signal .lpc .sect-strip .sect-chip.on{color:#fffdf4}
+
+/* The report warning is the primary action. Status is still carried by its
+   lamp and text, not by an endless attention animation. */
+html.manager-signal .s2-rail .s2-chip-acts{gap:10px}
+html.manager-signal .s2-ru{min-height:44px;border:1px solid #bfd0b473;background:#183c2f;color:#fffdf4;border-radius:9px;box-shadow:none;font-size:12px;font-weight:600}
+html.manager-signal .s2-imp{min-height:54px;border-radius:9px;background:#f5e7bd;color:#243a2a;border:1px solid #f5e7bd;box-shadow:none;animation:none;padding:10px 12px}
+html.manager-signal .s2-imp.done{background:#e4eedc;border-color:#e4eedc}
+html.manager-signal .s2-imp::after{animation:none;box-shadow:none}
+html.manager-signal .s2-imp-tx b{font-size:13px;letter-spacing:-.02em}
+html.manager-signal .s2-imp-tx i{font-size:10px;line-height:1.45;white-space:normal;max-width:none;color:#4c5942}
+html.manager-signal .s2-chip-state{padding-top:18px;border-top:1px solid #d0dfbf36}
+html.manager-signal .s2-rota{background:#193b2e;border:1px solid #bed2ae38;border-radius:9px;color:#eff5e8;min-height:40px}
+html.manager-signal .s2-gcap{font-size:11px;color:#d2e2c6;letter-spacing:.1em}
+html.manager-signal .s2-hcol{background:#142e2459;border:1px solid #bcd0ad61;box-shadow:none}
+html.manager-signal .s2-hbar>b{font-weight:700}
+html.manager-signal .s2-hero.s2-off{background:#454b48;border-color:#727972}
+html.manager-signal .s2-hero.s2-off .s2-gcap{color:#e1e4de}
+
+/* One coaching surface, then a ranked strip. The full metric definitions,
+   statuses and comparisons stay in their original interactive components. */
+html.manager-signal .s2-focusgrid{padding-bottom:18px;margin-bottom:2px}
+html.manager-signal .s2-ansq{border:1px solid #ffffff30;border-radius:10px 0 0 10px;padding:20px 24px;color:#fff}
+html.manager-signal .s2-ansq.an-1{background:#a83429}
+html.manager-signal .s2-ansq.an-2{background:#a34d28}
+html.manager-signal .s2-ansq.an-3{background:#876310}
+html.manager-signal .s2-ansq.an-4{background:#536c27}
+html.manager-signal .s2-ansq.an-5{background:#246b50}
+html.manager-signal .s2-an-name{font-size:19px;letter-spacing:-.025em;line-height:1.25;max-width:25ch}
+html.manager-signal .s2-an-cap{color:#fff;letter-spacing:.04em}
+html.manager-signal .s2-spot{background:#fffdf4;border:1px solid #cbd3c5;border-left:0;border-radius:0 10px 10px 0;box-shadow:none;min-height:236px}
+html.manager-signal .s2-person{min-height:44px;padding:9px 10px;border-radius:6px;border-bottom:1px solid #d5dccd;gap:12px}
+html.manager-signal .s2-pname{font-size:14px;font-weight:600;letter-spacing:-.02em;color:#234939}
+html.manager-signal .s2-pwhy{font-size:11px;color:#53614c}
+html.manager-signal .s2-ptag{border:1px solid transparent;border-radius:6px;padding:4px 7px}
+html.manager-signal .s2-ptag.soon{background:#eaf0e1;color:#2d5138;border-color:#cbd3c5}
+html.manager-signal .s2-ptag.now{background:#fae2d9;color:#992f25;border-color:#edb5a3}
+html.manager-signal .s2-podium{gap:0;border:1px solid #cbd3c5;border-radius:10px;background:#fffdf4;overflow:hidden}
+html.manager-signal .s2-pod{min-width:0;border:0;border-radius:0;border-right:1px solid #d0d8c8;background:transparent;padding:17px 20px;min-height:88px;box-shadow:none;gap:12px}
+html.manager-signal .s2-pod:last-child{border-right:0}
+html.manager-signal .s2-pod.first{background:#ecedce}
+html.manager-signal .s2-medal{border-radius:7px;box-shadow:none;width:34px;height:40px;flex:0 0 34px}
+html.manager-signal .s2-medal.m1{background:#897020}
+html.manager-signal .s2-medal.m2{background:#61735d}
+html.manager-signal .s2-medal.m3{background:#91663e}
+html.manager-signal .s2-podname{font-size:14px;white-space:normal;overflow-wrap:anywhere;line-height:1.3;color:#234939}
+html.manager-signal .s2-podsub{font-size:11px;line-height:1.4;color:#596850}
+html.manager-signal .s2-podval{font-size:30px;color:#234939;font-weight:600}
+html.manager-signal .s2-rolecard{background:#fffdf4;border:1px solid #cbd3c5;border-radius:10px;box-shadow:none}
+html.manager-signal .s2-rolecard .assoc-row{border-bottom-color:#d7dfcf}
+html.manager-signal .sec-cap{font-size:11px;color:#455b3f;letter-spacing:.09em}
+
+/* Existing form families use the same edge and press treatment. Do not
+   override destructive buttons or the rooms' coloured action semantics. */
+html.manager-signal :is(.history,.targets,.coaching,.checkout.da-page,.pp-card,.pp-bar) .btn:not(.btn-primary):not(.bad):not(.pp-danger){background:#fffdf4;border:1px solid #bdcbb6;color:#234939;border-radius:9px;box-shadow:0 1px 1px #1938270c;min-height:40px}
+html.manager-signal :is(.history,.targets,.coaching,.checkout.da-page,.pp-card,.pp-bar) .btn-primary:not(.bad):not(.pp-danger){background:#234939;border-color:#234939;border-radius:9px;box-shadow:none;color:#fffdf4;min-height:40px}
+html.manager-signal :is(.tg-tbl,.hist-section,.coach-list-card,.coach-detail,.pp-card){border-color:#cbd3c5;background:#fffdf4;box-shadow:none}
+html.manager-signal .tg-in input{background:#fffdf4;border-color:#a9bca0;border-radius:7px;color:#234939;box-shadow:0 1px 2px #1631210c;font-weight:600}
+html.manager-signal .tg-hstat{gap:4px}
+html.manager-signal :is(.hist-herobody,.tg-herobody,.pp-herobody){border-top:0;padding-top:4px}
+html.manager-signal :is(.hist-hstat,.tg-hstat,.pp-hstat)+:is(.hist-hstat,.tg-hstat,.pp-hstat){border-left:1px solid #d0dfbf38;padding-left:22px}
+
+/* Only an intentional press moves. No new loop, filter tween, screen cover,
+   or extra animation owner on page/card transitions. */
+html.manager-signal .lpc :is(.s2-ru,.s2-imp,.s2-person,.s2-pod,.qsel-pill,.tool-btn,.seg-btn,.sect-chip){box-sizing:border-box;transition:transform 180ms var(--sg-press),background-color 140ms ease,border-color 140ms ease,color 140ms ease;filter:none}
+html.manager-signal .lpc :is(.s2-ru,.s2-imp,.s2-person,.s2-pod,.qsel-pill,.tool-btn,.seg-btn,.sect-chip):not(:disabled):active{transform:translateY(1px);transition-duration:70ms}
+html.manager-signal .lpc :is(button,select,input):focus-visible{outline:2px solid #a87021;outline-offset:3px}
+html.manager-signal .lpc .s2-pod:focus-visible{outline-offset:-4px}
+@media(hover:hover) and (pointer:fine){
+  html.manager-signal .lpc :is(.s2-person,.s2-pod):not(:disabled):hover:not(:active){background:#e9efdd;transform:none}
+  html.manager-signal .lpc :is(.s2-ru,.s2-imp,.qsel-pill):not(:disabled):hover:not(:active){transform:translateY(-1px);filter:none}
+}
+@media(max-width:1080px) and (min-width:701px){
+  html.manager-signal .s2-chip-state{padding-top:0;border-top:0}
+  html.manager-signal .s2-pod{padding:16px 12px;gap:8px}
+  html.manager-signal .s2-podval{font-size:25px}
+}
+@media(max-width:700px){
+  html.manager-signal .bp-hero{border-radius:14px;padding:19px 17px}
+  html.manager-signal .bp-five{gap:12px 8px}
+  html.manager-signal :is(.bp-t5,.bp-dial){box-sizing:border-box;padding:6px 2px;border:1px solid #aec5a34d;border-radius:8px;background:#173b2d66;min-height:80px}
+  html.manager-signal .bp-t5 .bp-tb{border-radius:4px;box-shadow:none}
+  html.manager-signal .bp-t5 .bp-tl{font-size:11px;letter-spacing:0;color:#eef4e4}
+  html.manager-signal .bp-dial .bp-dl{font-size:11px;min-height:28px;color:#eef4e4;letter-spacing:0}
+  html.manager-signal .bp-dial .bp-ring{box-shadow:none}
+  html.manager-signal .bp-filt button{min-height:44px;border-radius:9px;padding:8px 11px}
+  html.manager-signal .bp-filt button.on{background:#234939;color:#fffdf4;border-color:#234939}
+  html.manager-signal .co-std>button{min-height:68px;border-radius:9px;border:1px solid #d9e6ca40;padding:10px 8px}
+  html.manager-signal .co-std>button:not(.co-alert){background:#14362645}
+  html.manager-signal :is(.history,.targets,.coaching,.co-page,.pe-tools,.pp-bar) :is(.btn,select){min-height:44px}
+  html.manager-signal .s2-focusgrid{gap:12px}
+  html.manager-signal :is(.s2-ansq,.s2-spot){border-radius:10px;border-width:1px}
+  html.manager-signal .s2-podium{flex-direction:column}
+  html.manager-signal .s2-pod{min-height:74px;border-right:0;border-bottom:1px solid #d0d8c8;padding:14px 16px}
+  html.manager-signal .s2-pod:last-child{border-bottom:0}
+  html.manager-signal :is(.hist-hstat,.tg-hstat,.pp-hstat)+:is(.hist-hstat,.tg-hstat,.pp-hstat){border-left:0;padding-left:0}
+}
+@media(prefers-reduced-motion:reduce){
+  html.manager-signal .lpc :is(.s2-ru,.s2-imp,.s2-person,.s2-pod,.qsel-pill,.tool-btn,.seg-btn,.sect-chip){transition:none!important;transform:none!important}
+}
+html.manager-signal.manager-signal-reduce .lpc :is(.s2-ru,.s2-imp,.s2-person,.s2-pod,.qsel-pill,.tool-btn,.seg-btn,.sect-chip){transition:none!important;transform:none!important}
+
+/* Signal third pass. Keep semantics and instruments, tighten their hierarchy. */
+html.manager-signal .s2-spot{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:22px;padding:18px 20px;min-height:190px;overflow:visible}
+html.manager-signal .s2-spot>.s2-slide{position:relative;inset:auto;opacity:1;transform:none;pointer-events:auto;overflow:visible;transition:none;min-width:0}
+html.manager-signal .s2-spot>.s2-slide+ .s2-slide{border-left:1px solid #d4ddce;padding-left:20px}
+html.manager-signal .s2-scap{font:600 12px/1.4 var(--font-ui);letter-spacing:0;text-transform:none;color:#294c38;margin-bottom:12px}
+html.manager-signal .s2-person{flex-wrap:wrap;gap:3px 10px;padding:9px 0}
+html.manager-signal .s2-pname{flex:1 1 120px}
+html.manager-signal .s2-pwhy{flex:1 1 100%;order:3;font-size:12px}
+html.manager-signal .s2-none{font-size:12px;color:#51624c;line-height:1.5}
+html.manager-signal .sg-qualifier{display:block;font:500 10px/1.2 var(--font-ui);color:#e6eddf;margin:2px 0;letter-spacing:0;text-transform:none}
+html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero){padding:18px 22px}
+html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero) .s2-head{padding-bottom:12px;gap:14px}
+html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero) .s2-store{font-size:25px}
+html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero) .s2-ava{width:40px;height:40px;box-shadow:none}
+html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero) .s2-chips{flex-direction:row;flex-wrap:wrap;gap:6px;max-width:52%;align-items:center}
+html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero) .s2-head>.s2-chips>*{width:auto;min-height:36px}
+html.manager-signal :is(.hist-herobody,.tg-herobody,.pp-herobody){padding-top:12px;gap:12px}
+html.manager-signal :is(.hist-hstat,.tg-hstat,.pp-hstat) small{font-size:11px;line-height:1.4;color:#e2ebdc}
+html.manager-signal :is(.hist-hstat,.tg-hstat,.pp-hstat) span{font-size:11px;line-height:1.4;color:#e2ebdc}
+html.manager-signal :is(.da-kcap,.sm-kcap){font-size:10px;color:#50634b;letter-spacing:.04em}
+html.manager-signal :is(.s2-greet,.s2-mc-sub){font-size:12px;color:#e1eadb}
+html.manager-signal :is(.assoc-sub,.hs-lim,.pp-hint,.da-hint){font-size:11px;line-height:1.4}
+html.manager-signal .acard{background:#fffdf4;border:1px solid #bdcdb6;box-shadow:0 18px 50px #182b2526;border-radius:14px}
+html.manager-signal .ac-cap{font:600 11px/1.4 var(--font-ui);letter-spacing:0;text-transform:none;color:#4c6245}
+html.manager-signal .ac-sub{font-size:12px;color:#52684b}
+html.manager-signal .ac-acts .fr-b{min-height:44px;border-radius:9px;font-size:14px;box-shadow:none}
+html.manager-signal .ac-acts .fr-b:not(.pri){background:#234939;color:#fffdf4;border:1px solid #234939}
+html.manager-signal .ac-acts .fr-b.warnpri{background:#fffdf4;color:#a73529;border:1px solid #c98071;font-size:13px}
+html.manager-signal .ac-acts .fr-b.pri:not(.warnpri){background:#e8efdf;color:#234939;border:1px solid #a9bba0}
+html.manager-signal .coaching .cx-bench{gap:10px!important;margin-top:12px;padding-top:12px}
+html.manager-signal .coaching .cx-blbl{font:500 11px/1.3 var(--font-ui);letter-spacing:0;text-transform:none;color:#e3ecdb}
+html.manager-signal .coaching .cx-bm{min-width:0;padding:9px 10px}
+html.manager-signal .dropzone.dz2{padding:20px;min-height:120px}
+html.manager-signal .ac-gauges .mstrip{gap:10px;flex-wrap:wrap}
+html.manager-signal .ac-gauges .s2g4-l{font:600 10px/1.3 var(--font-ui);letter-spacing:0;color:#4c6245;white-space:normal}
+@media(min-width:701px) and (max-width:1080px){
+  html.manager-signal .seg-wrap{flex-wrap:wrap;gap:10px}
+  html.manager-signal .seg-wrap>.seg{flex:1 1 100%;max-width:100%;min-width:0}
+  html.manager-signal .seg-wrap>.search-top{flex:1 1 100%;max-width:none;min-width:0;margin:0}
+  html.manager-signal .topbar{gap:10px;padding:12px 24px}
+  html.manager-signal .s2-spot{grid-template-columns:1fr;gap:18px}
+  html.manager-signal .s2-spot>.s2-slide+ .s2-slide{border-left:0;border-top:1px solid #d4ddce;padding:15px 0 0}
+  html.manager-signal :is(.hist-hero,.tg-hero,.pp-hero,.da-hero,.plate-hero,.cx-hero,.import-hero) .s2-chips{max-width:100%;flex:1 1 100%;width:100%;margin-left:0}
+}
+@media(max-width:700px){
+  html.manager-signal .bp-hero{padding:15px 14px}
+  html.manager-signal .bp-upd{margin-bottom:8px}
+  html.manager-signal .bp-five{gap:8px 6px}
+  html.manager-signal :is(.bp-t5,.bp-dial){min-height:72px;padding:5px 2px}
+  html.manager-signal .bp-dial .bp-dl{min-height:26px}
+  html.manager-signal :is(.co-store,.co-upd){font-size:12px}
+  html.manager-signal .co-std>button>span{font:600 11px/1.3 var(--font-ui);letter-spacing:0;text-transform:none;white-space:normal;color:#e3ecdb}
+  html.manager-signal .co-std>button{min-height:60px;padding:8px 6px!important}
+  html.manager-signal .co-page>.co-hero{padding:15px 14px}
+  html.manager-signal .acard .ac-gauges .mstrip{display:grid;grid-template-columns:1fr;gap:16px}
+  html.manager-signal .ac-gauges .mclust{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;justify-items:center;width:100%;padding:0;border:0}
+  html.manager-signal .ac-gauges .s2g4{width:100%;min-width:0}
+  html.manager-signal .ac-acts{width:100%;padding-top:14px}
+  html.manager-signal .s2-spot{grid-template-columns:1fr}
+  html.manager-signal .s2-spot>.s2-slide+ .s2-slide{border-left:0;border-top:1px solid #d4ddce;padding:15px 0 0}
+}
+
+/* Preview-only refinements. No new page animation, repaint loop or library. */
+.sg-floor-original,.sg-floor-original>.sg-floor-body,.sg-floor-original>.sg-floor-body>div{display:contents}
+html.manager-signal .sg-sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+html.manager-signal .sg-heading-meta{display:flex;align-items:center;gap:6px;margin-top:7px;font:500 12px/1.4 var(--font-mono);color:#d6e3d6}
+html.manager-signal .s2-left{min-width:0;max-width:none}
+html.manager-signal .s2-big{gap:14px;flex-wrap:wrap;align-items:baseline}
+html.manager-signal .s2-big>.dotnum{max-width:100%;flex-shrink:0}
+html.manager-signal .s2-big .s2-den{font-size:15px}
+html.manager-signal .s2-hgap{background:none;box-shadow:none}
+html.manager-signal .s2-hcol::after{border-top-style:solid;border-top-width:1px;opacity:.75}
+html.manager-signal .s2-mc-grid{grid-template-columns:repeat(7,22px);gap:7px 3px}
+html.manager-signal .s2-mc-grid i{width:13px;height:13px}
+html.manager-signal .s2-mc-grid i.t{box-shadow:0 0 0 3px #e6c78040}
+html.manager-signal .s2-mc-sub{font-size:12px;font-weight:600;margin-top:6px}
+html.manager-signal .s2-rota{margin-top:6px}
+html.manager-signal .sg-coach-action{margin-top:12px;padding-top:12px;border-top:1px solid #ffffff35;font-size:15px;line-height:1.4;font-weight:600;overflow-wrap:anywhere}
+html.manager-signal .sd-hero{padding:20px;border-radius:22px}
+html.manager-signal .sg-room-head{align-items:center;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #ffffff26;flex-wrap:wrap}
+html.manager-signal .sg-room-head h2{margin:0;font:600 24px/1.2 var(--font-display);letter-spacing:-.025em}
+html.manager-signal .sg-room-head .sd-when{white-space:normal;color:#ffffffce}
+html.manager-signal .sg-floor-hero{background:linear-gradient(145deg,#557f60,#234939 60%,#1c392c);box-shadow:0 18px 38px -18px #193a2955;margin:16px 0}
+html.manager-signal .sg-floor-body{display:grid;grid-template-columns:minmax(0,1fr) 268px;gap:16px;align-items:start}
+html.manager-signal .sg-floor-body>div{min-width:0}
+html.manager-signal .sg-floor-map .fbc{background:transparent;box-shadow:none;border-radius:0;margin:0;overflow:visible}
+html.manager-signal .sg-floor-map .fbc::after{background:none}
+html.manager-signal .sg-floor-map .fbc-head{padding:0 0 12px;flex-wrap:wrap}
+html.manager-signal .sg-floor-map .fbc-cap{display:none}
+html.manager-signal .sg-floor-map .fbc-strip{padding:12px 0 0;gap:8px}
+html.manager-signal .sg-floor-map .fbc-hint{flex-basis:100%;margin-left:0;color:#ffffffb8}
+html.manager-signal .sg-floor-console{color:#fff;position:relative}
+html.manager-signal .sg-floor-console .s2-age,html.manager-signal .sg-floor-console .s2-osd{position:relative;inset:auto;transform:none;display:inline-flex;margin:0 0 10px}
+html.manager-signal .sg-floor-console>.s2-tube{padding:0}
+html.manager-signal .sg-room-counts{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+html.manager-signal .sg-room-counts .fh-chip{font-size:10px;padding:6px 8px;min-width:0}
+html.manager-signal .sg-floor-console .fh-up{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;padding:14px;border:1px solid #ffffff29;border-radius:16px;background:#ffffff12;margin:0}
+html.manager-signal .sg-floor-console .fh-ava{width:44px;height:44px;font-size:16px}
+html.manager-signal .sg-floor-console .fh-main{min-width:0}
+html.manager-signal .sg-floor-console .fh-name{font-size:17px;line-height:1.3;overflow-wrap:anywhere}
+html.manager-signal .sg-floor-console .fh-name.empty{padding:0;margin:0;text-align:left;background:transparent}
+html.manager-signal .sg-floor-console .fh-deck,html.manager-signal .sg-floor-console .fh-go{grid-column:1/-1;margin:0;min-width:0}
+html.manager-signal .sg-floor-console .fh-go{width:100%;justify-content:center;min-height:44px}
+html.manager-signal .sg-floor-console .fh-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 10px;padding:16px 0 0;margin:0}
+html.manager-signal .sg-floor-console .da-kpi{min-width:0;border:0;padding:0;background:transparent;color:#fff;box-shadow:none;border-radius:0}
+html.manager-signal .sg-floor-console .da-kcap{font-size:9px;line-height:1.5;white-space:normal;color:#d6e3d6}
+html.manager-signal .sg-floor-console .da-krow{flex-wrap:wrap;gap:5px}
+html.manager-signal .sg-floor-console .da-knum{font-size:27px;color:#fff}
+html.manager-signal .sg-floor-console .da-ksub{font-size:10px;white-space:normal;color:#d6e3d6}
+@media(max-width:1000px){
+  html.manager-signal .sg-floor-body,html.manager-signal .sd-body{grid-template-columns:minmax(0,1fr)}
+  html.manager-signal .sg-floor-console{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+  html.manager-signal .sg-floor-console>.s2-tube{display:contents}
+  html.manager-signal .sg-room-counts{grid-column:1/-1;margin:0}
+  html.manager-signal .sg-floor-console .fh-kpis{padding:0;align-content:center}
+}
+@media(max-width:600px){
+  html.manager-signal .sg-floor-console{grid-template-columns:minmax(0,1fr)}
+  html.manager-signal .sd-hero{padding:16px}
+  html.manager-signal .sg-room-head h2{font-size:22px}
+}
+
+/* One batched preview revision, scoped to Jorge's annotations. */
+html.manager-signal .s2-podium .s2-podname{font-size:18px;font-weight:650;line-height:1.25}
+html.manager-signal .s2-rolecard>.warmhead{border-radius:9px 9px 0 0;background:var(--sandHead);background-clip:padding-box;flex-wrap:wrap}
+html.manager-signal .sg-ignore-tools{display:flex;align-items:center;flex-wrap:wrap;gap:7px;font-size:11px}
+html.manager-signal .sg-ignore-tools .s2-rowbtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;margin:0;border-radius:7px;background:#fffdf4}
+html.manager-signal .s2-rolecard .assoc-row{display:grid;grid-template-columns:minmax(160px,.7fr) minmax(0,1fr) auto 14px;gap:12px;align-items:center}
+html.manager-signal .s2-rolecard .assoc-row::after{display:none}
+html.manager-signal .assoc-row .assoc-who{grid-column:1/3;grid-row:1;width:auto;min-width:0;order:0}
+html.manager-signal .assoc-row .vpill{grid-column:3;grid-row:1;width:auto;max-width:100%;order:0}
+html.manager-signal .assoc-row .s2-rgo{grid-column:4;grid-row:1;order:0}
+html.manager-signal .assoc-row .assoc-spacer{display:none}
+html.manager-signal .assoc-row .sg-lead-meter{grid-column:1;grid-row:2;display:flex;align-items:center;gap:8px;min-width:0}
+html.manager-signal .assoc-row .sg-lead-meter .assoc-gauge{flex:1 1 auto;width:auto;height:7px;min-width:35px;order:0}
+html.manager-signal .assoc-row .sg-lead-meter .assoc-leads{width:auto;flex:0 0 auto;text-align:left;margin:0;font-size:15px;order:0}
+html.manager-signal .assoc-row>.mstrip{grid-column:2/-1;grid-row:2;order:0;min-width:0;justify-content:flex-start;flex-wrap:wrap;margin:0}
+html.manager-signal .assoc-row>.assoc-leads{grid-column:2;grid-row:2;width:auto;text-align:left;margin:0}
+html.manager-signal .s2-hero.s2-hasrail>.s2-signal>.s2-age{position:relative;inset:auto;transform:none;grid-column:1/-1;grid-row:2;justify-self:start;border:0;border-radius:0;background:none;padding:0;font-size:11px;letter-spacing:0;color:#e6c780}
+html.manager-signal .s2-hero.s2-hasrail>.s2-signal>.s2-age i{animation:none}
+html.manager-signal .s2-chip-state{align-items:stretch;flex-direction:column}
+html.manager-signal .sg-schedule{position:relative;width:100%;box-sizing:border-box;padding:12px;border:1px solid #bfd0b473;border-radius:9px;background:#193b2e;color:#fffdf4}
+html.manager-signal .sg-schedule-trigger{width:100%;border:0;background:none;color:inherit;padding:0;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;cursor:pointer;text-align:left;flex-wrap:wrap}
+html.manager-signal .sg-schedule-count{font:600 12px/1.4 var(--font-ui);white-space:nowrap}
+html.manager-signal .sg-schedule-count small{font-size:11px;color:#d6e3d6}
+html.manager-signal .sg-schedule .s2-mc-cap{font-size:12px}
+html.manager-signal .sg-schedule .s2-mc-grid{grid-template-columns:repeat(7,minmax(0,1fr));gap:10px 4px;width:100%;margin:9px 0}
+html.manager-signal .sg-schedule .s2-mc-grid i{width:16px;height:16px}
+html.manager-signal .sg-schedule .s2-mc-sub{text-align:left;font-size:12px}
+html.manager-signal .sg-schedule-details{position:absolute;right:0;top:100%;z-index:30;width:min(330px,calc(100vw - 48px));box-sizing:border-box;padding:18px;border:1px solid #bdcdb6;border-radius:10px;background:#fffdf4;color:#234939;box-shadow:0 14px 26px #142e2426;max-height:65vh;overflow:auto;overscroll-behavior:contain}
+html.manager-signal .sg-schedule-month{border-top:1px solid #cbd3c5;margin-top:14px;padding-top:12px}
+html.manager-signal .sg-schedule-details .s2-names s{font-size:12px;padding:5px 8px}
+html.manager-signal .sg-schedule-details :is(.bw-title,.s2-cw,.s2-detail){font-size:12px}
+@media(min-width:701px) and (max-width:1080px){
+  html.manager-signal .s2-hero.s2-hasrail>.s2-signal>.s2-age{grid-row:3}
+  html.manager-signal .s2-rail .s2-chip-state{align-items:stretch;flex-direction:column}
+  html.manager-signal .assoc-row .sg-lead-meter{grid-column:1/-1;grid-row:2;max-width:240px;width:100%}
+  html.manager-signal .assoc-row>.mstrip{grid-column:1/-1;grid-row:3}
+}
+@media(max-width:700px){
+  html.manager-signal .s2-podium .s2-podname{font-size:17px}
+  html.manager-signal .s2-rolecard .assoc-row{grid-template-columns:minmax(0,1fr) auto;gap:10px}
+  html.manager-signal .assoc-row .assoc-who{grid-column:1;grid-row:1}
+  html.manager-signal .assoc-row .vpill{grid-column:1;grid-row:2;justify-self:start}
+  html.manager-signal .assoc-row .s2-rgo{grid-column:2;grid-row:1}
+  html.manager-signal .assoc-row .sg-lead-meter{grid-column:1/-1;grid-row:3;max-width:240px;width:100%}
+  html.manager-signal .assoc-row>.mstrip{grid-column:1/-1;grid-row:4}
+  html.manager-signal .sg-ignore-tools{width:100%}
+}
+
+/* One instrument family. Status comes from goalTier, never an animated hue. */
+html.manager-signal .mstrip .s2g4-col{width:22px;height:34px;border-radius:3px;background:#e3e6dc;box-shadow:inset 0 0 0 1px #23493924}
+html.manager-signal .mstrip .s2g4-col i{border-radius:3px;transition:none;filter:none}
+html.manager-signal .mstrip .s2g4-col s{bottom:83.333333%;height:1px;opacity:.7;background:#234939}
+html.manager-signal .mstrip .s2g4>svg{filter:none}
+html.manager-signal .sg-goal-confirm{filter:none}
+
+/* A firm press and quick glide, not a second spring after release. The page
+   still has one directional transition owner and its original arrival. */
+html.manager-signal .seg-thumb{transition:transform 180ms var(--sg-press),width 180ms var(--sg-press);will-change:auto}
+html.manager-signal .lpc .seg-btn{transition:transform 110ms ease-out,color 110ms ease-out}
+
+/* Opaque paper stops the surrounding green/blue wash bleeding into reports.
+   Flat headers meet the card edge instead of fading halfway across a row. */
+html.manager-signal .sm-page :is(.da-tbl,.trends){background:#fffdf4;border:1px solid #cbd3c5;border-radius:9px;box-shadow:none;backdrop-filter:none}
+html.manager-signal .sm-page .warmhead{background:#edeada;color:#234939;border-bottom:1px solid #cbd3c5;border-radius:0;box-shadow:none}
+html.manager-signal .sm-page .sm-mrow{background:#fffdf4}
+/* Move chips already carry the verdict. A full-row green wash repeats it. */
+html.manager-signal .sm-page .sm-mrow .da-stripe{background:none}
+html.manager-signal .sm-page .sm-mhead{background:#f4f3e9}
+html.manager-signal .da-medal.sg-penalty-rank{width:32px;height:38px;border-radius:5px;box-shadow:none}
+
+@media(prefers-reduced-motion:reduce){html.manager-signal .seg-thumb{transition:none}}
+html.manager-signal.manager-signal-reduce .seg-thumb{transition:none}
+
+/* The panel edge already separates coaching from ranking. No extra rule. */
+html.manager-signal .s2-focusgrid{border-bottom:0;padding-bottom:0;margin-bottom:0}
+html.manager-signal .plate-hero .sg-heading-meta{margin-top:8px}
+html.manager-signal .sg-plate-policy{display:inline-flex;align-items:center;gap:7px;color:#fffdf4;font:600 11px var(--font-mono)}
+html.manager-signal .sg-plate-tools{gap:8px;align-items:center;margin:16px 0}
+html.manager-signal .sg-plate-tools :is(.btn.secondary,select){min-height:40px;border:1px solid #cbd3c5;border-radius:9px;background:#fffdf4;color:#234939;box-shadow:none;filter:none;font:600 13px var(--font-ui);padding:9px 12px;display:inline-flex;align-items:center;gap:7px;opacity:1}
+html.manager-signal .sg-plate-tools select{display:block;font-weight:500;appearance:auto}
+html.manager-signal .sg-plate-tools .btn.secondary:not(:disabled):active{transform:translateY(1px)}
+html.manager-signal .sg-plate-tools .btn.secondary:disabled{opacity:.5}
+html.manager-signal .sg-plate-tools :is(button,select,summary):focus-visible{outline:2px solid #234939;outline-offset:3px}
+html.manager-signal .sg-plate-audit{margin-left:auto;color:#52624d;font-size:12px;max-width:100%}
+html.manager-signal .sg-plate-audit summary{min-height:40px;display:flex;align-items:center;gap:10px;padding:8px 2px;cursor:pointer;list-style:none;border-radius:6px}
+html.manager-signal .sg-plate-audit summary::-webkit-details-marker{display:none}
+html.manager-signal .sg-plate-audit summary>span{display:inline-flex;gap:5px;align-items:center;white-space:nowrap}
+html.manager-signal .sg-plate-audit summary>span+span{border-left:1px solid #cbd3c5;padding-left:10px}
+html.manager-signal .sg-plate-audit[open]{flex-basis:100%;margin-left:0}
+html.manager-signal .sg-plate-audit p{margin:0;padding:10px 12px;border:1px solid #cbd3c5;background:#fffdf4;border-radius:9px;line-height:1.55;max-width:72ch}
+html.manager-signal .sg-plate-audit p+p{margin-top:8px}
+@media(max-width:700px){html.manager-signal .sg-plate-audit{margin-left:0}}
+@media(prefers-reduced-motion:reduce){html.manager-signal .sg-plate-tools .btn.secondary:not(:disabled):active{transform:none}}
+html.manager-signal.manager-signal-reduce .sg-plate-tools .btn.secondary:not(:disabled):active{transform:none}
+
+/* Preview only. FrRail keeps Phone Line's positional and track-light motion. */
+/* Room markers translate along a rail. General button feedback must not
+   shorten that travel or replace its positioned transform on press. */
+html.manager-signal .lpc .checkout .fr-rail .fr-pip{transition:left .65s var(--ease-bloop),width .5s ease,height .5s ease!important}
+html.manager-signal .lpc .checkout .fr-rail .fr-pip:active{transform:translate(-50%,-50%)!important}
+@supports(width:1cqw){html.manager-signal .lpc .checkout .fr-rail .fr-pip{transition:transform .65s var(--ease-bloop),width .5s ease,height .5s ease!important}html.manager-signal .lpc .checkout .fr-rail .fr-pip:active{transform:translate(calc(100cqw - var(--edge,25px) - var(--p,0) * 1cqw - 50%),-50%)!important}}
+html.manager-signal .sg-floor-old-dock{display:none}
+html.manager-signal .sg-floor-body{grid-template-columns:minmax(0,1fr) 280px}
+html.manager-signal .sg-floor-rail{padding:4px 14px 0;position:relative}
+html.manager-signal .sg-floor-rail .fr-rail{margin:10px 22px 4px 0;background:#102f244a}
+html.manager-signal .sg-floor-rail .fr-pip.hd{width:42px;height:42px;background:#e6c780;color:#203b2c;font-size:13px}
+html.manager-signal .sg-floor-rail .fr-pip:focus-visible{outline:2px solid #fff;outline-offset:3px}
+html.manager-signal .sg-floor-dispatch{position:relative;color:#fff;min-width:0}
+html.manager-signal .sg-floor-dispatch .sd-next{padding:16px;background:#ffffff0c;border:1px solid #ffffff26;border-radius:16px}
+html.manager-signal .sg-floor-dispatch .sd-nextwho b{font-size:18px;line-height:1.3;overflow-wrap:anywhere}
+html.manager-signal .sg-floor-dispatch .sd-assign{background:#e6c780;border:1px solid #e6c780;color:#203b2c;min-height:44px;box-shadow:none}
+html.manager-signal .sg-floor-dispatch .sd-assign:disabled{background:#ffffff0c;border-color:#ffffff26;color:#ffffff8c}
+html.manager-signal .sg-floor-dispatch .s2-age,html.manager-signal .sg-floor-dispatch .s2-osd{position:relative;inset:auto;transform:none;display:inline-flex;margin:0 0 10px}
+html.manager-signal .sg-floor-facts{display:flex;flex-direction:column;gap:10px;padding:15px 4px 0;font:500 11px/1.4 var(--font-mono);color:#d6e3d6}
+html.manager-signal .sg-floor-facts>div{display:flex;align-items:center;gap:7px}
+html.manager-signal .sg-floor-facts strong{font-size:25px;line-height:1;color:#fff}
+html.manager-signal .sg-floor-facts strong:nth-of-type(2){margin-left:auto}
+html.manager-signal .sg-floor-facts b{margin-left:auto;color:#fff;font-weight:600}
+html.manager-signal .sg-no-help-wait>.sg-help-wait,html.manager-signal .sg-no-help-wait>.fbc-quiet{display:none}
+html.manager-signal .sg-table-help{margin-left:auto;font-size:11px;max-width:100%}
+html.manager-signal .sg-table-help summary{display:flex;align-items:center;gap:6px;cursor:pointer;color:#d6e3d6;list-style:none;min-height:32px}
+html.manager-signal .sg-table-help summary::-webkit-details-marker{display:none}
+html.manager-signal .sg-table-help[open]{width:100%;padding:8px 10px;border:1px solid #ffffff26;border-radius:10px;background:#153829}
+html.manager-signal .sg-table-help .fbc-hint{display:block;margin-top:8px;font-size:12px;line-height:1.5}
+html.manager-signal .mf-floor .mf-lower{grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr);gap:16px;align-items:start}
+html.manager-signal .mf-floor .mf-main{background:#fffdf4;border:1px solid #d0d7c8;border-radius:16px;overflow:hidden}
+html.manager-signal .mf-floor .mf-main .qtbl{border:0;border-radius:0;box-shadow:none;margin:0;background:transparent}
+html.manager-signal .mf-floor .q-empty{padding:14px 16px;margin:0;font-size:13px}
+html.manager-signal .sg-floor-join{padding:16px;border-top:1px solid #d0d7c8}
+html.manager-signal .sg-join-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+html.manager-signal .sg-join-head>b{display:flex;align-items:center;gap:7px;font-size:14px;margin-right:auto;color:#263e30}
+html.manager-signal .sg-join-head select{max-width:200px;min-height:36px;background:#fffdf4;border:1px solid #d0d7c8;color:#263e30;appearance:auto;font-size:12px}
+html.manager-signal .sg-join-cap{display:block;font:500 10px/1.4 var(--font-mono);text-transform:uppercase;letter-spacing:.06em;color:#647466;margin-bottom:9px}
+html.manager-signal .sg-join-people{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+html.manager-signal .sg-join-people button{display:flex;align-items:center;gap:8px;min-height:44px;background:#f2f4e9;border:1px solid #dce1d0;border-radius:10px;padding:7px 10px;color:#294032;text-align:left}
+html.manager-signal .sg-join-people button:hover{background:#e8eedc;border-color:#adbda4}
+html.manager-signal .sg-join-people button:active{transform:translateY(1px)}
+html.manager-signal .sg-join-people b{font:600 13px/1.3 var(--font-ui);overflow-wrap:anywhere}
+html.manager-signal .sg-join-plus{margin-left:auto;flex-shrink:0;display:flex}
+html.manager-signal .sg-join-avatar{font:600 10px var(--font-mono);width:26px;height:26px;display:grid;place-items:center;background:#dfe7d2;border-radius:7px;flex-shrink:0}
+html.manager-signal .sg-join-people button:focus-visible,html.manager-signal .sg-table-help summary:focus-visible{outline:2px solid #9a7b12;outline-offset:3px}
+html.manager-signal .sg-floor-match{background:#fffdf4;border:1px solid #d0d7c8;border-radius:16px;padding:16px;box-shadow:none}
+html.manager-signal .sg-floor-match .sa-head{background:none;padding:0 0 12px;margin:0;border-bottom:1px solid #d0d7c8;display:flex;align-items:center;gap:7px;font-size:14px}
+html.manager-signal .sg-floor-match .sa-manage-toggle{margin:0 0 0 auto;padding:5px 8px;width:auto;border:1px solid #d0d7c8;border-radius:7px;font-size:11px;color:#496047;background:transparent}
+html.manager-signal .sg-floor-match>.sa-input{margin-top:12px;min-height:42px;background:#f2f4e9;border-color:#dce1d0;font-size:13px;box-sizing:border-box;max-width:100%}
+html.manager-signal .sg-floor-match>.sa-chips{gap:6px;margin:10px 0}
+html.manager-signal .sg-floor-match .sa-chip{background:#f2f4e9;border-color:#dce1d0;color:#496047;font-size:11px;padding:6px 9px}
+html.manager-signal .sg-floor-match .sa-list{padding:0;margin:0;min-height:0}
+html.manager-signal .sg-floor-match .sa-empty{margin:12px 0 0;padding:0;font-size:12px}
+html.manager-signal .sg-floor-match .sa-row{padding:12px 0;border-top:1px solid #d0d7c8}
+html.manager-signal .sg-floor-match .sa-row-top{gap:8px;flex-wrap:wrap}
+html.manager-signal .sg-floor-match .sa-who{min-width:100px;flex:1}
+html.manager-signal .sg-floor-match .sa-nm{font-size:13px}
+html.manager-signal .sg-floor-match .sa-close{background:#e9eedc;color:#456147;box-shadow:none}
+html.manager-signal .sg-floor-match .sa-manage{padding-top:12px;margin-top:12px;border-top:1px solid #d0d7c8}
+@media(max-width:1000px){html.manager-signal .sg-floor-body{grid-template-columns:minmax(0,1fr)}html.manager-signal .sg-floor-dispatch{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}html.manager-signal .sg-floor-dispatch>.s2-signal{grid-column:1/-1}html.manager-signal .sg-floor-facts{padding:0;justify-content:center}}
+@media(max-width:800px){html.manager-signal .mf-floor .mf-lower{grid-template-columns:minmax(0,1fr)}html.manager-signal .sg-join-people{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){html.manager-signal .sg-floor-dispatch{grid-template-columns:minmax(0,1fr)}html.manager-signal .sg-join-people{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){html.manager-signal .lpc .checkout .fr-rail .fr-pip{transition:none!important}html.manager-signal .lpc .checkout .fr-rail>s.lt{display:none}}
+html.manager-signal-reduce.manager-signal .lpc .checkout .fr-rail .fr-pip{transition:none!important}
+html.manager-signal-reduce.manager-signal .lpc .checkout .fr-rail>s.lt{display:none}
+
+/* Intrinsic-size status control, never a stretched grid item. */
+html.manager-signal .sg-data-signal{position:absolute;top:9px;left:50%;transform:translateX(-50%);z-index:7;display:block;width:max-content;max-width:calc(100% - 32px);height:max-content;color:#d8e3d7;font:500 11px/1.4 var(--font-mono)}
+html.manager-signal .sg-data-signal details{position:relative}
+html.manager-signal .sg-data-signal summary{display:flex;align-items:center;gap:7px;list-style:none;cursor:pointer;min-height:30px;box-sizing:border-box;padding:5px 8px;background:#15382966;border:1px solid #ffffff1c;border-radius:7px;width:max-content;max-width:100%;white-space:nowrap}
+html.manager-signal .sg-data-signal summary::-webkit-details-marker{display:none}
+html.manager-signal .sg-data-signal summary>i{width:4px;height:4px;flex-shrink:0;border-radius:50%;background:#b9cfac}
+html.manager-signal .sg-signal-old summary{color:#e6c780}
+html.manager-signal .sg-signal-old summary>i{background:#e6c780}
+html.manager-signal .sg-signal-off summary{background:#462822;color:#ffe1d0;border-color:#edb29d80}
+html.manager-signal .sg-signal-off summary>i{background:#f2b59f}
+html.manager-signal .sg-signal-back summary{color:#cdebc2}
+html.manager-signal .sg-data-signal summary:focus-visible{outline:2px solid #e6c780;outline-offset:3px}
+html.manager-signal .sg-signal-detail{position:absolute;top:calc(100% + 5px);left:50%;transform:translateX(-50%);width:230px;max-width:calc(100vw - 70px);box-sizing:border-box;padding:12px;border:1px solid #d0d7c8;border-radius:10px;background:#fffdf4;color:#263e30;box-shadow:0 8px 16px #102a2426;display:flex;flex-direction:column;gap:5px;white-space:normal;font:500 12px/1.4 var(--font-ui)}
+html.manager-signal .sg-signal-detail small{font-size:11px;color:#647466}
+html.manager-signal .sg-data-signal .sg-signal-detail b{font:600 12px/1.4 var(--font-ui);letter-spacing:0}
+html.manager-signal .sg-room-head{margin-bottom:12px;padding-bottom:12px;gap:12px;flex-wrap:nowrap;min-height:32px}
+html.manager-signal .sg-room-head h2{font-size:23px;line-height:1.25;min-width:0}
+html.manager-signal .sg-room-head>.sg-data-signal{position:relative;inset:auto;transform:none;flex:0 0 auto;margin-left:auto;max-width:50%}
+html.manager-signal .sg-room-head .sg-signal-detail{left:auto;right:0;transform:none}
+html.manager-signal .mf.checkout{padding-top:14px}
+html.manager-signal .mf>.q-topline{margin-bottom:8px;justify-content:flex-end}
+html.manager-signal .mf>.q-topline .btn{min-height:34px;padding:7px 12px;font-size:12px;box-shadow:none;border-radius:8px}
+html.manager-signal .mf>.q-topline .q-topline-actions{width:100%;justify-content:flex-end;gap:7px}
+html.manager-signal .mf>.q-topline .sg-room-settings{margin-right:auto;display:flex;gap:7px;align-items:center}
+html.manager-signal .mf .sg-floor-hero{margin-top:0}
+html.manager-signal .sg-room-return{padding:12px 24px 0}
+html.manager-signal .sg-room-return button{display:flex;align-items:center;gap:7px}
+html.manager-signal .mf-line .mf-lower{grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr);gap:16px;align-items:start}
+html.manager-signal .mf-line .mf-main{background:#fffdf4;border:1px solid #d0d7c8;border-radius:16px;overflow:hidden}
+html.manager-signal .mf-line .mf-main .qtbl{border:0;border-radius:0;box-shadow:none;margin:0;background:transparent}
+html.manager-signal .sg-floor-match>.sa-input{margin:12px 0 0}
+html.manager-signal .mf-line .q-row{display:grid;grid-template-columns:24px 18px 32px minmax(0,1fr) auto auto;gap:8px 10px;align-items:center}
+html.manager-signal .mf-line .q-row>.q-ord{grid-column:1;grid-row:1}
+html.manager-signal .mf-line .q-row>.q-rank{grid-column:2;grid-row:1}
+html.manager-signal .mf-line .q-row>.mf-av{grid-column:3;grid-row:1}
+html.manager-signal .mf-line .q-row>.q-who{grid-column:4;grid-row:1;width:auto;min-width:0}
+html.manager-signal .mf-line .q-row>.q-ups{grid-column:5;grid-row:1}
+html.manager-signal .mf-line .q-row>.q-open{grid-column:6;grid-row:1}
+html.manager-signal .mf-line .q-row>.q-row-actions{grid-column:4/-1;grid-row:2;justify-content:flex-start;min-width:0;flex-wrap:wrap}
+html.manager-signal .mf-line .q-row .q-nm{font-size:15px;line-height:1.3}
+html.manager-signal .mf-line .q-row .q-meta{flex-wrap:wrap;font-size:11px}
+html.manager-signal .sg-join-line .sg-join-people button{background:#f0f1f8;border-color:#d9dce8;color:#34416d}
+html.manager-signal .sg-join-line .sg-join-avatar{background:#e0e3f3}
+html.manager-signal .sg-join-line .sg-join-people button:hover{background:#e8ebf8;border-color:#aeb8d7}
+html.manager-signal .sd-hero:not(.sg-floor-hero) .sg-data-signal summary{background:#23365c55}
+@media(max-width:800px){html.manager-signal .mf-line .mf-lower{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){html.manager-signal .sg-room-head h2{font-size:20px}html.manager-signal .mf.checkout{padding-top:10px}html.manager-signal .sg-data-signal summary{min-height:36px}html.manager-signal .sg-data-signal{top:5px}html.manager-signal .mf-line .q-row{grid-template-columns:20px 18px 30px minmax(0,1fr);gap:7px}html.manager-signal .mf-line .q-row>.q-ups{grid-column:4;grid-row:2;justify-self:start}html.manager-signal .mf-line .q-row>.q-open{grid-column:4;grid-row:2;justify-self:start;margin-left:62px}html.manager-signal .mf-line .q-row>.q-row-actions{grid-column:1/-1;grid-row:3}}
+@media print{.sg-data-signal,.sg-room-settings{display:none!important}}
+
+/* The status participates in the header flow, never overlays its controls. */
+html.manager-signal .sg-signal-anchor{display:contents}
+html.manager-signal .sg-data-signal{position:relative;inset:auto;transform:none;align-self:center;margin-left:auto;flex:0 0 auto;order:10;max-width:100%;width:max-content;height:max-content}
+html.manager-signal .sg-data-signal summary{min-width:26px;justify-content:center;background:none;border-color:transparent;padding:6px}
+html.manager-signal .sg-data-signal summary>i{width:6px;height:6px}
+html.manager-signal .sg-signal-off summary{background:#462822;border-color:#edb29d80}
+html.manager-signal .sg-signal-detail{left:auto;right:0;transform:none}
+html.manager-signal .s2-head{flex-wrap:wrap}
+
+/* One vertical axis for every desktop cell, including shorter video dials. */
+html.manager-signal .s2-rolecard .assoc-row{align-items:center}
+html.manager-signal .s2-rolecard .assoc-row>.mstrip{align-items:center;min-height:84px}
+html.manager-signal .s2-rolecard .mclust{align-items:center}
+@media(min-width:1081px){
+  html.manager-signal .s2-rolecard .assoc-row{grid-template-columns:minmax(145px,.85fr) minmax(90px,.55fr) minmax(420px,2.1fr) minmax(135px,.75fr) 14px;gap:12px;min-height:112px}
+  html.manager-signal .s2-rolecard .assoc-row .assoc-who{grid-column:1;grid-row:1;flex-wrap:wrap}
+  html.manager-signal .s2-rolecard .assoc-row .sg-lead-meter{grid-column:2;grid-row:1}
+  html.manager-signal .s2-rolecard .assoc-row>.mstrip{grid-column:3;grid-row:1;width:100%;justify-content:center;flex-wrap:nowrap}
+  html.manager-signal .s2-rolecard .assoc-row .vpill{grid-column:4;grid-row:1;white-space:normal;text-align:center;line-height:1.35;justify-self:center}
+  html.manager-signal .s2-rolecard .assoc-row .s2-rgo{grid-column:5;grid-row:1}
+  html.manager-signal .s2-rolecard .mstrip .mclust{gap:5px}
+  html.manager-signal .s2-rolecard .mstrip>.mclust{flex:1 1 0;min-width:0}
+  html.manager-signal .s2-rolecard .mstrip .s2g4{width:auto;min-width:0;flex:1 1 0}
+  html.manager-signal .s2-rolecard .mstrip .s2g4>svg{max-width:100%}
+  html.manager-signal .s2-rolecard .mstrip .s2g4-l{white-space:normal;line-height:1.2;text-align:center;min-height:18px}
+  html.manager-signal .s2-rolecard .mclust+.mclust{padding-left:12px;margin-left:6px}
+}
+
+/* Matching paper, borders and edge-to-edge headers for plate sections. */
+html.manager-signal .plates>.card{background:#fffdf4;border:1px solid #cbd3c5;border-radius:16px;box-shadow:none;overflow:hidden;padding:16px}
+html.manager-signal .plates>.card:has(>h3){padding:0}
+html.manager-signal .plates>.card>h3{margin:0;padding:14px 20px;background:#edeada;color:#234939;border-bottom:1px solid #cbd3c5;border-radius:0;font:600 14px/1.4 var(--font-ui);letter-spacing:0;text-transform:none}
+html.manager-signal .plates>.card>h3::after{display:none}
+html.manager-signal .plates>.card:has(>h3)>.hint{margin:0;padding:16px 20px;font-size:13px;line-height:1.5}
+
+/* Coaching uses the same material and bounded controls, not a new theme. */
+html.manager-signal .coaching .coach-list-card,html.manager-signal .coaching .assoc-card-full{background:#fffdf4;border:1px solid #cbd3c5;border-radius:16px;box-shadow:none;padding:20px;min-width:0}
+html.manager-signal .coaching .coach-list-card>h3{background:#edeada;margin:-20px -20px 0;padding:14px 20px;border-bottom:1px solid #cbd3c5;border-radius:15px 15px 0 0;color:#234939;font:600 14px/1.4 var(--font-ui);text-transform:none;letter-spacing:0}
+html.manager-signal .coaching .coach-list-card>h3::after{display:none}
+html.manager-signal .coaching .coach-list-card>.hint{font-size:12px;line-height:1.5;margin:12px 0}
+html.manager-signal .coaching .coach-row{border:1px solid #dce1d0;border-radius:10px;background:#f4f3e9;min-height:54px;color:#263e30;align-items:center}
+html.manager-signal .coaching .coach-row.on{background:#e8eedc;border-color:#aebfa7}
+html.manager-signal .coaching .coach-open{color:#234939}
+html.manager-signal .coaching .assoc-card-full>.ac-head{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:10px;margin:-20px -20px 0;padding:16px 20px;background:#edeada;border-bottom:1px solid #cbd3c5;border-radius:15px 15px 0 0}
+html.manager-signal .coaching .ac-head>div{flex:none;min-width:0}
+html.manager-signal .coaching .ac-name{font:600 22px/1.3 var(--font-display);margin:0;color:#234939}
+html.manager-signal .coaching .ac-sub{font-size:12px;line-height:1.5;margin-top:4px}
+html.manager-signal .coaching .ac-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+html.manager-signal .coaching .ac-actions :is(.btn,.btn-ghost){flex:0 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;margin:0;padding:8px 11px;background:#fffdf4;border:1px solid #cbd3c5;border-radius:8px;box-shadow:none;color:#234939;font:600 12px/1.4 var(--font-ui);white-space:normal;width:auto}
+html.manager-signal .coaching .ac-actions .danger{color:#a53d2f;border-color:#d8b9aa}
+html.manager-signal .coaching .ac-actions button:disabled{opacity:.55}
+html.manager-signal .coaching .ac-head>.hint{margin:0;font-size:12px;line-height:1.5;width:auto}
+html.manager-signal .coaching .ac-h3{margin:18px 0 12px;padding:0 0 9px;background:none;border-bottom:1px solid #cbd3c5;color:#234939;font:600 12px/1.4 var(--font-mono);letter-spacing:.04em}
+html.manager-signal .coaching .ac-h3::after{display:none}
+html.manager-signal .coaching :is(.oyo-goal,.oyo-chan-tile,.ac-stat,.oyo-step){background:#f4f3e9;border:1px solid #dce1d0;border-radius:12px;box-shadow:none}
+html.manager-signal .coaching .oyo-goal{grid-template-columns:150px minmax(0,1fr);align-items:center;gap:16px;padding:14px}
+html.manager-signal .coaching .oyo-goalset input{box-sizing:border-box;min-height:44px;border:1px solid #cbd3c5;border-radius:8px;background:#fffdf4;color:#234939;font:600 24px var(--font-mono)}
+html.manager-signal .coaching .oyo-goal:not(:has(.oyo-pace)){display:block}
+html.manager-signal .coaching .oyo-goal:not(:has(.oyo-pace)) .oyo-goalset{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+html.manager-signal .coaching .oyo-goal:not(:has(.oyo-pace)) input{width:100px}
+html.manager-signal .coaching .oyo-goalset label{margin:0;font:600 11px/1.4 var(--font-mono);color:#52624d}
+html.manager-signal .coaching :is(input,select,textarea){max-width:100%;box-sizing:border-box}
+html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{outline:2px solid #9a7b12;outline-offset:3px}
+@media(max-width:900px){html.manager-signal .coach-split.has-open{grid-template-columns:minmax(0,1fr)}html.manager-signal .coach-split.has-open .coach-list-card{position:static}}
+@media(max-width:760px){html.manager-signal .coaching .oyo-goal{grid-template-columns:minmax(0,1fr)}}
