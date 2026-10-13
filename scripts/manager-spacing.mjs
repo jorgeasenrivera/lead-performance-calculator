@@ -339,6 +339,8 @@ try {
   }
   await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();
   await sharedHeader('activity-four',4);
+  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.sect-chip').length===5);
   await page.locator('.view-select').selectOption('admin');
   await sharedHeader('admin-seven',7);
   fixtureRole='overseer';
