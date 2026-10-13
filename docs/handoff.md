@@ -615,10 +615,13 @@ Jorge explicitly authorized taking over PR459's existing `codex/manager-signal`
 branch and publishing a test preview at 19:26:49 UTC, answering yes to that
 bounded request. Codex thread `01a118c8-416c-7086-a222-eef156b1403d` now owns this
 release preparation. Original implementation attribution and history remain.
-No force push, new credentials, access/protection changes, database mutation,
-merge or production deployment is authorized. The final live release waits for
-Jorge's actual production-build phone trial and informed approval after an
-independent exact-head review.
+At 19:27:23 UTC Jorge extended the request: "Do what you need to do to get it
+live today." This authorizes the approved refresh through release once the
+required checks, actual production-build phone trial and independent exact-head
+review pass. No force push, new credentials, access/protection changes, database
+mutation or unrelated feature is authorized. The parent coordinates the phone
+result and release gates; this worker publishes the test preview and does not
+merge or deploy production before the parent confirms completion.
 
 Local candidate `2249f05fe52bc87aef49ded8f3db87ed3ea66ff8` integrates main
 `f37de92d9ac15a6046aed9b80c2ec9f4dce4032b` and Signal
