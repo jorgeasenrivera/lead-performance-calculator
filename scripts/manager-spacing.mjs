@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium, webkit } from 'playwright';
 
 const baseline = '5bf65105003b3e01227c774ea82e08d5d595bb68';
-const before = execFileSync('git', ['show', `${baseline}:src/manager-signal.css`], { encoding: 'utf8' });
+const before = await readFile(process.env.SPACING_BEFORE_CSS || '.spacing-baseline/src/manager-signal.css', 'utf8');
+assert.equal(createHash('sha256').update(before).digest('hex'),
+  'e2c712c8518302b4082695230be54c629bdd53a0b5dd95d45d6be83b05eaa363', 'immutable production stylesheet');
 const after = await readFile('src/manager-signal.css', 'utf8');
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = 'http://127.0.0.1:5178/';
@@ -116,8 +118,9 @@ try {
   await page.locator('.sect-chip').filter({hasText:/^Dashboard$/}).click();
   await page.locator('.bp-row').first().waitFor();
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({engine,baseline,results,keyboard:'last row Enter/Escape, search clear and Summary return passed'}));
+  console.log('Keyboard passed: last row Enter/Escape, search clear and Summary return');
 } finally {
+  console.log(JSON.stringify({engine,baseline,results,errors}));
   await writeFile('manager-spacing/geometry.json',JSON.stringify({engine,baseline,results,errors},null,2));
   await page.screenshot({path:'manager-spacing/final.png'}).catch(()=>{});
   await context.close(); await browser.close();
