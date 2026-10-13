@@ -611,6 +611,8 @@ author's prefix. Nothing but the id changed.
 
 **H-X48 · X25 phone spacing, separate from frozen motion #468.**
 
+Motion #468 is now released at 2a11f4d, with production READY and main CI green. #469 preserves it. Review the 29 added layout CSS lines, intentional filter grid, shared columns, count/status wrapping and inherited 641-700px gutter repair. The fictional fixture includes the actual admin fifth tab and dealership selector, navigation, safe areas and enlarged text. Both engines completed the expanded checks; the final harness additionally requires stable scroll geometry after a WebKit resize race. Original-image comparison remains with parent/reviewer. No spacing merge or deployment authorized.
+
 Jorge accepted the quieter motion preview at 20:08:55 UTC. Do not change fe9b174. X25 starts from main 40a1429 and contains no motion patch. Parent authorized measured layout corrections from independent fictional reproduction, with original-image comparison owned by parent/reviewer. Filters, shared roster columns and final-row clearance only; before/after screenshots and geometry in both engines. No merge or production action.
 
 **H-X47 · X24 manager motion correction, 13 October.**
