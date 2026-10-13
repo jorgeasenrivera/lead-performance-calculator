@@ -40,3 +40,9 @@ Reproduce npm test and npm run build, then follow
 .github/workflows/manager-spacing.yml with the repository's local mock.
 The probe performs no requests to a real data service. Local browser sandbox
 limitations are unchanged; no security or permission setting is modified.
+
+The first CI attempt failed before rendering: a git subprocess hit the
+container's ownership check. The workflow now checks out the pinned baseline
+separately and verifies the stylesheet SHA-256 before reading it. It does not
+change Git's ownership checks. Locally SPACING_BEFORE_CSS can name that same
+verified stylesheet file.
