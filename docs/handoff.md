@@ -609,6 +609,33 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X46 · Signal release preparation and preview takeover, 13 October.**
+
+Jorge explicitly authorized taking over PR459's existing `codex/manager-signal`
+branch and publishing a test preview at 19:26:49 UTC, answering yes to that
+bounded request. Codex thread `01a118c8-416c-7086-a222-eef156b1403d` now owns this
+release preparation. Original implementation attribution and history remain.
+No force push, new credentials, access/protection changes, database mutation,
+merge or production deployment is authorized. The final live release waits for
+Jorge's actual production-build phone trial and informed approval after an
+independent exact-head review.
+
+Local candidate `2249f05fe52bc87aef49ded8f3db87ed3ea66ff8` integrates main
+`f37de92d9ac15a6046aed9b80c2ec9f4dce4032b` and Signal
+`7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5`. Only handoff and board conflicts
+needed resolution: both histories, Signal's X18 evidence and main's X16 record
+are retained. Runtime is byte-identical to Signal. No PR467 optimization,
+reported-calendar/backend work or C103 flip is included. Main's unrelated work
+is preserved. This handoff changes documentation only.
+
+All 906 local tests, production build and both integrity fixture builds pass.
+The cloud Chromium sandbox helper prevents browser launch with sandbox enabled;
+WebKit is absent. No security setting was weakened. Prior green two-engine
+checks at `41cb6b6` cover identical runtime and Signal harness files, but fresh
+integrated CI and manual coverage remain required. The approved earlier study
+phone preview does not close the actual production-build phone trial.
+
+
 **H-X45 · Desktop profiling is diagnostic, not a second app writer.**
 
 On 13 October, Jorge explicitly authorized a bounded Codex takeover of #466's
