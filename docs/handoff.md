@@ -611,6 +611,13 @@ author's prefix. Nothing but the id changed.
 
 **H-X45 · Desktop profiling is diagnostic, not a second app writer.**
 
+On 13 October, Jorge explicitly authorized a bounded Codex takeover of #466's
+documentation conflict resolution, independent recheck and merge once green.
+This reconciliation preserves main's X23 record and the reviewed diagnostic
+code. X22 keeps its attribution and closes with #466's merge; final candidate
+review and exact-head CI still precede that merge. This grants no PR467 work,
+application change, performance claim or deployment authority.
+
 Jorge's stalled trace-end regression failed unchanged at `555e576`: my deadline
 did not bound a stalled request acknowledgement. The request and terminal
 buffer now race one shared five-second deadline together. The supplied test
@@ -618,8 +625,11 @@ passes unchanged, and repository guards also cover missing-terminal delivery,
 early terminal with stalled acknowledgement, delayed success, immediate request
 rejection and late rejection after timeout. No increased deadline or retry.
 Invalid evidence is saved, listeners/timer removed and session detached.
-Final timeout-fix CI and independent cleanup review are pending. The measured
-profiling evidence below is unchanged; this is not an app speed improvement.
+Final timeout-fix CI and independent cleanup/artifact review cleared at
+`ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4`: see
+https://github.com/jorgeasenrivera/lead-performance-calculator/pull/466#issuecomment-5958520694
+. The measured profiling evidence below is unchanged; this is not an app speed
+improvement.
 
 Jorge authorized the next step after Dot accepted X21. X22 pins the accepted
 driver at `abcc33d` and actual Signal at `7fdf5ae`, then adds five in-memory
