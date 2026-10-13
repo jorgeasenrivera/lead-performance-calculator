@@ -1,22 +1,25 @@
 name: desktop-background
 on:
-  push:
-    branches: [codex/desktop-background-scope]
   pull_request:
     paths:
-      - scripts/desktop-background*.mjs
-      - test/desktop-background.test.mjs
       - .github/workflows/desktop-background.yml
 permissions:
   contents: read
+concurrency:
+  group: desktop-background-pr467-controlled-webkit
+  cancel-in-progress: false
 jobs:
-  compare:
-    timeout-minutes: 15
+  unprofiled:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 467 && github.head_ref == 'codex/desktop-background-scope'
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ee5b7756a36ff655ac0c28e0cf06624f78f2d558
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
@@ -41,70 +44,6 @@ jobs:
       - run: node --test test/desktop-background.test.mjs
       - name: Confirm repaired recorder regressions
         run: node --test .desktop-profiler/test/desktop-profile.test.mjs
-      - name: Build identical actual Signal assets and local hidden maps
-        working-directory: .desktop-signal
-        run: |
-          node ../node_modules/vite/bin/vite.js build
-          node ../node_modules/vite/bin/vite.js build --outDir dist-mapped --sourcemap hidden
-        env:
-          VITE_SUPABASE_URL: http://127.0.0.1:5433
-          VITE_SUPABASE_ANON_KEY: mock-anon-key
-      - name: Compare background write scope, not a release speed claim
-        shell: bash
-        env:
-          FEEL_BROWSER: chromium
-          DESKTOP_SOURCE_SHA: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
-        run: |
-          test "$(git -C .desktop-baseline rev-parse HEAD)" = abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
-          test "$(git -C .desktop-profiler rev-parse HEAD)" = ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
-          test "$(git -C .desktop-signal rev-parse HEAD)" = "$DESKTOP_SOURCE_SHA"
-          node .desktop-baseline/scripts/desktop-baseline-server.mjs .desktop-signal/dist 49218 > desktop-background-server.log 2>&1 &
-          for i in $(seq 1 100); do curl -sf http://127.0.0.1:49218/ > /dev/null && break; sleep 0.2; done
-          DESKTOP_BACKGROUND_VARIANT=root node scripts/desktop-background.mjs
-          DESKTOP_BACKGROUND_VARIANT=backdrop node scripts/desktop-background.mjs
-          node scripts/desktop-background-report.mjs
-      - name: Keep completed or failed comparison evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-background-chromium
-          path: |
-            desktop-background-evidence/
-            desktop-background-server.log
-          if-no-files-found: error
-  unprofiled:
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, webkit]
-    container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          ref: abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
-          path: .desktop-baseline
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          ref: ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
-          path: .desktop-profiler
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          ref: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
-          path: .desktop-signal
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: npm i --no-save playwright@1.63.0
-      - run: node --test test/desktop-background.test.mjs
       - name: Build unchanged Signal assets and matching hidden maps
         working-directory: .desktop-signal
         run: |
@@ -113,29 +52,121 @@ jobs:
         env:
           VITE_SUPABASE_URL: http://127.0.0.1:5433
           VITE_SUPABASE_ANON_KEY: mock-anon-key
-      - name: Verify lifecycle timing in both orders without CDP profiling
+      - name: WebKit ABBA then BAAB, unchanged unprofiled driver
         shell: bash
         env:
-          FEEL_BROWSER: ${{ matrix.browser }}
+          FEEL_BROWSER: webkit
           DESKTOP_SOURCE_SHA: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
           DESKTOP_BACKGROUND_RECORDING: unprofiled
         run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = ee5b7756a36ff655ac0c28e0cf06624f78f2d558
           test "$(git -C .desktop-baseline rev-parse HEAD)" = abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
           test "$(git -C .desktop-profiler rev-parse HEAD)" = ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
           test "$(git -C .desktop-signal rev-parse HEAD)" = "$DESKTOP_SOURCE_SHA"
+          echo '6de1f4d49a57e555f0ffcde435578bedbe1147856e2d811d1f83855f10c17f20  .desktop-baseline/scripts/desktop-baseline.mjs' | sha256sum --check
           node .desktop-baseline/scripts/desktop-baseline-server.mjs .desktop-signal/dist 49218 > desktop-background-server.log 2>&1 &
-          for i in $(seq 1 100); do curl -sf http://127.0.0.1:49218/ > /dev/null && break; sleep 0.2; done
-          DESKTOP_BACKGROUND_ORDER=root-first DESKTOP_BACKGROUND_VARIANT=root node scripts/desktop-background.mjs
-          DESKTOP_BACKGROUND_ORDER=root-first DESKTOP_BACKGROUND_VARIANT=backdrop node scripts/desktop-background.mjs
-          DESKTOP_BACKGROUND_ORDER=backdrop-first DESKTOP_BACKGROUND_VARIANT=backdrop node scripts/desktop-background.mjs
-          DESKTOP_BACKGROUND_ORDER=backdrop-first DESKTOP_BACKGROUND_VARIANT=root node scripts/desktop-background.mjs
-          node scripts/desktop-background-unprofiled.mjs
-      - name: Keep complete or failed unprofiled timing evidence
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 100); do
+            kill -0 "$server_pid"
+            if curl -sf http://127.0.0.1:49218/ > /dev/null; then break; fi
+            sleep 0.2
+          done
+          curl -fsS http://127.0.0.1:49218/ > /dev/null
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { mkdirSync, readFileSync, writeFileSync, appendFileSync, renameSync, openSync, closeSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+          import os from 'node:os';
+          import { webkit } from 'playwright';
+          import { validateUnprofiled, reportUnprofiled, INTERACTIONS } from './scripts/desktop-background-unprofiled.mjs';
+          const out = 'desktop-background-evidence/webkit-controlled';
+          mkdirSync(out, { recursive: true });
+          const optional = path => { try { return readFileSync(path, 'utf8').trim(); } catch { return null; } };
+          const host = () => ({ utc: new Date().toISOString(), uptimeSeconds: os.uptime(),
+            load: os.loadavg(), freeBytes: os.freemem(), totalBytes: os.totalmem(),
+            cpuTimes: os.cpus().map(cpu => cpu.times),
+            cpuPressure: optional('/proc/pressure/cpu'), cpuStat: optional('/sys/fs/cgroup/cpu.stat'),
+            memoryEvents: optional('/sys/fs/cgroup/memory.events') });
+          const emit = (kind, value) => {
+            const line = JSON.stringify({ kind, ...value });
+            appendFileSync(`${out}/summary.jsonl`, line + '\n'); console.log(line);
+          };
+          // This untimed launch records the installed engine, not an extra cohort.
+          const browser = await webkit.launch();
+          const browserVersion = browser.version(); await browser.close();
+          const runtime = { source: 'ee5b7756a36ff655ac0c28e0cf06624f78f2d558',
+            node: process.version, playwright: JSON.parse(readFileSync('node_modules/playwright/package.json')).version,
+            browser: 'webkit', browserVersion, platform: os.platform(), arch: os.arch(), kernel: os.release(),
+            cpuModel: os.cpus()[0]?.model, cpuCount: os.cpus().length,
+            workflowSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT, before: host() };
+          writeFileSync(`${out}/runtime.json`, JSON.stringify(runtime, null, 2));
+          emit('runtime', runtime);
+          const median = values => { const a = [...values].sort((a,b) => a-b); const i = Math.floor(a.length/2);
+            return a.length % 2 ? a[i] : (a[i-1]+a[i])/2; };
+          let position = 0, interactions = 0, parityChecks = 0;
+          for (const [blockIndex, orders] of [['root-first','backdrop-first'], ['backdrop-first','root-first']].entries()) {
+            const block = blockIndex + 1;
+            for (const order of orders) for (const variant of order === 'root-first' ? ['root','backdrop'] : ['backdrop','root']) {
+              position++;
+              const id = { block, order, variant, position, context: `block-${block}/${order}/${variant}` };
+              const before = host(); emit('cohort-start', { ...id, host: before });
+              const log = `${out}/cohort-${position}.log`, fd = openSync(log, 'wx');
+              let child;
+              try { child = spawnSync(process.execPath, ['scripts/desktop-background.mjs'], {
+                env: { ...process.env, DESKTOP_BACKGROUND_ORDER: order, DESKTOP_BACKGROUND_VARIANT: variant },
+                stdio: ['ignore', fd, fd] }); } finally { closeSync(fd); }
+              const after = host();
+              writeFileSync(`${out}/cohort-${position}-host.json`, JSON.stringify({ ...id, before, after,
+                exitCode: child.status, signal: child.signal, error: child.error?.message ?? null }, null, 2));
+              emit('cohort-exit', { ...id, exitCode: child.status, signal: child.signal, host: after });
+              if (child.error || child.status !== 0) {
+                console.log(readFileSync(log, 'utf8').slice(-16000));
+                throw new Error(`Cohort ${position} failed; stopped without retry`);
+              }
+              const dir = `desktop-background-evidence/unprofiled/webkit/${order}/${variant}`;
+              const json = name => JSON.parse(readFileSync(`${dir}/${name}`, 'utf8'));
+              const baseline = json('baseline/results.json'), background = json('background.json');
+              const rows = validateUnprofiled(variant, 'webkit', baseline, background);
+              interactions += rows.length; parityChecks += background.length;
+              emit('validated', { ...id, interactions: rows.length, parityChecks: background.length,
+                seedCount: baseline.runs[0].seedCount, rowCount: baseline.runs[0].rowCount,
+                splitValueReads: baseline.runs[0].splitValueReads, errors: baseline.runs[0].errors,
+                finalCounters: background.at(-1).after });
+              for (const label of INTERACTIONS) {
+                const selected = rows.filter(r => r.summary.label === label);
+                const fields = ['contentMs','settledMs','frameMedianMs','frameP95Ms','frameMaxMs','gapsOver34Ms'];
+                emit('timing', { ...id, label, cycles: selected.map(r => r.cycle),
+                  ...Object.fromEntries(fields.map(k => [k, { values: selected.map(r => r.summary[k]),
+                    median: median(selected.map(r => r.summary[k])) }])) });
+              }
+              for (const row of rows.filter(r => r.summary.label === 'associate-open')) {
+                const scope = background[row.cycle * 3 + 1];
+                emit('associate-cycle', { ...id, cycle: row.cycle, summary: row.summary,
+                  firstRafTimestampOffsetMs: row.raw.lastFrame - row.raw.frames.reduce((a,b) => a+b,0) - row.raw.start,
+                  frameIntervals: row.raw.frames, before: scope.before, after: scope.after, writes: scope.writes });
+              }
+            }
+            // Keep the original complete-report validator, including all four cohorts.
+            // Suppress only its duplicate console table; per-context values are logged above.
+            const log = console.log;
+            try { console.log = () => {}; await reportUnprofiled('webkit'); } finally { console.log = log; }
+            mkdirSync(`${out}/block-${block}`);
+            renameSync('desktop-background-evidence/unprofiled/webkit', `${out}/block-${block}/webkit`);
+            emit('block-complete', { block, sequence: block === 1 ? 'ABBA' : 'BAAB' });
+          }
+          assert.equal(position, 8); assert.equal(interactions, 240); assert.equal(parityChecks, 72);
+          emit('complete', { cohorts: position, interactions, parityChecks,
+            interpretation: 'Nested cycles, not independent trials; lifecycle timing is not a general speed win.' });
+          NODE
+      - name: Keep complete or failed controlled WebKit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-background-unprofiled-${{ matrix.browser }}
+          name: desktop-background-webkit-abba-baab-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            desktop-background-evidence/unprofiled/
+            desktop-background-evidence/
             desktop-background-server.log
           if-no-files-found: error
