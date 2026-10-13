@@ -20,9 +20,13 @@ await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => 
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
 await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
-  const response=await route.fetch(); const data=await response.json();
+  const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
+  const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
+  const data=await response.json();
   const addStore=row=>row?.value?.stores ? {...row,value:{...row.value,
-    stores:[...row.value.stores,{...row.value.stores[0],id:'spacing-demo-2',name:'Second Fictional Store'}]}}:row;
+    stores:[...row.value.stores,{...row.value.stores[0],id:'spacing-demo-2',name:'Second Fictional Store'}],
+    standards:{...row.value.standards,'spacing-demo-2':row.value.standards?.['sage-demo']}}}
+    :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
   await route.fulfill({response,json:Array.isArray(data)?data.map(addStore):addStore(data)});
 });
 const page = await context.newPage(), errors = [], results = [];
@@ -82,6 +86,8 @@ try {
           rowPadding:rows[0] ? getComputedStyle(rows[0]).paddingInline:null,
           controls:visible('.help-fab:not(.inline),.botnav,.botnav-fab,.botnav-halo'),
           names:[...document.querySelectorAll('.bp-nmx')].map(n=>({width:n.clientWidth,scroll:n.scrollWidth})),
+          details:rows.map(n=>({row:box(n),line:box(n.querySelector('.bp-lim')),
+            count:box(n.querySelector('.bp-lim b')),status:box(n.querySelector('.bp-stnd'))})),
           hit:last ? document.elementFromPoint(last.getBoundingClientRect().right-20,last.getBoundingClientRect().y+last.getBoundingClientRect().height/2)?.closest('.bp-row')===last :null};
       });
       const key=`${phase}-${c.width}x${c.height}-inset${c.inset}`;
@@ -119,6 +125,12 @@ try {
           const ceiling=Math.min(...geometry.controls.map(r=>r.y));
           assert.ok(geometry.last.bottom<=ceiling-8,`${key}: last row clears controls, bottom=${geometry.last.bottom}, ceiling=${ceiling}`);
           assert.ok(geometry.hit,`${key}: final units cell receives taps`);
+          for(const d of geometry.details) {
+            assert.ok(d.row.h>=56,`${key}: minimum row height`);
+            for(const child of [d.count,d.status].filter(Boolean)) {
+              assert.ok(child.x>=d.line.x-1 && child.right<=d.line.right+1,`${key}: count/status remains readable`);
+            }
+          }
         }
       }
     }
@@ -142,8 +154,39 @@ try {
   await page.locator('.sm-phone').waitFor();
   await page.locator('.sect-chip').filter({hasText:/^Dashboard$/}).click();
   await page.locator('.bp-row').first().waitFor();
+  const originalStore=await page.locator('.sage-bp-store').textContent();
+  await page.locator('.view-select').selectOption('spacing-demo-2');
+  await page.waitForFunction(()=>document.querySelector('.sage-bp-store')?.textContent==='Second Fictional Store');
+  await page.locator('.bp-row').first().waitFor();
+  await page.screenshot({path:'manager-spacing/after-dealer-switch.png'});
+  await page.locator('.view-select').selectOption('sage-demo');
+  await page.waitForFunction(name=>document.querySelector('.sage-bp-store')?.textContent===name,originalStore);
+  const people=page.locator('.sect-chip').filter({hasText:/^People$/});
+  await people.scrollIntoViewIfNeeded();
+  const reachable=await people.evaluate(n=>{const r=n.getBoundingClientRect(),s=n.closest('.sect-strip').getBoundingClientRect();return r.x>=s.x-1 && r.right<=s.right+1;});
+  assert.ok(reachable,'People is reachable through the horizontal tab strip');
+  await people.focus(); await page.keyboard.press('Enter');
+  await page.locator('.pe-phone').waitFor();
+  await page.screenshot({path:'manager-spacing/after-people-reached.png'});
+  await page.locator('.sect-chip').filter({hasText:/^Dashboard$/}).click();
+  await page.locator('.bp-row').first().waitFor();
+  // Explicit text-only stress, not a production scaling rule or a substitute
+  // for a physical phone's accessibility text setting.
+  const textStyle=await page.addStyleTag({content:'.bp-nmx{font-size:19.5px!important}.bp-lim b{font-size:12.75px!important}.bp-stnd{font-size:11.25px!important}.bp-filt button{font-size:16.5px!important}.bp-fivehead .bp-lbl{font-size:12.75px!important}.bp-un{font-size:22.5px!important}.bp-verdict{font-size:18px!important}'});
+  await page.locator('.bp-fivehead').scrollIntoViewIfNeeded();
+  const enlarged=await page.locator('.bp-row').evaluateAll(rows=>rows.map(row=>{
+    const line=row.querySelector('.bp-lim').getBoundingClientRect();
+    return {height:row.getBoundingClientRect().height,details:[...row.querySelectorAll('.bp-lim b,.bp-stnd')].map(n=>{
+      const r=n.getBoundingClientRect();return r.x>=line.x-1 && r.right<=line.right+1;
+    })};
+  }));
+  assert.ok(enlarged.every(r=>r.height>=56 && r.details.every(Boolean)),'150% text preserves count/status and row targets');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'150% text has no document overflow');
+  results.push({phase:'after',stress:'150-percent-text',rows:enlarged});
+  await page.screenshot({path:'manager-spacing/after-text-150.png'});
+  await textStyle.evaluate(n=>n.remove());
   assert.deepEqual(errors,[]);
-  console.log('Keyboard passed: last row Enter/Escape, search clear and Summary return');
+  console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');
 } finally {
   console.log(JSON.stringify({engine,baseline,results,errors}));
   await writeFile('manager-spacing/geometry.json',JSON.stringify({engine,baseline,results,errors},null,2));

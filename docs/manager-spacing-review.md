@@ -13,7 +13,10 @@ That difference is recorded, not treated as cross-engine parity.
 The correction uses a two-column filter grid with a full-width final odd item,
 44px minimum touch height and wrapping labels. Header and roster rows share
 12px side padding and identical columns, with 40px reserved for Units. No
-typography is shrunk. Bottom content space and scroll padding account for the
+typography is shrunk. Lead bars can shrink and lead count/status details wrap
+instead of disappearing inside an overflow-hidden line. Rows can grow above
+their unchanged 56px minimum, including when text is enlarged. Bottom content
+space and scroll padding account for the
 fixed help button's 122px extent plus a 14px gap and the safe-area inset.
 Import's raised treatment and all controls remain unchanged.
 
@@ -33,6 +36,10 @@ safe-area cases at 390 and 700. It captures the scrolled roster bottom and filte
 header, logs exact geometry, checks shared column centers, intentional wrapping,
 touch height, final-row clearance and units hit testing. Long-name, final-row
 Enter/Escape, search clearing and Summary return are also exercised.
+Dealer switching and reaching People through the horizontal tab strip exercise
+the real controls. A separate 150% text-only stress verifies readable lead
+counts/status and row targets; it is not a whole-page scale or physical-device
+accessibility claim.
 
 Artifacts manager-spacing-chromium and manager-spacing-webkit contain only
 fictional screenshots and geometry.json. Browser-height changes and synthetic
@@ -57,3 +64,5 @@ reported overlap while its smooth scroll was still approaching the bottom.
 The probe now waits for and logs the actual scroll endpoint before applying
 the unchanged clearance threshold; it does not infer a completed scroll from
 two animation frames. A failed endpoint or clearance assertion still fails CI.
+Filter screenshots are explicitly positioned below the sticky header and log
+that position, avoiding partially hidden captures from scrollIntoView alone.
