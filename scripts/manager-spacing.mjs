@@ -336,8 +336,15 @@ try {
   assert.ok(textSamples.every(s=>s.connected && Math.abs(s.after-s.before*1.5)<.01),'every selected text element is actually enlarged 150%');
   await pillGeometry('.sect-strip');
   const stripBox=await page.locator('.sect-strip').boundingBox();
-  await page.mouse.move(stripBox.x+stripBox.width/2,stripBox.y+stripBox.height/2);
-  await page.mouse.wheel(600,0);
+  if(engine==='chromium') {
+    await page.mouse.move(stripBox.x+stripBox.width/2,stripBox.y+stripBox.height/2);
+    await page.mouse.wheel(600,0);
+  }
+  // Mobile WebKit explicitly rejects Playwright mouse-wheel input. Both
+  // engines still exercise actual scrollTo in both directions and keyboard
+  // scrolling; this does not claim an emulated physical touch swipe.
+  await page.locator('.sect-chip').last().focus();await page.keyboard.press('ArrowRight');
+  results.push({sidewaysInput:engine==='chromium'?'wheel, ArrowRight, bidirectional scrollTo':'ArrowRight, bidirectional scrollTo; mobile WebKit wheel unsupported'});
   await pillGeometry('.sect-strip');
   await settleScroll('filters');
   const enlargedUnitsLines=await page.locator('.bp-fivehead .bp-lbl').last().evaluate(n=>{
@@ -382,6 +389,7 @@ try {
     assert.ok(sizes.every(s=>Math.abs(s.after-s.before*1.5)<.01),'shared header genuinely enlarged');
     await pillGeometry('.sect-strip');
     await page.screenshot({path:`manager-spacing/after-shared-${name}-text150.png`});
+    await page.locator('.sect-chip').evaluateAll(nodes=>nodes.forEach(n=>n.style.removeProperty('font-size')));
   }
   await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();
   await sharedHeader('activity-four',4);
