@@ -609,6 +609,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X48 · X25 phone spacing, separate from frozen motion #468.**
+
+Jorge accepted the quieter motion preview at 20:08:55 UTC. Do not change fe9b174. X25 starts from main 40a1429 and contains no motion patch. Parent authorized measured layout corrections from independent fictional reproduction, with original-image comparison owned by parent/reviewer. Filters, shared roster columns and final-row clearance only; before/after screenshots and geometry in both engines. No merge or production action.
+
 **H-X47 · X24 manager motion correction, 13 October.**
 
 Draft #468 is published. Runtime diff is 24 scoped CSS lines, preserving animation names and completion events. Local 906 tests/build pass; first Chromium/WebKit motion run 38459518168 passes. Review actual menu identification, the short inherited opacity curve, and exact preview on phone. Latest probe also exercises Summary navigation from the keyboard and interruption recovery. No original screenshot was inspected here and no spacing change is included.
