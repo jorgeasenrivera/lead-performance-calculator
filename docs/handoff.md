@@ -609,6 +609,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X47 · X24 manager motion correction, 13 October.**
+
+Jorge requested substantially reduced post-load entrance and dropdown icon travel at 19:55 UTC. Lightspeed is explicitly excluded. Start from production 5bf65105003b3e01227c774ea82e08d5d595bb68; scoped manager CSS and sanitized checks only, leaving C97 core ownership untouched. X11 production #459 is merged. Parent retains final independent review and production decision. Screenshot download failed twice, so spacing remains source-only investigation until direct sanitized reproduction is inspected.
+
 **H-X46 · Signal release preparation and preview takeover, 13 October.**
 
 Jorge explicitly authorized taking over PR459's existing `codex/manager-signal`
