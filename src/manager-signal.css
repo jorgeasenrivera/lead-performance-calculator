@@ -325,6 +325,18 @@ html.manager-signal .lpc .sect-strip .sect-chip.on{color:#fffdf4}
   html.manager-signal .pe-filters .pe-ft {
     flex:1 1 8em; min-width:0; min-height:44px; white-space:normal; overflow-wrap:anywhere;
   }
+  /* These shared phone views otherwise make the whole document wider than
+     the fixed header: a 340px grid minimum and a non-wrapping oversight row. */
+  html.manager-signal .gv-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); }
+  html.manager-signal .gv-card { min-width:0; }
+  html.manager-signal :is(.gv-top,.gv-feet) { flex-wrap:wrap; }
+  html.manager-signal .gv-id { flex:1 1 8em; overflow-wrap:anywhere; }
+  html.manager-signal .combined-row { flex-wrap:wrap; }
+  html.manager-signal .combined-row .assoc-name {
+    flex:1 1 calc(100% - 19px); min-width:0; white-space:normal; overflow:visible; overflow-wrap:anywhere;
+  }
+  html.manager-signal .combined-role-label { flex:1 1 6em; overflow-wrap:anywhere; }
+  html.manager-signal .combined-row .verdict { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 }
 @media(min-width:360px) and (max-width:760px) {
   html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) { grid-template-columns:repeat(6,minmax(0,1fr)); }

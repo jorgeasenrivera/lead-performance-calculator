@@ -366,11 +366,47 @@ try {
   results.push({phase:'after',stress:'150-percent-text',rows:enlarged,textSamples,enlargedUnitsLines});
   await page.screenshot({path:'manager-spacing/after-text-150.png'});
   await page.evaluate(()=>{for(const s of window.spacingTextRestore) {if(s.style===null)s.node.removeAttribute('style');else s.node.setAttribute('style',s.style);}delete window.spacingTextRestore;});
+  async function contentBounds() {
+    return page.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,
+      text:[...document.querySelectorAll('.gv-name,.gv-sub,.gv-of,.gv-open,.gv-top .tg-chip,.combined-row .assoc-name,.combined-role-label,.combined-row .assoc-leads,.combined-row .verdict')].map(n=>{
+        const card=n.closest('.gv-card,.combined-store').getBoundingClientRect(),range=document.createRange();range.selectNodeContents(n);
+        return {className:n.className,text:n.textContent,readable:[...range.getClientRects()].filter(r=>r.width).every(r=>r.x>=card.x && r.right<=card.right && r.y>=card.y && r.bottom<=card.bottom)};
+      })}));
+  }
   async function sharedHeader(name,count) {
     await page.waitForFunction(count=>document.querySelectorAll('.sect-chip').length===count,count);
     await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
     for(const width of [320,390]) {
       await page.setViewportSize({width,height:667});
+      if(name==='admin-seven' || name==='combined-two') {
+        for(const [phase,css] of [['before',before],['after',after]]) {
+          await page.evaluate(async css=>{
+            [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
+            scrollTo({top:0,left:0,behavior:'instant'});
+            await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+          },css);
+          const geometry=await contentBounds();results.push({sharedContent:name,phase,...geometry});
+          await page.screenshot({path:`manager-spacing/${phase}-${name}-${width}-content.png`});
+          if(phase==='after') {
+            assert.ok(geometry.scrollWidth<=width+1,'shared phone content fits viewport');
+            assert.ok(geometry.text.length && geometry.text.every(t=>t.readable),'shared phone content remains inside its card');
+          }
+        }
+        if(width===320) {
+          const sizes=await page.evaluate(async()=>{
+            const nodes=[...document.querySelectorAll('.gv-name,.gv-sub,.gv-of,.gv-open,.gv-top .tg-chip,.combined-row .assoc-name,.combined-role-label,.combined-row .assoc-leads,.combined-row .verdict')];
+            window.contentTextRestore=nodes.map(n=>({n,size:parseFloat(getComputedStyle(n).fontSize),style:n.getAttribute('style')}));
+            window.contentTextRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.size*1.5}px`,'important'));
+            await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+            return window.contentTextRestore.map(s=>({before:s.size,after:parseFloat(getComputedStyle(s.n).fontSize)}));
+          });
+          const geometry=await contentBounds();results.push({sharedContent:name,stress:'150-percent-text',sizes,...geometry});
+          await page.screenshot({path:`manager-spacing/after-${name}-content-text150.png`});
+          assert.ok(sizes.every(s=>Math.abs(s.after-s.before*1.5)<.01),'shared content genuinely enlarged');
+          assert.ok(geometry.scrollWidth<=width+1 && geometry.text.every(t=>t.readable),'enlarged shared content fits without clipping');
+          await page.evaluate(()=>{for(const s of window.contentTextRestore) {if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.contentTextRestore;});
+        }
+      }
       await pillGeometry('.sect-strip');
     }
     const first=page.locator('.sect-chip').first(),last=page.locator('.sect-chip').last();

@@ -95,3 +95,12 @@ It tests each section with keyboard Enter, responsive widths, 150% actual
 computed text sizes and a horizontal wheel attempt. Before/after fictional
 header screenshots and each selected tab are included. The previous approval
 does not clear this new header change; affected review and phone trial remain.
+
+The parent authorized bounded fixes for the measured shared-view overflow.
+At320px admin Overview's340px grid minimum made the document368px wide;
+combined overseer rows reached431px because names/counts/verdicts could not
+wrap. Baseline CSS reproduces both. Phone-only CSS now caps the grid minimum
+to its container and wraps these content rows without reducing text, hiding
+content or changing handlers. Desktop rules are untouched. Before/after
+320/390px content screenshots, bounds checks and actual150% content text
+checks supplement the existing header tests.
