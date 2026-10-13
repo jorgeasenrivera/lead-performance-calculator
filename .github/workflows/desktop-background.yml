@@ -1,0 +1,244 @@
+name: desktop-background
+on:
+  pull_request:
+    paths:
+      - .github/workflows/desktop-background.yml
+permissions:
+  contents: read
+concurrency:
+  group: desktop-background-pr467-controlled-webkit
+  cancel-in-progress: false
+jobs:
+  unprofiled:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 467 && github.head_ref == 'codex/desktop-background-scope'
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    steps:
+      - uses: actions/checkout@v4
+        id: diagnostic_source
+        with:
+          ref: ee5b7756a36ff655ac0c28e0cf06624f78f2d558
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        id: baseline_source
+        with:
+          ref: abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
+          path: .desktop-baseline
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        id: profiler_source
+        with:
+          ref: ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
+          path: .desktop-profiler
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        id: signal_source
+        with:
+          ref: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
+          path: .desktop-signal
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - run: node --test test/desktop-background.test.mjs
+      - name: Confirm repaired recorder regressions
+        run: node --test .desktop-profiler/test/desktop-profile.test.mjs
+      - name: Build unchanged Signal assets and matching hidden maps
+        working-directory: .desktop-signal
+        run: |
+          node ../node_modules/vite/bin/vite.js build
+          node ../node_modules/vite/bin/vite.js build --outDir dist-mapped --sourcemap hidden
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:5433
+          VITE_SUPABASE_ANON_KEY: mock-anon-key
+      - name: WebKit single root cohort with probe callback timing
+        shell: bash
+        env:
+          FEEL_BROWSER: webkit
+          DESKTOP_SOURCE_SHA: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
+          DESKTOP_BACKGROUND_RECORDING: unprofiled
+          CHECKED_DIAGNOSTIC_SHA: ${{ steps.diagnostic_source.outputs.commit }}
+          CHECKED_BASELINE_SHA: ${{ steps.baseline_source.outputs.commit }}
+          CHECKED_PROFILER_SHA: ${{ steps.profiler_source.outputs.commit }}
+          CHECKED_SIGNAL_SHA: ${{ steps.signal_source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          # Checkout reports the actual Git commit from its own execution context.
+          # Compare its verified outputs without extending trust to later shell Git.
+          test "$CHECKED_DIAGNOSTIC_SHA" = ee5b7756a36ff655ac0c28e0cf06624f78f2d558
+          test "$CHECKED_BASELINE_SHA" = abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
+          test "$CHECKED_PROFILER_SHA" = ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
+          test "$CHECKED_SIGNAL_SHA" = "$DESKTOP_SOURCE_SHA"
+          printf 'Verified checkout commits: %s %s %s %s\n' "$CHECKED_DIAGNOSTIC_SHA" "$CHECKED_BASELINE_SHA" "$CHECKED_PROFILER_SHA" "$CHECKED_SIGNAL_SHA"
+          echo '6de1f4d49a57e555f0ffcde435578bedbe1147856e2d811d1f83855f10c17f20  .desktop-baseline/scripts/desktop-baseline.mjs' | sha256sum --check
+          node --input-type=module <<'PREPARE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const base = '.desktop-baseline/scripts/';
+          const out = 'desktop-background-evidence/root-timing';
+          mkdirSync(out, { recursive: true });
+          const original = readFileSync(base + 'desktop-baseline-metrics.mjs', 'utf8');
+          let source = original;
+          const replace = (needle, value) => {
+            assert.equal(source.split(needle).length, 2, `timing anchor changed: ${needle}`);
+            source = source.replace(needle, value);
+          };
+          replace('  const observers = [];', `  const observers = [];
+            // Timing is diagnostic only. MutationObserver times are delivery times,
+            // not the exact mutation instant; these reads do not request geometry.
+            const timingNow = () => env.performance.now();
+            let timingObserver = null;
+            function markers(sample, reason, records = []) {
+              if (!sample?.timing) return;
+              const card = doc.querySelector('.acard');
+              const relevant = records.filter(r => r.type === 'childList' ||
+                r.target === doc.documentElement || r.target === card);
+              if (reason === 'delivery' && !relevant.length) return;
+              const list = sample.timing.markers;
+              if (list.length >= 2000) { sample.timing.dropped++; return; }
+              list.push({ at: timingNow(), reason, rootClass: doc.documentElement.className,
+                cardPresent: !!card, cardMotion: card?.getAttribute('data-signal-card-motion') ?? null,
+                records: relevant.slice(0, 100).map(r => ({ type: r.type, attribute: r.attributeName,
+                  target: r.target === doc.documentElement ? 'root' : r.target === card ? 'card' : 'subtree',
+                  oldValue: r.oldValue })), recordsOmitted: Math.max(0, relevant.length - 100) });
+            }
+            function timingFinish(sample) {
+              if (!sample?.timing) return;
+              markers(sample, 'finish', timingObserver?.takeRecords() || []);
+              timingObserver?.disconnect(); timingObserver = null;
+              sample.timing.finishEntry = timingNow();
+            }`);
+          replace('    env.cancelAnimationFrame(raf); env.clearTimeout(timer);',
+            '    timingFinish(active);\n    env.cancelAnimationFrame(raf); env.clearTimeout(timer);');
+          replace('    if (!active) return;\n    if (active.lastFrame', `    if (!active) return;
+              const timingSample = active;
+              const entry = active.timing ? { timestamp: t, entry: timingNow() } : null;
+              if (entry) {
+                if (active.timing.callbacks.length < 2000) active.timing.callbacks.push(entry);
+                else active.timing.dropped++;
+              }
+              try {
+              if (active.lastFrame`);
+          replace('      ready = active.absent ?', '      if (entry) entry.geometryStart = timingNow();\n      ready = active.absent ?');
+          replace('      if (ready && active.contentMs == null)', '      if (entry) entry.geometryEnd = timingNow();\n      if (ready && active.contentMs == null)');
+          replace('      if (ready && !rootBusy && !cardBusy)',
+            '      if (entry) Object.assign(entry, { markerRead: timingNow(), ready, rootBusy, cardBusy: !!cardBusy });\n      if (ready && !rootBusy && !cardBusy)');
+          replace('    raf = env.requestAnimationFrame(tick);\n  }\n  function start',
+            `    raf = env.requestAnimationFrame(tick);
+              } finally {
+                if (entry) Object.assign(entry, { exit: timingNow(), readyFrames: timingSample.readyFrames,
+                  contentMs: timingSample.contentMs, settledMs: timingSample.settledMs });
+              }
+            }
+            function start`);
+          replace('    // A background tab can stop rAF forever.', `    if (label === 'associate-open') {
+              active.timing = { callbacks: [], markers: [], dropped: 0,
+                interpretation: 'Instrumented observer delivery and probe execution, not GPU cost or an uninstrumented performance comparison' };
+              markers(active, 'start');
+              timingObserver = new env.MutationObserver(records => markers(active, 'delivery', records));
+              timingObserver.observe(doc.documentElement, { subtree: true, childList: true,
+                attributes: true, attributeOldValue: true, attributeFilter: ['class', 'data-signal-card-motion'] });
+            }
+            // A background tab can stop rAF forever.`);
+          // No pinned file is edited. The original driver still imports its original summary guard.
+          writeFileSync(base + 'desktop-timing-metrics.mjs', source);
+          const server = readFileSync(base + 'desktop-baseline-server.mjs', 'utf8');
+          assert.equal(server.split("'./desktop-baseline-metrics.mjs'").length, 2);
+          writeFileSync(base + 'desktop-timing-server.mjs', server.replace("'./desktop-baseline-metrics.mjs'", "'./desktop-timing-metrics.mjs'"));
+          writeFileSync(out + '/probe-original.mjs', original);
+          writeFileSync(out + '/probe-instrumented.mjs', source);
+          const hashes = { original: createHash('sha256').update(original).digest('hex'),
+            instrumented: createHash('sha256').update(source).digest('hex') };
+          writeFileSync(out + '/probe-hashes.json', JSON.stringify(hashes, null, 2));
+          console.log(JSON.stringify({ kind: 'probe-hashes', ...hashes }));
+          PREPARE
+          diff -u desktop-background-evidence/root-timing/probe-original.mjs desktop-background-evidence/root-timing/probe-instrumented.mjs > desktop-background-evidence/root-timing/instrumentation.patch || test "$?" = 1
+          cat desktop-background-evidence/root-timing/instrumentation.patch
+          node .desktop-baseline/scripts/desktop-timing-server.mjs .desktop-signal/dist 49218 > desktop-background-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 100); do
+            kill -0 "$server_pid"
+            if curl -sf http://127.0.0.1:49218/ > /dev/null; then break; fi
+            sleep 0.2
+          done
+          curl -fsS http://127.0.0.1:49218/ > /dev/null
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { mkdirSync, readFileSync, writeFileSync, appendFileSync, openSync, closeSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+          import os from 'node:os';
+          import { webkit } from 'playwright';
+          import { validateUnprofiled } from './scripts/desktop-background-unprofiled.mjs';
+          const out = 'desktop-background-evidence/root-timing';
+          mkdirSync(out, { recursive: true });
+          const optional = path => { try { return readFileSync(path, 'utf8').trim(); } catch { return null; } };
+          const host = () => ({ utc: new Date().toISOString(), uptimeSeconds: os.uptime(),
+            load: os.loadavg(), freeBytes: os.freemem(), totalBytes: os.totalmem(),
+            cpuTimes: os.cpus().map(cpu => cpu.times),
+            cpuPressure: optional('/proc/pressure/cpu'), cpuStat: optional('/sys/fs/cgroup/cpu.stat'),
+            memoryEvents: optional('/sys/fs/cgroup/memory.events') });
+          const emit = (kind, value) => {
+            const line = JSON.stringify({ kind, ...value });
+            appendFileSync(`${out}/summary.jsonl`, line + '\n'); console.log(line);
+          };
+          // This untimed launch records the installed engine, not an extra cohort.
+          const browser = await webkit.launch();
+          const browserVersion = browser.version(); await browser.close();
+          const runtime = { source: 'ee5b7756a36ff655ac0c28e0cf06624f78f2d558',
+            node: process.version, playwright: JSON.parse(readFileSync('node_modules/playwright/package.json')).version,
+            browser: 'webkit', browserVersion, platform: os.platform(), arch: os.arch(), kernel: os.release(),
+            cpuModel: os.cpus()[0]?.model, cpuCount: os.cpus().length,
+            workflowSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT, before: host() };
+          writeFileSync(`${out}/runtime.json`, JSON.stringify(runtime, null, 2));
+          emit('runtime', runtime);
+          const id = { order: 'root-first', variant: 'root', position: 1 };
+          const before = host(); emit('cohort-start', { ...id, host: before });
+          const log = `${out}/cohort-1.log`, fd = openSync(log, 'wx');
+          let child;
+          try { child = spawnSync(process.execPath, ['scripts/desktop-background.mjs'], {
+            env: { ...process.env, DESKTOP_BACKGROUND_ORDER: id.order, DESKTOP_BACKGROUND_VARIANT: id.variant },
+            stdio: ['ignore', fd, fd] }); } finally { closeSync(fd); }
+          emit('cohort-exit', { ...id, exitCode: child.status, signal: child.signal,
+            error: child.error?.message ?? null, before, after: host() });
+          // Inspect retained raw evidence even when the original validity guard stops the driver.
+          // Emit the complete JSON for independent inspection without an artifact download dependency.
+          const dir = 'desktop-background-evidence/unprofiled/webkit/root-first/root';
+          const rawText = optional(`${dir}/baseline/results.json`);
+          if (rawText) {
+            console.log('ROOT_TIMING_RESULTS_BEGIN'); console.log(rawText); console.log('ROOT_TIMING_RESULTS_END');
+            const baseline = JSON.parse(rawText);
+            for (const sample of baseline.failureEvidence?.probe?.samples || []) {
+              if (sample.label === 'associate-open') emit('failed-cohort-associate', { sample });
+            }
+          }
+          if (child.error || child.status !== 0) {
+            console.log(readFileSync(log, 'utf8').slice(-16000));
+            throw new Error('Single root cohort failed; stopped without retry');
+          }
+          assert.ok(rawText, 'raw evidence must exist');
+          const baseline = JSON.parse(rawText);
+          const background = JSON.parse(readFileSync(`${dir}/background.json`, 'utf8'));
+          const rows = validateUnprofiled('root', 'webkit', baseline, background);
+          console.log('ROOT_TIMING_BACKGROUND_BEGIN'); console.log(JSON.stringify(background)); console.log('ROOT_TIMING_BACKGROUND_END');
+          emit('validated', { cohorts: 1, interactions: rows.length, parityChecks: background.length });
+          for (const row of rows.filter(r => r.summary.label === 'associate-open')) {
+            emit('associate-cycle', { cycle: row.cycle, summary: row.summary, raw: row.raw });
+          }
+          NODE
+      - name: Keep complete or failed controlled WebKit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-background-webkit-root-timing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            desktop-background-evidence/
+            desktop-background-server.log
+          if-no-files-found: error
