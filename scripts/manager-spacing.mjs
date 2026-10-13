@@ -203,8 +203,19 @@ try {
     const samples=nodes.map(n=>({node:n,before:parseFloat(getComputedStyle(n).fontSize),style:n.getAttribute('style')}));
     window.spacingTextRestore=samples;
     for(const s of samples) s.node.style.setProperty('font-size',`${s.before*1.5}px`,'important');
-    return samples.map(s=>({className:s.node.className,before:s.before,after:parseFloat(getComputedStyle(s.node).fontSize)}));
+    return samples.map((s,index)=>{
+      const computed=getComputedStyle(s.node),rect=s.node.getBoundingClientRect();
+      return {index,className:s.node.className,text:s.node.textContent,before:s.before,
+        requested:s.before*1.5,after:parseFloat(computed.fontSize),connected:s.node.isConnected,
+        inlineSize:s.node.style.getPropertyValue('font-size'),priority:s.node.style.getPropertyPriority('font-size'),
+        textSizeAdjust:computed.getPropertyValue('-webkit-text-size-adjust'),
+        transition:computed.transition,animation:computed.animation,width:rect.width,height:rect.height};
+    });
   });
+  // Keep failed enlargement evidence too, before any requirement can abort.
+  results.push({phase:'after',stress:'150-percent-text-measurement',textSamples});
+  await writeFile('manager-spacing/text-measurement.json',JSON.stringify({engine,textSamples},null,2));
+  await page.screenshot({path:'manager-spacing/text-measurement.png'});
   assert.ok(textSamples.every(s=>Math.abs(s.after-s.before*1.5)<.01),'every selected text element is actually enlarged 150%');
   await settleScroll('filters');
   const enlargedUnitsLines=await page.locator('.bp-fivehead .bp-lbl').last().evaluate(n=>{
