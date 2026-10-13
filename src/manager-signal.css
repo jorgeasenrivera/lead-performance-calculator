@@ -111,16 +111,23 @@ html.manager-signal :is(.qpick,.drawer) {
     text-align:center; justify-content:center; overflow-wrap:anywhere;
   }
   html.manager-signal .bp-filt button:last-child:nth-child(odd) { grid-column:1 / -1; }
+  html.manager-signal .bp-stand {
+    /* Edge tracks include the shared 12px inset. Subgrid lets the Units label
+       size every row's last track without guessing its font's glyph widths. */
+    display:grid; grid-template-columns:40px minmax(0,1fr) 84px minmax(52px,max-content); column-gap:5px;
+  }
+  html.manager-signal .bp-stand > :is(.bp-filt,.fr-empty) { grid-column:1 / -1; }
   html.manager-signal :is(.bp-fivehead,.bp-row) {
-    grid-template-columns:28px minmax(0,1fr) 84px 40px;
+    grid-column:1 / -1; grid-template-columns:subgrid;
     padding-left:12px; padding-right:12px;
   }
   html.manager-signal .bp-row { height:auto; min-height:56px; padding-top:8px; padding-bottom:8px; }
   html.manager-signal .bp-row .bp-lim { flex-wrap:wrap; white-space:normal; overflow:visible; row-gap:3px; }
   html.manager-signal .bp-row .bp-pb { flex:1 1 28px; min-width:28px; max-width:70px; }
-  html.manager-signal .bp-row .bp-lim b { white-space:nowrap; }
+  html.manager-signal .bp-row .bp-lim b { max-width:100%; min-width:0; white-space:normal; overflow-wrap:anywhere; }
   html.manager-signal .bp-verdict { max-width:100%; height:auto; min-height:26px; white-space:normal; flex-wrap:wrap; justify-content:center; }
   html.manager-signal .bp-fivehead .bp-lbl { min-width:0; overflow-wrap:anywhere; }
+  html.manager-signal .bp-fivehead .bp-lbl:last-child { white-space:nowrap; overflow-wrap:normal; }
   /* Help stands 122px above the safe-area edge; leave a readable gap above it.
      Import keeps its raised treatment. Every roster row can clear both. */
   html.manager-signal .board-page:has(> .bp-page) { padding-bottom:calc(136px + var(--sab,0px)); }

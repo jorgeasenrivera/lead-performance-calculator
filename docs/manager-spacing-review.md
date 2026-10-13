@@ -12,7 +12,8 @@ That difference is recorded, not treated as cross-engine parity.
 
 The correction uses a two-column filter grid with a full-width final odd item,
 44px minimum touch height and wrapping labels. Header and roster rows share
-12px side padding and identical columns, with 40px reserved for Units. No
+12px side padding and shared subgrid columns. The Units track grows to its
+unbroken label's intrinsic width, including when text is enlarged. No
 typography is shrunk. Lead bars can shrink and lead count/status details wrap
 instead of disappearing inside an overflow-hidden line. Rows can grow above
 their unchanged 56px minimum, including when text is enlarged. Bottom content
@@ -39,7 +40,10 @@ Enter/Escape, search clearing and Summary return are also exercised.
 Dealer switching and reaching People through the horizontal tab strip exercise
 the real controls. A separate 150% text-only stress verifies readable lead
 counts/status and row targets; it is not a whole-page scale or physical-device
-accessibility claim.
+accessibility claim. It derives every tested font size from that element's
+computed baseline, verifies the actual 1.5 ratio, and records both sizes. The
+Units label must remain on one line at normal and enlarged sizes. The People
+screenshot waits for a populated row to be visible after navigation settles.
 
 Artifacts manager-spacing-chromium and manager-spacing-webkit contain only
 fictional screenshots and geometry.json. Browser-height changes and synthetic
@@ -66,3 +70,11 @@ the unchanged clearance threshold; it does not infer a completed scroll from
 two animation frames. A failed endpoint or clearance assertion still fails CI.
 Filter screenshots are explicitly positioned below the sticky header and log
 that position, avoiding partially hidden captures from scrollIntoView alone.
+
+Independent visual review caught a gap in the initially green geometry checks:
+the normal 12.5px Units header wrapped inside the old fixed 40px track. The
+shared intrinsic track and explicit line-count assertions correct that issue.
+The old stress used a hardcoded 12.75px header size, effectively leaving it
+unenlarged; those samples are not full 150% evidence. Fresh measured-size
+samples replace them. A selected People tab without populated visible content
+is likewise insufficient screenshot evidence and now fails the capture gate.

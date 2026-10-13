@@ -90,6 +90,9 @@ try {
         const rows=[...document.querySelectorAll('.bp-row')];
         const h=document.querySelector('.bp-fivehead');
         const last=rows.at(-1);
+        const units=h?.lastElementChild;
+        const range=document.createRange();
+        if(units) range.selectNodeContents(units);
         const visible = selector => [...document.querySelectorAll(selector)].filter(n=>n.getBoundingClientRect().width && getComputedStyle(n).display!=='none').map(box);
         const scroll=document.scrollingElement;
         return {viewport:{w:innerWidth,h:innerHeight},scrollWidth:document.documentElement.scrollWidth,
@@ -98,6 +101,8 @@ try {
           filter:box(document.querySelector('.bp-filt')),
           filters:[...document.querySelectorAll('.bp-filt button')].map(n=>({...box(n),text:n.textContent})),
           header:h ? [...h.children].map(box):[],
+          unitsHeader:units ? {fontSize:getComputedStyle(units).fontSize,
+            lines:new Set([...range.getClientRects()].filter(r=>r.width).map(r=>Math.round(r.y))).size}:null,
           row:rows[0] ? [...rows[0].children].map(box):[],last:box(last),
           headerPadding:h ? getComputedStyle(h).paddingInline:null,
           rowPadding:rows[0] ? getComputedStyle(rows[0]).paddingInline:null,
@@ -127,6 +132,8 @@ try {
         assert.ok(geometry.scrollWidth<=c.width+1,`${key}: no document overflow`);
         if(c.width<=700) {
           assert.equal(geometry.headerPadding,geometry.rowPadding,`${key}: shared header inset`);
+          assert.equal(geometry.unitsHeader.lines,1,`${key}: Units remains on one line`);
+          assert.ok(geometry.row[1].x>=geometry.row[0].right+4,`${key}: name clears avatar`);
           const center=r=>r.x+r.w/2;
           assert.ok(Math.abs(center(geometry.header[2])-center(geometry.row[2]))<1,`${key}: standards aligned`);
           assert.ok(Math.abs(center(geometry.header[3])-center(geometry.row[3]))<1,`${key}: units aligned`);
@@ -177,14 +184,34 @@ try {
   const reachable=await people.evaluate(n=>{const r=n.getBoundingClientRect(),s=n.closest('.sect-strip').getBoundingClientRect();return r.x>=s.x-1 && r.right<=s.right+1;});
   assert.ok(reachable,'People is reachable through the horizontal tab strip');
   await people.focus(); await page.keyboard.press('Enter');
-  await page.locator('.pe-phone').waitFor();
+  await page.locator('.pe-phone .pe-row').first().waitFor();
+  await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
+  await page.locator('.pe-phone .pe-row').first().evaluate(n=>n.scrollIntoView({block:'center',behavior:'instant'}));
+  await page.waitForFunction(()=>{
+    const row=document.querySelector('.pe-phone .pe-row'); if(!row?.textContent.trim()) return false;
+    const r=row.getBoundingClientRect(), sticky=document.querySelector('.topstack')?.getBoundingClientRect().bottom || 0;
+    return r.width>0 && r.height>0 && r.y>=sticky && r.bottom<=innerHeight && getComputedStyle(row).opacity==='1';
+  });
+  results.push({phase:'after',people:{visibleRows:await page.locator('.pe-phone .pe-row').count(),firstRowVisible:true}});
   await page.screenshot({path:'manager-spacing/after-people-reached.png'});
   await page.locator('.sect-chip').filter({hasText:/^Dashboard$/}).click();
   await page.locator('.bp-row').first().waitFor();
   // Explicit text-only stress, not a production scaling rule or a substitute
   // for a physical phone's accessibility text setting.
-  const textStyle=await page.addStyleTag({content:'.bp-nmx{font-size:19.5px!important}.bp-lim b{font-size:12.75px!important}.bp-stnd{font-size:11.25px!important}.bp-filt button{font-size:16.5px!important}.bp-fivehead .bp-lbl{font-size:12.75px!important}.bp-un{font-size:22.5px!important}.bp-verdict{font-size:18px!important}'});
-  await page.locator('.bp-fivehead').scrollIntoViewIfNeeded();
+  const textSamples=await page.evaluate(()=>{
+    const nodes=[...document.querySelectorAll('.bp-nmx,.bp-lim b,.bp-stnd,.bp-filt button,.bp-fivehead .bp-lbl,.bp-un,.bp-verdict')];
+    const samples=nodes.map(n=>({node:n,before:parseFloat(getComputedStyle(n).fontSize),style:n.getAttribute('style')}));
+    window.spacingTextRestore=samples;
+    for(const s of samples) s.node.style.setProperty('font-size',`${s.before*1.5}px`,'important');
+    return samples.map(s=>({className:s.node.className,before:s.before,after:parseFloat(getComputedStyle(s.node).fontSize)}));
+  });
+  assert.ok(textSamples.every(s=>Math.abs(s.after-s.before*1.5)<.01),'every selected text element is actually enlarged 150%');
+  await settleScroll('filters');
+  const enlargedUnitsLines=await page.locator('.bp-fivehead .bp-lbl').last().evaluate(n=>{
+    const range=document.createRange();range.selectNodeContents(n);
+    return new Set([...range.getClientRects()].filter(r=>r.width).map(r=>Math.round(r.y))).size;
+  });
+  assert.equal(enlargedUnitsLines,1,'enlarged Units stays on one line');
   const enlarged=await page.locator('.bp-row').evaluateAll(rows=>rows.map(row=>{
     const line=row.querySelector('.bp-lim').getBoundingClientRect();
     return {height:row.getBoundingClientRect().height,details:[...row.querySelectorAll('.bp-lim b,.bp-stnd')].map(n=>{
@@ -193,9 +220,9 @@ try {
   }));
   assert.ok(enlarged.every(r=>r.height>=56 && r.details.every(Boolean)),'150% text preserves count/status and row targets');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'150% text has no document overflow');
-  results.push({phase:'after',stress:'150-percent-text',rows:enlarged});
+  results.push({phase:'after',stress:'150-percent-text',rows:enlarged,textSamples,enlargedUnitsLines});
   await page.screenshot({path:'manager-spacing/after-text-150.png'});
-  await textStyle.evaluate(n=>n.remove());
+  await page.evaluate(()=>{for(const s of window.spacingTextRestore) {if(s.style===null)s.node.removeAttribute('style');else s.node.setAttribute('style',s.style);}delete window.spacingTextRestore;});
   assert.deepEqual(errors,[]);
   console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');
 } finally {
