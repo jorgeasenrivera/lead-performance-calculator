@@ -13,9 +13,10 @@ const url = 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 390, height: 667 },
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
+let fixtureRole='admin';
 await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
   const response = await route.fetch(); const data = await response.json();
-  const manager = p => ({ ...p, role: 'admin', wants: 'manager', onboarded: true,
+  const manager = p => ({ ...p, role: fixtureRole, wants: 'manager', onboarded: true,
     stores:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
@@ -218,6 +219,7 @@ try {
     await page.waitForFunction(label=>[...document.querySelectorAll('.sect-chip')].some(n=>n.textContent===label && n.classList.contains('on')),label);
     await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
     await pillGeometry('.sect-strip');
+    assert.ok(await tab.evaluate(n=>n.matches(':focus-visible') && parseFloat(getComputedStyle(n).outlineWidth)>=2),'keyboard focus is visible');
     await page.screenshot({path:`manager-spacing/after-tab-${label.toLowerCase()}.png`});
   }
   const people=page.locator('.sect-chip').filter({hasText:/^People$/});
@@ -304,6 +306,41 @@ try {
   results.push({phase:'after',stress:'150-percent-text',rows:enlarged,textSamples,enlargedUnitsLines});
   await page.screenshot({path:'manager-spacing/after-text-150.png'});
   await page.evaluate(()=>{for(const s of window.spacingTextRestore) {if(s.style===null)s.node.removeAttribute('style');else s.node.setAttribute('style',s.style);}delete window.spacingTextRestore;});
+  async function sharedHeader(name,count) {
+    await page.waitForFunction(count=>document.querySelectorAll('.sect-chip').length===count,count);
+    for(const width of [320,390]) {
+      await page.setViewportSize({width,height:667});
+      await pillGeometry('.sect-strip');
+    }
+    const first=page.locator('.sect-chip').first(),last=page.locator('.sect-chip').last();
+    await first.focus();await page.keyboard.press('Tab');
+    assert.ok(await page.locator('.sect-chip').nth(1).evaluate(n=>n===document.activeElement),'Tab reaches next section');
+    await page.keyboard.press('Shift+Tab');
+    assert.ok(await first.evaluate(n=>n===document.activeElement),'Shift-Tab returns to previous section');
+    await last.focus();await page.keyboard.press('Space');
+    await page.waitForFunction(()=>document.querySelector('.sect-chip:last-child')?.classList.contains('on'));
+    await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
+    await page.setViewportSize({width:320,height:667});
+    const sizes=await page.locator('.sect-chip').evaluateAll(async nodes=>{
+      const before=nodes.map(n=>parseFloat(getComputedStyle(n).fontSize));
+      nodes.forEach((n,i)=>n.style.setProperty('font-size',`${before[i]*1.5}px`,'important'));
+      await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+      return nodes.map((n,i)=>({before:before[i],after:parseFloat(getComputedStyle(n).fontSize)}));
+    });
+    results.push({sharedHeader:name,count,sizes});
+    assert.ok(sizes.every(s=>Math.abs(s.after-s.before*1.5)<.01),'shared header genuinely enlarged');
+    await pillGeometry('.sect-strip');
+    await page.screenshot({path:`manager-spacing/after-shared-${name}-text150.png`});
+  }
+  await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();
+  await sharedHeader('activity-four',4);
+  await page.locator('.view-select').selectOption('admin');
+  await sharedHeader('admin-seven',7);
+  fixtureRole='overseer';
+  await page.reload();
+  await sharedHeader('overseer-three',3);
+  await page.locator('.view-select').selectOption('combined');
+  await sharedHeader('combined-two',2);
   assert.deepEqual(errors,[]);
   console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');
 } finally {
