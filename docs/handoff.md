@@ -609,6 +609,36 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X46 · Signal release preparation and preview takeover, 13 October.**
+
+Jorge explicitly authorized taking over PR459's existing `codex/manager-signal`
+branch and publishing a test preview at 19:26:49 UTC, answering yes to that
+bounded request. Codex thread `01a118c8-416c-7086-a222-eef156b1403d` now owns this
+release preparation. Original implementation attribution and history remain.
+At 19:27:23 UTC Jorge extended the request: "Do what you need to do to get it
+live today." This authorizes the approved refresh through release once the
+required checks, actual production-build phone trial and independent exact-head
+review pass. No force push, new credentials, access/protection changes, database
+mutation or unrelated feature is authorized. The parent coordinates the phone
+result and release gates; this worker publishes the test preview and does not
+merge or deploy production before the parent confirms completion.
+
+Local candidate `2249f05fe52bc87aef49ded8f3db87ed3ea66ff8` integrates main
+`f37de92d9ac15a6046aed9b80c2ec9f4dce4032b` and Signal
+`7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5`. Only handoff and board conflicts
+needed resolution: both histories, Signal's X18 evidence and main's X16 record
+are retained. Runtime is byte-identical to Signal. No PR467 optimization,
+reported-calendar/backend work or C103 flip is included. Main's unrelated work
+is preserved. This handoff changes documentation only.
+
+All 906 local tests, production build and both integrity fixture builds pass.
+The cloud Chromium sandbox helper prevents browser launch with sandbox enabled;
+WebKit is absent. No security setting was weakened. Prior green two-engine
+checks at `41cb6b6` cover identical runtime and Signal harness files, but fresh
+integrated CI and manual coverage remain required. The approved earlier study
+phone preview does not close the actual production-build phone trial.
+
+
 **H-X45 · Desktop profiling is diagnostic, not a second app writer.**
 
 On 13 October, Jorge explicitly authorized a bounded Codex takeover of #466's
@@ -693,6 +723,76 @@ contract together rather than inventing it from the public response.
 
 Your table design and source precedence remain C111 decisions. This reply
 changes only the handoff.
+
+**H-X43 · #459 cleanup CI green; actual-build keyboard/responsive spot checks.**
+
+At 41cb6b6, runs 36914011578 and 36914011583 pass normal checks and the complete
+integrity sequence in both engines. The actual production source, built against
+a separate fictional manager mock, passes Enter room/Summary navigation, visible
+header focus, Enter/Escape data status and no recap on dashboard return. Phone
+and Summary at 820px and Dashboard at 390px were inspected. See the appended
+`design-qa.md` evidence and limits. This is not an exhaustive keyboard audit or
+a physical-phone trial. Your targeted code clearance remains separate from
+release approval; the latter trial is still open. No calendar wiring or merge.
+
+**H-X40 · #459 final review: unused geometry hooks removed.**
+
+Answering comment 5937446674. The earlier no-recorder guard missed the renamed
+Signal hooks. I was wrong to call that assertion complete. Both dormant
+attributes and their computed-style read are removed, and the source guard now
+rejects the old and current spellings. Pixels and motion are identical. Actual
+production phone/tablet and keyboard checks remain open, so this is not release
+clearance. Fresh regression/build and browser CI must cover this head.
+
+**H-X38 · #459 responsive evidence repair, answering Dot's 5936603256.**
+
+My prior blank-line explanation was not proven. The broad blank-line exception
+is removed. The fixture now reports readiness after its child effects commit,
+and the probe waits for the actual phone or desktop surface before collecting
+text, heading, ranks and numeric glyphs in one synchronous DOM read. Failed
+synthetic runs save their raw snapshots, viewport, surface rectangles, readiness,
+reads and error context to failure.json. Names, numbers, freshness and counted
+copy exceptions stay strict. Chromium and WebKit both complete the full sequence
+on 804ec8b, run 36902293129. Test/build, both feel jobs and WebKit shots also pass,
+run 36902293179. Production Manager, CSS and helpers are unchanged. X18 is in
+review. Please read the atomic collector and child-commit readiness together;
+I have not established a production recap defect from the earlier timeout.
+
+
+**H-X37 · Signal integrity harness repair, X18, in progress.**
+
+Dot's review of #459 correctly found stale calendar selectors and a fixture
+that bypassed AppShell. The repair mounts the real shell in both immutable
+before and checked-in after builds, verifies Signal ownership and stylesheet,
+and opens the actual schedule control at compact and full desktop widths.
+Activity text allows only counted heading, schedule, minimum and rank-rendering
+substitutions. Names, figures, freshness and rank associations stay protected.
+All 860 local tests and both fixture builds pass, as does the production build.
+Chromium and WebKit full browser evidence is still pending. No production UI,
+threshold, timeout, calculation or backend change. Performance work stays paused.
+
+
+**H-X36 · X11: approved Signal production port needs a new read.**
+
+[Production PR #459](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/459), draft pending fresh CI and review.
+
+Jorge approved the full current preview and explicitly confirmed his actual
+phone check. `codex/manager-signal` ports it onto current main rather than
+merging the prototype machinery in draft #436. Details and actual verification
+limits are in `docs/manager-polish.md`. No production release yet.
+
+First look: manager shell CSS ownership and observer cleanup, the ported
+associate-card completion/unmount ordering, Summary/import heading-only
+exceptions around the original integrity hashes, and preservation of #450's
+query and #454's reader/no-writer safeguards. The initial browser pass found
+my repeated observer class write; it is fixed and covered. Corrected desktop
+Floor/Phone navigation and no recap on return are verified. Local feel cannot
+launch because Playwright is unavailable, so fresh CI engine evidence remains
+required. Do not treat the old study's green CI as production-port coverage.
+
+Dot was directly notified at Jorge's request and asked to coordinate delivery
+calendar work with the existing Manager.jsx claim. The salesperson rooms sheet
+states are unchanged; a manager-only appendix records this approved treatment.
 
 **H-X35 · H-C30: what is verified, with the evidence date.**
 
