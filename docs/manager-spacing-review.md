@@ -78,3 +78,20 @@ The old stress used a hardcoded 12.75px header size, effectively leaving it
 unenlarged; those samples are not full 150% evidence. Fresh measured-size
 samples replace them. A selected People tab without populated visible content
 is likewise insufficient screenshot evidence and now fails the capture gate.
+
+Phone-preview feedback after 0f75c912 requires fixed pill navigation. The
+section strip previously used horizontal overflow and fixed-width chips,
+leaving People offscreen. It now uses deliberate rows: two columns below
+360px, with a full final odd item; five destinations use three plus two at
+360 through 760px. Labels wrap and touch targets remain at least 44px.
+The selected button owns its green fill; the decorative measured pill is
+hidden on phones because its old offsets did not track resize or font reflow.
+Section handlers and Lightspeed remain unchanged. People's filter pills
+also wrap inside their container instead of scrolling sideways.
+
+The probe records each header and ancestor's scroll extent and both attempted
+scroll directions, label rectangles, selected fill and touch dimensions.
+It tests each section with keyboard Enter, responsive widths, 150% actual
+computed text sizes and a horizontal wheel attempt. Before/after fictional
+header screenshots and each selected tab are included. The previous approval
+does not clear this new header change; affected review and phone trial remain.

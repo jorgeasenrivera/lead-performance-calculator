@@ -306,6 +306,31 @@ html.manager-signal .lpc .sect-strip{background:#e7ebdf;border:1px solid #d1dac8
 html.manager-signal .lpc .sect-strip .sect-pill{background:#234939;box-shadow:none}
 html.manager-signal .lpc .sect-strip .sect-chip{box-sizing:border-box;min-height:44px;color:#53664f}
 html.manager-signal .lpc .sect-strip .sect-chip.on{color:#fffdf4}
+/* Phone navigation is a fixed set of visible destinations, not a carousel.
+   The selected button owns its fill so wrapping and text resizing cannot
+   leave a measured highlight behind on a different row. */
+@media(max-width:760px) {
+  html.manager-signal .lpc .sect-strip {
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    overflow:visible; min-width:0;
+  }
+  html.manager-signal .lpc .sect-strip .sect-chip {
+    min-width:0; width:100%; padding:8px; white-space:normal;
+    overflow-wrap:anywhere; text-align:center;
+  }
+  html.manager-signal .lpc .sect-strip .sect-chip:last-child:nth-child(even) { grid-column:1 / -1; }
+  html.manager-signal .lpc .sect-strip .sect-pill { display:none; }
+  html.manager-signal .lpc .sect-strip .sect-chip.on { background:#234939; }
+  html.manager-signal .pe-filters { flex-wrap:wrap; overflow:visible; }
+  html.manager-signal .pe-filters .pe-ft {
+    flex:1 1 8em; min-width:0; min-height:44px; white-space:normal; overflow-wrap:anywhere;
+  }
+}
+@media(min-width:360px) and (max-width:760px) {
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) { grid-template-columns:repeat(6,minmax(0,1fr)); }
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) .sect-chip { grid-column:span 2; }
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) .sect-chip:nth-last-child(-n+2) { grid-column:span 3; }
+}
 
 /* The report warning is the primary action. Status is still carried by its
    lamp and text, not by an endless attention animation. */

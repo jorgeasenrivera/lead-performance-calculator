@@ -55,6 +55,35 @@ async function settleScroll(mode) {
   },mode);
   assert.ok(settled,`${mode}: scroll and responsive geometry settle`);
 }
+async function pillGeometry(selector, enforce=true) {
+  const evidence=await page.locator(selector).evaluate(n=>{
+    const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    const ancestors=[];
+    for(let p=n;p;p=p.parentElement) {
+      const initial=p.scrollLeft;
+      p.scrollTo({left:10000,behavior:'instant'});const positive=p.scrollLeft;
+      p.scrollTo({left:-10000,behavior:'instant'});const negative=p.scrollLeft;
+      p.scrollTo({left:initial,behavior:'instant'});
+      ancestors.push({className:p.className,clientWidth:p.clientWidth,scrollWidth:p.scrollWidth,positive,negative});
+    }
+    return {box:rect(n),ancestors,buttons:[...n.querySelectorAll('button')].map(b=>{
+      const range=document.createRange();range.selectNodeContents(b);
+      return {text:b.textContent,box:rect(b),fontSize:getComputedStyle(b).fontSize,
+        selected:b.classList.contains('on'),background:getComputedStyle(b).backgroundColor,
+        textRects:[...range.getClientRects()].filter(r=>r.width).map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};
+    })};
+  });
+  results.push({phase:enforce?'after':'before',pillHeader:selector,width:page.viewportSize().width,...evidence});
+  if(enforce) {
+    assert.ok(evidence.ancestors.every(a=>a.scrollWidth<=a.clientWidth+1 && a.positive===0 && a.negative===0),`${selector}: neither container nor ancestor scrolls sideways`);
+    for(const b of evidence.buttons) {
+      assert.ok(b.box.x>=evidence.box.x && b.box.right<=evidence.box.right+1 && b.box.height>=44,`${selector}: every control fits and keeps a touch target`);
+      assert.ok(b.textRects.every(r=>r.x>=b.box.x-1 && r.right<=b.box.right+1 && r.y>=b.box.y-1 && r.bottom<=b.box.bottom+1),`${selector}: complete label stays inside its button`);
+    }
+    if(selector==='.sect-strip') assert.ok(evidence.buttons.filter(b=>b.selected).every(b=>b.background==='rgb(35, 73, 57)'), 'selected fill follows the actual button');
+  }
+  return evidence;
+}
 try {
   await page.goto(url);
   await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');
@@ -81,6 +110,10 @@ try {
       await page.evaluate(inset => document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`),c.inset);
       if (await page.getByRole('button',{name:'Close the round-up',exact:true}).isVisible()) {
         await page.getByRole('button',{name:'Close the round-up',exact:true}).click();
+      }
+      if(c.width<=760) {
+        await pillGeometry('.sect-strip',phase==='after');
+        await page.screenshot({path:`manager-spacing/${phase}-${c.width}x${c.height}-inset${c.inset}-header.png`});
       }
       // html owns smooth scrolling even under the app's reduced-motion rule.
       // WebKit can also update its scroll extent after a responsive remount.
@@ -179,6 +212,14 @@ try {
   await page.screenshot({path:'manager-spacing/after-dealer-switch.png'});
   await page.locator('.view-select').selectOption('sage-demo');
   await page.waitForFunction(name=>document.querySelector('.sage-bp-store')?.textContent===name,originalStore);
+  for(const label of await page.locator('.sect-chip').allTextContents()) {
+    const tab=page.locator('.sect-chip').filter({hasText:new RegExp(`^${label}$`)});
+    await tab.focus();await page.keyboard.press('Enter');
+    await page.waitForFunction(label=>[...document.querySelectorAll('.sect-chip')].some(n=>n.textContent===label && n.classList.contains('on')),label);
+    await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
+    await pillGeometry('.sect-strip');
+    await page.screenshot({path:`manager-spacing/after-tab-${label.toLowerCase()}.png`});
+  }
   const people=page.locator('.sect-chip').filter({hasText:/^People$/});
   await people.scrollIntoViewIfNeeded();
   const reachable=await people.evaluate(n=>{const r=n.getBoundingClientRect(),s=n.closest('.sect-strip').getBoundingClientRect();return r.x>=s.x-1 && r.right<=s.right+1;});
@@ -193,13 +234,25 @@ try {
     return r.width>0 && r.height>0 && r.y>=sticky && r.bottom<=innerHeight && getComputedStyle(row).opacity==='1';
   });
   results.push({phase:'after',people:{visibleRows:await page.locator('.pe-phone .pe-row').count(),firstRowVisible:true}});
+  await pillGeometry('.sect-strip');
+  await pillGeometry('.pe-filters');
   await page.screenshot({path:'manager-spacing/after-people-reached.png'});
+  const peopleText=await page.locator('.pe-filters button').evaluateAll(async nodes=>{
+    const samples=nodes.map(n=>({n,before:parseFloat(getComputedStyle(n).fontSize),style:n.getAttribute('style')}));
+    samples.forEach(s=>s.n.style.setProperty('font-size',`${s.before*1.5}px`,'important'));
+    await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+    return samples.map(s=>({before:s.before,after:parseFloat(getComputedStyle(s.n).fontSize)}));
+  });
+  results.push({peopleText});
+  assert.ok(peopleText.every(s=>Math.abs(s.after-s.before*1.5)<.01),'People filter text really enlarges 150%');
+  await pillGeometry('.pe-filters');
+  await page.screenshot({path:'manager-spacing/after-people-text-150.png'});
   await page.locator('.sect-chip').filter({hasText:/^Dashboard$/}).click();
   await page.locator('.bp-row').first().waitFor();
   // Explicit text-only stress, not a production scaling rule or a substitute
   // for a physical phone's accessibility text setting.
   const textMeasurement=await page.evaluate(async()=>{
-    const nodes=[...document.querySelectorAll('.bp-nmx,.bp-lim b,.bp-stnd,.bp-filt button,.bp-fivehead .bp-lbl,.bp-un,.bp-verdict')];
+    const nodes=[...document.querySelectorAll('.sect-chip,.bp-nmx,.bp-lim b,.bp-stnd,.bp-filt button,.bp-fivehead .bp-lbl,.bp-un,.bp-verdict')];
     const samples=nodes.map(n=>({node:n,before:parseFloat(getComputedStyle(n).fontSize),style:n.getAttribute('style')}));
     window.spacingTextRestore=samples;
     for(const s of samples) s.node.style.setProperty('font-size',`${s.before*1.5}px`,'important');
@@ -229,6 +282,11 @@ try {
   await writeFile('manager-spacing/text-measurement.json',JSON.stringify({engine,...textMeasurement},null,2));
   await page.screenshot({path:'manager-spacing/text-measurement.png'});
   assert.ok(textSamples.every(s=>s.connected && Math.abs(s.after-s.before*1.5)<.01),'every selected text element is actually enlarged 150%');
+  await pillGeometry('.sect-strip');
+  const stripBox=await page.locator('.sect-strip').boundingBox();
+  await page.mouse.move(stripBox.x+stripBox.width/2,stripBox.y+stripBox.height/2);
+  await page.mouse.wheel(600,0);
+  await pillGeometry('.sect-strip');
   await settleScroll('filters');
   const enlargedUnitsLines=await page.locator('.bp-fivehead .bp-lbl').last().evaluate(n=>{
     const range=document.createRange();range.selectNodeContents(n);
