@@ -104,3 +104,15 @@ to its container and wraps these content rows without reducing text, hiding
 content or changing handlers. Desktop rules are untouched. Before/after
 320/390px content screenshots, bounds checks and actual150% content text
 checks supplement the existing header tests.
+
+Jorge's latest direction supersedes multiple rows of tabs: the top header
+now uses exactly one fixed row of buttons. Horizontal padding and gaps are
+reduced; full original labels and accessible names remain. At150% text the
+labels may wrap vertically inside each button, while the buttons stay in
+one aligned row and keep44px minimum height. Seven admin tabs use the edge
+space and24px minimum width; five-tab and smaller contexts retain44px minimum
+width. This narrower seven-tab target is an explicit tradeoff to review.
+No global text reduction, hidden destination or sideways scrolling is used.
+Card and roster corrections remain unchanged. The probe compares2024e009's
+multiple-row header with the candidate at320/390px and measured100/150%
+text, in addition to the shared-context and keyboard checks.

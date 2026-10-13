@@ -27,6 +27,11 @@ jobs:
           ref: 5bf65105003b3e01227c774ea82e08d5d595bb68
           path: .spacing-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 2024e009ad40408926907beb8bf0d820bc235031
+          path: .header-baseline
+          persist-credentials: false
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Build fictional app

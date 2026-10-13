@@ -306,19 +306,22 @@ html.manager-signal .lpc .sect-strip{background:#e7ebdf;border:1px solid #d1dac8
 html.manager-signal .lpc .sect-strip .sect-pill{background:#234939;box-shadow:none}
 html.manager-signal .lpc .sect-strip .sect-chip{box-sizing:border-box;min-height:44px;color:#53664f}
 html.manager-signal .lpc .sect-strip .sect-chip.on{color:#fffdf4}
-/* Phone navigation is a fixed set of visible destinations, not a carousel.
-   The selected button owns its fill so wrapping and text resizing cannot
-   leave a measured highlight behind on a different row. */
+/* Keep every destination in one fixed row. Labels retain their real names
+   and may grow vertically at enlarged text sizes; the buttons never wrap.
+   Their own selected fill stays aligned through text and viewport changes. */
 @media(max-width:760px) {
   html.manager-signal .lpc .sect-strip {
-    display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
-    overflow:visible; min-width:0;
+    display:flex; flex-wrap:nowrap; gap:0; padding:2px;
+    overflow:visible; min-width:0; align-items:stretch;
   }
   html.manager-signal .lpc .sect-strip .sect-chip {
-    min-width:0; width:100%; padding:8px; white-space:normal;
+    flex:1 1 auto; min-width:44px; width:auto; padding:8px 2px; white-space:normal;
     overflow-wrap:anywhere; text-align:center;
   }
-  html.manager-signal .lpc .sect-strip .sect-chip:last-child:nth-child(even) { grid-column:1 / -1; }
+  /* Seven admin destinations need the available edge space. Keep the same
+     font and target height, with narrower targets rather than missing tabs. */
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(8):last-child) { margin-inline:2px; padding:1px; }
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(8):last-child) .sect-chip { min-width:24px; padding-inline:0; }
   html.manager-signal .lpc .sect-strip .sect-pill { display:none; }
   html.manager-signal .lpc .sect-strip .sect-chip.on { background:#234939; }
   html.manager-signal .pe-filters { flex-wrap:wrap; overflow:visible; }
@@ -337,11 +340,6 @@ html.manager-signal .lpc .sect-strip .sect-chip.on{color:#fffdf4}
   }
   html.manager-signal .combined-role-label { flex:1 1 6em; overflow-wrap:anywhere; }
   html.manager-signal .combined-row .verdict { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
-}
-@media(min-width:360px) and (max-width:760px) {
-  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) { grid-template-columns:repeat(6,minmax(0,1fr)); }
-  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) .sect-chip { grid-column:span 2; }
-  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(6):last-child) .sect-chip:nth-last-child(-n+2) { grid-column:span 3; }
 }
 
 /* The report warning is the primary action. Status is still carried by its

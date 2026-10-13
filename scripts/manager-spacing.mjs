@@ -8,6 +8,9 @@ const before = await readFile(process.env.SPACING_BEFORE_CSS || '.spacing-baseli
 assert.equal(createHash('sha256').update(before).digest('hex'),
   'e2c712c8518302b4082695230be54c629bdd53a0b5dd95d45d6be83b05eaa363', 'immutable production stylesheet');
 const after = await readFile('src/manager-signal.css', 'utf8');
+const previousHeader=await readFile(process.env.SPACING_HEADER_BEFORE_CSS || '.header-baseline/src/manager-signal.css','utf8');
+assert.equal(createHash('sha256').update(previousHeader).digest('hex'),
+  '17a3d435a443609be1d5aacf2189b842e10400e9fa91fcfc950c067414b80bbb','immutable previously reviewed header stylesheet');
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
@@ -89,7 +92,11 @@ async function pillGeometry(selector, enforce=true) {
       assert.ok(b.box.x>=evidence.box.x && b.box.right<=evidence.box.right+1 && b.box.height>=44,`${selector}: every control fits and keeps a touch target`);
       assert.ok(b.textRects.every(r=>r.x>=b.box.x-1 && r.right<=b.box.right+1 && r.y>=b.box.y-1 && r.bottom<=b.box.bottom+1),`${selector}: complete label stays inside its button`);
     }
-    if(selector==='.sect-strip') assert.ok(evidence.buttons.filter(b=>b.selected).every(b=>b.background==='rgb(35, 73, 57)'), 'selected fill follows the actual button');
+    if(selector==='.sect-strip') {
+      assert.ok(evidence.buttons.every(b=>Math.abs(b.box.y-evidence.buttons[0].box.y)<1 && Math.abs(b.box.bottom-evidence.buttons[0].box.bottom)<1),'all section buttons occupy exactly one aligned row');
+      assert.ok(evidence.buttons.every(b=>b.box.width>=(evidence.buttons.length===7?24:44)),'section targets preserve their minimum widths');
+      assert.ok(evidence.buttons.filter(b=>b.selected).every(b=>b.background==='rgb(35, 73, 57)'), 'selected fill follows the actual button');
+    }
     } catch(error) {
       const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(n=>{
         const r=n.getBoundingClientRect();return r.width && r.right>innerWidth+1 && getComputedStyle(n).position!=='fixed';
@@ -128,6 +135,28 @@ try {
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);
+  for(const width of [320,390]) {
+    await page.setViewportSize({width,height:667});
+    for(const [version,css] of [['previous',previousHeader],['candidate',after]]) {
+      await page.evaluate(css=>{
+        [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
+        scrollTo({left:0,top:0,behavior:'instant'});
+      },css);
+      for(const scale of [1,1.5]) {
+        const samples=await page.locator('.sect-chip').evaluateAll(async(nodes,scale)=>{
+          window.headerTextRestore=nodes.map(n=>({n,style:n.getAttribute('style'),before:parseFloat(getComputedStyle(n).fontSize)}));
+          window.headerTextRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.before*scale}px`,'important'));
+          await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+          return window.headerTextRestore.map(s=>({text:s.n.textContent,before:s.before,after:parseFloat(getComputedStyle(s.n).fontSize)}));
+        },scale);
+        assert.ok(samples.every(s=>Math.abs(s.after-s.before*scale)<.01),'comparison uses genuine measured text scale');
+        const geometry=await pillGeometry('.sect-strip',version==='candidate');
+        results.push({singleRowComparison:version,width,scale,samples,buttons:geometry.buttons});
+        await page.screenshot({path:`manager-spacing/single-row-${version}-${width}-text${scale*100}.png`});
+        await page.evaluate(()=>{for(const s of window.headerTextRestore){if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.headerTextRestore;});
+      }
+    }
+  }
   for (const [phase, css] of [['before', before], ['after', after]]) {
     // Only replace the actual mounted manager stylesheet. All JSX, handlers,
     // data and geometry are the built application, using fictional fixtures.
