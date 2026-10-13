@@ -17,20 +17,24 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:
       - uses: actions/checkout@v4
+        id: diagnostic_source
         with:
           ref: ee5b7756a36ff655ac0c28e0cf06624f78f2d558
           persist-credentials: false
       - uses: actions/checkout@v4
+        id: baseline_source
         with:
           ref: abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
           path: .desktop-baseline
           persist-credentials: false
       - uses: actions/checkout@v4
+        id: profiler_source
         with:
           ref: ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
           path: .desktop-profiler
           persist-credentials: false
       - uses: actions/checkout@v4
+        id: signal_source
         with:
           ref: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
           path: .desktop-signal
@@ -58,12 +62,19 @@ jobs:
           FEEL_BROWSER: webkit
           DESKTOP_SOURCE_SHA: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
           DESKTOP_BACKGROUND_RECORDING: unprofiled
+          CHECKED_DIAGNOSTIC_SHA: ${{ steps.diagnostic_source.outputs.commit }}
+          CHECKED_BASELINE_SHA: ${{ steps.baseline_source.outputs.commit }}
+          CHECKED_PROFILER_SHA: ${{ steps.profiler_source.outputs.commit }}
+          CHECKED_SIGNAL_SHA: ${{ steps.signal_source.outputs.commit }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = ee5b7756a36ff655ac0c28e0cf06624f78f2d558
-          test "$(git -C .desktop-baseline rev-parse HEAD)" = abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
-          test "$(git -C .desktop-profiler rev-parse HEAD)" = ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
-          test "$(git -C .desktop-signal rev-parse HEAD)" = "$DESKTOP_SOURCE_SHA"
+          # Checkout reports the actual Git commit from its own execution context.
+          # Compare its verified outputs without extending trust to later shell Git.
+          test "$CHECKED_DIAGNOSTIC_SHA" = ee5b7756a36ff655ac0c28e0cf06624f78f2d558
+          test "$CHECKED_BASELINE_SHA" = abcc33dc7e9ad97f93f0517b6d0d41104b9fe111
+          test "$CHECKED_PROFILER_SHA" = ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4
+          test "$CHECKED_SIGNAL_SHA" = "$DESKTOP_SOURCE_SHA"
+          printf 'Verified checkout commits: %s %s %s %s\n' "$CHECKED_DIAGNOSTIC_SHA" "$CHECKED_BASELINE_SHA" "$CHECKED_PROFILER_SHA" "$CHECKED_SIGNAL_SHA"
           echo '6de1f4d49a57e555f0ffcde435578bedbe1147856e2d811d1f83855f10c17f20  .desktop-baseline/scripts/desktop-baseline.mjs' | sha256sum --check
           node .desktop-baseline/scripts/desktop-baseline-server.mjs .desktop-signal/dist 49218 > desktop-background-server.log 2>&1 &
           server_pid=$!
