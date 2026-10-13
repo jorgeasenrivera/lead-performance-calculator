@@ -220,11 +220,17 @@ try {
   await page.waitForFunction(name=>document.querySelector('.sage-bp-store')?.textContent===name,originalStore);
   for(const label of await page.locator('.sect-chip').allTextContents()) {
     const tab=page.locator('.sect-chip').filter({hasText:new RegExp(`^${label}$`)});
-    await tab.focus();await page.keyboard.press('Enter');
+    await tab.focus();
+    // Establish keyboard modality before checking the visible focus indicator.
+    await page.keyboard.press('Shift');
+    const focusBefore=await tab.evaluate(n=>({active:n===document.activeElement,visible:n.matches(':focus-visible'),outline:getComputedStyle(n).outlineWidth}));
+    results.push({tab:label,focusBefore});
+    assert.ok(focusBefore.active && focusBefore.visible && parseFloat(focusBefore.outline)>=2,'keyboard focus is visible before activation');
+    await page.keyboard.press('Enter');
     await page.waitForFunction(label=>[...document.querySelectorAll('.sect-chip')].some(n=>n.textContent===label && n.classList.contains('on')),label);
     await page.waitForFunction(()=>!document.documentElement.matches('.tool-move,.tab-move'));
     await pillGeometry('.sect-strip');
-    assert.ok(await tab.evaluate(n=>n.matches(':focus-visible') && parseFloat(getComputedStyle(n).outlineWidth)>=2),'keyboard focus is visible');
+    results.push({tab:label,focusAfter:await tab.evaluate(n=>({active:n===document.activeElement,visible:n.matches(':focus-visible'),activeTag:document.activeElement?.tagName}))});
     await page.screenshot({path:`manager-spacing/after-tab-${label.toLowerCase()}.png`});
   }
   const people=page.locator('.sect-chip').filter({hasText:/^People$/});
