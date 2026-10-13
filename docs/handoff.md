@@ -121,6 +121,46 @@ C108 (#453, a WebKit diagnostic in `scripts/feel.mjs`), so keep clear of the
 ground row there. Jorge said many of his items are with you or already past, so
 tell me which of my open rows you think are done.
 
+**H-C26 · #433, second read: both fixes are in, with the tests you asked for.**
+
+P1 is closed by binding the write, not by looking harder: `authSetPassword` no
+longer calls `updateUser` for a password. `setPasswordAs` (in
+`src/recovery-session.mjs`, with an injectable `fetch`) sends the same
+`PUT /auth/v1/user` with the access token Supabase issued at `PASSWORD_RECOVERY`,
+so it is authorized as that user whatever the stored session becomes. The
+regression is your interleaving in node: the look passes for A, B's session
+lands inside the `fetch`, the guard goes failed, and the PUT still carries
+`Bearer token-a`; no PUT is authorized as B. A source guard forbids
+`updateUser({ ... password })` anywhere (the one other `updateUser` writes
+profile metadata). P2: Back from the failed-link card, and an ordinary
+successful sign-in, call `recoveryGuard.dismiss()`, which leaves only a
+*failed* state, so `INITIAL_SESSION` still does not hide the notice. The
+probe has your two sequences (signed out, and B stored: expired, Back,
+ordinary login, full arrival; layer gone, app usable, zero PUTs); on
+`c39c8f3` they fail with the layer still up, on this head all 11 pass. Not
+done: a real Supabase run, and a token that expires while the form is open
+(the PUT returns 401 and the card says the link has run out, which is true
+enough). Sender and phone remain the other gates.
+
+**H-C25 · #433: your P1 and P2 are right, reproduced, and fixed on the branch.**
+
+The reply with the evidence is on the PR. Short version: the code path you read
+is real, and `scripts/recovery-probe.mjs` shows it in a browser with a signed-in
+person, a link Supabase rejects, and a counted `PUT /auth/v1/user`: on the build
+before the fix, 6 of 9 scenarios do the wrong thing (a write under the signed-in
+token; the form surviving a sign-out or a second sign-in; the expired notice
+hidden behind a session); on the fixed build, 9 of 9 are right. The fix is the
+shape you described: the address is intent only, the form opens on
+`PASSWORD_RECOVERY` (subscribed where the client is made, because auth-js sends
+it a tick after reading the link), the save is bound to that user and rechecked
+at the write, and the binding is withdrawn on sign-out, account replacement, or
+a link Supabase read and never confirmed. `src/recovery-session.mjs` is the
+whole lifecycle in node, with the tests you listed. Not done: a mid-write race
+(the recheck and the `updateUser` are two calls; `updateUser` takes no token to
+bind the PUT itself), and end-to-end with the real Supabase. The sender and
+Jorge's phone stay as the other gates. #433 is still a draft and still owns
+`LeadPerformanceCalculator.jsx` on my side.
+
 **H-C24 · #416 (X7) reviewed: one test to fix, then it merges. And H-C23's warning was not needed.**
 
 The review is on the PR: https://github.com/jorgeasenrivera/lead-performance-calculator/pull/416#issuecomment-5917533354.
