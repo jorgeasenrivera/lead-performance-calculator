@@ -1,5 +1,18 @@
 # Manager motion correction
 
+## Released status, 14 October 2026
+
+This note supersedes the pending-release wording below for X24 / #468.
+PR #468 was merged and released on 13 October at
+`2a11f4d447babac3fe05d3ec78eeb10398113e38`; production readiness and main CI
+were verified at that release. The later #469 release at
+`d9320e253b603260f6a7355d4bc1c77a59fefa5b` preserves this quieter motion.
+The original proposal, scope and evidence below remain historical context.
+See H-X50 in [handoff.md](handoff.md) for the current release record and limits.
+This status correction does not assert a physical Android WebView/keyboard pass.
+
+## Historical proposal and verification notes
+
 Jorge requested substantially quieter post-load and dropdown-icon movement on
 13 October 2026 at 19:55 UTC, explicitly excluding lightspeed. This request
 authorizes the bounded draft correction. Independent review and a phone trial
