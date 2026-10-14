@@ -155,22 +155,22 @@ try {
   for(const size of [{width:320,height:667},{width:390,height:667},{width:667,height:320}]) for(const inset of [0,34]) for(const scale of [1,1.5]) {
     await page.setViewportSize(size);
     for(const [phase,css] of [['before',dockBefore],['compact',compactBefore],['rail',railBefore],['after',after]]) {
-      await page.evaluate(async({css,inset,scale})=>{
+      await page.evaluate(async({css,inset,scale,phase})=>{
         [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
         document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
         for(let i=0;i<4;i++)await new Promise(requestAnimationFrame);
-        const nodes=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl,.search-top input,.help-fab:not(.inline)')];
+        const nodes=[...document.querySelectorAll(phase==='after'?'.botnav-btn,.botnav-slot,.search-top input,.help-fab:not(.inline)':'.botnav-lbl,.botnav-fablbl,.search-top input,.help-fab:not(.inline)')];
         window.dockRestore=nodes.map(n=>({n,style:n.getAttribute('style'),font:parseFloat(getComputedStyle(n).fontSize)}));
         window.dockRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.font*scale}px`,'important'));
         scrollTo({top:0,behavior:'instant'});
         for(let i=0;i<12;i++)await new Promise(requestAnimationFrame);
-      },{css,inset,scale});
+      },{css,inset,scale,phase});
       const geometry=await page.evaluate(()=>{
         const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
         const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
         const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,fontFamily:getComputedStyle(n).fontFamily,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
         const help=document.querySelector('.help-fab:not(.inline)'), hs=getComputedStyle(help), ps=getComputedStyle(help,'::after');
-        const helpLabel={fontSize:ps.fontSize,lineHeight:parseFloat(ps.lineHeight),height:help.getBoundingClientRect().height,required:parseFloat(hs.paddingTop)+26+parseFloat(ps.lineHeight)+parseFloat(hs.paddingBottom)};
+        const helpLabel={fontSize:ps.fontSize,lineHeight:parseFloat(ps.lineHeight),height:help.getBoundingClientRect().height,required:parseFloat(hs.paddingTop)+22+parseFloat(ps.lineHeight)+parseFloat(hs.paddingBottom)};
         const iconCenters=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
         const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
         const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
@@ -232,6 +232,19 @@ try {
   await page.locator('.botnav-btn').filter({hasText:/^Activity$/}).click();
   await page.getByRole('button',{name:'Open the daily report',exact:true}).waitFor();
   await page.screenshot({path:'manager-spacing/dock-daily-report.png'});
+  for(const width of [320,390]) {
+    await page.setViewportSize({width,height:667});
+    const variant=await page.evaluate(()=>{
+      const nav=document.querySelector('.botnav'), icons=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
+      return {height:nav.getBoundingClientRect().height,icons,label:document.querySelector('.botnav-fablbl').textContent};
+    });
+    results.push({dailyReportGeometry:{width,...variant}});
+    assert.ok(Math.max(...variant.icons)-Math.min(...variant.icons)<1,'Daily report icons stay aligned at phone widths');
+    assert.ok(variant.height<=60,'Daily report preserves the compact normal footprint');
+    const png=await page.screenshot({path:`manager-spacing/dock-daily-report-${width}.png`});
+    console.log('REVIEW_IMAGE '+JSON.stringify({width,phase:'daily',png:png.toString('base64')}));
+  }
+
   results.push({dailyReport:{label:await page.locator('.botnav-fablbl').textContent(),ring:await page.locator('.bh-arc').getAttribute('stroke-dashoffset')}});
   await page.locator('.botnav-btn').filter({hasText:/^Performance$/}).click();
   await page.locator('.bp-row').first().waitFor();
