@@ -54,13 +54,19 @@ async function capture(phase,width,scale,view){
   const bg=n=>{for(;n;n=n.parentElement){const c=getComputedStyle(n).backgroundColor;if(c!=='rgba(0, 0, 0, 0)'&&c!=='transparent')return c;}return 'rgb(255, 255, 255)'};
   const colors=['.sect-chip','.botnav-btn','.manager-context-action','.manager-context-action small','.drawer-item','.drawer-tick','.qpick-btn'].flatMap(sel=>[...document.querySelectorAll(sel)].filter(n=>n.getBoundingClientRect().width).map(n=>({sel,text:n.textContent,fg:getComputedStyle(n).color,bg:bg(n),ratio:contrast(getComputedStyle(n).color,bg(n))})));
   const borders=['.sect-strip','.assoc-search-trigger','.view-select','.manager-context-action'].flatMap(sel=>[...document.querySelectorAll(sel)].filter(n=>n.getBoundingClientRect().width).map(n=>({sel,ratio:contrast(getComputedStyle(n).borderTopColor,bg(n))})));
-  return{boxes,colors,borders,scroll:document.documentElement.scrollWidth,width:innerWidth};
+  const hero=document.querySelector('.bp-hero'),upper=hero?.querySelector('.bp-h5'),update=hero?.querySelector('.bp-upd');
+  const heroUpperHeight=(upper?.getBoundingClientRect().height||0)+(update?update.getBoundingClientRect().height+parseFloat(getComputedStyle(update).marginBottom||0):0);
+  return{boxes,colors,borders,heroUpperHeight,scroll:document.documentElement.scrollWidth,width:innerWidth};
  });
  results.push({phase,width,scale,view,...data});
  assert.ok(data.scroll<=width+1,'no horizontal overflow');
  if(phase==='after'){
   const before=results.find(x=>x.phase==='before'&&x.width===width&&x.scale===scale&&x.view===view);
-  assert.deepEqual(data.boxes,before.boxes,'color change preserves all measured bounds');
+  // The approved upper-panel compaction has its own before/after assertions.
+  // Keep every other bound exact, including the remaining hero height.
+  assert.deepEqual(data.boxes.map(b=>b.sel==='.bp-hero'?{...b,h:0}:b),before.boxes.map(b=>b.sel==='.bp-hero'?{...b,h:0}:b),'navigation and hero placement preserve all measured bounds');
+  const hero=data.boxes.find(b=>b.sel==='.bp-hero'),oldHero=before.boxes.find(b=>b.sel==='.bp-hero');
+  assert.ok(Math.abs((hero.h-data.heroUpperHeight)-(oldHero.h-before.heroUpperHeight))<.05,'hero height outside the approved upper panel is unchanged');
   for(const c of data.colors)assert.ok(c.ratio>=4.5,`${c.sel} text contrast ${c.ratio}`);
   for(const c of data.borders)assert.ok(c.ratio>=3,`${c.sel} UI contrast ${c.ratio}`);
  }
