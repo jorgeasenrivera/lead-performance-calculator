@@ -11,6 +11,7 @@ on:
       - scripts/search-runtime.sha256
       - scripts/hero-bars.mjs
       - scripts/manager-viewports.mjs
+      - scripts/room-hero-colors.mjs
       - scripts/color-phone.mjs
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
@@ -93,6 +94,7 @@ jobs:
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5181/ > /dev/null && break; sleep 0.2; done
           node scripts/hero-bars.mjs
           node scripts/manager-viewports.mjs
+          node scripts/room-hero-colors.mjs
           node scripts/color-phone.mjs
           node scripts/search-keyboard.mjs
           node scripts/manager-selector.mjs
@@ -108,4 +110,5 @@ jobs:
             color-phone/
             hero-bars/
             manager-viewports/
+            room-hero-colors/
           retention-days: 14

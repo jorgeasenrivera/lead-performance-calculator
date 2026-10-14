@@ -11890,6 +11890,25 @@ function AssocSearch({ value, onChange, store }) {
   const expanded = !phone || open;
   useLayoutEffect(() => { setHost(document.querySelector('.assoc-search-slot')); setPanelHost(document.querySelector('.assoc-search-panel-slot')); }, []);
   useLayoutEffect(() => { if (phone && open) inputRef.current?.focus({ preventScroll: true }); }, [phone, open]);
+  useLayoutEffect(() => {
+    if (!phone || !open) return;
+    const stack = panelHost?.closest('.topstack');
+    if (!stack) return;
+    // A resized phone viewport can leave the search row behind fixed navigation.
+    const reveal = () => { stack.scrollTop = Math.max(0, stack.scrollHeight - stack.clientHeight); };
+    const observer = new ResizeObserver(reveal);
+    observer.observe(stack);
+    if (panelHost) observer.observe(panelHost);
+    window.addEventListener('resize', reveal);
+    window.visualViewport?.addEventListener('resize', reveal);
+    reveal();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', reveal);
+      window.visualViewport?.removeEventListener('resize', reveal);
+      stack.scrollTop = 0;
+    };
+  }, [phone, open, panelHost]);
   const close = () => { inputRef.current?.blur(); setOpen(false); triggerRef.current?.focus({ preventScroll: true }); };
   const trigger = phone && <button type="button" ref={triggerRef} className={"assoc-search-trigger" + (value && !expanded ? " has-query" : "")}
     aria-label={value ? `Search associates: ${value}` : "Search associates"} title={value || "Search associates"} aria-expanded={expanded} aria-controls={inputId}

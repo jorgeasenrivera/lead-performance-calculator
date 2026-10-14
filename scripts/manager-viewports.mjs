@@ -41,7 +41,32 @@ page.setDefaultNavigationTimeout(30000);
 await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
 page.on('pageerror', e => errors.push(e.message));
 
-await mkdir('manager-viewports',{recursive:true});const results=[],failures=[];
+const out=process.env.VIEWPORT_OUT || 'manager-viewports';
+await mkdir(out,{recursive:true});const results=[],failures=[],searchChecks=[];
+async function checkSearch(name,stage,insets){
+ await page.waitForTimeout(100);
+ const check=await page.evaluate(()=>{
+  const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
+  const nav=rect(document.querySelector('.botnav'));
+  const controls=['.search-input','.search-clear','.assoc-search-done'].map(selector=>{
+   const n=document.querySelector(selector),box=rect(n),visible=getComputedStyle(n).visibility!=='hidden';
+   // Input's right edge contains its separate Clear button; sample its editable area.
+   const right=selector==='.search-input'?box.right-48:box.right-6;
+   const cx=(box.x+right)/2,cy=(box.y+box.bottom)/2;
+   const points=[[cx,box.y+6],[cx,box.bottom-6],[box.x+6,cy],[right,cy],[cx,cy]];
+   return {selector,...box,visible,disabled:n.disabled,overlap:box.x<nav.right&&box.right>nav.x&&box.y<nav.bottom&&box.bottom>nav.y,
+    hits:points.map(([x,y])=>{const hit=document.elementFromPoint(x,y);return{x,y,ok:hit===n||n.contains(hit),hit:hit?.className||hit?.tagName}})};
+  });return {nav,controls};
+ });
+ searchChecks.push({name,stage,...check});
+ for(const c of check.controls){
+  if(!c.visible){assert.equal(c.selector,'.search-clear');assert.equal(c.disabled,true);continue;}
+  assert.ok(c.y>=insets.top&&c.bottom<=420-insets.bottom,`${name}/${stage}/${c.selector}: viewport bounds`);
+  assert.ok(!c.overlap,`${name}/${stage}/${c.selector}: intersects fixed navigation`);
+  assert.ok(c.hits.every(p=>p.ok),`${name}/${stage}/${c.selector}: hit targets unobscured`);
+ }
+}
+
 const nativeSource=await readFile('native/App.js','utf8');
 const insetTemplate=nativeSource.match(/const insetJs = useMemo\(\(\) => `([\s\S]*?)`, \[insets.top/)[1];
 const insetScript=new Function('insets','return `'+insetTemplate+'`;');
@@ -58,14 +83,24 @@ try{
    const g=await page.evaluate(()=>{
     const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
     return{width:innerWidth,scroll:document.documentElement.scrollWidth,header:rect(document.querySelector('.topbar')),controls:[...document.querySelectorAll('.topbar button,.topbar select,.sect-chip,.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent,...rect(n)})),nav:[...document.querySelectorAll('.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(rect)};
-   });results.push({name,insets,...g});await page.screenshot({path:`manager-viewports/${name}.png`});
+   });results.push({name,insets,...g});await page.screenshot({path:`${out}/${name}.png`});
    assert.ok(g.scroll<=width+1,`${name}: page fits`);
    for(const c of g.controls){assert.ok(c.x>=insets.left-1&&c.right<=width-insets.right+1,`${name}: ${c.text} clear of side insets`);assert.ok(c.y>=insets.top-1,`${name}: ${c.text} clear of top inset`);}
    if(width<=760){assert.equal(g.nav.length,4);assert.ok(g.nav.every(n=>n.bottom<=height-insets.bottom+1),'navigation clear of bottom inset');
     const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});await trigger.click();await field.pressSequentially('Alex');await page.getByRole('button',{name:'Clear search',exact:true}).click();assert.equal(await field.inputValue(),'');assert.ok(await field.evaluate(n=>n===document.activeElement));await field.pressSequentially('Sam');await page.setViewportSize({width,height:420});
-    const focus=await field.boundingBox();assert.ok(focus.y>=insets.top&&focus.y+focus.height<=420-insets.bottom,'focused search fits resized viewport');await page.screenshot({path:`manager-viewports/${name}-keyboard-resize.png`});await page.getByRole('button',{name:'Done',exact:true}).click();assert.equal(await field.inputValue(),'Sam');assert.ok(await trigger.evaluate(n=>n===document.activeElement));await trigger.click();await page.getByRole('button',{name:'Clear search',exact:true}).click();await page.getByRole('button',{name:'Done',exact:true}).click();await page.setViewportSize({width,height});
+    await checkSearch(name,'typed-resized',insets);await page.screenshot({path:`${out}/${name}-keyboard-resize.png`});
+    const clear=page.getByRole('button',{name:'Clear search',exact:true}),done=page.getByRole('button',{name:'Done',exact:true});
+    for(let cycle=0;cycle<2;cycle++){
+     await field.click();await checkSearch(name,`refocus-${cycle}`,insets);
+     await clear.click();assert.equal(await field.inputValue(),'');assert.ok(await field.evaluate(n=>n===document.activeElement));await checkSearch(name,`cleared-${cycle}`,insets);
+     await field.pressSequentially('Sam');await checkSearch(name,`retyped-${cycle}`,insets);
+     await done.click();assert.equal(await field.inputValue(),'Sam');assert.ok(await trigger.evaluate(n=>n===document.activeElement));
+     await trigger.click();await checkSearch(name,`reopened-${cycle}`,insets);
+    }
+    await clear.click();await done.click();await page.setViewportSize({width,height});
+
    }
-  }catch(e){failures.push({name,error:e.message});}
+  }catch(e){failures.push({name,error:e.message});console.error(name,e.message);await page.evaluate(()=>document.querySelector('.search-top:not(.search-collapsed) .assoc-search-done')?.click());}
  }
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
-}finally{await writeFile('manager-viewports/evidence.json',JSON.stringify({engine,scope:'Browser rendering with actual wrapper inset injection; no Android emulator, WebView or native keyboard claim',results,failures,errors},null,2));await browser.close();}
+}finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,scope:'Browser rendering with actual wrapper inset injection; no Android emulator, WebView or native keyboard claim',results,searchChecks,failures,errors},null,2));await browser.close();}
