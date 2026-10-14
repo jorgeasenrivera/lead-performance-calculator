@@ -1,5 +1,6 @@
 """Synthetic system and subprocess tests; never touch /dev/kvm or call sudo."""
 import importlib.util
+import ctypes
 import json
 from pathlib import Path
 import tempfile
@@ -118,8 +119,7 @@ class LeaseTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'already exists'):
             kvm.grant(self.system, self.path)
 
-    def test_real_posix_acl_round_trip_on_owned_temporary_file(self):
-        import ctypes
+    def acl_library(self):
         try:
             acl = ctypes.CDLL('libacl.so.1', use_errno=True)
         except OSError:
@@ -129,9 +129,33 @@ class LeaseTests(unittest.TestCase):
         acl.acl_set_file.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p]
         acl.acl_get_file.argtypes = [ctypes.c_char_p, ctypes.c_int]
         acl.acl_get_file.restype = ctypes.c_void_p
-        acl.acl_to_text.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        acl.acl_to_text.restype = ctypes.c_void_p
+        acl.acl_to_any_text.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char, ctypes.c_int]
+        acl.acl_to_any_text.restype = ctypes.c_void_p
         acl.acl_free.argtypes = [ctypes.c_void_p]
+        return acl
+
+    def numeric_acl_text(self, acl, value):
+        # TEXT_NUMERIC_IDS (0x08) matches the controller's getfacl -n.
+        # https://man7.org/linux/man-pages/man3/acl_to_any_text.3.html
+        text = acl.acl_to_any_text(value, None, b'\n', 0x08)
+        try:
+            self.assertTrue(text)
+            return ctypes.string_at(text).decode()
+        finally:
+            if text:
+                acl.acl_free(text)
+
+    def test_numeric_serialization_does_not_resolve_account_names(self):
+        acl = self.acl_library()
+        value = acl.acl_from_text(('\n'.join(kvm.GRANTED) + '\n').encode())
+        self.assertTrue(value)
+        try:
+            self.assertEqual(kvm.entries(self.numeric_acl_text(acl, value)), kvm.GRANTED)
+        finally:
+            acl.acl_free(value)
+
+    def test_real_posix_acl_round_trip_on_owned_temporary_file(self):
+        acl = self.acl_library()
         target = Path(self.tmp.name) / 'owned-file'
         target.touch()
         def set_acl(lines, initial=False):
@@ -147,23 +171,29 @@ class LeaseTests(unittest.TestCase):
         def read_acl():
             value = acl.acl_get_file(bytes(target), 0x8000)
             self.assertTrue(value)
-            text = acl.acl_to_text(value, None)
-            self.assertTrue(text)
             try:
-                return ctypes.string_at(text).decode()
+                return self.numeric_acl_text(acl, value)
             finally:
-                acl.acl_free(text)
                 acl.acl_free(value)
         set_acl(kvm.BASE, initial=True)
         original = read_acl()
         before = target.stat()
-        set_acl(kvm.GRANTED)
-        self.assertEqual(kvm.entries(read_acl()), kvm.GRANTED)
-        self.assertEqual(target.stat().st_mode, before.st_mode)
-        set_acl(kvm.entries(original))
+        def round_trip(inject_failure=False):
+            try:
+                set_acl(kvm.GRANTED)
+                self.assertEqual(kvm.entries(read_acl()), kvm.GRANTED)
+                self.assertEqual(target.stat().st_mode, before.st_mode)
+                if inject_failure:
+                    raise AssertionError('deliberate assertion failure after ACL grant')
+            finally:
+                set_acl(kvm.entries(original))
+                self.assertEqual(read_acl(), original)
+                self.assertEqual((target.stat().st_uid, target.stat().st_gid, target.stat().st_mode),
+                                 (before.st_uid, before.st_gid, before.st_mode))
+        round_trip()
+        with self.assertRaisesRegex(AssertionError, '^deliberate assertion failure after ACL grant$'):
+            round_trip(inject_failure=True)
         self.assertEqual(read_acl(), original)
-        self.assertEqual((target.stat().st_uid, target.stat().st_gid, target.stat().st_mode),
-                         (before.st_uid, before.st_gid, before.st_mode))
 
     def test_exact_privileged_commands_no_mask_recalculation(self):
         system = kvm.System()
@@ -184,4 +214,4 @@ class LeaseTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(verbosity=2)

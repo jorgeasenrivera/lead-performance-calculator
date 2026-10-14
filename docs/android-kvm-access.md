@@ -73,7 +73,13 @@ checks). Four real shell-wrapper cases use a fake controller and child process:
 success, child failure, SIGTERM and restoration failure with a failing exit.
 No sudo or KVM operation occurs in these tests.
 
-An additional real POSIX ACL round trip uses libacl on an owned temporary file.
+An in-memory numeric-serialization check runs even when the filesystem has no
+ACL support. The real POSIX ACL round trip uses libacl on an owned temporary file.
+It uses `acl_to_any_text` with `TEXT_NUMERIC_IDS`, matching production
+`getfacl -n`; name-resolving `acl_to_text` previously made supported CI compare
+`runner` with `1001` and fail (run 38603698934). Full ACL and metadata equality
+checks remain. A `finally` restores and verifies the snapshot even after a failed
+assertion; the test also deliberately injects an assertion failure to exercise it.
 It explicitly skips only unavailable libacl or initial EOPNOTSUPP. This cloud
 filesystem returned EOPNOTSUPP; that case is not real ACL restoration evidence.
 The hosted run must still verify real device restoration. Local tests are not
