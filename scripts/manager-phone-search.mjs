@@ -36,6 +36,11 @@ export async function verifyManagerPhoneSearch(browser, url) {
     const field = page.getByPlaceholder("Search associates", { exact: true });
     for (const width of [390, 720, 760]) {
       await page.setViewportSize({ width, height: 844 });
+      if (width <= 700) {
+        const trigger = page.locator('.assoc-search-trigger');
+        await trigger.waitFor({ state: 'visible' });
+        if (await trigger.getAttribute('aria-expanded') === 'false') await trigger.click();
+      }
       await field.waitFor({ state: "visible", timeout: 5000 });
       const display = await field.evaluate((input) => {
         const row = input.closest(".seg-wrap");
