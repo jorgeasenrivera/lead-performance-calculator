@@ -14,7 +14,7 @@ test -x "$SDKMANAGER"
 # EOF never answers yes. Missing acceptance must be resolved outside this task.
 timeout 60 "$SDKMANAGER" --licenses </dev/null > "$OUT/licenses.txt" 2>&1
 grep -q 'All SDK package licenses accepted' "$OUT/licenses.txt" || { echo 'BLOCKED: SDK license acceptance not established'; exit 1; }
-timeout 300 "$SDKMANAGER" 'emulator' 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1' 'system-images;android-36;google_apis;x86_64' </dev/null
+timeout 300 "$SDKMANAGER" 'emulator' 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1' 'cmake;3.30.5' 'system-images;android-36;google_apis;x86_64' </dev/null
 export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
 emulator -accel-check
 java -version

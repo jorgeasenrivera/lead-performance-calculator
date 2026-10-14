@@ -74,6 +74,15 @@ try {
     adb('shell', 'settings', 'put', 'system', 'font_scale', String(scale));
     assert.equal(Number(adb('shell', 'settings', 'get', 'system', 'font_scale')), scale);
     adb('shell', 'am', 'start', '-n', 'com.sageonline/.MainActivity');
+    // The unchanged shell asks for location on first launch. Decline it as a
+    // user would; never grant permissions or alter the manifest for this test.
+    try {
+      await device.tap({ res: 'com.android.permissioncontroller:id/permission_deny_button' }, { timeout: 3000 });
+      scenario.locationPrompt = 'declined';
+    } catch (error) {
+      if (error.name !== 'TimeoutError') throw error;
+      scenario.locationPrompt = 'not shown within 3 seconds';
+    }
     page = await (await device.webView({ pkg: 'com.sageonline' })).page();
     page.setDefaultTimeout(15000);
     await page.waitForURL('http://127.0.0.1:5179/**', { timeout: 60000 });

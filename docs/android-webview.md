@@ -19,7 +19,7 @@ existing local mock and fictional demo seed, never its live demo account.
 A local HTTP fixture adds a restrictive CSP before scripts execute, disallows
 service workers and external web requests. ADB reverses localhost ports. No
 credentials, Expo account, Firebase file, production signing or EAS service is
-used. The generated Expo template's existing debug keystore signs the debug APK;
+used. The existing first-launch location prompt is declined, never granted. The generated Expo template's existing debug keystore signs the debug APK;
 no new signing key is generated. The APK is not uploaded or distributed.
 
 ## Feasibility and prerequisites
@@ -35,7 +35,7 @@ The released lockfile resolves Expo 54.0.37; native package requirements are
 Expo ~54, React Native 0.81.4, React 19.1 and WebView 13.15.0. Expo 54 documents
 Node >=20.19.x; use Node 22 and preinstalled Java 17. SDK 36 is also required by
 the existing Android module's AndroidX core 1.17 dependency. The SDK packages
-requested are platform/build-tools 36, NDK 27.1.12297006, CMake 3.22.1 and the
+requested are platform/build-tools 36, NDK 27.1.12297006, CMake 3.22.1/3.30.5 and the
 API 36 Google APIs x86_64 image, plus emulator/platform-tools. Generated Gradle
 requirements remain authoritative: SDK auto-download is disabled during build,
 so a missing or different dependency fails rather than being silently adopted.
@@ -97,7 +97,8 @@ JavaScript syntax, YAML parsing, export isolation and diff whitespace checks
 passed. A disposable native `npm ci --ignore-scripts` and Expo Android prebuild
 completed without an SDK or emulator. Installed React Native's
 `gradle/libs.versions.toml` confirms SDK 36, Build Tools 36.0.0 and NDK
-27.1.12297006. The generated template contains its debug keystore, and WebView
+27.1.12297006. ReactAndroid also declares CMake 3.30.5 for source builds; both it and the
+Android Gradle plugin default 3.22.1 are requested. The generated template contains its debug keystore, and WebView
 13.15.0 enables debugging for ReactBuildConfig.DEBUG.
 
 Prebuild warns that React Native 0.81.5 is recommended instead of locked 0.81.4,
