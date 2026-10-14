@@ -173,6 +173,10 @@ try {
       });
       results.push({dockSearch:{phase,...size,inset,scale,...geometry}});
       await page.screenshot({path:`manager-spacing/dock-search-${phase}-${size.width}x${size.height}-inset${inset}-text${scale*100}.png`});
+      if(phase==='after' && inset===0 && scale===1 && size.height===667) {
+        const png=await page.screenshot();
+        console.log('REVIEW_IMAGE '+JSON.stringify({width:size.width,phase,png:png.toString('base64')}));
+      }
       if(phase==='after') {
         assert.ok(geometry.targets.every(t=>t.width>=44 && t.height>=44),'dock and help retain 44px targets');
         assert.ok(geometry.targets.every(t=>t.x>=0 && t.right<=size.width && t.bottom<=size.height-inset),'dock targets clear viewport and safe area');
