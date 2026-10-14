@@ -41,14 +41,15 @@ await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo')
 page.on('pageerror', e => errors.push(e.message));
 await mkdir('search-keyboard', { recursive: true });
 const evidence=[];
+const identity={testHead:process.env.SEARCH_TEST_SHA||null,runtimeCommit:process.env.SEARCH_RUNTIME_SHA||null};
 async function measure(state){return page.evaluate(state=>{
- const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}};
- const input=document.querySelector('.search-input'),style=getComputedStyle(input),vv=visualViewport;
- return{state,input:rect(input),header:rect(document.querySelector('.topbar')),tabs:rect(document.querySelector('.sect-strip')),hero:rect(document.querySelector('.bp-hero')),focused:document.activeElement===input,query:input.value,textAlign:style.textAlign,placeholderAlign:getComputedStyle(input,'::placeholder').textAlign,boxShadow:style.boxShadow,outline:style.outlineStyle,viewport:{width:vv.width,height:vv.height,offsetTop:vv.offsetTop,scale:vv.scale,innerHeight,scrollY}};
+ const rect=n=>{if(!n)return null;const r=n.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}};
+ const input=document.querySelector('.search-input'),clear=document.querySelector('.search-top .search-clear'),done=document.querySelector('.assoc-search-done'),style=getComputedStyle(input),vv=visualViewport;
+ return{state,input:rect(input),done:rect(done),clear:rect(clear),clearDisabled:clear?.disabled,clearVisibility:clear?getComputedStyle(clear).visibility:null,header:rect(document.querySelector('.topbar')),tabs:rect(document.querySelector('.sect-strip')),hero:rect(document.querySelector('.bp-hero')),focused:document.activeElement===input,query:input.value,textAlign:style.textAlign,placeholderAlign:getComputedStyle(input,'::placeholder').textAlign,boxShadow:style.boxShadow,outline:style.outlineStyle,viewport:{width:vv.width,height:vv.height,offsetTop:vv.offsetTop,scale:vv.scale,innerHeight,scrollY}};
 },state)}
 try{
- for(const phase of ['baseline','corrected']){
-  const target=phase==='baseline'?'http://127.0.0.1:5179/':url;
+ for(const phase of process.env.SEARCH_BASELINE_URL?['baseline','corrected']:['corrected']){
+  const target=phase==='baseline'?process.env.SEARCH_BASELINE_URL:url;
   await page.setViewportSize({width:390,height:844});await page.goto(target);
   await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');await page.locator('input[type="password"]').fill('x');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.locator('.bp-row').first().waitFor({timeout:40000});await page.evaluate(()=>document.fonts.ready);
   for(const width of [320,390]){
@@ -57,14 +58,43 @@ try{
    await page.screenshot({path:`search-keyboard/${phase}-${width}-closed.png`});
    if(!await field.isVisible())await trigger.click();
    await page.setViewportSize({width,height:420});await field.focus();
-   await field.fill('');const states=[await measure('empty')];await page.screenshot({path:`search-keyboard/${phase}-${width}-keyboard-sized-empty.png`});
-   for(const [name,query] of [['first','A'],['long','no-such-fictional-associate-long-query']]){
-    await field.fill(query);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));states.push(await measure(name));await page.screenshot({path:`search-keyboard/${phase}-${width}-keyboard-sized-${name}.png`});
+   const states=[];
+   evidence.push({phase,width,simulation:`Mobile ${engine} viewport reduced to 420 CSS px with focused input; no native iOS keyboard or accessory emulation`,states});
+   const sample=async(state,query)=>{
+    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    const measured=await measure(state);states.push(measured);
+    assert.equal(measured.query,query,`${state}: query retained`);
+    assert.ok(measured.focused,`${state}: input retains focus`);
+    if(phase==='corrected'){
+     assert.equal(measured.textAlign,'left');assert.equal(measured.placeholderAlign,'left');assert.equal(measured.boxShadow,'none');assert.equal(measured.outline,'none');
+     assert.equal(measured.clearDisabled,!query);assert.equal(measured.clearVisibility,query?'visible':'hidden');
+     for(const control of ['input','done','clear']){
+      assert.ok(measured[control],`${state}: ${control} remains mounted`);
+      assert.ok(measured[control].width>=44&&measured[control].height>=44,`${state}: ${control} target at least 44px`);
+      assert.ok(measured[control].bottom<=measured.viewport.height+measured.viewport.offsetTop,`${state}: ${control} inside available viewport`);
+      for(const key of ['x','y','width','height'])assert.ok(Math.abs(measured[control][key]-states[0][control][key])<1,`${state}: ${control} ${key} stable`);
+     }
+     assert.equal(measured.tabs.y,states[0].tabs.y);
+    }
+   };
+   const shot=state=>page.screenshot({path:`search-keyboard/${phase}-${width}-keyboard-sized-${state}.png`});
+   assert.equal(await field.inputValue(),'');await sample('empty','');await shot('empty');
+   let query='';
+   for(const char of 'Alex'){
+    await field.pressSequentially(char);query+=char;await sample(`type-${query.length}`,query);if(query.length===1)await shot('first');
    }
-   await page.locator('.search-top .search-clear').click();states.push(await measure('clear'));await page.screenshot({path:`search-keyboard/${phase}-${width}-keyboard-sized-clear.png`});
-   evidence.push({phase,width,simulation:'Mobile WebKit viewport reduced to 420 CSS px with focused input; no native iOS keyboard or accessory emulation',states});
+   await shot('typed');
+   while(query){await page.keyboard.press('Backspace');query=query.slice(0,-1);await sample(`backspace-${query.length}`,query);}
+   await shot('backspaced-empty');
+   for(const char of 'no-such-fictional-associate-long-query'){
+    await field.pressSequentially(char);query+=char;await sample(`long-${query.length}`,query);
+   }
+   await shot('long');
+   await page.locator('.search-top .search-clear').click();query='';await sample('clear',query);await shot('clear');
+   for(const char of 'Sam'){await field.pressSequentially(char);query+=char;await sample(`retype-${query.length}`,query);}
+   await shot('retyped');
+   await page.locator('.search-top .search-clear').click();await sample('clear-again','');
    if(phase==='corrected'){
-    for(const state of states){assert.ok(state.focused);assert.equal(state.textAlign,'left');assert.equal(state.placeholderAlign,'left');assert.equal(state.boxShadow,'none');assert.equal(state.outline,'none');assert.ok(state.input.bottom<=state.viewport.height+state.viewport.offsetTop,'input visible above simulated keyboard');for(const key of ['x','y','width','height'])assert.ok(Math.abs(state.input[key]-states[0].input[key])<1,`input ${key} stable across query edits`);assert.equal(state.tabs.y,states[0].tabs.y);}
     assert.equal(await page.locator('.sage-bp-store').count(),0);assert.match(await page.locator('.bp-hero').first().getAttribute('aria-label'),/^Performance for /);
    }
    if(phase==='corrected'){await field.fill('Alex');await page.locator('.search-top .search-clear').focus();await page.keyboard.press('Enter');assert.equal(await field.inputValue(),'');assert.ok(await field.evaluate(n=>n===document.activeElement));}
@@ -76,4 +106,4 @@ try{
  }
  fixtureRole='manager';singleStore=true;await page.setViewportSize({width:390,height:844});await page.reload();await page.locator('.bp-row').first().waitFor();assert.equal(await page.locator('.view-select').count(),0);assert.ok(await page.locator('.manager-store-name').isVisible());assert.equal(await page.locator('.manager-store-name').innerText(),'Sage Demo Motors');await page.screenshot({path:'search-keyboard/corrected-single-store-identity.png'});evidence.push({singleStoreIdentity:true});
  assert.deepEqual(errors,[]);
-}finally{await writeFile('search-keyboard/evidence.json',JSON.stringify({engine,evidence,errors},null,2));console.log(JSON.stringify({engine,evidence,errors}));await browser.close();}
+}finally{await writeFile('search-keyboard/evidence.json',JSON.stringify({engine,identity,evidence,errors},null,2));console.log(JSON.stringify({engine,identity,evidence,errors}));await browser.close();}
