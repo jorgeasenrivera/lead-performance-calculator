@@ -873,3 +873,7 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
   html.manager-signal .search-top .search-input{min-height:44px;padding:7px 44px;font-size:16px}
   html.manager-signal .search-top .search-clear{width:44px;height:44px;right:0;top:50%;transform:translateY(-50%)}
 }
+@media(min-width:641px) and (max-width:760px){
+  html.manager-signal .botnav-btn,html.manager-signal .botnav-slot,html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){min-height:52px}
+  html.manager-signal .botnav-btn,html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){grid-template-rows:22px auto}
+}
