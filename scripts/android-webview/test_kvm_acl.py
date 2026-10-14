@@ -2,6 +2,9 @@
 import importlib.util
 import ctypes
 import json
+import os
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
@@ -28,6 +31,12 @@ class Fake:
 
     def metadata(self):
         return dict(self.meta)
+
+    def observed_metadata(self):
+        return dict(self.meta)
+
+    def observed_identity(self):
+        return {'uid': 1001, 'euid': 1001, 'groups': [1001]}
 
     def acl(self):
         return self.value
@@ -118,6 +127,54 @@ class LeaseTests(unittest.TestCase):
         kvm.grant(self.system, self.path)
         with self.assertRaisesRegex(RuntimeError, 'already exists'):
             kvm.grant(self.system, self.path)
+
+    def test_diagnostics_capture_unknown_acl_without_mutation(self):
+        kvm.grant(self.system, self.path)
+        saved = self.path.read_bytes()
+        self.system.value += 'user:2000:r--\n'
+        with self.assertRaisesRegex(RuntimeError, 'third-party'):
+            kvm.restore(self.system, self.path)
+        report = kvm.diagnostics(self.system, self.path)
+        self.assertEqual(report['saved']['value']['original_acl'], ORIGINAL)
+        self.assertEqual(report['current_acl']['value'], self.system.value)
+        self.assertEqual(report['current_metadata']['value'], self.system.meta)
+        self.assertEqual(report['process_identity']['value']['uid'], 1001)
+        self.assertEqual(report['effective_read_write']['value'], [False, False])
+        self.assertEqual(self.system.calls, ['grant'])
+        self.assertEqual(self.path.read_bytes(), saved)
+
+    def test_diagnostics_read_failures_are_independent(self):
+        self.path.write_text('invalid json')
+        with patch.object(self.system, 'acl', side_effect=OSError('ACL unreadable')), \
+             patch.object(self.system, 'observed_metadata', side_effect=FileNotFoundError('device absent')):
+            report = kvm.diagnostics(self.system, self.path)
+        self.assertIn('error', report['saved'])
+        self.assertIn('ACL unreadable', report['current_acl']['error'])
+        self.assertIn('device absent', report['current_metadata']['error'])
+        self.assertIn('value', report['process_identity'])
+        self.assertIn('value', report['effective_read_write'])
+        self.assertEqual(self.system.calls, [])
+        self.assertEqual(self.path.read_text(), 'invalid json')
+
+    def test_diagnostics_preserve_both_attempts_and_saved_lease(self):
+        kvm.grant(self.system, self.path)
+        saved = self.path.read_bytes()
+        previous = Path.cwd()
+        try:
+            os.chdir(self.tmp.name)
+            with redirect_stdout(io.StringIO()) as output:
+                kvm.diagnose(self.system, self.path)
+                self.system.meta['st_ino'] = 999
+                kvm.diagnose(self.system, self.path)
+            reports = [json.loads(line) for line in Path('android-webview-evidence/kvm-cleanup-diagnostics.jsonl').read_text().splitlines()]
+            self.assertEqual(len(reports), 2)
+            self.assertEqual(reports[0]['current_metadata']['value']['st_ino'], 2)
+            self.assertEqual(reports[1]['current_metadata']['value']['st_ino'], 999)
+            self.assertEqual(output.getvalue().count('KVM cleanup diagnostics:'), 2)
+        finally:
+            os.chdir(previous)
+        self.assertEqual(self.path.read_bytes(), saved)
+        self.assertEqual(self.system.calls, ['grant'])
 
     def acl_library(self):
         try:

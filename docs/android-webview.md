@@ -1,8 +1,9 @@
 # Android WebView review check
 
-AVD discovery correction prepared for parent review. The previous run built the
-debug APK but failed to find its AVD before Android UI testing. No physical
-Android result exists. Jorge does not own an Android device.
+Driver preparation and cleanup diagnostics prepared for parent review. The
+latest run booted Android and installed the debug APK, then failed during the
+first launch because driver assets were missing. ACL restoration was unverified.
+No physical Android result exists. Jorge does not own an Android device.
 
 ## Scope and ownership
 
@@ -161,6 +162,64 @@ for creation/listing/launch on success. No SDK/emulator or KVM runs locally.
 The existing boot timeouts, launch flags, assertions, license gates, permission
 scope, supervision and cleanup remain unchanged. No activation accompanies this
 correction; a new exact-head review is required before another run.
+
+## Driver prerequisite and unresolved ACL restoration
+
+[Run 38633800752](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/38633800752),
+at `f16aac1787d68e8798b94c445c7b5ea453684c26`, passed the license/package gates,
+KVM acceleration, debug build, AVD registration/discovery, boot and APK install.
+The owner-supplied artifact matched uploaded ZIP SHA-256
+`e40f330175b79f0228a8c7ffcc9d92ba903bd7215a33d80e90ba3790c6b541ba`.
+The parent reports that result.json failed at device.tap in the first 320dp
+launch because Playwright's Android driver APKs were absent. No UI assertions ran.
+
+Preparation now installs pinned playwright@1.63.0 in the existing task-local
+package directory before any KVM grant. Its own CLI runs `install android` with
+`PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/sage-playwright-cache`; the same exported
+cache and package module are inherited by the supervised probe. Both package
+versions and Android revision 1001 are checked, then both required regular APK
+files must be readable, valid ZIP archives with a nonempty AndroidManifest.xml.
+The diagnostic JSON records sizes and SHA-256 digests; the APKs are not uploaded.
+Npm/CLI/verifier failures stop before grant. Existing SDK license preflight still
+runs first; no SDK agreement is accepted by this addition.
+
+The inspected installed Playwright 1.63.0 package's browsers.json defines
+Android revision 1001. Its lib/coreBundle.js `_installDriver` implementation
+requires `android-driver.apk` and `android-driver-target.apk`, and its registry
+uses PLAYWRIGHT_BROWSERS_PATH. These are the exact installed-package sources,
+consistent with [Playwright's Android API](https://playwright.dev/docs/api/class-android)
+and [browser cache controls](https://playwright.dev/docs/browsers#managing-browser-binaries).
+No Playwright device calls or asset downloads run in the offline tests.
+
+That same run stopped/reaped descendants, but both ACL restoration paths refused
+an unexpected ACL and reported `shutdown=0 restore=1`. Original ACL restoration
+and runner-access revocation were not verified. The actual unexpected ACL was
+not captured, so the cause remains unknown. This change does not repair it or
+make another permission grant safe by itself.
+
+On cleanup failure only, a read-only diagnostic command now independently reads
+the saved lease's ACL/status/metadata, current numeric ACL, current lstat device
+identity/type, runner UID/GID/groups, and effective read/write access. Each failed
+read is recorded without suppressing the other observations. Reports go to the
+job log and append to kvm-cleanup-diagnostics.jsonl, preserving both cleanup
+attempts. The command never changes the lease, ACL, ownership or permission state.
+Even diagnostic failure retains cleanup's nonzero result. Exact grant commands,
+device/ACL refusal guards, restoration logic and shutdown policy are unchanged.
+
+Offline coverage checks both driver files, versions/revision, missing/corrupt/
+symlink assets, manifest presence, shared cache inheritance and zero grants on
+npm/CLI/verification failures. Diagnostic tests cover unknown ACL/device identity,
+independent read failures, both reports retained, unchanged saved lease and no
+setter calls. A shell case verifies diagnostic failure cannot hide failed cleanup.
+Validation: all 944 Node tests and the production build passed, along with shell
+syntax and diff whitespace checks. The driver suite has seven offline cases.
+The ACL/diagnostic Python suite ran 15 cases, with the existing owned-file POSIX
+ACL case skipped locally because this filesystem returns EOPNOTSUPP. The pinned
+CLI's `install --dry-run android` confirmed revision 1001 and the explicit cache
+without downloading assets. AST comparison confirmed every pre-existing System
+method and the grant/restore/ACL parser functions are unchanged.
+These are preparation checks, not Android UI or restoration evidence. No new
+emulator execution is authorized; the unresolved cleanup risk requires review.
 
 ## Sources checked 14 October 2026
 

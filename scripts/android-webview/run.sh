@@ -28,7 +28,6 @@ node scripts/android-webview/prepare.mjs prepare "$SOURCE"
 # supply a signing secret, invoke EAS or build a release variant.
 test -f "$SOURCE/native/android/app/debug.keystore"
 (cd "$SOURCE/native/android" && timeout 1200 ./gradlew :app:assembleDebug -PreactNativeArchitectures=x86_64 -Pandroid.builder.sdkDownload=false --console=plain)
-npm install --prefix "$RUNNER_TEMP/android-driver" --no-package-lock --no-save playwright@1.63.0
 source scripts/android-webview/start-emulator.sh
 timeout 120 adb wait-for-device
 for attempt in $(seq 1 120); do
@@ -52,4 +51,4 @@ for port in 5179 8081; do
   curl -fsS "http://127.0.0.1:$port/" >/dev/null
 done
 adb install "$SOURCE/native/android/app/build/outputs/apk/debug/app-debug.apk"
-ANDROID_PLAYWRIGHT="$RUNNER_TEMP/android-driver/node_modules/playwright/index.mjs" timeout 300 node scripts/android-webview/probe.mjs
+timeout 300 node scripts/android-webview/probe.mjs

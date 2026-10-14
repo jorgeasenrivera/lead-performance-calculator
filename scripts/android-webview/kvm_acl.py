@@ -7,6 +7,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 DEVICE = '/dev/kvm'
 BASE = ['user::rw-', 'group::rw-', 'other::---']
@@ -40,6 +41,17 @@ class System:
         require((s.st_uid, s.st_gid, stat.S_IMODE(s.st_mode), os.major(s.st_rdev), os.minor(s.st_rdev))
                 == (0, 993, 0o660, 10, 232), 'Device owner/group/mode/number differs from diagnostic')
         return {key: getattr(s, key) for key in ('st_dev', 'st_ino', 'st_rdev', 'st_uid', 'st_gid', 'st_mode')}
+
+    def observed_metadata(self):
+        # Diagnostics must describe unexpected devices too, without following symlinks.
+        s = os.lstat(DEVICE)
+        return {**{key: getattr(s, key) for key in ('st_dev', 'st_ino', 'st_rdev', 'st_uid', 'st_gid', 'st_mode')},
+                'major': os.major(s.st_rdev), 'minor': os.minor(s.st_rdev),
+                'is_character': stat.S_ISCHR(s.st_mode), 'is_symlink': stat.S_ISLNK(s.st_mode)}
+
+    def observed_identity(self):
+        return {'uid': os.getuid(), 'euid': os.geteuid(), 'gid': os.getgid(),
+                'egid': os.getegid(), 'groups': os.getgroups()}
 
     def acl(self):
         return subprocess.run(['/usr/bin/getfacl', '-p', '-n', DEVICE], check=True,
@@ -112,7 +124,36 @@ def restore(system, path):
     print('KVM ACL: complete original ACL and metadata verified; runner access revoked')
 
 
+def diagnostics(system, path):
+    # Independent read-only observations; failures must not hide the other fields.
+    def observe(read):
+        try:
+            return {'value': read()}
+        except Exception as error:
+            return {'error': type(error).__name__ + ': ' + str(error)}
+
+    def saved():
+        state = json.loads(path.read_text())
+        return {key: state.get(key) for key in ('status', 'metadata', 'original_acl')}
+
+    return {'timestamp_ns': time.time_ns(), 'device': DEVICE,
+            'saved': observe(saved), 'current_acl': observe(system.acl),
+            'current_metadata': observe(system.observed_metadata),
+            'process_identity': observe(system.observed_identity),
+            'effective_read_write': observe(system.accessible)}
+
+
+def diagnose(system, path):
+    report = diagnostics(system, path)
+    print('KVM cleanup diagnostics: ' + json.dumps(report), flush=True)
+    out = Path('android-webview-evidence')
+    out.mkdir(exist_ok=True)
+    # Keep both trap and final-cleanup observations. Never update the saved lease.
+    with (out / 'kvm-cleanup-diagnostics.jsonl').open('a') as stream:
+        stream.write(json.dumps(report) + '\n')
+
+
 if __name__ == '__main__':
-    require(len(sys.argv) == 2 and sys.argv[1] in ('grant', 'restore'), 'Expected grant or restore')
+    require(len(sys.argv) == 2 and sys.argv[1] in ('grant', 'restore', 'diagnose'), 'Expected grant, restore or diagnose')
     path = Path(os.environ['RUNNER_TEMP']) / 'sage-kvm-acl.json'
-    {'grant': grant, 'restore': restore}[sys.argv[1]](System(), path)
+    {'grant': grant, 'restore': restore, 'diagnose': diagnose}[sys.argv[1]](System(), path)

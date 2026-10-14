@@ -6,6 +6,7 @@ source scripts/android-webview/sdk-packages.sh
 OUT="$PWD/android-webview-evidence"
 mkdir -p "$OUT"
 timeout 60 python3 scripts/android-webview/licenses.py --sdk "$ANDROID_HOME" "${PACKAGES[@]}" > "$OUT/licenses.txt" 2>&1 || { cat "$OUT/licenses.txt"; exit 1; }
+source scripts/android-webview/prepare-driver.sh
 supervisor=''
 cleanup() {
   local result=$?
