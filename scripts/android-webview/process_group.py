@@ -106,7 +106,7 @@ def shutdown(supervisor, pgid):
                 terminate(supervisor, pgid, sig)
             time.sleep(0.05)
         print(f'Android process cleanup: escalating after {sig.name}', flush=True)
-    raise RuntimeError('Android descendants remain after bounded TERM/KILL; ACL restoration blocked')
+    raise RuntimeError('Android descendants remain after bounded TERM/KILL; shutdown unverified')
 
 
 def run(path):
@@ -157,7 +157,7 @@ def stop(path):
     supervisor = state['supervisor']
     if state['status'] != 'stopped':
         if not same_identity(supervisor):
-            raise RuntimeError('Supervisor disappeared without verified shutdown; ACL restoration blocked')
+            raise RuntimeError('Supervisor disappeared without verified shutdown; shutdown unverified')
         os.kill(supervisor['pid'], signal.SIGTERM)
         deadline = time.monotonic() + STOP_SECONDS
         while time.monotonic() < deadline:
@@ -166,13 +166,13 @@ def stop(path):
                 break
             time.sleep(0.05)
         else:
-            raise RuntimeError('Timed out waiting for verified descendant shutdown; ACL restoration blocked')
+            raise RuntimeError('Timed out waiting for verified descendant shutdown; shutdown unverified')
     table = processes()
     pgid = state['pgid']
     if pgid is not None and any(p['pgid'] == pgid or p['sid'] == pgid for p in table.values()):
-        raise RuntimeError('Original process group/session still exists; ACL restoration blocked')
+        raise RuntimeError('Original process group/session still exists; shutdown unverified')
     if same_identity(supervisor) and descendants(table, supervisor['pid']):
-        raise RuntimeError('Supervisor still has descendants; ACL restoration blocked')
+        raise RuntimeError('Supervisor still has descendants; shutdown unverified')
     print('Android process cleanup: shutdown verified before ACL restore')
 
 
