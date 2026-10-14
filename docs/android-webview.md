@@ -42,11 +42,14 @@ so a missing or different dependency fails rather than being silently adopted.
 The currently documented runner image lists SDK 36 but does not promise the
 emulator system image, requested NDK or CMake versions.
 
-Before download/build, require an already readable/writable `/dev/kvm` and the
+Before download/build, the approved temporary ACL wrapper requires the exact
+reviewed device and ACL, saves the original ACL, and grants only current runner
+UID 1001 read/write. See [temporary KVM access](android-kvm-access.md). The
+unchanged test script then requires readable/writable `/dev/kvm` and the
 SDK manager's affirmative report that all package licenses are accepted. License
 inspection and installation receive EOF, never an affirmative response. Then
-require `emulator -accel-check` and boot with `-accel on`. No KVM permission,
-udev, sudo, root or security-setting workaround is included. A prerequisite
+require `emulator -accel-check` and boot with `-accel on`. The only privileged commands are the approved narrow ACL grant and restoration.
+No broad mode, group, udev or other security-setting change is included. A prerequisite
 failure is a blocker, not a failed app assertion. A new agreement needs separate
 owner handling outside this task; do not add license acceptance to this script.
 
@@ -54,7 +57,7 @@ owner handling outside this task; do not add license acceptance to this script.
 
 No push, PR-open or synchronize event runs the emulator. Do not merge to run it.
 After reviewing the exact head, the parent may create/apply the PR label
-`android:<full 40-character reviewed head SHA>`. Only a newly added label matching
+`android:<full 40-character reviewed head SHA>`. Only attempt 1 runs; a rerun is rejected. Only a newly added label matching
 the same-repository PR head and this exact branch starts the job. No label was
 created or applied during preparation. A later commit invalidates the label.
 If the workflow eventually exists on the default branch, manual dispatch is also

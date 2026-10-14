@@ -17,6 +17,7 @@ concurrency:
 jobs:
   emulator:
     if: >-
+      github.run_attempt == 1 &&
       github.event.repository.private == false &&
       ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/android-webview-verification') ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository &&
@@ -47,7 +48,11 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
       - name: Check prerequisites, build debug wrapper and exercise WebView
-        run: bash scripts/android-webview/run.sh
+        run: bash scripts/android-webview/with-kvm.sh
+      - name: Always restore and verify original KVM ACL
+        if: always()
+        timeout-minutes: 2
+        run: python3 scripts/android-webview/kvm_acl.py restore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
