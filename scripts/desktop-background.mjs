@@ -9,7 +9,7 @@ export { backgroundConfig } from './desktop-background-config.mjs';
 export const PROFILER_SHA = 'ec1ca5308bc8db162d090bf65e7f4d7f228d2bf4';
 export const DRIVER_SHA = 'abcc33dc7e9ad97f93f0517b6d0d41104b9fe111';
 export const DRIVER_HASH = '6de1f4d49a57e555f0ffcde435578bedbe1147856e2d811d1f83855f10c17f20';
-export const SIGNAL_SHA = '7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5';
+export const SIGNAL_SHA = 'd9320e253b603260f6a7355d4bc1c77a59fefa5b';
 export function narrowExperiment(source, variant, directory = `desktop-background-evidence/${variant}`) {
   assert.ok(['root', 'backdrop'].includes(variant));
   const cohort = "for (const width of [1440, 1920]) for (const fixture of ['demo', '60-sales']) {";
