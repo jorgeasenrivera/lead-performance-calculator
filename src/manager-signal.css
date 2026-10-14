@@ -5,7 +5,6 @@
 .manager-signal .s2-head { padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,.22); }
 .manager-signal .s2-right { padding-left:22px; border-left:1px solid rgba(255,255,255,.22); }
 .manager-signal .bp-hero { border:1px solid rgba(255,255,255,.22); box-shadow:0 12px 22px -15px rgba(18,34,26,.55); }
-.manager-signal .sage-bp-store { font:700 12px/1.25 var(--font-display); color:#fff; margin:0 110px 16px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .manager-signal .bp-five { padding-top:10px; }
 .manager-signal .bp-upd i { animation:none; background:#E4C98D; box-shadow:none; }
 .manager-signal .bp-goal, .manager-signal .bp-left, .manager-signal .bp-tl { color:rgba(255,255,255,.87); }
@@ -177,7 +176,6 @@ html.manager-signal .s2-vitals{line-height:1.55}
 html.manager-signal :is(.co-std,.tg-row){min-width:0}
 html.manager-signal .co-std>button{min-width:0}
 html.manager-signal .co-std>button>span{white-space:normal;line-height:1.35}
-html.manager-signal .sage-bp-store{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.4}
 html.manager-signal .bp-five{column-gap:7px}
 html.manager-signal .bp-t5{font-size:10px;white-space:normal;line-height:1.4;text-align:center}
 html.manager-signal .bp-t5 .bp-tl{font-size:10px;white-space:normal;line-height:1.35;letter-spacing:.02em}
@@ -246,7 +244,6 @@ html.manager-signal .brand-menu>.bm-app{display:none}
   html.manager-signal .s2-rail .s2-chips{display:flex}
   html.manager-signal .s2-rail .s2-chip-state{flex-wrap:wrap;justify-content:flex-start}
   html.manager-signal .bp-hero{padding:20px 18px}
-  html.manager-signal .sage-bp-store{margin:0 0 6px}
   html.manager-signal .bp-upd{position:static;justify-content:flex-end;margin-bottom:16px}
   html.manager-signal .bp-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 8px}
   html.manager-signal .bp-five .bp-sep{grid-column:1/-1;height:1px;width:100%}
@@ -271,7 +268,6 @@ html.manager-signal .brand-menu>.bm-app{display:none}
 }
 @media(max-width:380px){
   html.manager-signal .bp-h5{grid-template-columns:minmax(0,1fr) 102px;column-gap:10px}
-  html.manager-signal .sage-bp-store{margin-right:0;padding-right:0}
   html.manager-signal .bp-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 9px}
   html.manager-signal .bp-five .bp-sep{grid-column:1/-1;height:1px;width:100%}
   html.manager-signal .bp-t5{font-size:11px}
@@ -843,6 +839,9 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
 
 /* Four navigation cells; actions and search belong to the header. */
 .manager-context-action,.assoc-search-slot{display:none}
+html.manager-signal .assoc-search-field{position:relative;flex:1;min-width:0}
+html.manager-signal .manager-store-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 .875rem/1.4 var(--font-ui);color:#234939}
+html.manager-signal .topbar-right:has(.view-select) .manager-store-name{display:none}
 @media(max-width:760px){
   html.manager-signal .botnav{left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:4px 0 calc(4px + var(--sab));min-height:64px;box-sizing:border-box;align-items:stretch;border-radius:0;border:0;border-top:1px solid #cbd3c5;background:#fffdf4;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 -3px 16px #2349390a;transform:none;transition:none}
   html.manager-signal .botnav-btn{position:relative;min-width:0;min-height:56px;padding:5px 0;gap:4px;display:grid;grid-template-rows:24px auto;align-content:start;justify-items:center;align-items:start;border-radius:0;color:#52624d;font:600 .75rem/1rem var(--font-ui);transition:color 160ms ease-out,background-color 160ms ease-out}
@@ -880,14 +879,29 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
   html.manager-signal .assoc-search-trigger.has-query>span{overflow-wrap:anywhere;min-width:0;text-align:left}
   html.manager-signal .assoc-search-trigger>.pix{flex:none}
   html.manager-signal .seg-wrap:has(>.search-top){padding:2px 12px;gap:0}
-  html.manager-signal .seg-wrap:has(>.search-collapsed){display:none}
+  html.manager-signal .seg-wrap:has(>.search-collapsed),html.manager-signal .seg-wrap:has(>.assoc-search-anchor){display:none}
+  html.manager-signal .assoc-search-panel-slot:empty,html.manager-signal .assoc-search-panel-slot:has(.search-collapsed){display:none}
+  html.manager-signal .assoc-search-panel-slot{padding:4px 12px 2px}
+  html.manager-signal .assoc-search-panel-slot>.search-top{margin:0;max-width:none;min-width:0}
   html.manager-signal .search-top.search-collapsed{display:none}
   html.manager-signal .seg-wrap>.search-top{margin:0;max-width:none;min-width:0;flex:1 1 auto}
-  html.manager-signal .search-top:not(.search-collapsed){display:flex;align-items:center;gap:4px}
-  html.manager-signal .search-top .search-input{width:100%;min-width:0;min-height:44px;padding:7px 40px;font-size:1rem}
-  html.manager-signal .search-top .search-clear{position:static;flex:none;width:44px;height:44px;transform:none}
+  html.manager-signal .search-top:not(.search-collapsed){display:flex;align-items:center;gap:8px}
+  html.manager-signal .search-top .search-input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:8px 44px 8px 36px;font:400 1rem/1.4 var(--font-ui);text-align:left;border:2px solid #cbd3c5;border-radius:9px;background:#fffdf4;color:#234939;box-shadow:none;outline:none;scroll-margin-block:12px}
+  html.manager-signal .search-top .search-input::placeholder{text-align:left;color:#647260;opacity:1}
+  html.manager-signal .lpc .search-top .search-input:is(:focus,:focus-visible){border-color:#234939;box-shadow:none;outline:none}
+  html.manager-signal .search-top .search-input::-webkit-search-cancel-button{display:none;-webkit-appearance:none}
+  html.manager-signal .search-top .search-icon{left:12px}
+  html.manager-signal .topbar-right .manager-store-name{flex:1 1 70px;font-size:.75rem}
+  html.manager-signal .search-top .search-clear{position:absolute;right:0;top:50%;width:44px;height:44px;transform:translateY(-50%);background:transparent}
+  html.manager-signal .search-top .search-clear:disabled{visibility:hidden}
   html.manager-signal .assoc-search-done{flex:none;min-height:44px;padding:6px 10px;border:0;border-radius:8px;background:#e8eedf;color:#234939;font:600 .75rem/1rem var(--font-ui)}
   html.manager-signal .lpc:has(.botnav){padding-bottom:calc(var(--manager-nav-height,80px) + 20px)}
   html.manager-signal .botnav-scrim{animation:none}
 }
 @media(prefers-reduced-motion:reduce){html.manager-signal :is(.botnav-btn,.qpick-btn,.manager-context-action,.assoc-search-trigger){transition:none!important}}
+/* Help category reflow: keep enlarged labels inside the modal. */
+@media(max-width:760px){
+  html.manager-signal .help-sheet .help-tabs{flex-wrap:wrap}
+  html.manager-signal .help-sheet .help-tab{flex:1 1 min-content;min-width:0;max-width:100%;min-height:44px;white-space:normal;overflow-wrap:normal}
+}
+/* End Help category reflow. */

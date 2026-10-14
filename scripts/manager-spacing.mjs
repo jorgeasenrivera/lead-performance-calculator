@@ -12,8 +12,8 @@ const previousHeader=await readFile(process.env.SPACING_HEADER_BEFORE_CSS || '.h
 assert.equal(createHash('sha256').update(previousHeader).digest('hex'),
   '17a3d435a443609be1d5aacf2189b842e10400e9fa91fcfc950c067414b80bbb','immutable previously reviewed header stylesheet');
 const engine = process.env.FEEL_BROWSER || 'chromium';
-const url = 'http://127.0.0.1:5178/';
-const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
+const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
+const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
 const context = await browser.newContext({ viewport: { width: 390, height: 667 },
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
 let fixtureRole='admin', dockFixture=null;
@@ -271,13 +271,13 @@ try {
   await page.locator('.sm-phone').waitFor();
   await page.locator('.sect-chip').filter({hasText:/^Dashboard$/}).click();
   await page.locator('.bp-row').first().waitFor();
-  const originalStore=await page.locator('.sage-bp-store').textContent();
+  const originalStore=await page.locator('.bp-hero[aria-label]').getAttribute('aria-label');
   await page.locator('.view-select').selectOption('spacing-demo-2');
-  await page.waitForFunction(()=>document.querySelector('.sage-bp-store')?.textContent==='Second Fictional Store');
+  await page.waitForFunction(()=>document.querySelector('.bp-hero[aria-label]')?.getAttribute('aria-label')==='Performance for Second Fictional Store');
   await page.locator('.bp-row').first().waitFor();
   await page.screenshot({path:'manager-spacing/after-dealer-switch.png'});
   await page.locator('.view-select').selectOption('sage-demo');
-  await page.waitForFunction(name=>document.querySelector('.sage-bp-store')?.textContent===name,originalStore);
+  await page.waitForFunction(name=>document.querySelector('.bp-hero[aria-label]')?.getAttribute('aria-label')===name,originalStore);
   for(const label of await page.locator('.sect-chip').allTextContents()) {
     const tab=page.locator('.sect-chip').filter({hasText:new RegExp(`^${label}$`)});
     await tab.focus();

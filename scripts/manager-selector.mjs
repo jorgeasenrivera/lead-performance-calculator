@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
 const engine = process.env.FEEL_BROWSER || 'chromium';
-const url = 'http://127.0.0.1:5178/';
-const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
+const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
+const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
 const context = await browser.newContext({ viewport: { width: 390, height: 667 },
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
 let fixtureRole='admin', dockFixture=null;

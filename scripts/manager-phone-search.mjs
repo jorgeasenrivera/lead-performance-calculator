@@ -43,12 +43,12 @@ export async function verifyManagerPhoneSearch(browser, url) {
       }
       await field.waitFor({ state: "visible", timeout: 5000 });
       const display = await field.evaluate((input) => {
-        const row = input.closest(".seg-wrap");
+        const row = input.closest(".assoc-search-panel-slot,.seg-wrap");
         const box = input.getBoundingClientRect();
         return { row: getComputedStyle(row).display, width: box.width, height: box.height,
           tabs: [...row.querySelectorAll(".seg")].map((tab) => getComputedStyle(tab).display) };
       });
-      assert.equal(display.row, "flex", `search row visible at ${width}px`);
+      assert.notEqual(display.row, "none", `search row visible at ${width}px`);
       assert.ok(display.width > 0 && display.height > 0, `search input has area at ${width}px`);
       assert.ok(display.tabs.every((value) => value === "none"), "no duplicate desktop tabs");
       const nameSelector = width <= 700 ? ".bp-row .bp-nmx" : ".assoc-card .assoc-name";
@@ -83,7 +83,7 @@ export async function verifyManagerPhoneSearch(browser, url) {
       assert.deepEqual(await names.allTextContents(), baseline, "clear restores the same ordered rows");
       assert.equal(await field.inputValue(), "");
       await page.emulateMedia({ media: "print" });
-      assert.equal(await field.evaluate((input) => getComputedStyle(input.closest(".seg-wrap")).display), "none", "print still hides search");
+      assert.equal(await field.isVisible(), false, "print still hides search");
       await page.emulateMedia({ media: "screen" });
       console.log(`manager phone search: ${width}px visible, type, no-match, clear and print passed`);
     }

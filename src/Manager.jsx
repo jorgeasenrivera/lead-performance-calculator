@@ -11884,30 +11884,34 @@ function AssocSearch({ value, onChange, store }) {
   const phone = usePhoneLayout();
   const [open, setOpen] = useState(false);
   const [host, setHost] = useState(null);
+  const [panelHost, setPanelHost] = useState(null);
   const inputRef = useRef(null), triggerRef = useRef(null);
   const inputId = React.useId();
   const expanded = !phone || open;
-  useLayoutEffect(() => { setHost(document.querySelector('.assoc-search-slot')); }, []);
-  useEffect(() => { if (phone && open) inputRef.current?.focus(); }, [phone, open]);
-  const close = () => { setOpen(false); triggerRef.current?.focus(); };
-  const trigger = phone && <button type="button" ref={triggerRef} className={"assoc-search-trigger" + (value ? " has-query" : "")}
+  useLayoutEffect(() => { setHost(document.querySelector('.assoc-search-slot')); setPanelHost(document.querySelector('.assoc-search-panel-slot')); }, []);
+  useLayoutEffect(() => { if (phone && open) inputRef.current?.focus({ preventScroll: true }); }, [phone, open]);
+  const close = () => { inputRef.current?.blur(); setOpen(false); triggerRef.current?.focus({ preventScroll: true }); };
+  const trigger = phone && <button type="button" ref={triggerRef} className={"assoc-search-trigger" + (value && !expanded ? " has-query" : "")}
     aria-label={value ? `Search associates: ${value}` : "Search associates"} title={value || "Search associates"} aria-expanded={expanded} aria-controls={inputId}
     onClick={() => { if (expanded) close(); else setOpen(true); }}>
     <PixIcon glyph="search" size={15} /><span>{value ? `Search: ${value}` : "Search"}</span>
   </button>;
-  return <>
-    {trigger && (host ? createPortal(trigger, host) : trigger)}
-    <div className={"search-wrap search-top" + (phone && !expanded ? " search-collapsed" : "")}
-      onKeyDown={(e) => { if (phone && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }}>
+  const field = <div className={"search-wrap search-top" + (phone && !expanded ? " search-collapsed" : "")}
+      onKeyDown={(e) => { if (phone && (e.key === 'Escape' || (e.key === 'Enter' && e.target === inputRef.current && !e.nativeEvent.isComposing))) { e.preventDefault(); e.stopPropagation(); close(); } }}>
+      <div className="assoc-search-field">
       <span className="search-icon"><PixIcon glyph="search" size={17} /></span>
-      <input id={inputId} ref={inputRef} className="search-input" value={value}
+      <input id={inputId} ref={inputRef} type="search" enterKeyHint="done" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="search-input" value={value}
         aria-label="Search associates" onChange={(e) => onChange(e.target.value)} placeholder="Search associates" />
-      {value && <button type="button" className="search-clear"
-        onClick={() => { onChange(''); setOpen(true); inputRef.current?.focus(); }} aria-label="Clear search">
+      {(phone || value) && <button type="button" className="search-clear" disabled={!value} aria-hidden={!value} tabIndex={value ? 0 : -1}
+        onClick={() => { onChange(''); setOpen(true); inputRef.current?.focus({ preventScroll: true }); }} aria-label="Clear search">
         <PixIcon glyph="close" size={13} />
       </button>}
+      </div>
       {phone && <button type="button" className="assoc-search-done" onClick={close}>Done</button>}
-    </div>
+    </div>;
+  return <>
+    {trigger && (host ? createPortal(trigger, host) : trigger)}
+    {phone && panelHost ? <><span className="assoc-search-anchor" hidden />{createPortal(field, panelHost)}</> : field}
   </>;
 }
 
@@ -17313,8 +17317,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
 
   return (
     <div className="bp-page">
-      <div className="bp-hero">
-        {true && <h2 className="sage-bp-store" title={store.name}>{store.name}</h2>}
+      <div className="bp-hero" role="region" aria-label={`Performance for ${store.name}`}>
         {updatedAt && <div className="bp-upd"><i />Updated {fmtTime(updatedAt)}</div>}
         <div className="bp-h5">
           <button type="button" className="bp-l1" onClick={() => setPop({ k: "units" })}>
@@ -22700,12 +22703,13 @@ function AppShell({
           a hardcoded `top` equal to the header's height, and that number is
           different at 320 and at 430. */}
       <div className="topstack no-print">
-      <header className="topbar no-print">
+      <header className="topbar no-print" aria-label={storeName ? `Manager tools for ${storeName}` : "Manager tools"}>
         <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin}
           onSignOut={onSignOut} onReplayIntro={onReplayIntro} onHelp={onHelp} />
         <div className="topbar-right">
           <ToolSwitcher value={appModule} onChange={onToolChange} />
           {right}
+          {storeName && <span className="manager-store-name" title={storeName}>{storeName}</span>}
           <ManagerContextAction appModule={appModule} navValue={navValue} storeData={storeData} onImport={onImport} />
         </div>
         <span className="assoc-search-slot" />
@@ -22716,6 +22720,7 @@ function AppShell({
 
       <SectionStrip items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData} />
+      <div className="assoc-search-panel-slot" />
       </div>
 
       {children}
