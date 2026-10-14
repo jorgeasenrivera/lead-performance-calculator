@@ -11,7 +11,22 @@ concurrency:
 jobs:
   unprofiled:
     # Preparation only. Independent review must precede a separate activation change.
-    if: ${{ false }}
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.action == 'synchronize' &&
+          github.event.number == 475 &&
+          github.event.pull_request.number == 475 &&
+          github.repository == 'jorgeasenrivera/lead-performance-calculator' &&
+          github.event.pull_request.head.repo.full_name == 'jorgeasenrivera/lead-performance-calculator' &&
+          github.event.pull_request.base.repo.full_name == 'jorgeasenrivera/lead-performance-calculator' &&
+          github.event.pull_request.head.ref == 'codex/desktop-release-corrected-local' &&
+          github.event.pull_request.base.ref == 'codex/desktop-release-source-pin' &&
+          github.event.pull_request.base.sha == '1b2d04642fa3b2fac4dea57168c049adf1a979d6' &&
+          github.event.before == '26bab176a4aa16f42a2f4efa13c84a0d8df9e0b8' &&
+          github.event.after != '' &&
+          github.event.after != github.event.before &&
+          github.event.after == github.event.pull_request.head.sha &&
+          github.run_attempt == '1' }}
     timeout-minutes: 30
     runs-on: ubuntu-latest
     container:
