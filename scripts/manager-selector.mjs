@@ -34,7 +34,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
   };
   await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
 });
-const page = await context.newPage(), errors = [], results = [], pillFailures=[], keyboardFailures=[];
+const page = await context.newPage(), errors = [];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
 await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
@@ -42,6 +42,7 @@ page.on('pageerror', e => errors.push(e.message));
 await mkdir('manager-selector', { recursive: true });
 const evidence=[], failures=[];
 async function shot(name, log=false) {
+  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.target?.matches?.('.qpick,.drawer,.drawer-scrim') && a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});
   const png=await page.screenshot({path:`manager-selector/${name}.png`});
   if(log)console.log('SELECTOR_IMAGE '+JSON.stringify({name,png:png.toString('base64')}));
 }
@@ -71,18 +72,26 @@ try{
  await page.evaluate(()=>{document.documentElement.style.fontSize='16px';document.documentElement.style.setProperty('--sab','0px')});await page.setViewportSize({width:320,height:667});
  await check('search',async()=>{
   const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});
-  assert.equal(await field.isVisible(),false);await trigger.click();assert.ok(await field.evaluate(n=>n===document.activeElement));await field.fill('no-such-fictional-associate');await page.locator('.bp-stand .fr-empty').waitFor();await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));assert.match(await trigger.innerText(),/no-such/);await shot('active-query',true);
+  assert.equal(await field.isVisible(),false);await trigger.click();assert.ok(await field.evaluate(n=>n===document.activeElement));await field.fill('no-such-fictional-associate');await page.locator('.bp-stand .fr-empty').waitFor();await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));assert.match(await trigger.innerText(),/no-such/);await shot('active-query',true);await page.evaluate(()=>document.documentElement.style.fontSize='32px');await shot('active-query-text200',true);await geometry('active-query-text200');await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   await trigger.click();assert.equal(await field.inputValue(),'no-such-fictional-associate');await page.getByRole('button',{name:'Clear search',exact:true}).click();assert.ok(await field.evaluate(n=>n===document.activeElement));await page.locator('.bp-row').first().waitFor();await page.getByRole('button',{name:'Done',exact:true}).click();assert.ok(await trigger.evaluate(n=>n===document.activeElement));
  });
  for(const reduced of [false,true]){
   await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
   for(const kind of ['Rooms','More'])await check(`${kind}-${reduced}`,async()=>{
-   const trigger=page.locator('.botnav').getByRole('button',{name:kind,exact:true});await trigger.focus();await page.keyboard.press('Enter');const dialog=page.locator(kind==='Rooms'?'.qpick':'.drawer');await dialog.waitFor({state:'visible'});await shot(kind.toLowerCase()+(reduced?'-reduce':''),!reduced);
+   const trigger=page.locator('.botnav').getByRole('button',{name:kind,exact:true});await trigger.focus();await page.keyboard.press('Enter');const dialog=page.locator(kind==='Rooms'?'.qpick':'.drawer');await dialog.waitFor({state:'visible'});await shot(kind.toLowerCase()+(reduced?'-reduce':''),!reduced);if(reduced){await page.evaluate(()=>document.documentElement.style.fontSize='32px');await shot(kind.toLowerCase()+'-text200',true);assert.ok(await dialog.evaluate(n=>n.getBoundingClientRect().right<=innerWidth+1));await page.evaluate(()=>document.documentElement.style.fontSize='16px');}
    assert.ok(await dialog.evaluate(n=>n.contains(document.activeElement)));await page.keyboard.press('Shift+Tab');assert.ok(await dialog.evaluate(n=>n.contains(document.activeElement)));await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));
    for(let i=0;i<3;i++){await trigger.dispatchEvent('click');await page.keyboard.press('Escape');}assert.equal(await trigger.getAttribute('aria-expanded'),'false');
   });
  }
- await check('help',async()=>{await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).click();await page.locator('.drawer').getByRole('button',{name:'Help',exact:true}).click();await page.getByRole('dialog',{name:'Help',exact:true}).waitFor();await shot('help');await page.keyboard.press('Escape');await page.getByRole('dialog',{name:'Help',exact:true}).waitFor({state:'hidden'});});
+ for(const label of ['Live Floor','Phone Line','Online'])await check(`room-${label}`,async()=>{
+  await page.locator('.botnav').getByRole('button',{name:'Rooms',exact:true}).click();
+  await page.locator('.qpick').getByRole('button',{name:label,exact:true}).click();
+  await page.locator('.qpick').waitFor({state:'hidden'});
+  await page.waitForFunction(()=>document.querySelector('.botnav-btn[aria-label="Rooms"]')?.classList.contains('on'));
+  await shot(`room-${label.replaceAll(' ','-')}`,label==='Phone Line');
+  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
+ });
+ await check('help',async()=>{await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).click();await page.locator('.drawer').getByRole('button',{name:'Help',exact:true}).click();await page.getByRole('dialog',{name:'Help',exact:true}).waitFor();assert.ok(await page.locator('.help-sheet').evaluate(n=>n.contains(document.activeElement)));await shot('help');await page.keyboard.press('Escape');await page.getByRole('dialog',{name:'Help',exact:true}).waitFor({state:'hidden'});assert.ok(await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).evaluate(n=>n===document.activeElement));});
  await check('activity-report',async()=>{await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();await page.locator('.co-hero').waitFor();await shot('activity-320',true);await page.getByRole('button',{name:'Open the daily report',exact:true}).click();await page.locator('.dayreport-modal').waitFor();await page.locator('.dayreport-modal').getByRole('button',{name:'Close',exact:true}).click();await page.locator('.sect-chip').filter({hasText:/^Coaching$/}).click();assert.equal(await page.getByRole('button',{name:'Open the daily report',exact:true}).count(),0);});
  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
  for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();const action=page.locator('.manager-context-action');assert.match(await action.getAttribute('aria-label'),new RegExp(`${mode.done} of 2`));await shot(`import-${mode.done}`);await action.click();await page.waitForFunction(()=>!document.querySelector('.bp-row'));});

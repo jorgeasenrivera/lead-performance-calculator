@@ -143,6 +143,7 @@ try {
   await page.locator('input[type="password"]').fill('x');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.locator('.bp-row').first().waitFor({ timeout: 40000 });
+  await page.locator('.view-select').waitFor({state:'visible'});
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);

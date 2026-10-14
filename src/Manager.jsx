@@ -16323,7 +16323,7 @@ function BottomNav({ appModule, onToolChange, onMore, moreOpen, rooms }) {
         aria-current={solo && queueOn ? "page" : undefined}
         aria-haspopup={solo ? undefined : "dialog"} aria-expanded={solo ? undefined : picking}
         aria-controls={solo ? undefined : pickerId}
-        onClick={() => { if (solo) { if (appModule !== solo.id) onToolChange(solo.id); } else setPicking(v => !v); }}>
+        onClick={event => { event.currentTarget.focus(); if (solo) { if (appModule !== solo.id) onToolChange(solo.id); } else setPicking(v => !v); }}>
         <span className="botnav-ico"><PixIcon glyph={BAR_TOOLS[2][2]} size={24} /></span>
         <span className="botnav-lbl">Rooms</span>
       </button>
@@ -16337,7 +16337,7 @@ function BottomNav({ appModule, onToolChange, onMore, moreOpen, rooms }) {
           {appModule === q.id && <PixIcon glyph="check" size={16} />}
         </button>)}
       </div>}
-      <button type="button" className="botnav-btn" aria-haspopup="dialog" aria-expanded={moreOpen} aria-controls="manager-more" onClick={() => { setPicking(false); onMore(); }}>
+      <button type="button" className="botnav-btn" aria-haspopup="dialog" aria-expanded={moreOpen} aria-controls="manager-more" onClick={event => { event.currentTarget.focus(); setPicking(false); onMore(); }}>
         <span className="botnav-ico"><PixIcon glyph="more" size={24} /></span><span className="botnav-lbl">More</span>
       </button>
     </nav>
@@ -16464,7 +16464,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
             <>
               <div className="drawer-section-label">Sections</div>
               <nav className="drawer-nav">
-                {items.map(([id, label]) => (
+                {items.filter(([id]) => id !== "import" || !onImport).map(([id, label]) => (
                   <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
                     <span>{label}</span>
                     {/* The dock's centre button carries the import count on the phone; a second copy here said it twice (consistency pass, item 9). */}

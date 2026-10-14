@@ -845,10 +845,10 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
 .manager-context-action,.assoc-search-slot{display:none}
 @media(max-width:760px){
   html.manager-signal .botnav{left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:4px 0 calc(4px + var(--sab));min-height:64px;box-sizing:border-box;align-items:stretch;border-radius:0;border:0;border-top:1px solid #cbd3c5;background:#fffdf4;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 -3px 16px #2349390a;transform:none;transition:none}
-  html.manager-signal .botnav-btn{position:relative;min-width:0;min-height:56px;padding:5px 2px;gap:4px;display:grid;grid-template-rows:24px auto;align-content:start;justify-items:center;align-items:start;border-radius:0;color:#52624d;font:600 .75rem/1rem var(--font-ui);transition:color 160ms ease-out,background-color 160ms ease-out}
+  html.manager-signal .botnav-btn{position:relative;min-width:0;min-height:56px;padding:5px 0;gap:4px;display:grid;grid-template-rows:24px auto;align-content:start;justify-items:center;align-items:start;border-radius:0;color:#52624d;font:600 .75rem/1rem var(--font-ui);transition:color 160ms ease-out,background-color 160ms ease-out}
   html.manager-signal .botnav-ico{width:24px;height:24px;position:relative}
   html.manager-signal .botnav-ico>.pix{width:24px;height:24px}
-  html.manager-signal .botnav-lbl{font:inherit;letter-spacing:-.02em;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
+  html.manager-signal .botnav-lbl{font:inherit;letter-spacing:-.025em;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
   html.manager-signal .botnav-btn.on{color:#173d2b;background:#e8eedf}
   html.manager-signal .botnav-btn.on::after{content:"";position:absolute;top:-4px;left:calc(50% - 12px);width:24px;height:3px;background:#234939;border-radius:0 0 2px 2px}
   html.manager-signal .botnav-btn:active{background:#dce6d3;transform:none;transition:none}
@@ -861,7 +861,8 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
   html.manager-signal .qpick-btn:active,html.manager-signal .qpick-btn.on{background:#e8eedf;transform:none}
   html.manager-signal .qpick-ico{width:28px;height:28px;background:none;color:inherit;border-radius:0;flex:none}
   html.manager-signal .qpick-lbl{font:600 .875rem/1.4 var(--font-ui);white-space:normal;text-align:left;flex:1}
-  html.manager-signal .drawer{background:#fffdf4;color:#234939;border-radius:18px 18px 0 0;max-height:85dvh}
+  html.manager-signal .drawer{top:auto;bottom:0;left:0;right:0;width:100%;height:auto;display:flex;flex-direction:column;background:#fffdf4;color:#234939;border-radius:18px 18px 0 0;max-height:85dvh}
+  html.manager-signal .drawer-scroll{min-height:0;padding-bottom:calc(20px + var(--sab))}
   html.manager-signal .drawer-item{min-height:48px;font-size:.875rem;line-height:1.4;border-radius:8px}
   html.manager-signal .drawer-section-label{font-size:.75rem;line-height:1.4;letter-spacing:.06em;color:#52624d}
   html.manager-signal .drawer-x{min-width:44px;min-height:44px}
