@@ -1,5 +1,5 @@
 diff --git a/src/manager-signal.css b/src/manager-signal.css
-index a0de1b9..8a33bcb 100644
+index a0de1b9..f3a8f2f 100644
 --- a/src/manager-signal.css
 +++ b/src/manager-signal.css
 @@ -891,3 +891,9 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
@@ -9,6 +9,6 @@ index a0de1b9..8a33bcb 100644
 +/* Help category reflow: keep enlarged labels inside the modal. */
 +@media(max-width:760px){
 +  html.manager-signal .help-sheet .help-tabs{flex-wrap:wrap}
-+  html.manager-signal .help-sheet .help-tab{flex:1 1 6em;min-width:0;max-width:100%;min-height:44px;white-space:normal;overflow-wrap:anywhere}
++  html.manager-signal .help-sheet .help-tab{flex:1 1 min-content;min-width:0;max-width:100%;min-height:44px;white-space:normal;overflow-wrap:normal}
 +}
 +/* End Help category reflow. */
