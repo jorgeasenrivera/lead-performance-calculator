@@ -4,7 +4,9 @@ on:
     branches: [codex/signal-phone-spacing]
   pull_request:
     paths:
+      - src/Manager.jsx
       - src/manager-signal.css
+      - scripts/manager-selector.mjs
       - scripts/manager-spacing.mjs
       - .github/workflows/manager-spacing.yml
 jobs:
@@ -60,10 +62,13 @@ jobs:
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          node scripts/manager-selector.mjs
           node scripts/manager-spacing.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: manager-spacing-${{ matrix.engine }}
-          path: manager-spacing/
+          path: |
+            manager-spacing/
+            manager-selector/
           retention-days: 14

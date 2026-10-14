@@ -146,139 +146,8 @@ try {
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);
-  const railBefore=await readFile('.composition-baseline/src/manager-signal.css','utf8');
-  assert.equal(createHash('sha256').update(railBefore).digest('hex'),'20f9538020c6f80a5b49d89dcfbc1c77746d5282370e9c09336f22233051b74f','immutable flat rail baseline');
-  const compactBefore=await readFile('.rail-baseline/src/manager-signal.css','utf8');
-  assert.equal(createHash('sha256').update(compactBefore).digest('hex'),'df61b077ae859454022425873637eed87df18a98348fcbf05aa49e590017071a','immutable compact dock baseline');
-  const dockBefore=await readFile('.dock-baseline/src/manager-signal.css','utf8');
-  assert.equal(createHash('sha256').update(dockBefore).digest('hex'),'8cf478b56e8066b6bd1262980428311ad76c9ab88aacbd16f5d09f652a8c1704','immutable dock baseline');
-  for(const size of [{width:320,height:667},{width:390,height:667},{width:667,height:320}]) for(const inset of [0,34]) for(const scale of [1,1.5]) {
-    await page.setViewportSize(size);
-    for(const [phase,css] of [['before',dockBefore],['compact',compactBefore],['rail',railBefore],['after',after]]) {
-      await page.evaluate(async({css,inset,scale,phase})=>{
-        [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
-        document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
-        for(let i=0;i<4;i++)await new Promise(requestAnimationFrame);
-        const nodes=[...document.querySelectorAll(phase==='after'?'.botnav-btn,.botnav-slot,.search-top input,.help-fab:not(.inline)':'.botnav-lbl,.botnav-fablbl,.search-top input,.help-fab:not(.inline)')];
-        window.dockRestore=nodes.map(n=>({n,style:n.getAttribute('style'),font:parseFloat(getComputedStyle(n).fontSize)}));
-        window.dockRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.font*scale}px`,'important'));
-        scrollTo({top:0,behavior:'instant'});
-        for(let i=0;i<12;i++)await new Promise(requestAnimationFrame);
-      },{css,inset,scale,phase});
-      const geometry=await page.evaluate(()=>{
-        const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
-        const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
-        const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,fontFamily:getComputedStyle(n).fontFamily,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
-        const help=document.querySelector('.help-fab:not(.inline)'), hs=getComputedStyle(help), ps=getComputedStyle(help,'::after');
-        const helpLabel={fontSize:ps.fontSize,lineHeight:parseFloat(ps.lineHeight),height:help.getBoundingClientRect().height,required:parseFloat(hs.paddingTop)+20+parseFloat(ps.lineHeight)+parseFloat(hs.paddingBottom)};
-        const iconCenters=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
-        const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
-        const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
-        return {dock,search,band,targets,labels,iconCenters,helpLabel,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
-      });
-      results.push({dockSearch:{phase,...size,inset,scale,...geometry}});
-      await page.screenshot({path:`manager-spacing/dock-search-${phase}-${size.width}x${size.height}-inset${inset}-text${scale*100}.png`});
-      if(phase==='after' && inset===0 && scale===1 && size.height===667) {
-        const png=await page.screenshot();
-        console.log('REVIEW_IMAGE '+JSON.stringify({width:size.width,phase,png:png.toString('base64')}));
-      }
-      if(phase==='after') {
-        assert.ok(geometry.targets.every(t=>t.width>=44 && t.height>=44),'dock and help retain 44px targets');
-        assert.ok(geometry.targets.every(t=>t.x>=0 && t.right<=size.width && t.bottom<=size.height-inset),'dock targets clear viewport and safe area');
-        for(let i=0;i<geometry.targets.length;i++)for(let j=i+1;j<geometry.targets.length;j++){const a=geometry.targets[i],b=geometry.targets[j];assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,'dock targets do not overlap');}
-        assert.ok(geometry.labels.every(l=>Math.abs(parseFloat(l.fontSize)-11*scale)<.01),'dock label text is genuinely enlarged');
-        assert.ok(geometry.labels.every(l=>l.rects.every(r=>r.x>=l.box.x-1 && r.right<=l.box.right+1 && r.y>=l.box.y-1 && r.bottom<=l.box.bottom+1)),'dock labels fully fit');
-        assert.ok(Math.abs(parseFloat(geometry.helpLabel.fontSize)-11*scale)<.01 && geometry.helpLabel.required<=geometry.helpLabel.height+1,'Help label is enlarged and fits its target');
-        assert.ok(geometry.search.height>=44 && geometry.documentWidth<=size.width,'search target and document fit');
-        if(scale===1){assert.ok(Math.max(...geometry.iconCenters)-Math.min(...geometry.iconCenters)<1,'normal-size icons share one optical centerline');assert.ok(Math.max(...geometry.labels.map(l=>l.rects[0].y))-Math.min(...geometry.labels.map(l=>l.rects[0].y))<1,'normal-size navigation and Import labels share a baseline');}
-      }
-      await page.evaluate(()=>{for(const s of window.dockRestore){if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.dockRestore;});
-    }
-  }
-  await page.setViewportSize({width:390,height:667});
-  await page.evaluate(()=>document.documentElement.style.setProperty('--shell-inset-bottom','0px'));
-  const railStyle=await page.evaluate(()=>{
-    const style=s=>{const n=document.querySelector(s),c=getComputedStyle(n);return {background:c.backgroundColor,color:c.color,radius:c.borderRadius,display:c.display};};
-    return {rail:style('.botnav'),thumb:style('.botnav-thumb'),help:style('.help-fab:not(.inline)'),selected:style('.botnav-btn.on'),marker:getComputedStyle(document.querySelector('.botnav-btn.on'),'::after').backgroundColor};
-  });
-  results.push({railStyle});
-  assert.equal(railStyle.rail.background,'rgb(255, 253, 244)');
-  assert.equal(railStyle.rail.radius,'0px');
-  assert.equal(railStyle.thumb.display,'none');
-  assert.equal(railStyle.marker,'rgb(35, 73, 57)');
-  const dockSearch=page.getByPlaceholder('Search associates',{exact:true});
-  await dockSearch.focus();await page.keyboard.type('no-such-fictional-associate');
-  await page.locator('.bp-stand .fr-empty').waitFor();
-  await page.keyboard.press('Tab');
-  assert.ok(await page.locator('.search-clear').evaluate(n=>n===document.activeElement),'keyboard reaches search clear');
-  await page.keyboard.press('Enter');await page.locator('.bp-row').first().waitFor();
-  assert.equal(await dockSearch.inputValue(),'','clear resets query');
-  results.push({searchClearFocus:await page.evaluate(()=>({tag:document.activeElement.tagName,className:document.activeElement.className}))});
-  await dockSearch.focus();await page.keyboard.type('Alex');await page.keyboard.press('ControlOrMeta+A');await page.keyboard.press('Backspace');
-  await page.locator('.bp-row').first().waitFor();
-  const rooms=page.locator('.botnav-btn[aria-haspopup]');
-  if(await rooms.count()) {
-    await rooms.click();await page.locator('.qpick').waitFor();
-    const popup=await page.locator('.qpick').boundingBox(),dock=await page.locator('.botnav').boundingBox();
-    assert.ok(popup.y+popup.height<=dock.y-7,'Rooms menu anchors above dock');
-    await page.screenshot({path:'manager-spacing/dock-rooms-open.png'});
-    await page.keyboard.press('Escape');await page.locator('.qpick').waitFor({state:'hidden'});
-  }
-
-  await page.locator('.botnav-btn').filter({hasText:/^More$/}).click();
-  await page.getByRole('button',{name:'Close menu',exact:true}).click();
-  await page.locator('.help-fab:not(.inline)').click();
-  await page.getByRole('dialog',{name:'Help',exact:true}).getByRole('button',{name:'Close',exact:true}).click();
-  await page.locator('.botnav-btn').filter({hasText:/^Activity$/}).click();
-  await page.getByRole('button',{name:'Open the daily report',exact:true}).waitFor();
-  await page.screenshot({path:'manager-spacing/dock-daily-report.png'});
-  for(const width of [320,390]) {
-    await page.setViewportSize({width,height:667});
-    const variant=await page.evaluate(()=>{
-      const nav=document.querySelector('.botnav'), icons=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
-      return {height:nav.getBoundingClientRect().height,icons,label:document.querySelector('.botnav-fablbl').textContent};
-    });
-    results.push({dailyReportGeometry:{width,...variant}});
-    assert.ok(Math.max(...variant.icons)-Math.min(...variant.icons)<1,'Daily report icons stay aligned at phone widths');
-    assert.ok(variant.height<=60,'Daily report preserves the compact normal footprint');
-    const png=await page.screenshot({path:`manager-spacing/dock-daily-report-${width}.png`});
-    console.log('REVIEW_IMAGE '+JSON.stringify({width,phase:'daily',png:png.toString('base64')}));
-  }
-
-  results.push({dailyReport:{label:await page.locator('.botnav-fablbl').textContent(),ring:await page.locator('.bh-arc').getAttribute('stroke-dashoffset')}});
-  await page.locator('.botnav-btn').filter({hasText:/^Performance$/}).click();
-  await page.locator('.bp-row').first().waitFor();
-  for(const mode of [{rooms:1,done:1},{rooms:2,done:2}]) {
-    dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();
-    assert.equal(await page.locator('.botnav-btn[aria-haspopup]').count(),mode.rooms===1?0:1,'single room goes directly, multiple rooms retain menu');
-    const label=await page.locator('.botnav-fablbl').textContent();
-    assert.equal(label,mode.done===2?'Imported':'Import 1/2');
-    results.push({importVariant:{...mode,label,ring:await page.locator('.bh-arc').getAttribute('stroke-dashoffset')}});
-    for(const width of [320,390]){await page.setViewportSize({width,height:667});await page.screenshot({path:`manager-spacing/dock-variant-${mode.rooms}-rooms-${mode.done}-done-${width}.png`});}
-  }
-  dockFixture=null;await page.reload();await page.locator('.bp-row').first().waitFor();
-  for(const width of [320,390]) {
-    await page.setViewportSize({width,height:667});
-    for(const [version,css] of [['previous',previousHeader],['candidate',after]]) {
-      await page.evaluate(css=>{
-        [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
-        scrollTo({left:0,top:0,behavior:'instant'});
-      },css);
-      for(const scale of [1,1.5]) {
-        const samples=await page.locator('.sect-chip').evaluateAll(async(nodes,scale)=>{
-          window.headerTextRestore=nodes.map(n=>({n,style:n.getAttribute('style'),before:parseFloat(getComputedStyle(n).fontSize)}));
-          window.headerTextRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.before*scale}px`,'important'));
-          await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
-          return window.headerTextRestore.map(s=>({text:s.n.textContent,before:s.before,after:parseFloat(getComputedStyle(s.n).fontSize)}));
-        },scale);
-        assert.ok(samples.every(s=>Math.abs(s.after-s.before*scale)<.01),'comparison uses genuine measured text scale');
-        const geometry=await pillGeometry('.sect-strip',version==='candidate');
-        results.push({singleRowComparison:version,width,scale,samples,buttons:geometry.buttons});
-        await page.screenshot({path:`manager-spacing/single-row-${version}-${width}-text${scale*100}.png`});
-        await page.evaluate(()=>{for(const s of window.headerTextRestore){if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.headerTextRestore;});
-      }
-    }
-  }
+  // Selector structure changed with Jorge's approved rebuild. Historical CSS-only
+  // dock comparisons cannot represent it; manager-selector.mjs owns that coverage.
   for (const [phase, css] of [['before', before], ['after', after]]) {
     // Only replace the actual mounted manager stylesheet. All JSX, handlers,
     // data and geometry are the built application, using fictional fixtures.
@@ -392,6 +261,7 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('.acard').waitFor({state:'hidden'});
   const field=page.getByPlaceholder('Search associates',{exact:true});
+  if (!await field.isVisible()) await page.locator('.assoc-search-trigger').click();
   await field.fill('no-such-fictional-associate');
   await page.locator('.bp-stand .fr-empty').waitFor();
   await field.fill('');

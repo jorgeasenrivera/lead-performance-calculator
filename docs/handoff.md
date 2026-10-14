@@ -609,6 +609,18 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X49 · Bounded selector/search exception approved, 14 October.**
+
+Jorge answered “Sure go ahead” at 2026-10-14 02:09:15 UTC to the explicit
+Manager.jsx exception for four bottom controls, contextual Import, Help in More
+and compact search. This records the exception on existing X25 / #469; it does
+not transfer or renew ownership, claim the core file, or alter another owner.
+Scope: BottomNav, AppShell header/action wiring, MobileDrawer grouping/focus,
+AssocSearch and selector-specific CSS/tests. Daily report stays with mounted
+Check Out. No LeadPerformanceCalculator.jsx, data/auth/backend or Lightspeed
+change. No merge or production release. Supersedes the rejected six-cell rail;
+200 percent text, both browser engines, visual review and phone trial remain gates.
+
 **H-X48 · X25 phone spacing, separate from frozen motion #468.**
 
 Motion #468 is now released at 2a11f4d, with production READY and main CI green. #469 preserves it. Review the 29 added layout CSS lines, intentional filter grid, shared columns, count/status wrapping and inherited 641-700px gutter repair. The fictional fixture includes the actual admin fifth tab and dealership selector, navigation, safe areas and enlarged text. Both engines completed the expanded checks; the final harness additionally requires stable scroll geometry after a WebKit resize race. Original-image comparison remains with parent/reviewer. No spacing merge or deployment authorized.

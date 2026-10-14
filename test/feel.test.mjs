@@ -396,13 +396,11 @@ test("the phone's section chips glide under one pill, on the wipe token and the 
   assert.ok(/\.sect-chip\.on \{ color:#fff; background:transparent; border-color:transparent; \}/.test(core), "the chip itself no longer paints the highlight");
 });
 
-test("arrivals on the tokens: nothing waits for a scroll, cards arrive 40 ms apart, the dock rises, Import asks", () => {
+test("arrivals on the tokens: nothing waits for a scroll, cards arrive 40 ms apart, selector motion is local", () => {
   assert.ok(!/is-in|settleReveals|useReveal/.test(core + mgr), "the scroll observer and its patch are gone");
   assert.ok(/:where\(\.page > \*:not\(\.board-page\):not\(\.tab-page\), \.board-page > \*, \.tab-page > \*\) \{ animation: cardIn var\(--t-settle\) var\(--ease\) both; \}/.test(core), "the page's blocks arrive on the settle token, under any move's own entrance");
   assert.ok(/:nth-child\(2\) \{ animation-delay:40ms; \}/.test(core) && /:nth-child\(n\+4\) \{ animation-delay:120ms; \}/.test(core), "40 ms apart");
   assert.ok(/\.card \{[^}]*transition: box-shadow var\(--t-wipe\) var\(--ease\); \}/.test(core), "a card no longer transitions opacity or transform");
-  assert.ok(/className=\{"botnav no-print" \+ \(up \? " up" : ""\)\}/.test(mgr) && /\.botnav\.up \{ transform:none; \}/.test(mgr), "the dock rises after the first paint");
-  assert.ok(/\.botnav-fab\.ready \{ animation:fabAsk 1\.2s var\(--ease\) 2; \}/.test(mgr) && /if \(ready\) buzz\("asked"\)/.test(mgr), "Import asks when it is due");
 });
 
 test("a card grows from its row and goes back the way it came", () => {
@@ -461,7 +459,7 @@ test("consistency pass, items 1, 4, 7 and 9: one close, one name each, honest ic
   assert.ok(!/board: "Board"|checkout: "Checkout"|queue: "Phones"/.test(mgr), "the phone shortens widths, never words");
   assert.ok(/\["board", "TV Board"\]/.test(mgr) && !/"The Board"/.test(mgr), "the TV tool is the TV Board");
   assert.ok(/Who is taking desk \$\{st\.n\}\?/.test(mgr) && !/Station \$\{st\.n\}|Station \{st\.n\}/.test(mgr), "a desk is a desk on every surface");
-  assert.ok(/drawer-section-label">Sections</.test(mgr) && /drawer-section-label">Tools</.test(mgr), "the drawer uses the desk's words");
+  assert.ok(/drawer-section-label">Sections</.test(mgr) && /drawer-section-label">Utilities</.test(mgr), "the drawer uses the desk's words");
   assert.ok(/aria-label="Zoom in"><PixIcon glyph="plus"/.test(mgr) && /  plus:      \[/.test(core) && /  dash:      \[/.test(core), "zoom in is a plus; a dash exists for no data");
   assert.ok(!/aria-label="Close"><PixIcon glyph="remove"/.test(mgr), "close is never the remove glyph");
   assert.ok(/glyph="dash" size=\{13\} \/> Nothing logged today/.test(mgr), "nothing logged is a dash, not a minus");
@@ -495,7 +493,7 @@ test("consistency pass, items 10 and 11: the app asks in its own voice, and a se
   assert.ok(/const freeDesks = board\.seats\.filter\(\(s\) => !s\.taken && !s\.offerTo\);/.test(mgr) && /className="sd-chair" disabled=\{!!busy\}\n\s*onClick=\{\(\) => seat\(s\.n, \{ id: nextP\.id, label: realName\(nextP\.id\) \}\)\}>\{s\.n\}<\/button>/.test(mgr), "the free desks are chips on the next-up card");
   assert.ok(/\{warn && !open && \(\s*<div className="sd-inwarn">/.test(mgr), "the standard's warning lands in the same card");
   assert.ok(/stnDeco\(board, t, realName, rotates && !!nextP && !taken\.has\(nextP\.id\)\)/.test(mgr) && /\.stn-map \.fbp-tbl\.stn-off\.stn-hot\{ border-style:solid;[^}]*animation:stnHot 1\.8s var\(--ease\) infinite; \}/.test(core), "a free desk breathes while somebody waits");
-  assert.ok(/const solo = Array\.isArray\(rooms\) && rooms\.length === 1 \? queueTool\(rooms\[0\]\) : null;/.test(mgr) && /rooms=\{store \? roomListOf\(config, store\.id\) : null\}/.test(mgr) && /\{picking && !solo && \(/.test(mgr), "a one-room store's dock goes straight to the room");
+  assert.ok(/const solo = Array\.isArray\(rooms\) && rooms\.length === 1 \? queueTool\(rooms\[0\]\) : null;/.test(mgr) && /rooms=\{store \? roomListOf\(config, store\.id\) : null\}/.test(mgr) && /\{picking && !solo && </.test(mgr), "a one-room store's dock goes straight to the room");
 });
 
 test("five-second pass, items 6 to 12: plain words, one verdict per row, the empty room speaks, grids wait, type grows, set-up steps back, Rooms", () => {

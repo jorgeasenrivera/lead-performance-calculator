@@ -95,7 +95,7 @@ try {
       await page.getByRole('button', { name: 'Close menu', exact: true }).dispatchEvent('click');
     }
     assert.equal(await page.locator('.drawer-root.open').count(), 0, 'interrupted drawer stays closed');
-    const picker = page.locator('.botnav button[aria-haspopup]');
+    const picker = page.locator('.botnav button[aria-label="Rooms"]');
     assert.equal(await picker.count(), 1, 'fictional fixture exposes queue menu');
     await picker.focus();
     await page.keyboard.press('Enter');

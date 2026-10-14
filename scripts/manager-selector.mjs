@@ -1,0 +1,90 @@
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {chromium,webkit} from 'playwright';
+const engine = process.env.FEEL_BROWSER || 'chromium';
+const url = 'http://127.0.0.1:5178/';
+const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
+const context = await browser.newContext({ viewport: { width: 390, height: 667 },
+  isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
+let fixtureRole='admin', dockFixture=null;
+await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
+  const response = await route.fetch(); const data = await response.json();
+  const manager = p => ({ ...p, role: fixtureRole, wants: 'manager', onboarded: true,
+    stores:['sage-demo','spacing-demo-2'] });
+  await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
+});
+await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
+  const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
+  const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
+  const data=await response.json();
+  const addStore=row=>row?.value?.stores ? {...row,value:{...row.value,
+    stores:[...row.value.stores,{...row.value.stores[0],id:'spacing-demo-2',name:'Second Fictional Store'}],
+    standards:{...row.value.standards,'spacing-demo-2':row.value.standards?.['sage-demo']}}}
+    :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
+  const fixture=row=>{
+    row=addStore(row);
+    if(!dockFixture || !row?.value)return row;
+    if(row.value.stores)return {...row,value:{...row.value,stores:row.value.stores.map(st=>({...st,rooms:{floor:true,line:dockFixture.rooms===2}}))}};
+    if(row.value.months){
+      const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date()), month=day.slice(0,7);
+      const m=row.value.months[month]||{};
+      return {...row,value:{...row.value,months:{...row.value.months,[month]:{...m,imports:{...m.imports,[day]:dockFixture.done===2?{appointment:true,video:true,activity:true}:dockFixture.done===1?{appointment:true}:{}}}}}};
+    }
+    return row;
+  };
+  await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
+});
+const page = await context.newPage(), errors = [], results = [], pillFailures=[], keyboardFailures=[];
+page.setDefaultTimeout(20000);
+page.setDefaultNavigationTimeout(30000);
+await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
+page.on('pageerror', e => errors.push(e.message));
+await mkdir('manager-selector', { recursive: true });
+const evidence=[], failures=[];
+async function shot(name, log=false) {
+  const png=await page.screenshot({path:`manager-selector/${name}.png`});
+  if(log)console.log('SELECTOR_IMAGE '+JSON.stringify({name,png:png.toString('base64')}));
+}
+async function check(name, fn){try{await fn();evidence.push({name,pass:true});}catch(e){failures.push({name,error:e.message});await shot('failure-'+name.replace(/[^a-z0-9]/gi,'-'));}}
+async function geometry(name){
+  const g=await page.evaluate(()=>{
+    const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}};
+    const nav=document.querySelector('.botnav');
+    return{width:innerWidth,scroll:document.documentElement.scrollWidth,nav:rect(nav),buttons:[...nav.querySelectorAll(':scope > button')].map(n=>({text:n.textContent,box:rect(n),font:getComputedStyle(n).fontSize,range:(()=>{const r=document.createRange();r.selectNodeContents(n);return [...r.getClientRects()].filter(r=>r.width).map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}));})()})),header:rect(document.querySelector('.topbar'))};
+  });evidence.push({name,...g});
+  assert.ok(g.scroll<=g.width+1,'page fits');assert.equal(g.buttons.length,4);
+  for(const b of g.buttons){assert.ok(b.box.w>=48 && b.box.h>=48,'comfortable full cell');assert.ok(b.range.every(r=>r.x>=b.box.x-1&&r.right<=b.box.right+1&&r.y>=b.box.y-1&&r.bottom<=b.box.bottom+1),'label fits');}
+  assert.ok(g.buttons.every(b=>Math.abs(b.box.w-g.buttons[0].box.w)<1),'equal columns');
+}
+try{
+ await page.goto(url);await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');await page.locator('input[type="password"]').fill('x');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.locator('.bp-row').first().waitFor({timeout:40000});await page.evaluate(()=>document.fonts.ready);
+ for(const width of [320,360,375,390,414,430,667]){
+  await page.setViewportSize({width,height:width===667?320:667});
+  for(const scale of [1,2])for(const inset of [0,34]){
+   await page.evaluate(({scale,inset})=>{document.documentElement.style.fontSize=`${scale*16}px`;document.documentElement.style.setProperty('--sab',`${inset}px`);},{scale,inset});
+   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+   const name=`performance-${width}-text${scale*100}-safe${inset}`;
+   await shot(name,[320,390].includes(width)&&inset===0);
+   await check(name,()=>geometry(name));
+  }
+ }
+ await page.evaluate(()=>{document.documentElement.style.fontSize='16px';document.documentElement.style.setProperty('--sab','0px')});await page.setViewportSize({width:320,height:667});
+ await check('search',async()=>{
+  const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});
+  assert.equal(await field.isVisible(),false);await trigger.click();assert.ok(await field.evaluate(n=>n===document.activeElement));await field.fill('no-such-fictional-associate');await page.locator('.bp-stand .fr-empty').waitFor();await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));assert.match(await trigger.innerText(),/no-such/);await shot('active-query',true);
+  await trigger.click();assert.equal(await field.inputValue(),'no-such-fictional-associate');await page.getByRole('button',{name:'Clear search',exact:true}).click();assert.ok(await field.evaluate(n=>n===document.activeElement));await page.locator('.bp-row').first().waitFor();await page.getByRole('button',{name:'Done',exact:true}).click();assert.ok(await trigger.evaluate(n=>n===document.activeElement));
+ });
+ for(const reduced of [false,true]){
+  await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
+  for(const kind of ['Rooms','More'])await check(`${kind}-${reduced}`,async()=>{
+   const trigger=page.locator('.botnav').getByRole('button',{name:kind,exact:true});await trigger.focus();await page.keyboard.press('Enter');const dialog=page.locator(kind==='Rooms'?'.qpick':'.drawer');await dialog.waitFor({state:'visible'});await shot(kind.toLowerCase()+(reduced?'-reduce':''),!reduced);
+   assert.ok(await dialog.evaluate(n=>n.contains(document.activeElement)));await page.keyboard.press('Shift+Tab');assert.ok(await dialog.evaluate(n=>n.contains(document.activeElement)));await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));
+   for(let i=0;i<3;i++){await trigger.dispatchEvent('click');await page.keyboard.press('Escape');}assert.equal(await trigger.getAttribute('aria-expanded'),'false');
+  });
+ }
+ await check('help',async()=>{await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).click();await page.locator('.drawer').getByRole('button',{name:'Help',exact:true}).click();await page.getByRole('dialog',{name:'Help',exact:true}).waitFor();await shot('help');await page.keyboard.press('Escape');await page.getByRole('dialog',{name:'Help',exact:true}).waitFor({state:'hidden'});});
+ await check('activity-report',async()=>{await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();await page.locator('.co-hero').waitFor();await shot('activity-320',true);await page.getByRole('button',{name:'Open the daily report',exact:true}).click();await page.locator('.dayreport-modal').waitFor();await page.locator('.dayreport-modal').getByRole('button',{name:'Close',exact:true}).click();await page.locator('.sect-chip').filter({hasText:/^Coaching$/}).click();assert.equal(await page.getByRole('button',{name:'Open the daily report',exact:true}).count(),0);});
+ await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
+ for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();const action=page.locator('.manager-context-action');assert.match(await action.getAttribute('aria-label'),new RegExp(`${mode.done} of 2`));await shot(`import-${mode.done}`);await action.click();await page.waitForFunction(()=>!document.querySelector('.bp-row'));});
+ assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
+}finally{await writeFile('manager-selector/evidence.json',JSON.stringify({engine,evidence,failures,errors},null,2));console.log('SELECTOR_RESULT '+JSON.stringify({engine,evidence,failures,errors}));await browser.close();}

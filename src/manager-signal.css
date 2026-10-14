@@ -841,39 +841,52 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
 @media(max-width:900px){html.manager-signal .coach-split.has-open{grid-template-columns:minmax(0,1fr)}html.manager-signal .coach-split.has-open .coach-list-card{position:static}}
 @media(max-width:760px){html.manager-signal .coaching .oyo-goal{grid-template-columns:minmax(0,1fr)}}
 
-/* Keep every phone tool within one low dock, including Import and help. */
+/* Four navigation cells; actions and search belong to the header. */
+.manager-context-action,.assoc-search-slot{display:none}
 @media(max-width:760px){
-  html.manager-signal .botnav{left:0;right:0;bottom:0;padding:3px 47px calc(3px + var(--sab)) 3px;align-items:stretch;border-radius:0;border:0;border-top:1px solid #71866b;background:#fffdf4;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:inset 0 2px 0 #edeada}
-  html.manager-signal .botnav-btn{flex:1 1 0;min-width:44px;min-height:calc(22px + 2.8em);padding:1px 1px;gap:0;display:grid;grid-template-rows:20px minmax(2.8em,auto);align-content:start;justify-items:center;align-items:start;border-radius:0;color:#53664f;font:600 11px/1.4 var(--font-ui)}
-  html.manager-signal .botnav-btn:first-of-type{min-width:78px}
-  html.manager-signal .botnav-lbl{font:inherit;letter-spacing:-.035em;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
-  html.manager-signal .botnav-slot{flex:1 1 0;min-width:60px;min-height:calc(22px + 2.8em);font:600 11px/1.4 var(--font-ui);display:grid;align-items:start;justify-items:stretch}
-  html.manager-signal .botnav-fab{inset:0;width:100%;height:100%;transform:none;border-radius:0;background:transparent;color:#234939;box-shadow:none;align-items:flex-start;padding:1.5px 0 0}
-  html.manager-signal .botnav-halo{top:0;width:22px;height:22px;z-index:3}
-  html.manager-signal .botnav-fablbl{position:relative;inset:auto;padding:21px 1px 1px;font:inherit;letter-spacing:-.035em;white-space:normal;overflow-wrap:anywhere;z-index:3;color:#234939}
-  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){right:3px;bottom:calc(3px + var(--sab));top:auto;width:44px;height:auto;min-height:calc(22px + 2.8em);display:grid;grid-template-rows:20px minmax(2.8em,auto);align-content:start;justify-items:center;align-items:start;padding:1px 1px;border-radius:0;box-shadow:none;background:transparent;color:#53664f;border:0;transform:none;font:600 11px/1.4 var(--font-ui)}
-  html.manager-signal .botnav-ico{width:26px;height:20px}
-  html.manager-signal .botnav-ico>.pix,html.manager-signal .botnav-fab>.pix{width:19px;height:19px}
-  html.manager-signal .botnav-slot::before,html.manager-signal .botnav-slot::after{content:"";position:absolute;top:8px;bottom:8px;width:1px;background:#cbd3c5;pointer-events:none}
-  html.manager-signal .botnav-slot::before{left:0}
-  html.manager-signal .botnav-slot::after{right:0}
-  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline)>.pix{width:19px;height:19px;align-self:center}
-  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline)::after{content:"Help";font:inherit;line-height:1.4}
-  html.manager-signal .botnav-thumb{display:none}
-  html.manager-signal .botnav-btn.on{color:#173d2b;background:transparent}
-  html.manager-signal .botnav-btn.on::after{content:"";position:absolute;bottom:0;left:8px;right:8px;height:3px;background:#234939}
-  html.manager-signal .botnav-btn.on .botnav-lbl{font-weight:700}
-  html.manager-signal .botnav-halo .bh-trk{stroke:#cbd3c5}
-  html.manager-signal .botnav-halo .bh-arc{stroke:#71866b}
-  html.manager-signal .qpick{bottom:calc(100% + 8px);border-radius:6px;background:#fffdf4;border:1px solid #a9bba0;backdrop-filter:none;-webkit-backdrop-filter:none}
-  html.manager-signal .qpick-btn{border-radius:3px;color:#234939}
-  html.manager-signal .qpick-ico{border-radius:3px;background:#e8efdf;color:#234939}
+  html.manager-signal .botnav{left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:4px 0 calc(4px + var(--sab));min-height:64px;box-sizing:border-box;align-items:stretch;border-radius:0;border:0;border-top:1px solid #cbd3c5;background:#fffdf4;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 -3px 16px #2349390a;transform:none;transition:none}
+  html.manager-signal .botnav-btn{position:relative;min-width:0;min-height:56px;padding:5px 2px;gap:4px;display:grid;grid-template-rows:24px auto;align-content:start;justify-items:center;align-items:start;border-radius:0;color:#52624d;font:600 .75rem/1rem var(--font-ui);transition:color 160ms ease-out,background-color 160ms ease-out}
+  html.manager-signal .botnav-ico{width:24px;height:24px;position:relative}
+  html.manager-signal .botnav-ico>.pix{width:24px;height:24px}
+  html.manager-signal .botnav-lbl{font:inherit;letter-spacing:-.02em;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
+  html.manager-signal .botnav-btn.on{color:#173d2b;background:#e8eedf}
+  html.manager-signal .botnav-btn.on::after{content:"";position:absolute;top:-4px;left:calc(50% - 12px);width:24px;height:3px;background:#234939;border-radius:0 0 2px 2px}
+  html.manager-signal .botnav-btn:active{background:#dce6d3;transform:none;transition:none}
+  html.manager-signal :is(.botnav-btn,.qpick button,.drawer button,.manager-context-action,.assoc-search-trigger,.assoc-search-done):focus-visible{outline:2px solid #846812;outline-offset:-3px}
+  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){display:none}
+  html.manager-signal .qpick{left:12px;right:12px;bottom:calc(100% + 8px);display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:14px;background:#fffdf4;border:1px solid #cbd3c5;backdrop-filter:none;-webkit-backdrop-filter:none;max-height:calc(100dvh - 130px);overflow-y:auto}
+  html.manager-signal .selector-sheet-heading{display:flex;justify-content:space-between;align-items:center;padding-left:10px;font:600 .875rem/1.3 var(--font-ui);color:#234939}
+  html.manager-signal .selector-sheet-heading button{width:44px;min-height:44px;border:0;background:none;color:inherit;border-radius:8px;cursor:pointer}
+  html.manager-signal .qpick-btn{flex-direction:row;gap:12px;min-height:52px;padding:8px 10px;border-radius:8px;color:#234939;transition:background-color 160ms ease-out;transform:none}
+  html.manager-signal .qpick-btn:active,html.manager-signal .qpick-btn.on{background:#e8eedf;transform:none}
+  html.manager-signal .qpick-ico{width:28px;height:28px;background:none;color:inherit;border-radius:0;flex:none}
+  html.manager-signal .qpick-lbl{font:600 .875rem/1.4 var(--font-ui);white-space:normal;text-align:left;flex:1}
+  html.manager-signal .drawer{background:#fffdf4;color:#234939;border-radius:18px 18px 0 0;max-height:85dvh}
+  html.manager-signal .drawer-item{min-height:48px;font-size:.875rem;line-height:1.4;border-radius:8px}
+  html.manager-signal .drawer-section-label{font-size:.75rem;line-height:1.4;letter-spacing:.06em;color:#52624d}
+  html.manager-signal .drawer-x{min-width:44px;min-height:44px}
+  html.manager-signal .topbar{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:6px;padding:8px 12px;align-items:center}
+  html.manager-signal .topbar-right{display:flex;gap:6px;min-width:0;width:100%;flex-wrap:wrap}
+  html.manager-signal .topbar-right .view-select{flex:1 1 70px;min-width:0;width:0;max-width:100%;padding-left:8px;padding-right:24px;font-size:.75rem;min-height:44px;text-overflow:ellipsis}
+  html.manager-signal .manager-context-action{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 1 auto;min-width:64px;min-height:44px;max-width:100%;padding:5px 8px;border:1px solid #bccbb2;border-radius:9px;background:#e8eedf;color:#234939;font:600 .75rem/1rem var(--font-ui);cursor:pointer;overflow-wrap:anywhere}
+  html.manager-signal .manager-context-action small{font:500 .625rem/.875rem var(--font-ui);color:#52624d}
+  html.manager-signal .assoc-search-slot{display:block;min-width:0}
+  html.manager-signal .assoc-search-slot:empty{display:none}
+  html.manager-signal .assoc-search-slot:has(.has-query){grid-column:1/-1}
+  html.manager-signal .assoc-search-trigger{display:flex;align-items:center;justify-content:center;gap:8px;width:44px;min-height:44px;padding:8px;border:1px solid #cbd3c5;border-radius:9px;background:#fffdf4;color:#234939;font:600 .75rem/1rem var(--font-ui);cursor:pointer}
+  html.manager-signal .assoc-search-trigger:not(.has-query)>span{display:none}
+  html.manager-signal .assoc-search-trigger.has-query{width:100%;justify-content:flex-start;background:#e8eedf}
+  html.manager-signal .assoc-search-trigger.has-query>span{overflow-wrap:anywhere;min-width:0;text-align:left}
+  html.manager-signal .assoc-search-trigger>.pix{flex:none}
   html.manager-signal .seg-wrap:has(>.search-top){padding:2px 12px;gap:0}
+  html.manager-signal .seg-wrap:has(>.search-collapsed){display:none}
+  html.manager-signal .search-top.search-collapsed{display:none}
   html.manager-signal .seg-wrap>.search-top{margin:0;max-width:none;min-width:0;flex:1 1 auto}
-  html.manager-signal .search-top .search-input{min-height:44px;padding:7px 44px;font-size:16px}
-  html.manager-signal .search-top .search-clear{width:44px;height:44px;right:0;top:50%;transform:translateY(-50%)}
+  html.manager-signal .search-top:not(.search-collapsed){display:flex;align-items:center;gap:4px}
+  html.manager-signal .search-top .search-input{width:100%;min-width:0;min-height:44px;padding:7px 40px;font-size:1rem}
+  html.manager-signal .search-top .search-clear{position:static;flex:none;width:44px;height:44px;transform:none}
+  html.manager-signal .assoc-search-done{flex:none;min-height:44px;padding:6px 10px;border:0;border-radius:8px;background:#e8eedf;color:#234939;font:600 .75rem/1rem var(--font-ui)}
+  html.manager-signal .lpc:has(.botnav){padding-bottom:calc(var(--manager-nav-height,80px) + 20px)}
+  html.manager-signal .botnav-scrim{animation:none}
 }
-@media(min-width:641px) and (max-width:760px){
-  html.manager-signal .botnav-btn,html.manager-signal .botnav-slot,html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){min-height:52px}
-  html.manager-signal .botnav-btn,html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){grid-template-rows:20px auto}
-}
+@media(prefers-reduced-motion:reduce){html.manager-signal :is(.botnav-btn,.qpick-btn,.manager-context-action,.assoc-search-trigger){transition:none!important}}
