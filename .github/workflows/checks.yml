@@ -61,7 +61,7 @@ jobs:
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
           set +e
-          FEEL_URL=http://127.0.0.1:5178/ npm run feel 2>&1 | tee feel.txt
+          FEEL_EVIDENCE_DIR=feel-evidence FEEL_FICTIONAL_FIXTURE=1 FEEL_URL=http://127.0.0.1:5178/ npm run feel 2>&1 | tee feel.txt
           code=${PIPESTATUS[0]}
           set -e
           {
@@ -71,6 +71,18 @@ jobs:
             echo "code=$code"
           } >> "$GITHUB_OUTPUT"
           exit $code
+      - name: Keep feel failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feel-evidence-chromium
+          path: |
+            feel-evidence/
+            feel.txt
+            mock.log
+            preview.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Keep manager search evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -147,7 +159,23 @@ jobs:
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
-          FEEL_BROWSER=webkit FEEL_URL=http://127.0.0.1:5178/ npm run feel
+          set +e
+          FEEL_BROWSER=webkit FEEL_EVIDENCE_DIR=feel-evidence FEEL_FICTIONAL_FIXTURE=1 FEEL_URL=http://127.0.0.1:5178/ npm run feel 2>&1 | tee feel.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          exit $code
+      - name: Keep feel failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feel-evidence-webkit
+          path: |
+            feel-evidence/
+            feel.txt
+            mock.log
+            preview.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Keep manager search evidence
         if: always()
         uses: actions/upload-artifact@v4
