@@ -1,4 +1,5 @@
 import { fixtures, nextWeek, addDays, propose } from "./model.mjs";
+import { storeRuleDraft, ruleFromForm } from "./store-editor.mjs";
 const stores = fixtures();
 let selected = 0,
   start = nextWeek(new Date().toISOString().slice(0, 10)),
@@ -104,7 +105,7 @@ function render() {
       }),
   );
 }
-function openSheet(html) {
+function openSheet(html, openerId) {
   const sheet = document.querySelector("#sheet");
   sheet.hidden = false;
   sheet.innerHTML = html;
@@ -112,7 +113,7 @@ function openSheet(html) {
   sheet.querySelector("input,select,button")?.focus();
   sheet.querySelector("[data-close]").onclick = () => {
     sheet.hidden = true;
-    document.querySelector("#people").focus();
+    document.getElementById(openerId).focus();
   };
   return sheet;
 }
@@ -121,6 +122,7 @@ function personSheet(id = "p0") {
     p = store.people.find((p) => p.id === id);
   const sheet = openSheet(
     `<h2>Person sheet</h2><p>Availability and weekly limit for the selected fictional store. Reset returns to the example.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${p.name}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Maximum weekly hours<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><fieldset><legend>Days off</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${p.off.includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply to local proposal</button><button type="button" data-close>Close sheet</button></div></form>`,
+    "people",
   );
   sheet.querySelector("#person").onchange = (e) => personSheet(e.target.value);
   sheet.querySelector("form").onsubmit = (e) => {
@@ -142,18 +144,33 @@ function personSheet(id = "p0") {
     document.querySelector("#people").focus();
   };
 }
-function storeSheet() {
+function storeSheet(effective = start) {
   const store = stores[selected],
-    r = store.rules.at(-1);
+    r = storeRuleDraft(store.rules, effective),
+    holiday = addDays(effective, 2);
   const sheet = openSheet(
-    `<h2>Store sheet</h2><p>Entered rules, never inferred from historical staffing. Add a dated version; earlier weeks keep their earlier rules. Saving the same effective date replaces that local draft version.</p><form><div class="fields"><label>Effective from<input name="effective" type="date" value="${start}" required></label><label>Minimum people throughout open hours<input name="minimum" type="number" min="1" max="30" value="${r.minimum}" required></label><label>Store opens (hour)<input name="open" type="number" min="0" max="23" value="${r.open}" required></label><label>Store closes (hour)<input name="close" type="number" min="1" max="24" value="${r.close}" required></label><label>Delivered cars per person per full shift<input name="capacity" type="number" min="1" max="100" value="${r.capacity}" required></label></div><p><label class="check"><input type="checkbox" name="useCapacity" ${r.useCapacity ? "checked" : ""}>Use my capacity input alongside minimum coverage</label></p><fieldset><legend>Regular closed days</legend>${names.map((n, i) => `<label class="check"><input name="closedDays" type="checkbox" value="${i}" ${r.closedDays.includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><h3>Holiday / special-day status</h3><p>Example closure on 23 Oct and unconfirmed status on 21 Oct are fictional. An explicit Open overrides a regular closed day.</p><div class="fields"><label>Date<input name="holiday" type="date" value="${addDays(start, 2)}" required></label><label>Status<select name="holidayState"><option value="unknown">Unknown</option><option value="closed">Closed</option><option value="open">Open</option></select></label></div><p>Existing entries: ${Object.entries(
+    `<h2>Store sheet</h2><p>Entered rules, never inferred from historical staffing. Add a dated version; earlier weeks keep their earlier rules. Saving the same effective date replaces that local draft version. Changing the effective date reloads the rules for that date and discards unsaved sheet edits.</p><form><div class="fields"><label>Effective from<input name="effective" type="date" value="${effective}" required></label><label>Minimum people throughout open hours<input name="minimum" type="number" min="1" max="30" value="${r.minimum}" required></label><label>Store opens (hour)<input name="open" type="number" min="0" max="23" value="${r.open}" required></label><label>Store closes (hour)<input name="close" type="number" min="1" max="24" value="${r.close}" required></label><label>Delivered cars per person per full shift<input name="capacity" type="number" min="1" max="100" value="${r.capacity}" required></label></div><p><label class="check"><input type="checkbox" name="useCapacity" ${r.useCapacity ? "checked" : ""}>Use my capacity input alongside minimum coverage</label></p><fieldset><legend>Regular closed days</legend>${names.map((n, i) => `<label class="check"><input name="closedDays" type="checkbox" value="${i}" ${r.closedDays.includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><h3>Holiday / special-day status</h3><p>Example closure on 23 Oct and unconfirmed status on 21 Oct are fictional. An explicit Open overrides a regular closed day.</p><p><label class="check"><input type="checkbox" name="editHoliday">Edit a special-day exception</label></p><p>Leave this unchecked to preserve existing exceptions when changing coverage.</p><div class="fields"><label>Date<input name="holiday" type="date" value="${holiday}" required disabled></label><label>Status<select name="holidayState" disabled>${["unknown", "closed", "open"].map((state) => `<option value="${state}" ${state === (r.holidays[holiday] ?? "unknown") ? "selected" : ""}>${state[0].toUpperCase() + state.slice(1)}</option>`).join("")}</select></label></div><p>Existing entries: ${Object.entries(
       r.holidays,
     )
       .map(([d, s]) => `${d}: ${s}`)
       .join(
         "; ",
       )}</p><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply dated local rule</button><button type="button" data-close>Close sheet</button></div></form><details><summary>Rule versions</summary>${store.rules.map((r) => `<p>${r.effective}: ${r.open}:00 to ${r.close}:00, minimum ${r.minimum}</p>`).join("")}</details>`,
+    "rules",
   );
+  sheet.querySelector('[name="effective"]').onchange = (e) => {
+    if (!e.target.value || !e.target.validity.valid) return;
+    storeSheet(e.target.value);
+  };
+  sheet.querySelector('[name="editHoliday"]').onchange = (e) => {
+    for (const name of ["holiday", "holidayState"]) {
+      sheet.querySelector(`[name="${name}"]`).disabled = !e.target.checked;
+    }
+  };
+  sheet.querySelector('[name="holiday"]').onchange = (e) => {
+    sheet.querySelector('[name="holidayState"]').value =
+      r.holidays[e.target.value] ?? "unknown";
+  };
   sheet.querySelector("form").onsubmit = (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -162,21 +179,12 @@ function storeSheet() {
         "Store closes must be after store opens.";
       return;
     }
-    if (f.get("holiday") < f.get("effective")) {
+    if (f.has("editHoliday") && f.get("holiday") < f.get("effective")) {
       sheet.querySelector("#error").textContent =
         "Special-day date must be on or after the rule’s effective date.";
       return;
     }
-    const rule = {
-      effective: f.get("effective"),
-      open: +f.get("open"),
-      close: +f.get("close"),
-      minimum: +f.get("minimum"),
-      capacity: +f.get("capacity"),
-      useCapacity: f.has("useCapacity"),
-      closedDays: f.getAll("closedDays").map(Number),
-      holidays: { ...r.holidays, [f.get("holiday")]: f.get("holidayState") },
-    };
+    const rule = ruleFromForm(store.rules, f);
     store.rules = store.rules
       .filter((r) => r.effective !== rule.effective)
       .concat(rule)

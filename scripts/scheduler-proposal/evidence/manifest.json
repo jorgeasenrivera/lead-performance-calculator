@@ -2,20 +2,25 @@
   "base": "2fba7db0d12879578bf02679d08fa020e06391a8",
   "reviewClock": "2026-10-14T12:00:00Z",
   "sourceSha256": {
-    "app.mjs": "92a0115841dfe361132dee417d3e671e096130462a4cadc8a3385e6b1720768a",
+    "app.mjs": "f084700971a8bf477ba77e8e97e6df4eae27cc4f85471bb0b70e0e3b7760d0eb",
     "model.mjs": "4da9871871ffc052c5732b90b63e138e81bdda0a025a3d691ba84d41740be0a1",
+    "store-editor.mjs": "3b4c7266b8aa3f4dea6ee2d579c02fa3e54bb96bfb5f792ab4ce62faa2e21842",
+    "store-editor.test.mjs": "7ff5f1efd33a1d2b880a221f50da1fbe18ba61cb05a5aa5ac50d9d1dd84ff624",
     "style.css": "24800b249f81b7d77434b807c167ffbab4952a5b7bd39e71c6766c1c8aa10490",
     "index.html": "2f15dbe85bfc38eac55e1bf3ca86cf7d6bea2dd1c9f135b8f42c7c5829df9ed8",
-    "probe.mjs": "3b27e4e8f1800da70f5acab864a4660ad136cb670cbe5df55380af9e19669b10"
+    "probe.mjs": "4be26ecc0bf51d5a2b29389ae35e4e3f1ed40d09bcdc1a6d3476f2f7a138c45e"
   },
   "screenshotsSha256": {
+    "phone-repeat-save.png": "0686f43fa9eecdd948c7e99b137427ecaf818545d2192c29ad8aeea317546acf",
     "phone-week.png": "5cfebea0ee23652305d3c7e4293b7a06ce8509f2764f9a14eda5b0899e07d3ea",
+    "phone-dated-rule.png": "d93d0adbf8e5b8b446accf304118354404719bd6d35e3f189ff6332a3015d645",
     "phone-override.png": "4fcce440737f0a634a5c33ae4cd4dcb3e4179c89253c2cc5b29801cfd97ecdd6",
     "phone-person.png": "94d3b53aa6f216eb3c6f04dc6a3ac23860987fb450b9952e62d4a99608734dc0",
     "desktop-week.png": "8d6d130470bdb423544c4c050ff168aec845314d8e04c817965dbfa70dea76f3",
-    "phone-store.png": "6f14f85b1b39829c6d7552a4886631392c1ded8fd81d7ee33cf82b7b41baaabf"
+    "phone-store.png": "4cc3b59e24b373ec0bf5e539c8909f4ff3f90f5417b8e00b82f3fb6c062a1cd7"
   },
   "browser": "Chromium via /usr/bin/chromium",
   "webkit": "Launch blocked: missing system libraries",
-  "physicalPhone": "Not tested"
+  "physicalPhone": "Not tested",
+  "correctsHead": "2177bcb947259bdab9ecee3c3f1caf303fb7518b"
 }
