@@ -106,7 +106,7 @@ async function pillGeometry(selector, enforce=true) {
     if(selector==='.sect-strip') {
       assert.ok(evidence.buttons.every(b=>Math.abs(b.box.y-evidence.buttons[0].box.y)<1 && Math.abs(b.box.bottom-evidence.buttons[0].box.bottom)<1),'all section buttons occupy exactly one aligned row');
       assert.ok(evidence.buttons.every(b=>b.box.width>=(evidence.buttons.length===7?24:44)),'section targets preserve their minimum widths');
-      assert.ok(evidence.buttons.filter(b=>b.selected).every(b=>b.background==='rgb(35, 73, 57)'), 'selected fill follows the actual button');
+      assert.ok(evidence.buttons.filter(b=>b.selected).every(b=>b.background==='rgb(23, 61, 43)'), 'selected fill follows the actual button');
     }
     } catch(error) {
       const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(n=>{

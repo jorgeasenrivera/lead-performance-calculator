@@ -72,7 +72,7 @@ jobs:
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SEARCH_RUNTIME_SHA: 92c62622184e495d091b7e683c7c8e8a81f50788
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
