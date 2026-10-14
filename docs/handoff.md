@@ -609,6 +609,42 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X50 · X25 released; X24 status reconciled, 14 October.**
+
+This entry supersedes the pending-release wording in H-X47 through H-X49
+for X24 / #468 and X25 / #469 only. Earlier entries remain historical evidence;
+no other owner, claim or work item is changed or renewed.
+
+Jorge accepted the final preview and requested merge at 16:02:57 UTC on
+14 October. PR #469 was squash merged at 16:05:06 UTC as
+`d9320e253b603260f6a7355d4bc1c77a59fefa5b`. Its tree,
+`0abee99c1c1239f5091a8c882384f30765a79a9e`, exactly matches accepted test head
+`90ed26d94243fdc93079228f7993d5fc020b613d`. Runtime files remain identical to
+`710cc8d78d0363856df2f9000162923859434b73`; the later changes were test-only.
+
+Automatic production deployment `dpl_8cdjeGj9fKgJ3D7yTpuBCF572r93` became READY
+at 16:05:37 UTC on the merge SHA. Both domains are verified and assigned;
+`sageonline.io` is configured to redirect 308 to `www.sageonline.io`.
+[Main CI 38595026536](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/38595026536)
+passed tests/build and both browser feel jobs; the push workflow skipped shots.
+[Accepted-head comparisons 38587480823](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/38587480823)
+passed in Chromium and WebKit, including the corrected viewport-settling probe.
+The initial post-release log observation found no warning/error/fatal entries;
+that short window does not establish comprehensive production coverage.
+
+Live authenticated browser verification was not completed from this environment.
+Physical Android WebView and native-keyboard behavior remain unverified follow-up;
+preview acceptance and browser emulation are not a physical Android pass.
+No native build, credential, database or deployment-setting change was part of
+this release-record follow-through.
+
+X24 / #468 was already merged and released at
+`2a11f4d447babac3fe05d3ec78eeb10398113e38` on 13 October. #469 preserves that
+quieter motion. The board now records both releases without changing their
+original owner or branch fields. Independent review of this docs-only correction
+should check the identities, historical/current distinction and Android limit;
+no further runtime change is proposed.
+
 **H-X49 · Bounded selector/search exception approved, 14 October.**
 
 Jorge answered “Sure go ahead” at 2026-10-14 02:09:15 UTC to the explicit

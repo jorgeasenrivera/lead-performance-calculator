@@ -1,5 +1,31 @@
 # Phone spacing and compact tools
 
+## Released status, 14 October 2026
+
+This note supersedes the pending-release, earlier-preview and initial CSS-only
+scope statements below. The remaining text records the proposal's evolution.
+PR #469 also includes the approved bounded Manager.jsx navigation/search work,
+responsive Help and search fixes, hero color/status consistency, shared Updated
+formatting and the compact Performance upper panel. Data paths and the already
+released quieter motion are preserved.
+
+Jorge accepted the final preview and requested merge at 16:02:57 UTC. Merge
+`d9320e253b603260f6a7355d4bc1c77a59fefa5b` has accepted tree
+`0abee99c1c1239f5091a8c882384f30765a79a9e`, matching test head
+`90ed26d94243fdc93079228f7993d5fc020b613d` and frozen runtime
+`710cc8d78d0363856df2f9000162923859434b73`.
+Automatic production deployment `dpl_8cdjeGj9fKgJ3D7yTpuBCF572r93` was READY
+at 16:05:37 UTC; both production domains are assigned. Main CI 38595026536
+passed, as did both accepted-head browser comparisons in run 38587480823.
+See H-X50 in [handoff.md](handoff.md) for links and verification limits.
+
+The release decision is complete. Live authenticated verification from this
+environment was not completed, and physical Android WebView/native-keyboard
+behavior remains unverified follow-up. No browser result establishes a physical
+Android pass.
+
+## Historical proposal and verification notes
+
 This correction is separate from motion PR #468. It starts from main's X25
 claim and changes only phone layout in manager-signal.css. The later dock/search revision below supersedes the initial typography and raised-Import scope. No viewport scaling, data, auth, native or backend change is included.
 
