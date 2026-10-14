@@ -46,8 +46,10 @@ Before download/build, the approved temporary ACL wrapper requires the exact
 reviewed device and ACL, saves the original ACL, and grants only current runner
 UID 1001 read/write. See [temporary KVM access](android-kvm-access.md). The
 unchanged test script then requires readable/writable `/dev/kvm` and the
-SDK manager's affirmative report that all package licenses are accepted. License
-inspection and installation receive EOF, never an affirmative response. Then
+read-only proof of existing acceptance for the exact requested stable packages
+and their dependencies. See [package-specific license proof](android-sdk-licenses.md)
+for pinned official metadata and agreement provenance. Installation receives EOF,
+never an affirmative response; installed metadata is verified before proceeding. Then
 require `emulator -accel-check` and boot with `-accel on`. The only privileged commands are the approved narrow ACL grant and restoration.
 No broad mode, group, udev or other security-setting change is included. A prerequisite
 failure is a blocker, not a failed app assertion. A new agreement needs separate
