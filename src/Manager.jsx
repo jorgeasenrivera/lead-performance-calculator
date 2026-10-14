@@ -563,6 +563,17 @@ const cutoffFor = (store) => ({ ...DEFAULT_REPORT_CUTOFF, ...((store && store.re
 
 const fmtClock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
+// These timestamps describe report arrival, not connection health or a grade.
+function HeroUpdated({ at, className, fallback = null }) {
+  const stamp = at ? new Date(at) : null;
+  const valid = stamp && !isNaN(stamp);
+  if (!valid && !fallback) return null;
+  return <span className={`${className} sg-updated${valid ? "" : " sg-updated-empty"}`}
+    title={valid ? `Latest report: ${stamp.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}` : undefined}>
+    {valid ? <><i aria-hidden="true" /><span>Updated {stamp.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}</span></> : fallback}
+  </span>;
+}
+
 function reportFreshness(store, rows, now = new Date()) {
   const c = cutoffFor(store);
   const stamps = Object.values(rows || {}).map((r) => r && r.uploadedAt).filter(Boolean).sort();
@@ -7586,13 +7597,12 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
   };
 
   const leader = offenders[0];
-  const upd = fresh.lastAt ? fmtClock(fresh.lastAt) : null;
   return (
     <div className="bp-page co-page">
       <div className="bp-hero co-hero">
         <div className="co-hh">
           <button type="button" className="co-day" onClick={() => setPop({ k: "day" })}><PixIcon glyph="calendar" size={11} />{dayLabel(day)}</button>
-          <span className={"co-upd" + (upd ? "" : " co-none")}>{upd ? <><i />Updated {upd}</> : fresh.missed ? `nothing past ${fresh.cutoffLabel}` : "no report yet"}</span>
+          <HeroUpdated className="co-upd" at={fresh.lastAt} fallback={fresh.missed ? `nothing past ${fresh.cutoffLabel}` : "no report yet"} />
         </div>
         <div className="co-big">
           <button type="button" onClick={() => setPop({ k: "team" })}><span className="co-ucap"><PixIcon glyph="phone" size={11} />Team calls</span><span className="co-unum"><DotNum value={String(tNow.c)} dot={7} color="#fff" />{delta(dCalls)}</span></button>
@@ -17198,7 +17208,6 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const dotN = 28;
   const litDots = goalBar > 0 ? Math.round(Math.min(1, totalUnits / goalBar) * dotN) : 0;
   const parX = pace.goal && !pace.tooEarly ? Math.min(100, (pace.parToday / goalBar) * 100) : null;
-  const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, ""); };
 
   /* ---- the pops ---- */
   const hd = (title, meta) => (
@@ -17337,10 +17346,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   return (
     <div className="bp-page">
       <div className="bp-hero" role="region" aria-label={`Performance for ${store.name}`}>
-        {updatedAt && <div className="bp-upd"><i />Updated {fmtTime(updatedAt)}</div>}
+        <HeroUpdated className="bp-upd" at={updatedAt} />
         <div className="bp-h5">
           <button type="button" className="bp-l1" onClick={() => setPop({ k: "units" })}>
-            <span className="bp-num"><DotNum value={String(Math.round(totalUnits))} dot={11} color="#fff" /></span>
+            <span className="bp-num"><DotNum value={String(Math.round(totalUnits))} dot={9} color="#fff" /></span>
             <span className="bp-goal">{goalUnits ? `/ ${fmtNum(goalBar)} goal` : canSetGoal ? "/ set a goal" : ""}</span>
           </button>
           <button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>

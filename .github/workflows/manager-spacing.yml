@@ -12,6 +12,7 @@ on:
       - scripts/hero-bars.mjs
       - scripts/manager-viewports.mjs
       - scripts/room-hero-colors.mjs
+      - scripts/hero-freshness.mjs
       - scripts/color-phone.mjs
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
@@ -65,6 +66,11 @@ jobs:
           ref: 57c381c4e07c8d815819bb5e2feed00d104ba4f8
           path: .hero-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e6d087c203bb88685159efbc272e04ce868e4c89
+          path: .freshness-baseline
+          persist-credentials: false
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Verify frozen preview runtime
@@ -75,6 +81,8 @@ jobs:
           npm run build
           ln -s "$PWD/node_modules" .color-baseline/node_modules
           ln -s "$PWD/node_modules" .hero-baseline/node_modules
+          ln -s "$PWD/node_modules" .freshness-baseline/node_modules
+          (cd .freshness-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
           (cd .hero-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
           cd .color-baseline
           VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build
@@ -92,6 +100,10 @@ jobs:
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5180/ > /dev/null && break; sleep 0.2; done
           npx vite preview --outDir .hero-baseline/dist --port 5181 --host 127.0.0.1 > hero-baseline.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5181/ > /dev/null && break; sleep 0.2; done
+          npx vite preview --outDir .freshness-baseline/dist --port 5185 --host 127.0.0.1 > freshness-baseline.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5185/ > /dev/null && break; sleep 0.2; done
+          FEEL_URL=http://127.0.0.1:5185/ FRESH_OUT=hero-freshness-before node scripts/hero-freshness.mjs
+          FRESH_ASSERT=1 FRESH_BASELINE_FILE=hero-freshness-before/evidence.json node scripts/hero-freshness.mjs
           node scripts/hero-bars.mjs
           node scripts/manager-viewports.mjs
           node scripts/room-hero-colors.mjs
@@ -111,4 +123,6 @@ jobs:
             hero-bars/
             manager-viewports/
             room-hero-colors/
+            hero-freshness/
+            hero-freshness-before/
           retention-days: 14

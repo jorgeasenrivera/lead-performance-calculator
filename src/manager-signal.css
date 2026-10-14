@@ -947,3 +947,17 @@ html.manager-signal .mf-line :is(.fr-hero,.sd-hero){background:#24395b;box-shado
 html.manager-signal :is(.mf-floor,.mf-line) :is(.fr-hero,.sd-hero)::after{background:repeating-linear-gradient(0deg,#ffffff04 0 1px,transparent 1px 4px)}
 html.manager-signal .mf-line .sd-hero :is(.sd-cap2,.sd-none,.sd-chairlbl,.sd-nextwho em){color:#dce4f0}
 html.manager-signal :is(.mf-floor,.mf-line) .fr-hero .fr-raildoor{color:#fffdf4}
+
+/* Arrival timestamps share one neutral treatment; their report sources stay distinct. */
+html.manager-signal .sg-updated{display:flex;align-items:flex-start;gap:6px;font:600 .75rem/1.4 var(--font-mono);letter-spacing:.04em;text-transform:uppercase;color:#e3ecdb;flex-wrap:nowrap}
+html.manager-signal .sg-updated>i{flex:none;margin-top:calc(.525rem - 3px);width:6px;height:6px;border-radius:50%;background:#e4c98d;box-shadow:none;animation:none}
+html.manager-signal .sg-updated-empty{letter-spacing:0;text-transform:none}
+/* Give the total and calendar one shared row, with pace across the whole panel. */
+html.manager-signal .bp-hero:not(.co-hero)>.bp-upd{position:static;justify-content:flex-end;margin:0 0 4px}
+html.manager-signal .bp-h5{row-gap:4px}
+html.manager-signal .bp-h5 .bp-l1{align-self:center;gap:6px}
+html.manager-signal .bp-h5 .bp-r1{grid-row:1;align-self:center}
+html.manager-signal .bp-h5 .bp-l2{grid-column:1/-1;padding-top:0}
+html.manager-signal .bp-h5 :is(.bp-l3,.bp-r3){padding-top:0}
+html.manager-signal .bp-h5 .bp-grid{grid-template-columns:repeat(7,10px);gap:3px;margin-top:6px}
+html.manager-signal .bp-h5 .bp-grid i{width:7px;height:7px}
