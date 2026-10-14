@@ -851,7 +851,7 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
   html.manager-signal .botnav-fab{inset:0;width:100%;height:100%;transform:none;border-radius:0;background:transparent;color:#234939;box-shadow:none;align-items:flex-start;padding:6.5px 0 0}
   html.manager-signal .botnav-halo{top:3px;width:26px;height:26px;z-index:3}
   html.manager-signal .botnav-fablbl{position:relative;inset:auto;padding:29px 1px 4px;font:600 11px/1.4 var(--font-ui);letter-spacing:-.035em;white-space:normal;overflow-wrap:anywhere;z-index:3;color:#234939}
-  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){right:3px;bottom:calc(3px + var(--sab));top:auto;width:44px;height:52px;display:grid;grid-template-rows:26px auto;align-content:start;justify-items:center;align-items:start;padding:3px 1px 4px;border-radius:0;box-shadow:none;background:transparent;color:#53664f;border:0;transform:none;font:600 11px/1.4 var(--font-ui)}
+  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){right:3px;bottom:calc(3px + var(--sab));top:auto;width:44px;height:auto;min-height:52px;display:grid;grid-template-rows:26px auto;align-content:start;justify-items:center;align-items:start;padding:3px 1px 4px;border-radius:0;box-shadow:none;background:transparent;color:#53664f;border:0;transform:none;font:600 11px/1.4 var(--font-ui)}
   html.manager-signal .botnav-ico{width:26px;height:26px}
   html.manager-signal .botnav-ico>.pix,html.manager-signal .botnav-fab>.pix{width:19px;height:19px}
   html.manager-signal .botnav-slot::before,html.manager-signal .botnav-slot::after{content:"";position:absolute;top:8px;bottom:8px;width:1px;background:#cbd3c5;pointer-events:none}

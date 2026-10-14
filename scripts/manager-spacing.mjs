@@ -159,7 +159,7 @@ try {
         [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
         document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
         for(let i=0;i<4;i++)await new Promise(requestAnimationFrame);
-        const nodes=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl,.search-top input')];
+        const nodes=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl,.search-top input,.help-fab:not(.inline)')];
         window.dockRestore=nodes.map(n=>({n,style:n.getAttribute('style'),font:parseFloat(getComputedStyle(n).fontSize)}));
         window.dockRestore.forEach(s=>s.n.style.setProperty('font-size',`${s.font*scale}px`,'important'));
         scrollTo({top:0,behavior:'instant'});
@@ -169,10 +169,12 @@ try {
         const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
         const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
         const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,fontFamily:getComputedStyle(n).fontFamily,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
+        const help=document.querySelector('.help-fab:not(.inline)'), hs=getComputedStyle(help), ps=getComputedStyle(help,'::after');
+        const helpLabel={fontSize:ps.fontSize,lineHeight:parseFloat(ps.lineHeight),height:help.getBoundingClientRect().height,required:parseFloat(hs.paddingTop)+26+parseFloat(ps.lineHeight)+parseFloat(hs.paddingBottom)};
         const iconCenters=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
         const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
         const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
-        return {dock,search,band,targets,labels,iconCenters,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
+        return {dock,search,band,targets,labels,iconCenters,helpLabel,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
       });
       results.push({dockSearch:{phase,...size,inset,scale,...geometry}});
       await page.screenshot({path:`manager-spacing/dock-search-${phase}-${size.width}x${size.height}-inset${inset}-text${scale*100}.png`});
@@ -186,6 +188,7 @@ try {
         for(let i=0;i<geometry.targets.length;i++)for(let j=i+1;j<geometry.targets.length;j++){const a=geometry.targets[i],b=geometry.targets[j];assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,'dock targets do not overlap');}
         assert.ok(geometry.labels.every(l=>Math.abs(parseFloat(l.fontSize)-11*scale)<.01),'dock label text is genuinely enlarged');
         assert.ok(geometry.labels.every(l=>l.rects.every(r=>r.x>=l.box.x-1 && r.right<=l.box.right+1 && r.y>=l.box.y-1 && r.bottom<=l.box.bottom+1)),'dock labels fully fit');
+        assert.ok(Math.abs(parseFloat(geometry.helpLabel.fontSize)-11*scale)<.01 && geometry.helpLabel.required<=geometry.helpLabel.height+1,'Help label is enlarged and fits its target');
         assert.ok(geometry.search.height>=44 && geometry.documentWidth<=size.width,'search target and document fit');
         if(scale===1){assert.ok(Math.max(...geometry.iconCenters)-Math.min(...geometry.iconCenters)<1,'normal-size icons share one optical centerline');assert.ok(Math.max(...geometry.labels.map(l=>l.rects[0].y))-Math.min(...geometry.labels.map(l=>l.rects[0].y))<1,'normal-size navigation and Import labels share a baseline');}
       }
