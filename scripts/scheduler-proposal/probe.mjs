@@ -19,8 +19,15 @@ const out = process.env.EVIDENCE_DIR || "/workspace/scheduler-evidence";
 mkdirSync(out, { recursive: true });
 const evidence = [];
 try {
-  for (const width of [1440, 390, 320]) {
-    const page = await browser.newPage({ viewport: { width, height: 900 } });
+  for (const [width, textScale] of [1440, 390, 320].flatMap((width) =>
+    [1, 2].map((scale) => [width, scale]),
+  )) {
+    const shot = `${engine}-${width}${textScale === 2 ? "-text200" : ""}`;
+    const page = await browser.newPage({
+      viewport: { width, height: 900 },
+      isMobile: width < 600,
+      hasTouch: width < 600,
+    });
     const errors = [],
       external = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -33,6 +40,10 @@ try {
     });
     await page.clock.install({ time: new Date("2026-10-14T12:00:00Z") });
     await page.goto("http://127.0.0.1:5189/");
+    await page.evaluate(
+      (scale) => (document.documentElement.style.fontSize = `${scale * 100}%`),
+      textScale,
+    );
     assert.equal(await page.locator("#week").inputValue(), "2026-10-19");
     assert.equal(await page.locator(".day").count(), 7);
     assert.equal(await page.locator(".badge.unknown").count(), 1);
@@ -46,7 +57,7 @@ try {
       );
     await fit();
     await page.screenshot({
-      path: `${out}/${engine}-${width}-week.png`,
+      path: `${out}/${shot}-week.png`,
       fullPage: true,
     });
     await page.locator("#accept").click();
@@ -54,9 +65,27 @@ try {
     await page.locator("#people").click();
     await fit();
     await page.screenshot({
-      path: `${out}/${engine}-${width}-person.png`,
+      path: `${out}/${shot}-person.png`,
       fullPage: true,
     });
+    await page.locator("[name=maxHours]").fill("1");
+    await page
+      .getByRole("button", { name: "Close sheet", exact: true })
+      .click();
+    assert.equal(
+      await page.evaluate(() => document.activeElement.id),
+      "people",
+    );
+    await page.locator("#people").click();
+    assert.equal(await page.locator("[name=maxHours]").inputValue(), "40");
+    await page.locator("[name=maxHours]").fill("2");
+    await page.locator("[name=maxHours]").press("Escape");
+    assert.equal(
+      await page.evaluate(() => document.activeElement.id),
+      "people",
+    );
+    await page.locator("#people").click();
+    assert.equal(await page.locator("[name=maxHours]").inputValue(), "40");
     await page.locator("[name=maxHours]").fill("0");
     await page
       .getByRole("button", { name: "Apply to local proposal", exact: true })
@@ -67,9 +96,27 @@ try {
     await page.locator("#rules").click();
     await fit();
     await page.screenshot({
-      path: `${out}/${engine}-${width}-store.png`,
+      path: `${out}/${shot}-store.png`,
       fullPage: true,
     });
+    await page.locator("[name=minimum]").fill("8");
+    await page.locator("[name=editHoliday]").check();
+    await page.locator("[name=holidayState]").selectOption("closed");
+    await page
+      .getByRole("button", { name: "Close sheet", exact: true })
+      .click();
+    assert.equal(await page.evaluate(() => document.activeElement.id), "rules");
+    await page.locator("#rules").click();
+    assert.equal(await page.locator("[name=minimum]").inputValue(), "2");
+    assert.equal(
+      await page.locator("[name=holidayState]").inputValue(),
+      "unknown",
+    );
+    await page.locator("[name=minimum]").fill("7");
+    await page.locator("[name=minimum]").press("Escape");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "rules");
+    await page.locator("#rules").click();
+    assert.equal(await page.locator("[name=minimum]").inputValue(), "2");
     await page.locator("[name=editHoliday]").check();
     await page.locator("[name=holidayState]").selectOption("open");
     await page.getByRole("button", { name: "Apply dated local rule" }).click();
@@ -108,13 +155,36 @@ try {
     );
     await page.locator("[name=holidayState]").selectOption("unknown");
     await page.locator("[name=editHoliday]").uncheck();
+    assert.equal(
+      await page.locator("[name=holidayState]").inputValue(),
+      "open",
+    );
     await fit();
     await page.screenshot({
-      path: `${out}/${engine}-${width}-repeat-save.png`,
+      path: `${out}/${shot}-repeat-save.png`,
       fullPage: true,
     });
     await page.getByRole("button", { name: "Apply dated local rule" }).click();
     assert.equal(await page.locator(".badge.unknown").count(), 0);
+    for (const state of ["closed", "unknown", "open"]) {
+      await page.locator("#rules").click();
+      await page.locator("[name=editHoliday]").check();
+      await page.locator("[name=holidayState]").selectOption(state);
+      await page
+        .getByRole("button", { name: "Apply dated local rule" })
+        .click();
+      const day = page.locator(".day").nth(2);
+      assert.equal(
+        (await day.locator(".badge").textContent()).toLowerCase(),
+        state,
+      );
+      if (state !== "open")
+        assert.equal(await day.locator(".person").count(), 0);
+      if (state === "unknown") {
+        await page.locator("#accept").click();
+        assert.match(await page.locator("#message").textContent(), /Resolve/);
+      }
+    }
     const first = page.locator(".day").first();
     await first.locator("summary").click();
     await first.locator("input[value=p0]").check();
@@ -123,7 +193,7 @@ try {
       /weekly hours exceeded/,
     );
     await page.screenshot({
-      path: `${out}/${engine}-${width}-override.png`,
+      path: `${out}/${shot}-override.png`,
       fullPage: true,
     });
     await first.getByRole("button", { name: "Use suggestion" }).click();
@@ -184,7 +254,7 @@ try {
     await assertEarlier();
     await fit();
     await page.screenshot({
-      path: `${out}/${engine}-${width}-dated-rule.png`,
+      path: `${out}/${shot}-dated-rule.png`,
       fullPage: true,
     });
     await page.locator("[name=minimum]").fill("3");
@@ -231,7 +301,7 @@ try {
     );
     await fit();
     await page.screenshot({
-      path: `${out}/${engine}-${width}-large-text.png`,
+      path: `${out}/${shot}-large-text.png`,
       fullPage: true,
     });
     assert.deepEqual(errors, []);
@@ -239,6 +309,9 @@ try {
     evidence.push({
       engine,
       width,
+      textScale,
+      browserVersion: browser.version(),
+      mobileEmulation: width < 600,
       checks: [
         "initial week",
         "closed/unknown",
@@ -253,6 +326,10 @@ try {
         "earlier save preserves future rule",
         "before-first-rule fields are blank",
         "both sheets restore opener focus",
+        "Close and Escape discard unsaved person and store edits",
+        "cancelling exception edit restores displayed saved status",
+        "explicit Closed / Unknown / Open transitions",
+        "full editing flow at selected text scale",
         "override conflicts",
         "manager review",
         "store isolation",
