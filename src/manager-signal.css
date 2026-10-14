@@ -418,6 +418,7 @@ html.manager-signal .lpc .s2-pod:focus-visible{outline-offset:-4px}
   html.manager-signal .bp-five{gap:12px 8px}
   html.manager-signal :is(.bp-t5,.bp-dial){box-sizing:border-box;padding:6px 2px;border:1px solid #aec5a34d;border-radius:8px;background:#173b2d66;min-height:80px}
   html.manager-signal .bp-t5 .bp-tb{border-radius:4px;box-shadow:none}
+  html.manager-signal .bp-t5 .bp-tb i{border-radius:0}
   html.manager-signal .bp-t5 .bp-tl{font-size:11px;letter-spacing:0;color:#eef4e4}
   html.manager-signal .bp-dial .bp-dl{font-size:11px;min-height:28px;color:#eef4e4;letter-spacing:0}
   html.manager-signal .bp-dial .bp-ring{box-shadow:none}
@@ -928,3 +929,6 @@ html.manager-signal .topbar-right:has(.view-select) .manager-store-name{display:
   html.manager-signal .drawer .drawer-item.on .drawer-tick{color:#e4c98d}
   html.manager-signal :is(.botnav-btn.on,.drawer-item.on):focus-visible{outline-color:#e4c98d}
 }
+
+/* The native wrapper supplies --shell-inset-top through the existing --satr token. */
+html.manager-signal .topstack{padding-top:var(--satr,0px)}

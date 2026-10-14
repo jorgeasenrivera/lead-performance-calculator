@@ -17355,11 +17355,15 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             const pctV = c.pct == null ? null : c.pct * 100;
             const h = pctV == null ? 0 : Math.min(pctV / target * 100, 120) / 1.2;
             const d = chDelta[c.id];
+            // Match the main closing sheet: grade its displayed tenth of a point.
+            const gradePct = c.pct == null ? null : Math.round(c.pct * 1000) / 10;
+            const state = gradePct == null ? "na" : gradePct >= target ? "ok" : gradePct >= thr[c.id].yellow ? "warn" : "bad";
+            const color = { ok: "#8FD8AF", warn: "#E4C98D", bad: "#F08A80", na: "#FFFFFF" }[state];
             return (
               <button type="button" key={c.id} className={"bp-t5" + (d == null ? "" : d >= 0 ? " bp-up" : " bp-down")} onClick={() => setPop({ k: "chan", id: c.id })}>
-                <span className={"bp-pct " + (pctV == null ? "" : pctV >= target ? "bp-ok" : "bp-low")}>{pctV == null ? "–" : fmtPct(c.pct)}</span>
-                <span className="bp-body"><span className="bp-tb"><i style={{ height: h.toFixed(1) + "%", background: CHANNEL_HUE[c.id] }} /></span><span className="bp-tgt" style={{ bottom: `${(100 / 1.2).toFixed(0)}%` }} /></span>
-                <span className="bp-tl">{c.label}</span>
+                <span className="bp-pct" style={{ color }}>{pctV == null ? "–" : fmtPct(c.pct)}</span>
+                <span className="bp-body"><span className="bp-tb"><i style={{ height: h.toFixed(1) + "%", background: color }} /></span><span className="bp-tgt" style={{ bottom: `${(100 / 1.2).toFixed(0)}%` }} /></span>
+                <span className="bp-tl" style={{ color }}>{c.label}</span>
               </button>
             );
           })}
