@@ -5,7 +5,7 @@ import { chromium, webkit } from 'playwright';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 assert.equal(new URL(url).hostname, '127.0.0.1');
 const engine = process.env.FEEL_BROWSER || 'chromium';
-const browser = await ({ chromium, webkit }[engine]).launch({ headless: true });
+const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
 const context = await browser.newContext({ viewport: { width: 390, height: 667 },
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
 const evidence = { engine, cases: [], spacing: [] };
@@ -95,7 +95,7 @@ try {
       await page.getByRole('button', { name: 'Close menu', exact: true }).dispatchEvent('click');
     }
     assert.equal(await page.locator('.drawer-root.open').count(), 0, 'interrupted drawer stays closed');
-    const picker = page.locator('.botnav button[aria-haspopup]');
+    const picker = page.locator('.botnav button[aria-label="Rooms"]');
     assert.equal(await picker.count(), 1, 'fictional fixture exposes queue menu');
     await picker.focus();
     await page.keyboard.press('Enter');

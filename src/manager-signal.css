@@ -5,7 +5,6 @@
 .manager-signal .s2-head { padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,.22); }
 .manager-signal .s2-right { padding-left:22px; border-left:1px solid rgba(255,255,255,.22); }
 .manager-signal .bp-hero { border:1px solid rgba(255,255,255,.22); box-shadow:0 12px 22px -15px rgba(18,34,26,.55); }
-.manager-signal .sage-bp-store { font:700 12px/1.25 var(--font-display); color:#fff; margin:0 110px 16px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .manager-signal .bp-five { padding-top:10px; }
 .manager-signal .bp-upd i { animation:none; background:#E4C98D; box-shadow:none; }
 .manager-signal .bp-goal, .manager-signal .bp-left, .manager-signal .bp-tl { color:rgba(255,255,255,.87); }
@@ -102,6 +101,42 @@ html.manager-signal :is(.qpick,.drawer) {
 }
 @keyframes sagePolishOut { from {opacity:1;transform:none} to {opacity:0;transform:translateX(var(--tabx-out,var(--tx-out,0px)))} }
 @keyframes sagePolishIn { from {opacity:1;transform:translateX(var(--tabx-in,var(--tx-in,0px)))} to {opacity:1;transform:none} }
+/* Phone roster spacing follows the same columns in its heading and rows.
+   A full final filter row is intentional, rather than a stranded pill. */
+@media(max-width:700px) {
+  html.manager-signal .bp-filt { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  html.manager-signal .bp-filt button {
+    min-width:0; min-height:44px; padding:8px 10px; white-space:normal;
+    text-align:center; justify-content:center; overflow-wrap:anywhere;
+  }
+  html.manager-signal .bp-filt button:last-child:nth-child(odd) { grid-column:1 / -1; }
+  html.manager-signal .bp-stand {
+    /* Edge tracks include the shared 12px inset. Subgrid lets the Units label
+       size every row's last track without guessing its font's glyph widths. */
+    display:grid; grid-template-columns:40px minmax(0,1fr) 84px minmax(52px,max-content); column-gap:5px;
+  }
+  html.manager-signal .bp-stand > :is(.bp-filt,.fr-empty) { grid-column:1 / -1; }
+  html.manager-signal :is(.bp-fivehead,.bp-row) {
+    grid-column:1 / -1; grid-template-columns:subgrid;
+    padding-left:12px; padding-right:12px;
+  }
+  html.manager-signal .bp-row { height:auto; min-height:56px; padding-top:8px; padding-bottom:8px; }
+  html.manager-signal .bp-row .bp-lim { flex-wrap:wrap; white-space:normal; overflow:visible; row-gap:3px; }
+  html.manager-signal .bp-row .bp-pb { flex:1 1 28px; min-width:28px; max-width:70px; }
+  html.manager-signal .bp-row .bp-lim b { max-width:100%; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+  html.manager-signal .bp-verdict { max-width:100%; height:auto; min-height:26px; white-space:normal; flex-wrap:wrap; justify-content:center; }
+  html.manager-signal .bp-fivehead .bp-lbl { min-width:0; overflow-wrap:anywhere; }
+  html.manager-signal .bp-fivehead .bp-lbl:last-child { white-space:nowrap; overflow-wrap:normal; }
+  /* Help stands 122px above the safe-area edge; leave a readable gap above it.
+     Import keeps its raised treatment. Every roster row can clear both. */
+  html.manager-signal .board-page:has(> .bp-page) { padding-bottom:calc(136px + var(--sab,0px)); }
+  html.manager-signal:has(.board-page > .bp-page) { scroll-padding-bottom:calc(136px + var(--sab,0px)); }
+}
+/* The phone card keeps its negative margin through 700px, but the outer page
+   gutter ends at 640px. Carry that gutter across the intervening range. */
+@media(min-width:641px) and (max-width:700px) {
+  html.manager-signal .board-page:has(> .bp-page) { padding-left:14px; padding-right:14px; }
+}
 @media(max-width:600px) {
   /* The units column is narrower than the digits plus an inline goal. Keep
      the goal below, and let real SVG digits shrink together without clipping. */
@@ -141,7 +176,6 @@ html.manager-signal .s2-vitals{line-height:1.55}
 html.manager-signal :is(.co-std,.tg-row){min-width:0}
 html.manager-signal .co-std>button{min-width:0}
 html.manager-signal .co-std>button>span{white-space:normal;line-height:1.35}
-html.manager-signal .sage-bp-store{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.4}
 html.manager-signal .bp-five{column-gap:7px}
 html.manager-signal .bp-t5{font-size:10px;white-space:normal;line-height:1.4;text-align:center}
 html.manager-signal .bp-t5 .bp-tl{font-size:10px;white-space:normal;line-height:1.35;letter-spacing:.02em}
@@ -210,7 +244,6 @@ html.manager-signal .brand-menu>.bm-app{display:none}
   html.manager-signal .s2-rail .s2-chips{display:flex}
   html.manager-signal .s2-rail .s2-chip-state{flex-wrap:wrap;justify-content:flex-start}
   html.manager-signal .bp-hero{padding:20px 18px}
-  html.manager-signal .sage-bp-store{margin:0 0 6px}
   html.manager-signal .bp-upd{position:static;justify-content:flex-end;margin-bottom:16px}
   html.manager-signal .bp-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 8px}
   html.manager-signal .bp-five .bp-sep{grid-column:1/-1;height:1px;width:100%}
@@ -235,7 +268,6 @@ html.manager-signal .brand-menu>.bm-app{display:none}
 }
 @media(max-width:380px){
   html.manager-signal .bp-h5{grid-template-columns:minmax(0,1fr) 102px;column-gap:10px}
-  html.manager-signal .sage-bp-store{margin-right:0;padding-right:0}
   html.manager-signal .bp-five{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 9px}
   html.manager-signal .bp-five .bp-sep{grid-column:1/-1;height:1px;width:100%}
   html.manager-signal .bp-t5{font-size:11px}
@@ -270,6 +302,41 @@ html.manager-signal .lpc .sect-strip{background:#e7ebdf;border:1px solid #d1dac8
 html.manager-signal .lpc .sect-strip .sect-pill{background:#234939;box-shadow:none}
 html.manager-signal .lpc .sect-strip .sect-chip{box-sizing:border-box;min-height:44px;color:#53664f}
 html.manager-signal .lpc .sect-strip .sect-chip.on{color:#fffdf4}
+/* Keep every destination in one fixed row. Labels retain their real names
+   and may grow vertically at enlarged text sizes; the buttons never wrap.
+   Their own selected fill stays aligned through text and viewport changes. */
+@media(max-width:760px) {
+  html.manager-signal .lpc .sect-strip {
+    display:flex; flex-wrap:nowrap; gap:0; padding:2px;
+    overflow:visible; min-width:0; align-items:stretch;
+  }
+  html.manager-signal .lpc .sect-strip .sect-chip {
+    flex:1 1 auto; min-width:44px; width:auto; padding:8px 2px; white-space:normal;
+    overflow-wrap:anywhere; text-align:center;
+  }
+  /* Seven admin destinations need the available edge space. Keep the same
+     font and target height, with narrower targets rather than missing tabs. */
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(8):last-child) { margin-inline:2px; padding:1px; }
+  html.manager-signal .lpc .sect-strip:has(.sect-chip:nth-child(8):last-child) .sect-chip { min-width:24px; padding-inline:0; }
+  html.manager-signal .lpc .sect-strip .sect-pill { display:none; }
+  html.manager-signal .lpc .sect-strip .sect-chip.on { background:#234939; }
+  html.manager-signal .pe-filters { flex-wrap:wrap; overflow:visible; }
+  html.manager-signal .pe-filters .pe-ft {
+    flex:1 1 8em; min-width:0; min-height:44px; white-space:normal; overflow-wrap:anywhere;
+  }
+  /* These shared phone views otherwise make the whole document wider than
+     the fixed header: a 340px grid minimum and a non-wrapping oversight row. */
+  html.manager-signal .gv-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); }
+  html.manager-signal .gv-card { min-width:0; }
+  html.manager-signal :is(.gv-top,.gv-feet) { flex-wrap:wrap; }
+  html.manager-signal .gv-id { flex:1 1 8em; overflow-wrap:anywhere; }
+  html.manager-signal .combined-row { flex-wrap:wrap; }
+  html.manager-signal .combined-row .assoc-name {
+    flex:1 1 calc(100% - 19px); min-width:0; white-space:normal; overflow:visible; overflow-wrap:anywhere;
+  }
+  html.manager-signal .combined-role-label { flex:1 1 6em; overflow-wrap:anywhere; }
+  html.manager-signal .combined-row .verdict { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+}
 
 /* The report warning is the primary action. Status is still carried by its
    lamp and text, not by an endless attention animation. */
@@ -351,6 +418,7 @@ html.manager-signal .lpc .s2-pod:focus-visible{outline-offset:-4px}
   html.manager-signal .bp-five{gap:12px 8px}
   html.manager-signal :is(.bp-t5,.bp-dial){box-sizing:border-box;padding:6px 2px;border:1px solid #aec5a34d;border-radius:8px;background:#173b2d66;min-height:80px}
   html.manager-signal .bp-t5 .bp-tb{border-radius:4px;box-shadow:none}
+  html.manager-signal .bp-t5 .bp-tb i{border-radius:0}
   html.manager-signal .bp-t5 .bp-tl{font-size:11px;letter-spacing:0;color:#eef4e4}
   html.manager-signal .bp-dial .bp-dl{font-size:11px;min-height:28px;color:#eef4e4;letter-spacing:0}
   html.manager-signal .bp-dial .bp-ring{box-shadow:none}
@@ -769,3 +837,127 @@ html.manager-signal .coaching :is(input,select,textarea){max-width:100%;box-sizi
 html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{outline:2px solid #9a7b12;outline-offset:3px}
 @media(max-width:900px){html.manager-signal .coach-split.has-open{grid-template-columns:minmax(0,1fr)}html.manager-signal .coach-split.has-open .coach-list-card{position:static}}
 @media(max-width:760px){html.manager-signal .coaching .oyo-goal{grid-template-columns:minmax(0,1fr)}}
+
+/* Four navigation cells; actions and search belong to the header. */
+.manager-context-action,.assoc-search-slot{display:none}
+html.manager-signal .assoc-search-field{position:relative;flex:1;min-width:0}
+html.manager-signal .manager-store-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 .875rem/1.4 var(--font-ui);color:#234939}
+html.manager-signal .topbar-right:has(.view-select) .manager-store-name{display:none}
+@media(max-width:760px){
+  html.manager-signal .botnav{left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:4px 0 calc(4px + var(--sab));min-height:64px;box-sizing:border-box;align-items:stretch;border-radius:0;border:0;border-top:1px solid #cbd3c5;background:#fffdf4;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 -3px 16px #2349390a;transform:none;transition:none}
+  html.manager-signal .botnav-btn{position:relative;min-width:0;min-height:56px;padding:5px 0;gap:4px;display:grid;grid-template-rows:24px auto;align-content:start;justify-items:center;align-items:start;border-radius:0;color:#52624d;font:600 .75rem/1rem var(--font-ui);transition:color 160ms ease-out,background-color 160ms ease-out}
+  html.manager-signal .botnav-ico{width:24px;height:24px;position:relative}
+  html.manager-signal .botnav-ico>.pix{width:24px;height:24px}
+  html.manager-signal .botnav-lbl{font:inherit;letter-spacing:-.025em;white-space:normal;overflow:visible;overflow-wrap:anywhere;text-align:center}
+  html.manager-signal .botnav-btn.on{color:#173d2b;background:#e8eedf}
+  html.manager-signal .botnav-btn.on::after{content:"";position:absolute;top:-4px;left:calc(50% - 12px);width:24px;height:3px;background:#234939;border-radius:0 0 2px 2px}
+  html.manager-signal .botnav-btn:active{background:#dce6d3;transform:none;transition:none}
+  html.manager-signal :is(.botnav-btn,.qpick button,.drawer button,.manager-context-action,.assoc-search-trigger,.assoc-search-done):focus-visible{outline:2px solid #846812;outline-offset:-3px}
+  html.manager-signal .lpc:has(.botnav) .help-fab:not(.inline){display:none}
+  html.manager-signal .qpick{left:12px;right:12px;bottom:calc(100% + 8px);display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:14px;background:#fffdf4;border:1px solid #cbd3c5;backdrop-filter:none;-webkit-backdrop-filter:none;max-height:calc(100dvh - 130px);overflow-y:auto}
+  html.manager-signal .selector-sheet-heading{display:flex;justify-content:space-between;align-items:center;padding-left:10px;font:600 .875rem/1.3 var(--font-ui);color:#234939}
+  html.manager-signal .selector-sheet-heading button{width:44px;min-height:44px;border:0;background:none;color:inherit;border-radius:8px;cursor:pointer}
+  html.manager-signal .lpc .qpick .qpick-btn{flex-direction:row;gap:12px;min-height:52px;padding:8px 10px;border-radius:8px;background:transparent;color:#234939;transition:background-color 160ms ease-out;transform:none}
+  html.manager-signal .lpc .qpick .qpick-btn:active,html.manager-signal .lpc .qpick .qpick-btn.on{background:#e8eedf;transform:none}
+  html.manager-signal .lpc .qpick .qpick-btn .qpick-ico{width:28px;height:28px;background:none;color:inherit;border-radius:0;flex:none}
+  html.manager-signal .qpick-lbl{font:600 .875rem/1.4 var(--font-ui);white-space:normal;text-align:left;flex:1}
+  html.manager-signal .drawer{top:auto;bottom:0;left:0;right:0;width:100%;height:auto;display:flex;flex-direction:column;background:#fffdf4;color:#234939;border-radius:18px 18px 0 0;max-height:85dvh}
+  html.manager-signal .drawer-scroll{min-height:0;padding-bottom:calc(20px + var(--sab))}
+  html.manager-signal .drawer-item{min-height:48px;font-size:.875rem;line-height:1.4;border-radius:8px}
+  html.manager-signal .drawer-section-label{font-size:.75rem;line-height:1.4;letter-spacing:.06em;color:#52624d}
+  html.manager-signal .drawer-x{min-width:44px;min-height:44px}
+  html.manager-signal .topbar{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:6px;padding:8px 12px;align-items:center}
+  html.manager-signal .topbar-right{display:flex;gap:6px;min-width:0;width:100%;flex-wrap:wrap}
+  html.manager-signal .topbar-right .view-select{flex:1 1 70px;min-width:0;width:0;max-width:100%;padding-left:8px;padding-right:24px;font-size:.75rem;min-height:44px;text-overflow:ellipsis}
+  html.manager-signal .manager-context-action{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 1 auto;min-width:64px;min-height:44px;max-width:100%;padding:5px 8px;border:1px solid #bccbb2;border-radius:9px;background:#e8eedf;color:#234939;font:600 .75rem/1rem var(--font-ui);cursor:pointer;overflow-wrap:anywhere}
+  html.manager-signal .manager-context-action small{font:500 .625rem/.875rem var(--font-ui);color:#52624d}
+  html.manager-signal .assoc-search-slot{display:block;min-width:0}
+  html.manager-signal .assoc-search-slot:empty{display:none}
+  html.manager-signal .assoc-search-slot:has(.has-query){grid-column:1/-1}
+  html.manager-signal .assoc-search-trigger{display:flex;align-items:center;justify-content:center;gap:8px;width:44px;min-height:44px;padding:8px;border:1px solid #cbd3c5;border-radius:9px;background:#fffdf4;color:#234939;font:600 .75rem/1rem var(--font-ui);cursor:pointer}
+  html.manager-signal .assoc-search-trigger:not(.has-query)>span{display:none}
+  html.manager-signal .assoc-search-trigger.has-query{width:100%;justify-content:flex-start;background:#e8eedf}
+  html.manager-signal .assoc-search-trigger.has-query>span{overflow-wrap:anywhere;min-width:0;text-align:left}
+  html.manager-signal .assoc-search-trigger>.pix{flex:none}
+  html.manager-signal .seg-wrap:has(>.search-top){padding:2px 12px;gap:0}
+  html.manager-signal .seg-wrap:has(>.search-collapsed),html.manager-signal .seg-wrap:has(>.assoc-search-anchor){display:none}
+  html.manager-signal .assoc-search-panel-slot:empty,html.manager-signal .assoc-search-panel-slot:has(.search-collapsed){display:none}
+  html.manager-signal .assoc-search-panel-slot{padding:4px 12px 2px}
+  html.manager-signal .assoc-search-panel-slot>.search-top{margin:0;max-width:none;min-width:0}
+  html.manager-signal .search-top.search-collapsed{display:none}
+  html.manager-signal .seg-wrap>.search-top{margin:0;max-width:none;min-width:0;flex:1 1 auto}
+  html.manager-signal .search-top:not(.search-collapsed){display:flex;align-items:center;gap:8px}
+  html.manager-signal .search-top .search-input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:8px 44px 8px 36px;font:400 1rem/1.4 var(--font-ui);text-align:left;border:2px solid #cbd3c5;border-radius:9px;background:#fffdf4;color:#234939;box-shadow:none;outline:none;scroll-margin-block:12px}
+  html.manager-signal .search-top .search-input::placeholder{text-align:left;color:#647260;opacity:1}
+  html.manager-signal .lpc .search-top .search-input:is(:focus,:focus-visible){border-color:#234939;box-shadow:none;outline:none}
+  html.manager-signal .search-top .search-input::-webkit-search-cancel-button{display:none;-webkit-appearance:none}
+  html.manager-signal .search-top .search-icon{left:12px}
+  html.manager-signal .topbar-right .manager-store-name{flex:1 1 70px;font-size:.75rem}
+  html.manager-signal .search-top .search-clear{position:absolute;right:0;top:50%;width:44px;height:44px;transform:translateY(-50%);background:transparent}
+  html.manager-signal .search-top .search-clear:disabled{visibility:hidden}
+  html.manager-signal .assoc-search-done{flex:none;min-height:44px;padding:6px 10px;border:0;border-radius:8px;background:#e8eedf;color:#234939;font:600 .75rem/1rem var(--font-ui)}
+  html.manager-signal .lpc:has(.botnav){padding-bottom:calc(var(--manager-nav-height,80px) + 20px)}
+  html.manager-signal .botnav-scrim{animation:none}
+}
+@media(prefers-reduced-motion:reduce){html.manager-signal :is(.botnav-btn,.qpick-btn,.manager-context-action,.assoc-search-trigger){transition:none!important}}
+/* Help category reflow: keep enlarged labels inside the modal. */
+@media(max-width:760px){
+  html.manager-signal .help-sheet .help-tabs{flex-wrap:wrap}
+  html.manager-signal .help-sheet .help-tab{flex:1 1 min-content;min-width:0;max-width:100%;min-height:44px;white-space:normal;overflow-wrap:normal}
+}
+/* End Help category reflow. */
+
+/* Phone hierarchy: warm canvas, forest selection, sand action accent. */
+@media(max-width:760px){
+  html.manager-signal .lpc{background-color:#f4f1e7}
+  html.manager-signal .topstack,html.manager-signal .topbar{background-color:#fffdf4}
+  html.manager-signal .lpc .sect-strip{background-color:#edeada;border-color:#827b68}
+  html.manager-signal .lpc .sect-strip .sect-chip{color:#514d40}
+  html.manager-signal .lpc .sect-strip .sect-chip.on{background-color:#173d2b;color:#fffdf4}
+  html.manager-signal .botnav{background-color:#fffdf4;border-top-color:#827b68}
+  html.manager-signal .botnav-btn{color:#514d40}
+  html.manager-signal .botnav-btn.on{background-color:#173d2b;color:#fffdf4}
+  html.manager-signal .botnav-btn.on::after{background-color:#e4c98d}
+  html.manager-signal .manager-context-action{background-color:#e4c98d;border-color:#876d31;color:#3f361f}
+  html.manager-signal .manager-context-action small{color:#51452b}
+  html.manager-signal .assoc-search-trigger,html.manager-signal .topbar-right .view-select{border-color:#827b68}
+  html.manager-signal .search-top .search-input{border-color:#827b68}
+  html.manager-signal .assoc-search-done{background-color:#edeada}
+  html.manager-signal .qpick,html.manager-signal .drawer{background-color:#fffdf4}
+  html.manager-signal .lpc .qpick .qpick-btn.on{background-color:#edeada}
+  html.manager-signal .drawer .drawer-item.on{background-color:#173d2b;color:#fffdf4}
+  html.manager-signal .drawer .drawer-item.on .drawer-tick{color:#e4c98d}
+  html.manager-signal :is(.botnav-btn.on,.drawer-item.on):focus-visible{outline-color:#e4c98d}
+}
+
+/* The native wrapper supplies --shell-inset-top through the existing --satr token. */
+html.manager-signal .topstack{padding-top:var(--satr,0px)}
+
+/* Keep enlarged search controls reachable above fixed navigation on short phones. */
+@media(max-width:760px) and (max-height:500px){
+  html.manager-signal .topstack:has(.search-top:not(.search-collapsed)){
+    box-sizing:border-box;max-height:calc(100dvh - var(--manager-nav-height,80px) - 12px);
+    overflow-y:auto;padding-top:0;border-top:var(--satr,0px) solid #fffdf4;
+  }
+}
+
+/* Room heroes share Performance's depth while retaining their room identity. */
+html.manager-signal .mf-floor :is(.fr-hero,.sg-floor-hero){background:#234939;box-shadow:inset 0 0 0 1px #3c5f49}
+html.manager-signal .mf-line :is(.fr-hero,.sd-hero){background:#24395b;box-shadow:inset 0 0 0 1px #465b7c}
+html.manager-signal :is(.mf-floor,.mf-line) :is(.fr-hero,.sd-hero)::after{background:repeating-linear-gradient(0deg,#ffffff04 0 1px,transparent 1px 4px)}
+html.manager-signal .mf-line .sd-hero :is(.sd-cap2,.sd-none,.sd-chairlbl,.sd-nextwho em){color:#dce4f0}
+html.manager-signal :is(.mf-floor,.mf-line) .fr-hero .fr-raildoor{color:#fffdf4}
+
+/* Arrival timestamps share one neutral treatment; their report sources stay distinct. */
+html.manager-signal .sg-updated{display:flex;align-items:flex-start;gap:6px;font:600 .75rem/1.4 var(--font-mono);letter-spacing:.04em;text-transform:uppercase;color:#e3ecdb;flex-wrap:nowrap}
+html.manager-signal .sg-updated>i{flex:none;margin-top:calc(.525rem - 3px);width:6px;height:6px;border-radius:50%;background:#e4c98d;box-shadow:none;animation:none}
+html.manager-signal .sg-updated-empty{letter-spacing:0;text-transform:none}
+/* Give the total and calendar one shared row, with pace across the whole panel. */
+html.manager-signal .bp-hero:not(.co-hero)>.bp-upd{position:static;justify-content:flex-end;margin:0 0 4px}
+html.manager-signal .bp-h5{row-gap:4px}
+html.manager-signal .bp-h5 .bp-l1{align-self:center;gap:6px}
+html.manager-signal .bp-h5 .bp-r1{grid-row:1;align-self:center}
+html.manager-signal .bp-h5 .bp-l2{grid-column:1/-1;padding-top:0}
+html.manager-signal .bp-h5 :is(.bp-l3,.bp-r3){padding-top:0}
+html.manager-signal .bp-h5 .bp-grid{grid-template-columns:repeat(7,10px);gap:3px;margin-top:6px}
+html.manager-signal .bp-h5 .bp-grid i{width:7px;height:7px}

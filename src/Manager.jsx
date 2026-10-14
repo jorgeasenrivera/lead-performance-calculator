@@ -563,6 +563,17 @@ const cutoffFor = (store) => ({ ...DEFAULT_REPORT_CUTOFF, ...((store && store.re
 
 const fmtClock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
+// These timestamps describe report arrival, not connection health or a grade.
+function HeroUpdated({ at, className, fallback = null }) {
+  const stamp = at ? new Date(at) : null;
+  const valid = stamp && !isNaN(stamp);
+  if (!valid && !fallback) return null;
+  return <span className={`${className} sg-updated${valid ? "" : " sg-updated-empty"}`}
+    title={valid ? `Latest report: ${stamp.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}` : undefined}>
+    {valid ? <><i aria-hidden="true" /><span>Updated {stamp.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}</span></> : fallback}
+  </span>;
+}
+
 function reportFreshness(store, rows, now = new Date()) {
   const c = cutoffFor(store);
   const stamps = Object.values(rows || {}).map((r) => r && r.uploadedAt).filter(Boolean).sort();
@@ -7586,13 +7597,12 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
   };
 
   const leader = offenders[0];
-  const upd = fresh.lastAt ? fmtClock(fresh.lastAt) : null;
   return (
     <div className="bp-page co-page">
       <div className="bp-hero co-hero">
         <div className="co-hh">
           <button type="button" className="co-day" onClick={() => setPop({ k: "day" })}><PixIcon glyph="calendar" size={11} />{dayLabel(day)}</button>
-          <span className={"co-upd" + (upd ? "" : " co-none")}>{upd ? <><i />Updated {upd}</> : fresh.missed ? `nothing past ${fresh.cutoffLabel}` : "no report yet"}</span>
+          <HeroUpdated className="co-upd" at={fresh.lastAt} fallback={fresh.missed ? `nothing past ${fresh.cutoffLabel}` : "no report yet"} />
         </div>
         <div className="co-big">
           <button type="button" onClick={() => setPop({ k: "team" })}><span className="co-ucap"><PixIcon glyph="phone" size={11} />Team calls</span><span className="co-unum"><DotNum value={String(tNow.c)} dot={7} color="#fff" />{delta(dCalls)}</span></button>
@@ -11881,14 +11891,57 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 
 /* ---------------- Lead Board ---------------- */
 function AssocSearch({ value, onChange, store }) {
-  return (
-    <div className="search-wrap search-top">
+  const phone = usePhoneLayout();
+  const [open, setOpen] = useState(false);
+  const [host, setHost] = useState(null);
+  const [panelHost, setPanelHost] = useState(null);
+  const inputRef = useRef(null), triggerRef = useRef(null);
+  const inputId = React.useId();
+  const expanded = !phone || open;
+  useLayoutEffect(() => { setHost(document.querySelector('.assoc-search-slot')); setPanelHost(document.querySelector('.assoc-search-panel-slot')); }, []);
+  useLayoutEffect(() => { if (phone && open) inputRef.current?.focus({ preventScroll: true }); }, [phone, open]);
+  useLayoutEffect(() => {
+    if (!phone || !open) return;
+    const stack = panelHost?.closest('.topstack');
+    if (!stack) return;
+    // A resized phone viewport can leave the search row behind fixed navigation.
+    const reveal = () => { stack.scrollTop = Math.max(0, stack.scrollHeight - stack.clientHeight); };
+    const observer = new ResizeObserver(reveal);
+    observer.observe(stack);
+    if (panelHost) observer.observe(panelHost);
+    window.addEventListener('resize', reveal);
+    window.visualViewport?.addEventListener('resize', reveal);
+    reveal();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', reveal);
+      window.visualViewport?.removeEventListener('resize', reveal);
+      stack.scrollTop = 0;
+    };
+  }, [phone, open, panelHost]);
+  const close = () => { inputRef.current?.blur(); setOpen(false); triggerRef.current?.focus({ preventScroll: true }); };
+  const trigger = phone && <button type="button" ref={triggerRef} className={"assoc-search-trigger" + (value && !expanded ? " has-query" : "")}
+    aria-label={value ? `Search associates: ${value}` : "Search associates"} title={value || "Search associates"} aria-expanded={expanded} aria-controls={inputId}
+    onClick={() => { if (expanded) close(); else setOpen(true); }}>
+    <PixIcon glyph="search" size={15} /><span>{value ? `Search: ${value}` : "Search"}</span>
+  </button>;
+  const field = <div className={"search-wrap search-top" + (phone && !expanded ? " search-collapsed" : "")}
+      onKeyDown={(e) => { if (phone && (e.key === 'Escape' || (e.key === 'Enter' && e.target === inputRef.current && !e.nativeEvent.isComposing))) { e.preventDefault(); e.stopPropagation(); close(); } }}>
+      <div className="assoc-search-field">
       <span className="search-icon"><PixIcon glyph="search" size={17} /></span>
-      <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder="Search associates" />
-      {value && <button className="search-clear" onClick={() => onChange("")} aria-label="Close"><PixIcon glyph="close" size={13} /></button>}
-    </div>
-  );
+      <input id={inputId} ref={inputRef} type="search" enterKeyHint="done" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="search-input" value={value}
+        aria-label="Search associates" onChange={(e) => onChange(e.target.value)} placeholder="Search associates" />
+      {(phone || value) && <button type="button" className="search-clear" disabled={!value} aria-hidden={!value} tabIndex={value ? 0 : -1}
+        onClick={() => { onChange(''); setOpen(true); inputRef.current?.focus({ preventScroll: true }); }} aria-label="Clear search">
+        <PixIcon glyph="close" size={13} />
+      </button>}
+      </div>
+      {phone && <button type="button" className="assoc-search-done" onClick={close}>Done</button>}
+    </div>;
+  return <>
+    {trigger && (host ? createPortal(trigger, host) : trigger)}
+    {phone && panelHost ? <><span className="assoc-search-anchor" hidden />{createPortal(field, panelHost)}</> : field}
+  </>;
 }
 
 /* How many of a role's people a phone shows before asking. Five is what fits
@@ -16242,206 +16295,101 @@ function importProgress(storeData, activity) {
   return { done: ["appointment", "video"].filter((k) => t[k]).length, need: 2 };
 }
 
-/* Which tool the bar was showing last, kept outside the component on purpose so
-   it outlives a remount. See the pill placement below. */
-let lastBarTool = null;
-
-function BottomNav({ appModule, onToolChange, storeData, onImport, onMore, rooms }) {
-  const activity = appModule === "activity";
-  const { done, need } = importProgress(storeData, activity);
-  const R = 27, C = 2 * Math.PI * R;
-  const ready = need > 0 && done >= need;
-
-  /* Three of the six tools live behind one tab, so the tab the bar highlights is
-     not always the module you are in. Everything below — the pill, the glyph,
-     the on state — works off this, not off appModule. */
-  const queueOn = inQueues(appModule);
-  const activeTab = queueOn ? QUEUE_TAB : appModule;
-  const [picking, setPicking] = useState(false);
-  // Close it on the way out of the group, so coming back never opens to a
-  // menu left standing from last time.
-  useEffect(() => { setPicking(false); }, [appModule]);
+/* Focus stays inside an open selector and returns to its invoking control. */
+function useSelectorFocus(open, ref, onClose) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    if (!picking) return;
-    const onKey = (e) => { if (e.key === "Escape") setPicking(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [picking]);
-
-  /* The pill that slides. The tabs are not evenly wide — "Live Floor" is a wider
-     word than "More", and the centre slot is a fixed 62px — so the pill cannot be
-     placed by index arithmetic. It is measured off the live button instead, which
-     also survives the label going from "Performance" to "Perf" at 360px. */
-  const barRef = useRef(null);
-  const tabRefs = useRef({});
-  const [pill, setPill] = useState(null);
-  const mounted = useRef(false);
-  /* The bar rises from below the foot once the first page is there, as the
-     rooms' bar does, rather than sitting on screen before anything it points
-     at. And when an import is due the centre button asks, twice, the way a
-     FlyBy asks on a salesperson's phone. */
-  const [up, setUp] = useState(false);
-  useEffect(() => { const r = requestAnimationFrame(() => setUp(true)); return () => cancelAnimationFrame(r); }, []);
-  useEffect(() => { if (ready) buzz("asked"); }, [ready]);
-  useLayoutEffect(() => {
-    const bar = barRef.current;
-    if (!bar) { setPill(null); return; }
-    /* padded out from the glyph rather than sized to the tab. The glyph box is
-       square and the same in every tab, so the pill is one constant shape that
-       only ever moves — which is what makes the slide read as one object. */
-    const box = (id) => {
-      const tab = tabRefs.current[id];
-      const ico = tab && tab.querySelector(".botnav-ico");
-      if (!ico) return null;
-      const w = ico.offsetWidth + 26, h = ico.offsetHeight + 13;
-      return { w, h,
-        x: tab.offsetLeft + ico.offsetLeft + (ico.offsetWidth - w) / 2,
-        y: tab.offsetTop + ico.offsetTop + (ico.offsetHeight - h) / 2 };
+    if (!open) return;
+    const previous = document.activeElement;
+    const node = ref.current;
+    const controls = () => [...(node?.querySelectorAll('button:not(:disabled),a[href],input,select,[tabindex="0"]') || [])]
+      .filter(el => el.getClientRects().length);
+    (controls()[0] || node)?.focus();
+    const onKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRef.current(); }
+      if (e.key === 'Tab') {
+        const all = controls(), index = all.indexOf(document.activeElement);
+        if (!all.length) { e.preventDefault(); return; }
+        if (e.shiftKey && index <= 0) { e.preventDefault(); all.at(-1).focus(); }
+        else if (!e.shiftKey && (index < 0 || index === all.length - 1)) { e.preventDefault(); all[0].focus(); }
+      }
     };
-    const to = box(activeTab);
-    if (!to) { setPill(null); lastBarTool = activeTab; return; }
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      // A pointer may already have moved focus to a different selector.
+      // Do not steal it back while that next panel is taking ownership.
+      if (previous?.isConnected && (node?.contains(document.activeElement) || document.activeElement === document.body)) previous.focus();
+    };
+  }, [open, ref]);
+}
 
-    /* Live Floor is a different component tree from Performance and Activity, so
-       switching between them unmounts one bar and mounts another. The pill in the
-       new bar has no history to move from and simply appears under the tab you
-       picked — which is the "it doesn't follow" you see going back to
-       Performance. lastBarTool lives outside the component so it survives that
-       remount: a fresh bar is drawn once at the OLD tab with the transition off,
-       and only then released to glide to the new one. */
-    const from = !mounted.current && lastBarTool && lastBarTool !== activeTab
-      ? box(lastBarTool) : null;
-    mounted.current = true;
-    lastBarTool = activeTab;
-
-    let raf = 0;
-    if (from) {
-      setPill({ ...from, glide: false });
-      // two frames: one to paint the old position, one to start the transition.
-      // A single frame lands in the same style recalculation and animates nothing.
-      raf = requestAnimationFrame(() => {
-        raf = requestAnimationFrame(() => setPill({ ...to, glide: true }));
-      });
-    } else {
-      setPill({ ...to, glide: true });
-    }
-
-    /* Rotating the phone changes every offset at once. ResizeObserver on the bar
-       catches that, and the orientation change that comes with it, without a
-       resize listener that fires on every scroll-driven toolbar shift in Safari. */
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => {
-        const b = box(activeTab);
-        if (b) setPill({ ...b, glide: true });
-      });
-      ro.observe(bar);
-    }
-    return () => { if (raf) cancelAnimationFrame(raf); if (ro) ro.disconnect(); };
-  }, [activeTab]);
-
-  /* Daily Activity's numbers arrive by report — there is nothing to upload from
-     a phone — so its verb is the daily report, not Import. The ring still shows
-     whether today's report has landed, which is the same question either way. */
-  const verb = activity
-    ? { label: "Daily report", glyph: "doc", act: openDailyReport, aria: "Open the daily report" }
-    : { label: ready ? "Imported" : `Import ${done}/${need}`, glyph: ready ? "check" : "arrowup",
-        act: onImport, aria: ready ? "Import: today's files are in" : `Import: ${done} of ${need} done today` };
-
-  const [, queueLabel, queueGlyph] = BAR_TOOLS[2];
-  const here = queueOn ? queueTool(appModule) : null;
-  /* A store with one room does not need a menu to choose it (consistency
-     pass, item 11). The slot becomes that room's own button, in its glyph
-     and its colour, and goes straight there. */
+function BottomNav({ appModule, onToolChange, onMore, moreOpen, rooms }) {
+  const queueOn = inQueues(appModule);
+  const barRef = useRef(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current, shell = bar?.closest('.lpc');
+    if (!shell) return;
+    const measure = () => shell.style.setProperty('--manager-nav-height', `${bar.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => { observer.disconnect(); shell.style.removeProperty('--manager-nav-height'); };
+  }, []);
+  const [picking, setPicking] = useState(false);
+  const pickerRef = useRef(null);
+  const pickerId = React.useId();
+  useSelectorFocus(picking, pickerRef, () => setPicking(false));
+  useEffect(() => { setPicking(false); }, [appModule, moreOpen]);
   const solo = Array.isArray(rooms) && rooms.length === 1 ? queueTool(rooms[0]) : null;
-
-  return (
-   <>
-    {/* Outside the <nav> on purpose. The bar carries backdrop-filter, which makes
-        it a containing block for fixed descendants — a scrim rendered inside it
-        would be the size of the bar, not the screen. */}
+  return <>
     {picking && <div className="botnav-scrim" onClick={() => setPicking(false)} aria-hidden="true" />}
-    <nav className={"botnav no-print" + (up ? " up" : "")} aria-label="Tools" ref={barRef}>
-      {/* Rendered even with no measurement yet, at opacity 0, so the first paint
-          after a tool change animates from where the pill was rather than
-          appearing under the new tab. */}
-      <span className="botnav-thumb" aria-hidden="true"
-        style={pill
-          ? { opacity: 1, width: pill.w + "px", height: pill.h + "px",
-              transform: `translate(${pill.x}px, ${pill.y}px)`,
-              ...(pill.glide ? null : { transition: "none" }) }
-          : { opacity: 0 }} />
-      {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => (
-        <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
-          className={"botnav-btn" + (appModule === id ? " on" : "")}
-          onClick={() => onToolChange(id)}>
-          <span className="botnav-ico"><PixIcon glyph={glyph} size={17} /></span>
-          <span className="botnav-lbl">{label}</span>
-        </button>
-      ))}
-
-      {/* align-self:stretch is load-bearing. Under align-items:flex-end the slot
-          collapses to height 0, and a negative `top` on the button then measures
-          from the bar's BOTTOM edge — which is how the centre button ended up
-          off the bottom of the screen in the drafts. */}
-      <div className="botnav-slot">
-        <svg className="botnav-halo" viewBox="0 0 62 62" aria-hidden="true">
-          <circle className="bh-trk" cx="31" cy="31" r={R} />
-          <circle className="bh-arc" cx="31" cy="31" r={R} transform="rotate(-90 31 31)"
-            strokeDasharray={C.toFixed(1)} strokeDashoffset={(C * (1 - done / need)).toFixed(1)} />
-        </svg>
-        <button className={"botnav-fab" + (ready ? " ready" : "")} onClick={verb.act} aria-label={verb.aria}>
-          <PixIcon glyph={verb.glyph} size={21} />
-        </button>
-        <span className="botnav-fablbl">{verb.label}</span>
-      </div>
-
-      {/* The group tab. It opens a menu rather than going anywhere, so it takes
-          aria-expanded and a popup role — and it wears the glyph and the colour
-          of whichever queue you are actually in, which is the only thing the
-          fixed "Up Next" label cannot tell you. */}
-      {solo ? (
-        <button ref={(el) => { tabRefs.current[QUEUE_TAB] = el; }}
-          className={"botnav-btn" + (queueOn ? " on" : "")}
-          style={{ "--sp": solo.accent }}
-          onClick={() => { if (appModule !== solo.id) onToolChange(solo.id); }}>
-          <span className="botnav-ico"><PixIcon glyph={solo.glyph} size={17} /></span>
-          <span className="botnav-lbl">{solo.label}</span>
-        </button>
-      ) : (
-      <button ref={(el) => { tabRefs.current[QUEUE_TAB] = el; }}
-        className={"botnav-btn" + (queueOn ? " on" : "") + (picking ? " open" : "")}
-        style={here ? { "--sp": here.accent } : null}
-        aria-haspopup="true" aria-expanded={picking}
-        onClick={() => setPicking((v) => !v)}>
-        <span className="botnav-ico"><PixIcon glyph={here ? here.glyph : queueGlyph} size={17} /></span>
-        <span className="botnav-lbl">{queueLabel}</span>
+    <nav ref={barRef} className="botnav no-print up" aria-label="Tools">
+      {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => <button type="button" key={id}
+        className={"botnav-btn" + (appModule === id ? " on" : "")}
+        aria-current={appModule === id ? "page" : undefined}
+        onClick={() => { setPicking(false); if (appModule !== id) onToolChange(id); }}>
+        <span className="botnav-ico"><PixIcon glyph={glyph} size={24} /></span>
+        <span className="botnav-lbl">{label}</span>
+      </button>)}
+      <button type="button" className={"botnav-btn" + (queueOn ? " on" : "")}
+        aria-label={solo ? `Rooms: ${solo.label}` : "Rooms"}
+        aria-current={solo && queueOn ? "page" : undefined}
+        aria-haspopup={solo ? undefined : "dialog"} aria-expanded={solo ? undefined : picking}
+        aria-controls={solo ? undefined : pickerId}
+        onClick={event => { event.currentTarget.focus(); if (solo) { if (appModule !== solo.id) onToolChange(solo.id); } else setPicking(v => !v); }}>
+        <span className="botnav-ico"><PixIcon glyph={BAR_TOOLS[2][2]} size={24} /></span>
+        <span className="botnav-lbl">Rooms</span>
       </button>
-      )}
-
-      {/* A sibling of the tab, not a child of it: a button inside a button is
-          invalid, and every tap on the menu would bubble back out and reopen the
-          thing it just closed. It spans the bar and blooms from the tab's corner
-          instead, which transform-origin handles. */}
-      {picking && !solo && (
-        <div className="qpick" role="menu">
-          {QUEUE_TOOLS.map((q) => (
-            <button key={q.id} role="menuitem" style={{ "--qa": q.accent }}
-              className={"qpick-btn" + (appModule === q.id ? " on" : "")}
-              onClick={() => { setPicking(false); if (appModule !== q.id) onToolChange(q.id); }}>
-              <span className="qpick-ico"><PixIcon glyph={q.glyph} size={20} /></span>
-              <span className="qpick-lbl">{q.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <button className="botnav-btn" onClick={onMore}>
-        <span className="botnav-ico"><PixIcon glyph="more" size={17} /></span>
-        <span className="botnav-lbl">More</span>
+      {picking && !solo && <div id={pickerId} ref={pickerRef} className="qpick" role="dialog" aria-modal="true" aria-label="Choose a room" tabIndex={-1}>
+        <div className="selector-sheet-heading"><strong>Rooms</strong><button type="button" onClick={() => setPicking(false)} aria-label="Close rooms"><PixIcon glyph="close" size={16} /></button></div>
+        {QUEUE_TOOLS.map(q => <button type="button" key={q.id} className={"qpick-btn" + (appModule === q.id ? " on" : "")}
+          aria-current={appModule === q.id ? "page" : undefined}
+          onClick={() => { setPicking(false); if (appModule !== q.id) onToolChange(q.id); }}>
+          <span className="qpick-ico"><PixIcon glyph={q.glyph} size={24} /></span>
+          <span className="qpick-lbl">{q.label}</span>
+          {appModule === q.id && <PixIcon glyph="check" size={16} />}
+        </button>)}
+      </div>}
+      <button type="button" className="botnav-btn" aria-haspopup="dialog" aria-expanded={moreOpen} aria-controls="manager-more" onClick={event => { event.currentTarget.focus(); setPicking(false); onMore(); }}>
+        <span className="botnav-ico"><PixIcon glyph="more" size={24} /></span><span className="botnav-lbl">More</span>
       </button>
     </nav>
-   </>
-  );
+  </>;
+}
+
+function ManagerContextAction({ appModule, navValue, storeData, onImport }) {
+  const activity = appModule === 'activity';
+  const { done, need } = importProgress(storeData, activity);
+  if (activity && navValue !== 'checkout') return null;
+  if (!activity && !onImport) return null;
+  return <button type="button" className="manager-context-action"
+    aria-label={activity ? 'Open the daily report' : `Import: ${done} of ${need} done today`}
+    onClick={activity ? openDailyReport : onImport}>
+    <span>{activity ? 'Daily report' : 'Import'}</span>
+    {!activity && <small>{done}/{need} today{done === need ? ' ✓' : ''}</small>}
+  </button>;
 }
 
 /* The sections, as a scrolling strip of chips under the header. This is what the
@@ -16519,7 +16467,9 @@ const NAV_SHORT = {
   floor: "Floor",                      // "Live Floor"
 };
 
-function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
+function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange, onHelp, onImport }) {
+  const drawerRef = useRef(null);
+  useSelectorFocus(open, drawerRef, onClose);
   // Lock body scroll while the drawer is open so the page behind doesn't move.
   useEffect(() => {
     if (!open) return;
@@ -16530,37 +16480,25 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open, onClose]);
 
-  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "TV Board"], ["floor", "Live Floor"], ["line", "Phone Line"], ["online", "Online"]];
+  const tools = [["board", "TV Board"]];
   const pick = (id) => { onChange && onChange(id); onClose(); };
 
   return (
-    <div className={"drawer-root no-print " + (open ? "open" : "")} aria-hidden={!open}>
+    <div className={"drawer-root no-print " + (open ? "open" : "")} aria-hidden={!open} inert={open ? undefined : ""}>
       <div className="drawer-scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label="Menu">
+      <aside id="manager-more" ref={drawerRef} className="drawer" role="dialog" aria-modal="true" aria-label="Menu" tabIndex={-1}>
         <div className="drawer-head">
           {storeName ? <div className="drawer-store">{storeName}</div> : <div className="drawer-store">Menu</div>}
           <button className="drawer-x x-close" onClick={onClose} aria-label="Close menu"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         <div className="drawer-scroll">
-          {/* A module without tabs (The Board) opens the drawer for Switch tool
-              alone, so the "Go to" heading would sit over nothing. */}
-          {items && items.length > 0 && (
-            <>
-              <div className="drawer-section-label">Sections</div>
-              <nav className="drawer-nav">
-                {items.map(([id, label]) => (
-                  <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
-                    <span>{label}</span>
-                    {/* The dock's centre button carries the import count on the phone; a second copy here said it twice (consistency pass, item 9). */}
-                    {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
-                  </button>
-                ))}
-              </nav>
-            </>
-          )}
-
-          <div className="drawer-section-label">Tools</div>
+          <div className="drawer-section-label">Utilities</div>
+          <div className="drawer-nav">
+            {onImport && <button type="button" className="drawer-item" onClick={() => { onClose(); onImport(); }}>Import</button>}
+            <button type="button" className="drawer-item" onClick={() => { onClose(); onHelp?.(); }}>Help</button>
+          </div>
+          <div className="drawer-section-label">Destinations</div>
           <nav className="drawer-nav">
             {tools.map(([id, label]) => (
               <button key={id} className={"drawer-item " + (appModule === id ? "on" : "")} onClick={() => onToolChange(id)}>
@@ -16569,6 +16507,20 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
               </button>
             ))}
           </nav>
+          {items && items.length > 0 && (
+            <>
+              <div className="drawer-section-label">Sections</div>
+              <nav className="drawer-nav">
+                {items.filter(([id]) => id !== "import" || !onImport).map(([id, label]) => (
+                  <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
+                    <span>{label}</span>
+                    {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
+
         </div>
       </aside>
     </div>
@@ -17256,7 +17208,6 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const dotN = 28;
   const litDots = goalBar > 0 ? Math.round(Math.min(1, totalUnits / goalBar) * dotN) : 0;
   const parX = pace.goal && !pace.tooEarly ? Math.min(100, (pace.parToday / goalBar) * 100) : null;
-  const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, ""); };
 
   /* ---- the pops ---- */
   const hd = (title, meta) => (
@@ -17394,12 +17345,11 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
 
   return (
     <div className="bp-page">
-      <div className="bp-hero">
-        {true && <h2 className="sage-bp-store" title={store.name}>{store.name}</h2>}
-        {updatedAt && <div className="bp-upd"><i />Updated {fmtTime(updatedAt)}</div>}
+      <div className="bp-hero" role="region" aria-label={`Performance for ${store.name}`}>
+        <HeroUpdated className="bp-upd" at={updatedAt} />
         <div className="bp-h5">
           <button type="button" className="bp-l1" onClick={() => setPop({ k: "units" })}>
-            <span className="bp-num"><DotNum value={String(Math.round(totalUnits))} dot={11} color="#fff" /></span>
+            <span className="bp-num"><DotNum value={String(Math.round(totalUnits))} dot={9} color="#fff" /></span>
             <span className="bp-goal">{goalUnits ? `/ ${fmtNum(goalBar)} goal` : canSetGoal ? "/ set a goal" : ""}</span>
           </button>
           <button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>
@@ -17433,11 +17383,15 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             const pctV = c.pct == null ? null : c.pct * 100;
             const h = pctV == null ? 0 : Math.min(pctV / target * 100, 120) / 1.2;
             const d = chDelta[c.id];
+            // Match the main closing sheet: grade its displayed tenth of a point.
+            const gradePct = c.pct == null ? null : Math.round(c.pct * 1000) / 10;
+            const state = gradePct == null ? "na" : gradePct >= target ? "ok" : gradePct >= thr[c.id].yellow ? "warn" : "bad";
+            const color = { ok: "#8FD8AF", warn: "#E4C98D", bad: "#F08A80", na: "#FFFFFF" }[state];
             return (
               <button type="button" key={c.id} className={"bp-t5" + (d == null ? "" : d >= 0 ? " bp-up" : " bp-down")} onClick={() => setPop({ k: "chan", id: c.id })}>
-                <span className={"bp-pct " + (pctV == null ? "" : pctV >= target ? "bp-ok" : "bp-low")}>{pctV == null ? "–" : fmtPct(c.pct)}</span>
-                <span className="bp-body"><span className="bp-tb"><i style={{ height: h.toFixed(1) + "%", background: CHANNEL_HUE[c.id] }} /></span><span className="bp-tgt" style={{ bottom: `${(100 / 1.2).toFixed(0)}%` }} /></span>
-                <span className="bp-tl">{c.label}</span>
+                <span className="bp-pct" style={{ color }}>{pctV == null ? "–" : fmtPct(c.pct)}</span>
+                <span className="bp-body"><span className="bp-tb"><i style={{ height: h.toFixed(1) + "%", background: color }} /></span><span className="bp-tgt" style={{ bottom: `${(100 / 1.2).toFixed(0)}%` }} /></span>
+                <span className="bp-tl" style={{ color }}>{c.label}</span>
               </button>
             );
           })}
@@ -22735,6 +22689,14 @@ function TubeGlass() {
   );
 }
 
+/* Keep the existing HelpPanel and callbacks; add manager-shell keyboard ownership. */
+function ManagerHelpAccess({ children, onClose }) {
+  const panelRef = useRef(null);
+  useLayoutEffect(() => { panelRef.current = document.querySelector('.help-sheet'); }, []);
+  useSelectorFocus(true, panelRef, onClose);
+  return children;
+}
+
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
   right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
@@ -22773,13 +22735,16 @@ function AppShell({
           a hardcoded `top` equal to the header's height, and that number is
           different at 320 and at 430. */}
       <div className="topstack no-print">
-      <header className="topbar no-print">
+      <header className="topbar no-print" aria-label={storeName ? `Manager tools for ${storeName}` : "Manager tools"}>
         <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin}
           onSignOut={onSignOut} onReplayIntro={onReplayIntro} onHelp={onHelp} />
         <div className="topbar-right">
           <ToolSwitcher value={appModule} onChange={onToolChange} />
           {right}
+          {storeName && <span className="manager-store-name" title={storeName}>{storeName}</span>}
+          <ManagerContextAction appModule={appModule} navValue={navValue} storeData={storeData} onImport={onImport} />
         </div>
+        <span className="assoc-search-slot" />
         <button className="hamburger no-print" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
           <span></span><span></span><span></span>
         </button>
@@ -22787,6 +22752,7 @@ function AppShell({
 
       <SectionStrip items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData} />
+      <div className="assoc-search-panel-slot" />
       </div>
 
       {children}
@@ -22795,15 +22761,17 @@ function AppShell({
         appModule={appModule} storeData={storeData} rooms={rooms}
         onToolChange={onToolChange}
         onImport={onImport}
-        onMore={() => setDrawerOpen(true)} />
+        onMore={() => setDrawerOpen(true)} moreOpen={drawerOpen} />
       <MobileDrawer
-        open={drawerOpen} onClose={() => setDrawerOpen(false)}
+        open={drawerOpen} onClose={() => setDrawerOpen(false)} onHelp={onHelp} onImport={onImport}
         items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData} storeName={storeName}
         onToolChange={(mod) => { onToolChange(mod); setDrawerOpen(false); }} />
       <Style />
       <style>{managerSignalCSS}</style>
-      {help}
+      {help && React.cloneElement(help, {}, React.Children.map(help.props.children, child =>
+        React.isValidElement(child) && typeof child.props.onClose === 'function'
+          ? <ManagerHelpAccess onClose={child.props.onClose}>{child}</ManagerHelpAccess> : child))}
           {corner}
       <AskHost />
     </Shell>
@@ -24172,7 +24140,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           line-height:1.6; border-radius:999px; vertical-align:1px; }
         .botnav { position:fixed; left:10px; right:10px; z-index:340; display:flex;
           align-items:flex-end;
-          transform:translateY(calc(100% + 40px)); transition:transform var(--t-settle) var(--spring);
           bottom:calc(9px + var(--sab));
           padding:7px 5px 8px; border-radius:26px;
           background:rgba(255,255,255,.82); backdrop-filter:blur(22px) saturate(180%);
@@ -24180,11 +24147,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           border:1px solid rgba(255,255,255,.72);
           box-shadow:0 1px 0 rgba(255,255,255,.6) inset,
             0 10px 30px -6px rgba(16,40,68,.18), 0 2px 8px rgba(16,40,68,.06); }
-        .botnav-thumb { position:absolute; left:0; top:0; z-index:0; border-radius:13px;
-          background:color-mix(in srgb, var(--sp, var(--blue)) 13%, transparent);
-          pointer-events:none;
-          transition:transform var(--t-wipe) var(--ease-bloop), width var(--t-wipe) var(--ease-bloop),
-            height .48s var(--ease-bloop), opacity .2s var(--ease); }
         .botnav-btn { flex:1; min-width:0; position:relative; z-index:1; display:flex;
           flex-direction:column; align-items:center; gap:5px;
           border:none; background:none; font:inherit; cursor:pointer; padding:5px 1px; border-radius:12px;
@@ -24193,26 +24155,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           width:17px; height:17px; line-height:0; }
         .botnav-lbl { font-size:9.5px; font-weight:700; letter-spacing:-.01em;
           white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
-        .botnav-slot { flex:0 0 62px; position:relative; align-self:stretch; z-index:2; }
-        .botnav-halo { position:absolute; left:50%; top:-35px; transform:translateX(-50%);
-          width:62px; height:62px; pointer-events:none; }
-        .botnav-halo circle { fill:none; stroke-width:3.5; stroke-linecap:round; }
-        .botnav-halo .bh-trk { stroke:rgba(16,40,68,.12); }
-        .botnav-halo .bh-arc { stroke:var(--sa, var(--lime)); transition:stroke-dashoffset 1s var(--ease); }
-        .botnav-fab { position:absolute; left:50%; top:-30px; width:52px; height:52px;
-          border-radius:50%; border:none; cursor:pointer; color:#fff;
-          background:linear-gradient(145deg, var(--sp, var(--blue)), var(--sd, #16324f));
-          transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
-          box-shadow:0 10px 24px -8px rgba(16,40,68,.5);
-          transition:transform var(--t-wipe) var(--ease-bloop); }
-        .botnav.up { transform:none; }
-        .botnav-fab.ready { animation:fabAsk 1.2s var(--ease) 2; }
-        @keyframes fabAsk { 0%, 100% { box-shadow:0 10px 24px -8px rgba(16,40,68,.5); }
-          30% { box-shadow:0 0 0 7px color-mix(in srgb, var(--sp, var(--blue)) 28%, transparent), 0 10px 24px -8px rgba(16,40,68,.5); } }
-        @media (prefers-reduced-motion: reduce) { .botnav { transition:none; } .botnav-fab.ready { animation:none; } }
-        .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:4px; text-align:center;
-          font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
-          pointer-events:none; }
         .botnav-scrim { position:fixed; inset:0; z-index:335;
           background:rgba(16,40,68,.07); animation:fadeIn .2s var(--ease) both; }
         .qpick { position:absolute; left:6px; right:6px; bottom:calc(100% + 30px); z-index:3;
