@@ -29,6 +29,11 @@ def license_value(text):
     return re.sub(' +', ' ', text).strip(''.join(map(chr, range(33))))
 
 
+def acceptance_records(text):
+    # Java/Guava readLines recognizes only CR, LF and CRLF, not Unicode separators.
+    return re.split(r'\r\n|\r|\n', text)
+
+
 def revision(node):
     require(node is not None, 'missing revision')
     require(all(c.tag in ('major', 'minor', 'micro') for c in node), 'unknown revision')
@@ -68,7 +73,7 @@ def check_license(root, node, policy, read_acceptance):
     require(digest(raw.encode('utf-8')) == policy['licenses'][name], 'changed license text')
     marker = hashlib.sha1(license_value(raw).encode('utf-8')).hexdigest()
     # Read only. Never create a license directory or write an acceptance marker.
-    require(marker in read_acceptance(name).splitlines(), 'required license acceptance not established: ' + name)
+    require(marker in acceptance_records(read_acceptance(name)), 'required license acceptance not established: ' + name)
     return name
 
 
@@ -112,7 +117,7 @@ def verify_installed(policy, sdk, read_acceptance):
         require(len(licenses) == 1 and not len(licenses[0]), 'unknown installed license definition')
         value = license_value(licenses[0].text or '')
         require(digest(value.encode()) == policy['license_values'][name], 'changed installed license text')
-        require(hashlib.sha1(value.encode()).hexdigest() in read_acceptance(name).splitlines(), 'installed license acceptance not established')
+        require(hashlib.sha1(value.encode()).hexdigest() in acceptance_records(read_acceptance(name)), 'installed license acceptance not established')
 
 
 def fetch(url):

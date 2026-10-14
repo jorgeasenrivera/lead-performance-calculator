@@ -11,9 +11,7 @@ test -r /dev/kvm && test -w /dev/kvm || { echo 'BLOCKED: accessible KVM required
 SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
 test -x "$SDKMANAGER"
-# Only this reviewed stable package set and its dependency closure need acceptance.
-PACKAGES=('emulator' 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1' 'cmake;3.30.5' 'system-images;android-36;google_apis;x86_64')
-timeout 60 python3 scripts/android-webview/licenses.py --sdk "$ANDROID_HOME" "${PACKAGES[@]}" > "$OUT/licenses.txt" 2>&1 || { cat "$OUT/licenses.txt"; exit 1; }
+source scripts/android-webview/sdk-packages.sh
 # EOF never accepts an agreement. The SDK manager remains an independent guard.
 timeout 300 "$SDKMANAGER" "${PACKAGES[@]}" </dev/null
 timeout 60 python3 scripts/android-webview/licenses.py --sdk "$ANDROID_HOME" --installed "${PACKAGES[@]}" >> "$OUT/licenses.txt" 2>&1 || { cat "$OUT/licenses.txt"; exit 1; }

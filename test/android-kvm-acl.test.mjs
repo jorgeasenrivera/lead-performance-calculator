@@ -11,7 +11,7 @@ test('ACL lease verifies scoped grant, full restoration and fail-closed recovery
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-const modes = ['success', 'failure', 'signal', 'restore-failure', 'surviving-descendant',
+const modes = ['preflight-failure', 'success', 'failure', 'signal', 'restore-failure', 'surviving-descendant',
   'surviving-failure', 'term-resistant-descendant', 'escaped-descendant', 'shutdown-failure', 'both-cleanup-failures'];
 for (const mode of modes) {
   test(`KVM wrapper attempts shutdown and restoration: ${mode}`, { timeout: 20000 }, async () => {
@@ -21,13 +21,16 @@ for (const mode of modes) {
       const scriptDir = path.join(dir, 'scripts/android-webview');
       mkdirSync(scriptDir, { recursive: true });
       mkdirSync(path.join(dir, 'bin'));
-      for (const file of ['with-kvm.sh', 'cleanup-kvm.sh', 'process_group.py']) {
+      for (const file of ['with-kvm.sh', 'cleanup-kvm.sh', 'process_group.py', 'sdk-packages.sh']) {
         copyFileSync(`scripts/android-webview/${file}`, path.join(scriptDir, file));
       }
-      // Use the real process supervisor and traps. Only the ACL controller is fake.
+      // Use the real wrapper, process supervisor and traps; fake license proof and ACL operations.
       const realPython = spawnSync('which', ['python3'], { encoding: 'utf8' }).stdout.trim();
       writeFileSync(path.join(dir, 'bin/python3'), `#!/bin/bash
-if [[ "$1" == scripts/android-webview/kvm_acl.py ]]; then
+if [[ "$1" == scripts/android-webview/licenses.py ]]; then
+  echo preflight >> calls
+  if [[ "$MODE" == preflight-failure ]]; then echo 'BLOCKED: fictional missing acceptance'; exit 23; fi
+elif [[ "$1" == scripts/android-webview/kvm_acl.py ]]; then
   if [[ "$2" == restore && -f descendant ]]; then
     if kill -0 "$(cat descendant)" 2>/dev/null; then echo 'descendant alive at ACL restoration' >&2; exit 88; fi
   fi
@@ -55,7 +58,7 @@ if [[ "$MODE" == failure || "$MODE" == surviving-failure ]]; then exit 17; fi
 `);
       child = spawn('bash', ['scripts/android-webview/with-kvm.sh'], {
         cwd: dir, env: { ...process.env, MODE: mode, REAL_PYTHON: realPython, RUNNER_TEMP: dir,
-          PYTHONDONTWRITEBYTECODE: '1', PATH: `${dir}/bin:${process.env.PATH}` }, stdio: 'pipe',
+          ANDROID_HOME: '/fictional-sdk', PYTHONDONTWRITEBYTECODE: '1', PATH: `${dir}/bin:${process.env.PATH}` }, stdio: 'pipe',
       });
       let output = '';
       child.stdout.on('data', b => { output += b; });
@@ -67,10 +70,18 @@ if [[ "$MODE" == failure || "$MODE" == surviving-failure ]]; then exit 17; fi
         child.kill('SIGTERM');
       }
       const result = await exited;
+      if (mode === 'preflight-failure') {
+        assert.equal(result.code, 1, output);
+        assert.deepEqual(readFileSync(path.join(dir, 'calls'), 'utf8').trim().split('\n'), ['preflight']);
+        assert.match(output, /BLOCKED: fictional missing acceptance/);
+        assert.equal(existsSync(path.join(dir, 'started')), false, 'supervised child must not start');
+        assert.equal(existsSync(path.join(dir, 'sage-android-processes.json')), false);
+        return;
+      }
       const expected = { failure: 17, 'surviving-failure': 17, signal: 143, 'restore-failure': 1, 'shutdown-failure': 1, 'both-cleanup-failures': 1 }[mode] || 0;
       assert.equal(result.code, expected, output);
       assert.deepEqual(readFileSync(path.join(dir, 'calls'), 'utf8').trim().split('\n'),
-        ['grant', 'restore']);
+        ['preflight', 'grant', 'restore']);
       const shutdownCode = ['shutdown-failure', 'both-cleanup-failures'].includes(mode) ? 7 : 0;
       const restoreCode = ['restore-failure', 'both-cleanup-failures'].includes(mode) ? 9 : 0;
       assert.ok(output.includes(`KVM cleanup results: shutdown=${shutdownCode} restore=${restoreCode}`));

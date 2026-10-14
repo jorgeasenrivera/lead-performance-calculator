@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Prove required acceptance before any device access grant or supervised work.
+: "${ANDROID_HOME:?Android SDK required}"
+source scripts/android-webview/sdk-packages.sh
+OUT="$PWD/android-webview-evidence"
+mkdir -p "$OUT"
+timeout 60 python3 scripts/android-webview/licenses.py --sdk "$ANDROID_HOME" "${PACKAGES[@]}" > "$OUT/licenses.txt" 2>&1 || { cat "$OUT/licenses.txt"; exit 1; }
 supervisor=''
 cleanup() {
   local result=$?

@@ -42,14 +42,16 @@ so a missing or different dependency fails rather than being silently adopted.
 The currently documented runner image lists SDK 36 but does not promise the
 emulator system image, requested NDK or CMake versions.
 
-Before download/build, the approved temporary ACL wrapper requires the exact
+Before any KVM grant, the wrapper requires read-only proof of existing acceptance
+for the exact requested stable packages and their dependencies. See
+[package-specific license proof](android-sdk-licenses.md) for pinned official
+metadata and agreement provenance. Failure exits before the ACL grant or
+supervisor starts. The approved temporary ACL wrapper then requires the exact
 reviewed device and ACL, saves the original ACL, and grants only current runner
-UID 1001 read/write. See [temporary KVM access](android-kvm-access.md). The
-unchanged test script then requires readable/writable `/dev/kvm` and the
-read-only proof of existing acceptance for the exact requested stable packages
-and their dependencies. See [package-specific license proof](android-sdk-licenses.md)
-for pinned official metadata and agreement provenance. Installation receives EOF,
-never an affirmative response; installed metadata is verified before proceeding. Then
+UID 1001 read/write. See [temporary KVM access](android-kvm-access.md).
+The supervised test requires readable/writable `/dev/kvm`. Installation receives
+EOF, never an affirmative response; installed metadata is verified under the
+same supervisor before proceeding. Then
 require `emulator -accel-check` and boot with `-accel on`. The only privileged commands are the approved narrow ACL grant and restoration.
 No broad mode, group, udev or other security-setting change is included. A prerequisite
 failure is a blocker, not a failed app assertion. A new agreement needs separate

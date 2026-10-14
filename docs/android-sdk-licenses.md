@@ -52,15 +52,18 @@ Relevant classes are `com/android/repository/api/License.java`,
 
 The generated license value uses TrimStringAdapter: collapse specified ASCII
 whitespace, preserve blank lines, then Java trim. License.getLicenseHash hashes
-that value as UTF-8 SHA-1; checkAccepted compares exact lines in
+that value as UTF-8 SHA-1; checkAccepted compares exact CR/LF-delimited records in
 `$ANDROID_HOME/licenses/<license-id>`. For this agreement the normalized text
 SHA-256 is `aaf80cd0aee7e569ffa8a4be1b61189c0fefccf23068e38dfafe336289b8c723`.
 Its SHA-1 lookup marker is `24333f8a63b6825ea9c5514f83c2829b004d1fee`.
-These are reference digests, not acceptance writes. No code creates or modifies
+Both checks use one CR/LF-only record parser; vertical tab, form feed, NEL,
+Unicode separators and the other Python-only line boundaries cannot establish
+acceptance. These are reference digests, not acceptance writes. No code creates or modifies
 an SDK license file, and no offline test writes an actual agreement marker.
 The runner's existing acceptance remains unproven until an authorized run reads it.
 
-The verifier fetches the two fixed HTTPS metadata URLs with bounded curl calls,
+The wrapper runs the read-only preflight before any KVM grant or supervisor
+startup. A failed preflight makes zero grant calls. The verifier fetches the two fixed HTTPS metadata URLs with bounded curl calls,
 no retries or stale-cache fallback. It checks the exact requested set, stable
 selection, complete selected-package metadata hashes, revisions, dependencies,
 license references and exact agreement text against the reviewed JSON policy.
@@ -70,6 +73,8 @@ changed terms, missing acceptance, command errors and network failures block.
 A metadata refresh requires review even if only an archive or formatting changed.
 The policy is never regenerated automatically.
 
+Installation and installed-metadata verification remain under the existing
+process supervisor. Both phases share one package list with the preflight.
 Installation still uses the same eight package arguments and default stable
 channel, with stdin at EOF and the original timeout. The SDK manager remains
 an independent acceptance guard. A second read-only check inspects installed
@@ -86,7 +91,7 @@ They cover accepted required terms with unrelated terms pending, missing and
 wrong-version acceptance, exact-line matching, changed agreement text, unknown
 metadata/schema/channel/license/dependency/revision, ambiguous/missing packages,
 command/network/timeout failures, requested-set drift and installed-text drift.
-Validation completed: 13 Python regression cases and all 931 Node tests passed.
+Validation completed: 14 Python regression cases and all 932 Node tests passed.
 `npm run build`, shell syntax and diff whitespace checks passed. The build emitted
 its existing large-chunk advisory. These checks do not establish runner acceptance
 or emulator behavior.

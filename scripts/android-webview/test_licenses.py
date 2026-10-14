@@ -73,6 +73,17 @@ class LicenseProofTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.verify(read=lambda _: ' ' + self.marker + ' ')
 
+    def test_java_record_separators_only(self):
+        for separator in ['\n', '\r', '\r\n']:
+            with self.subTest(separator=repr(separator)):
+                self.assertEqual(m.acceptance_records('older' + separator + self.marker), ['older', self.marker])
+                self.verify(read=lambda _: 'older' + separator + self.marker)
+        for separator in ['\v', '\f', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029']:
+            with self.subTest(separator=repr(separator)):
+                self.assertEqual(m.acceptance_records('older' + separator + self.marker), ['older' + separator + self.marker])
+                with self.assertRaisesRegex(ValueError, 'acceptance not established'):
+                    self.verify(read=lambda _: 'older' + separator + self.marker)
+
     def test_changed_license_even_with_new_marker_accepted(self):
         changed = self.xml.replace(b'No actual license.', b'Changed fictional license.')
         with self.assertRaisesRegex(ValueError, 'changed license text'):
@@ -158,6 +169,11 @@ class LicenseProofTests(unittest.TestCase):
                 folder.mkdir()
                 (folder / 'package.xml').write_bytes(ET.tostring(local))
             m.verify_installed(self.policy, sdk, self.accepted)
+            for separator in ['\n', '\r', '\r\n']:
+                m.verify_installed(self.policy, sdk, lambda _: 'older' + separator + self.marker)
+            for separator in ['\v', '\f', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029']:
+                with self.subTest(separator=repr(separator)), self.assertRaisesRegex(ValueError, 'acceptance not established'):
+                    m.verify_installed(self.policy, sdk, lambda _: 'older' + separator + self.marker)
             file = sdk / 'image/package.xml'
             file.write_text(file.read_text().replace('No actual license.', 'Changed license.'))
             with self.assertRaisesRegex(ValueError, 'changed installed license'):
