@@ -31,6 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
+import { watchFeelEvidence } from "./feel-evidence.mjs";
 import { followAssessment, followDetail, groundStep } from "./feel-read.mjs";
 import { verifyManagerPhoneSearch } from "./manager-phone-search.mjs";
 
@@ -239,6 +240,9 @@ async function run(b) {
   if (cpu > 1) { try { const c = await ctx.newCDPSession(p); await c.send("Emulation.setCPUThrottlingRate", { rate: cpu }); } catch (e) { say("no CPU throttle: " + e.message); } }
   if (lost) lost.watchPage(p);
   const errs = []; p.on("pageerror", (e) => errs.push(String(e).slice(0, 160)));
+  const captureFailure = watchFeelEvidence(p, { directory: process.env.FEEL_EVIDENCE_DIR,
+    fixture: process.env.FEEL_FICTIONAL_FIXTURE === "1", url: URL_APP });
+  try {
   await p.addInitScript(([s]) => {
     try { localStorage.setItem(`lpcf:room:${s}`, "floor"); localStorage.setItem(`lpcf:pref:open:${s}`, "floor"); } catch (e) {}
     window.__vib = []; navigator.vibrate = (v) => { window.__vib.push(v); return true; };
@@ -710,14 +714,21 @@ async function run(b) {
   row("reduced-motion return sign-in to floor", await signIn(false), BAR.returnSignIn);
 
   const bad = rows.filter((r) => !r.ok);
-  if (errs.length) console.log("  page errors: " + errs.join(" | "));
   if (bad.length || errs.length) { console.log(`feel: ${bad.length} over the bar${errs.length ? ", and page errors" : ""}`); process.exitCode = 1; }
   else console.log("feel: all under the bar");
+  if (bad.length || errs.length) await captureFailure?.(new Error(`feel: ${bad.length} over the bar, ${errs.length} page errors`));
   /* Printed on every run, not only a bad one. A crash is only readable
      against what a run normally costs, and the only place that number can
      come from is the runs that did not crash. C83. */
   const m = machine && machine.line();
   if (m) console.log("feel: the machine: " + m);
+  } catch (error) {
+    await captureFailure?.(error);
+    throw error;
+  } finally {
+    // A sign-in timeout used to skip the only page-error report.
+    if (errs.length) console.log("  page errors: " + errs.join(" | "));
+  }
 }
 main().catch((e) => {
   const why = e && e.lostBrowser;
