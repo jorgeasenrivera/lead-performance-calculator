@@ -42,7 +42,7 @@ page.on('pageerror', e => errors.push(e.message));
 await mkdir('manager-selector', { recursive: true });
 const evidence=[], failures=[];
 async function shot(name, log=false) {
-  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.target?.matches?.('.qpick,.drawer,.drawer-scrim') && a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});
+  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.target?.matches?.('.qpick,.drawer,.drawer-scrim,.help-sheet,.help-back') && a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});
   const png=await page.screenshot({path:`manager-selector/${name}.png`});
   if(log)console.log('SELECTOR_IMAGE '+JSON.stringify({name,png:png.toString('base64')}));
 }
@@ -99,7 +99,28 @@ try{
   await page.waitForFunction(()=>!document.querySelector('.floor-load'));await shot(`room-${label.replaceAll(' ','-')}`,label==='Phone Line');
   await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
  });
- await check('help',async()=>{await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).click();await page.locator('.drawer').getByRole('button',{name:'Help',exact:true}).click();await page.getByRole('dialog',{name:'Help',exact:true}).waitFor();assert.ok(await page.locator('.help-sheet').evaluate(n=>n.contains(document.activeElement)));await shot('help');await page.keyboard.press('Escape');await page.getByRole('dialog',{name:'Help',exact:true}).waitFor({state:'hidden'});assert.ok(await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).evaluate(n=>n===document.activeElement));});
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ for(const width of [320,390])for(const scale of [1,2])await check(`help-settled-${width}-text${scale*100}`,async()=>{
+  await page.setViewportSize({width,height:667});
+  const more=page.locator('.botnav').getByRole('button',{name:'More',exact:true});
+  await more.click();await page.locator('.drawer').getByRole('button',{name:'Help',exact:true}).click();
+  const panel=page.getByRole('dialog',{name:'Help',exact:true});await panel.waitFor();
+  assert.ok(await panel.evaluate(n=>n.contains(document.activeElement)),'Help takes focus');
+  const textSizes=await panel.evaluate((node,scale)=>{
+   const samples=[...node.querySelectorAll('h3,p,span,a,button,label,input,textarea,select')].map(n=>({n,before:parseFloat(getComputedStyle(n).fontSize)}));
+   if(scale===2)samples.forEach(({n,before})=>n.style.setProperty('font-size',`${before*scale}px`,'important'));
+   return samples.map(({n,before})=>({text:n.textContent.slice(0,60),before,after:parseFloat(getComputedStyle(n).fontSize)}));
+  },scale);
+  assert.ok(textSizes.every(s=>Math.abs(s.after-s.before*scale)<.01),'Help text enlargement is measured');
+  await shot(`help-settled-${width}-text${scale*100}`,true);
+  const settled=await panel.evaluate(n=>{const r=n.getBoundingClientRect(),style=getComputedStyle(n);return{opacity:style.opacity,transform:style.transform,x:r.x,y:r.y,width:r.width,height:r.height,scrollWidth:n.scrollWidth,clientWidth:n.clientWidth,scrollHeight:n.scrollHeight,clientHeight:n.clientHeight,active:document.activeElement?.getAttribute('aria-label'),running:n.getAnimations().filter(a=>a.playState==='running').length};});
+  evidence.push({helpSettled:{width,scale,textSizes,...settled}});
+  assert.equal(settled.opacity,'1');assert.equal(settled.running,0,'Help entrance completed naturally');
+  await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});
+  assert.ok(await more.evaluate(n=>n===document.activeElement),'Escape returns focus to More');
+ });
+ await page.setViewportSize({width:320,height:667});
+ await page.emulateMedia({reducedMotion:'reduce'});
  await check('activity-report',async()=>{await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();await page.locator('.co-hero').waitFor();await shot('activity-320',true);await page.getByRole('button',{name:'Open the daily report',exact:true}).click();await page.locator('.dayreport-modal').waitFor();await page.locator('.dayreport-modal').getByRole('button',{name:'Close',exact:true}).click();await page.locator('.sect-chip').filter({hasText:/^Coaching$/}).click();assert.equal(await page.getByRole('button',{name:'Open the daily report',exact:true}).count(),0);});
  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
  for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();const action=page.locator('.manager-context-action');assert.match(await action.getAttribute('aria-label'),new RegExp(`${mode.done} of 2`));await shot(`import-${mode.done}`);await action.click();await page.waitForFunction(()=>!document.querySelector('.bp-row'));});
