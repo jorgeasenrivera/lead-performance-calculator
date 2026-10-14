@@ -42,9 +42,46 @@ await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo')
 page.on('pageerror', e => errors.push(e.message));
 
 const out=process.env.VIEWPORT_OUT || 'manager-viewports';
-await mkdir(out,{recursive:true});const results=[],failures=[],searchChecks=[];
+await mkdir(out,{recursive:true});const results=[],failures=[],searchChecks=[],settling=[];
+let expectedViewport;
+// A viewport switch can precede React's responsive render and WebKit's style
+// update. Observe the requested state and stable geometry, not elapsed time.
+async function renderedState(){
+ return page.evaluate(()=>{
+  const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
+  const root=getComputedStyle(document.documentElement),stack=getComputedStyle(document.querySelector('.topstack'));
+  const update=document.querySelector('.bp-upd.sg-updated');
+  return {width:innerWidth,height:innerHeight,scroll:document.documentElement.scrollWidth,
+   rootFont:parseFloat(root.fontSize),insets:Object.fromEntries(['top','bottom','left','right'].map(side=>[side,parseFloat(root.getPropertyValue(`--shell-inset-${side}`))])),
+   consumedTop:parseFloat(stack.paddingTop)+parseFloat(stack.borderTopWidth),
+   phone:!!document.querySelector('.bp-page'),desktop:!!document.querySelector('.s2-hero.s2-hasrail'),
+   updateFont:update?parseFloat(getComputedStyle(update).fontSize):null,
+   header:rect(document.querySelector('.topbar')),
+   controls:[...document.querySelectorAll('.topbar button,.topbar select,.sect-chip,.botnav>button,.search-input,.search-clear,.assoc-search-done')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent,font:getComputedStyle(n).fontSize,...rect(n)})),
+   nav:[...document.querySelectorAll('.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(rect)};
+ });
+}
+async function settleViewport(name,stage){
+ const {width,height,scale,insets}=expectedViewport;
+ let previous='',stable=0,last;const samples=[];
+ for(let attempt=0;attempt<50;attempt++){
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await page.evaluate(()=>document.fonts.ready);
+  last=await renderedState();
+  const ready=last.width===width&&last.height===height&&last.rootFont===16*scale
+   &&Object.keys(insets).every(side=>last.insets[side]===insets[side])
+   &&last.consumedTop===insets.top
+   &&(width<=760?last.phone&&!last.desktop&&last.updateFont===12*scale:last.desktop&&!last.phone);
+  const current=JSON.stringify(last);stable=ready&&current===previous?stable+1:0;previous=current;
+  samples.push({attempt,ready,stable,...last});
+  if(stable>=4){settling.push({name,stage,samples});return last;}
+  await page.waitForTimeout(100);
+ }
+ settling.push({name,stage,samples});
+ assert.fail(`${name}/${stage}: requested viewport, text scale and insets did not settle: ${JSON.stringify(last)}`);
+}
 async function checkSearch(name,stage,insets){
- await page.waitForTimeout(100);
+ await settleViewport(name,stage);
  const check=await page.evaluate(()=>{
   const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
   const nav=rect(document.querySelector('.botnav'));
@@ -79,15 +116,17 @@ try{
    const insets=mode==='web'?{top:0,bottom:0,left:0,right:0}:width>height?{top:0,bottom:24,left:24,right:24}:{top:24,bottom:24,left:0,right:0};
    await page.evaluate(insetScript(insets));
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${16*scale}px`;document.querySelectorAll('.sect-chip').forEach(n=>{n.style.removeProperty('font-size');if(scale===2)n.style.fontSize=`${parseFloat(getComputedStyle(n).fontSize)*2}px`});scrollTo(0,0)},scale);
-   await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(100);
+   expectedViewport={width,height,scale,insets};
+   const settled=await settleViewport(name,'initial');
    const g=await page.evaluate(()=>{
     const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
     return{width:innerWidth,scroll:document.documentElement.scrollWidth,header:rect(document.querySelector('.topbar')),controls:[...document.querySelectorAll('.topbar button,.topbar select,.sect-chip,.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent,...rect(n)})),nav:[...document.querySelectorAll('.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(rect)};
    });results.push({name,insets,...g});await page.screenshot({path:`${out}/${name}.png`});
+   assert.deepEqual(await renderedState(),settled,`${name}: screenshot and measured layout agree`);
    assert.ok(g.scroll<=width+1,`${name}: page fits`);
    for(const c of g.controls){assert.ok(c.x>=insets.left-1&&c.right<=width-insets.right+1,`${name}: ${c.text} clear of side insets`);assert.ok(c.y>=insets.top-1,`${name}: ${c.text} clear of top inset`);}
    if(width<=760){assert.equal(g.nav.length,4);assert.ok(g.nav.every(n=>n.bottom<=height-insets.bottom+1),'navigation clear of bottom inset');
-    const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});await trigger.click();await field.pressSequentially('Alex');await page.getByRole('button',{name:'Clear search',exact:true}).click();assert.equal(await field.inputValue(),'');assert.ok(await field.evaluate(n=>n===document.activeElement));await field.pressSequentially('Sam');await page.setViewportSize({width,height:420});
+    const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});await trigger.click();await field.pressSequentially('Alex');await page.getByRole('button',{name:'Clear search',exact:true}).click();assert.equal(await field.inputValue(),'');assert.ok(await field.evaluate(n=>n===document.activeElement));await field.pressSequentially('Sam');await page.setViewportSize({width,height:420});expectedViewport={width,height:420,scale,insets};
     await checkSearch(name,'typed-resized',insets);await page.screenshot({path:`${out}/${name}-keyboard-resize.png`});
     const clear=page.getByRole('button',{name:'Clear search',exact:true}),done=page.getByRole('button',{name:'Done',exact:true});
     for(let cycle=0;cycle<2;cycle++){
@@ -103,4 +142,4 @@ try{
   }catch(e){failures.push({name,error:e.message});console.error(name,e.message);await page.evaluate(()=>document.querySelector('.search-top:not(.search-collapsed) .assoc-search-done')?.click());}
  }
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
-}finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,scope:'Browser rendering with actual wrapper inset injection; no Android emulator, WebView or native keyboard claim',results,searchChecks,failures,errors},null,2));await browser.close();}
+}finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,scope:'Browser rendering with actual wrapper inset injection; no Android emulator, WebView or native keyboard claim',identity:{testHead:process.env.SEARCH_TEST_SHA||null,runtimeCommit:process.env.SEARCH_RUNTIME_SHA||null},results,searchChecks,settling,failures,errors},null,2));await browser.close();}
