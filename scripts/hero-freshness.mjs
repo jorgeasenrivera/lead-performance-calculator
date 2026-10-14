@@ -53,7 +53,17 @@ const template=nativeSource.match(/const insetJs = useMemo\(\(\) => `([\s\S]*?)`
 const insetScript=new Function('insets','return `'+template+'`;');
 async function settle(){await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(200);await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})))});}
 async function capture(name,surface){
- await settle();const hero=page.locator(surface==='performance'?'.bp-hero:not(.co-hero),.s2-hero.s2-hasrail':'.co-hero,.da-hero').first();
+ const desktop=page.viewportSize().width>700;
+ const hero=page.locator(surface==='performance'?(desktop?'.s2-hero.s2-hasrail':'.bp-hero:not(.co-hero)'):(desktop?'.da-hero':'.co-hero')).first();
+ await hero.waitFor({state:'visible'});await settle();
+ const recap=page.getByRole('button',{name:'Close the round-up',exact:true});if(await recap.isVisible()){await recap.click();await page.locator('.ru-sheet').waitFor({state:'hidden'});await settle();}
+ assert.equal(await page.locator('.ru-sheet').count(),0,'hero capture is unobscured');
+ let previous='',stable=0;
+ for(let attempt=0;attempt<30&&stable<4;attempt++){
+  const current=await hero.evaluate(n=>JSON.stringify(n.getBoundingClientRect().toJSON()));stable=current===previous?stable+1:0;previous=current;await page.waitForTimeout(100);
+ }
+ assert.ok(stable>=4,`${name}/${surface}: responsive hero settled`);
+
  const g=await hero.evaluate(n=>{
   const box=x=>{const r=x.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};
   const update=n.querySelector('.bp-upd,.co-upd');const s=update&&getComputedStyle(update),dot=update?.querySelector('i'),ds=dot&&getComputedStyle(dot);
@@ -66,7 +76,7 @@ async function capture(name,surface){
 try{
  await page.clock.setFixedTime(new Date('2026-10-14T14:00:00Z'));
  await page.goto(url);await page.locator('input[type="password"]').waitFor();await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');await page.locator('input[type="password"]').fill('x');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.locator('.bp-row').first().waitFor();
- for(const mode of (process.env.FRESH_STATES_ONLY?[]:['web','android-inset-contract']))for(const width of [320,360,393,412,1280])for(const scale of [1,2]){
+ for(const mode of (process.env.FRESH_STATES_ONLY?[]:['web','android-inset-contract']))for(const width of (process.env.FRESH_DESKTOP_ONLY?[1280]:[320,360,393,412,1280]))for(const scale of [1,2]){
   const name=`${mode}-${width}-text${scale*100}`;
   try{
    await page.setViewportSize({width,height:900});await page.evaluate(insetScript(mode==='web'?{top:0,bottom:0,left:0,right:0}:{top:24,bottom:24,left:0,right:0}));await page.evaluate(scale=>{document.documentElement.style.fontSize=`${16*scale}px`;scrollTo(0,0)},scale);
@@ -86,7 +96,7 @@ try{
    await page.locator(selector).click();await page.locator('.fr-sheet').waitFor();await page.keyboard.press('Escape');await page.locator('.fr-sheet').waitFor({state:'hidden'});
   }
  }
- for(const state of ['different-sources','stale','missing','missed']){
+ for(const state of (process.env.FRESH_DESKTOP_ONLY?[]:['different-sources','stale','missing','missed'])){
   const name=`state-${state}`;stamp=state==='different-sources'?'2026-10-14T09:35:00Z':state==='stale'?'2026-10-13T17:05:00Z':null;importStamp=state==='different-sources'?'2026-10-14T10:15:00Z':null;
   await page.clock.setFixedTime(new Date(state==='missed'?'2026-10-14T22:00:00Z':'2026-10-14T14:00:00Z'));
   await page.setViewportSize({width:393,height:900});await page.evaluate(()=>document.documentElement.style.fontSize='16px');await page.reload();await page.locator('.bp-row').first().waitFor();
@@ -107,4 +117,4 @@ try{
   }
  }
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
-}finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,results,failures,errors},null,2));await browser.close();}
+}finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,identity:{testHead:process.env.SEARCH_TEST_SHA||null,runtimeCommit:process.env.SEARCH_RUNTIME_SHA||null},results,failures,errors},null,2));await browser.close();}

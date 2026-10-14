@@ -90,7 +90,7 @@ jobs:
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SEARCH_RUNTIME_SHA: 710cc8d78d0363856df2f9000162923859434b73
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
@@ -102,7 +102,7 @@ jobs:
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5181/ > /dev/null && break; sleep 0.2; done
           npx vite preview --outDir .freshness-baseline/dist --port 5185 --host 127.0.0.1 > freshness-baseline.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5185/ > /dev/null && break; sleep 0.2; done
-          FEEL_URL=http://127.0.0.1:5185/ FRESH_OUT=hero-freshness-before node scripts/hero-freshness.mjs
+          SEARCH_RUNTIME_SHA=e6d087c203bb88685159efbc272e04ce868e4c89 FEEL_URL=http://127.0.0.1:5185/ FRESH_OUT=hero-freshness-before node scripts/hero-freshness.mjs
           FRESH_ASSERT=1 FRESH_BASELINE_FILE=hero-freshness-before/evidence.json node scripts/hero-freshness.mjs
           node scripts/hero-bars.mjs
           node scripts/manager-viewports.mjs
