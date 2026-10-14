@@ -35,10 +35,24 @@ The original emulator acceleration, license, SDK and time-limit checks remain.
 
 ## Restoration
 
-`with-kvm.sh` installs EXIT/INT/TERM traps before granting. The unchanged test
-runs in its own process group. INT/TERM stop that group before the EXIT trap
-restores the ACL; the child script retains its emulator/server cleanup. A
-separate `if: always()` workflow step repeats restoration and verification.
+`with-kvm.sh` installs EXIT/INT/TERM traps before granting. A Python child
+[subreaper](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html) runs the unchanged test commands in a new process group/session. It
+also adopts daemonized descendants, including those that start another session.
+On every exit, including success, child failure and cancellation, it sends TERM
+to the process group and discovered descendants, waits/reaps for up to three
+seconds, then escalates to KILL with a further three-second verification window.
+It requires the original group/session and all adopted descendants to be gone,
+including reaped zombies, before writing a stopped process lease. The old
+`run.sh` PID-only fire-and-forget cleanup is removed; the supervisor owns cleanup
+for all test processes, including emulator, build daemons and fixture servers.
+
+Both the shell trap and the `if: always()` step invoke `cleanup-kvm.sh`. That
+first requests and verifies supervisor shutdown, with a 12-second wait bound,
+and only then invokes ACL restoration. If shutdown cannot be verified, no ACL
+restoration is attempted and the job fails. An absent supervisor with an
+unfinished lease fails closed. Supervisor identity includes the Linux process
+start time, preventing a reused PID from being mistaken for the supervisor.
+Normal EXIT cleanup is independent of the test-script leader's lifetime.
 Only the same device identity is eligible for restoration. An unexpected
 third-party ACL change fails closed rather than silently overwriting it.
 
@@ -69,9 +83,13 @@ a setter interrupted after mutation, restoration failure followed by retry,
 unexpected original ACL/mask, changed device identity, third-party ACL changes,
 failed revocation verification, repeated grant rejection, exact privileged
 commands and device type/owner/group/mode/number rejection (some cases combine
-checks). Four real shell-wrapper cases use a fake controller and child process:
-success, child failure, SIGTERM and restoration failure with a failing exit.
-No sudo or KVM operation occurs in these tests.
+checks). Nine real shell-wrapper cases use the real supervisor with a fake ACL controller:
+success, child failure, SIGTERM, restoration failure, surviving descendant,
+failure with a surviving descendant, TERM-resistant descendant, separate-session
+descendant, and shutdown failure. The fake controller rejects restoration if a
+recorded descendant PID is still present; tests also verify reaping and the KILL
+escalation. Shutdown failure must prevent any restore call. No sudo or KVM
+operation occurs in these tests.
 
 An in-memory numeric-serialization check runs even when the filesystem has no
 ACL support. The real POSIX ACL round trip uses libacl on an owned temporary file.

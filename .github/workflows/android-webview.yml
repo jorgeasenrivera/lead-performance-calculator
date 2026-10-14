@@ -49,10 +49,10 @@ jobs:
           echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
       - name: Check prerequisites, build debug wrapper and exercise WebView
         run: bash scripts/android-webview/with-kvm.sh
-      - name: Always restore and verify original KVM ACL
+      - name: Always stop descendants and restore original KVM ACL
         if: always()
         timeout-minutes: 2
-        run: python3 scripts/android-webview/kvm_acl.py restore
+        run: bash scripts/android-webview/cleanup-kvm.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

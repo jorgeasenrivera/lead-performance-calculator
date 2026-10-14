@@ -30,14 +30,8 @@ test -f "$SOURCE/native/android/app/debug.keystore"
 (cd "$SOURCE/native/android" && timeout 1200 ./gradlew :app:assembleDebug -PreactNativeArchitectures=x86_64 -Pandroid.builder.sdkDownload=false --console=plain)
 npm install --prefix "$RUNNER_TEMP/android-driver" --no-package-lock --no-save playwright@1.63.0
 printf 'no\n' | "$AVDMANAGER" create avd --name sage-review --package 'system-images;android-36;google_apis;x86_64' --device pixel_2
-pids=()
-cleanup() {
-  adb emu kill >/dev/null 2>&1 || true
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
-}
-trap cleanup EXIT
+# The outer subreaper owns bounded shutdown and waits for all descendants.
 emulator -avd sage-review -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel on > "$OUT/emulator.txt" 2>&1 &
-pids+=("$!")
 timeout 120 adb wait-for-device
 for attempt in $(seq 1 120); do
   test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 && break
@@ -52,13 +46,9 @@ adb reverse tcp:5179 tcp:5179
 adb reverse tcp:5433 tcp:5433
 adb reverse tcp:8081 tcp:8081
 (cd "$SOURCE" && node scripts/mock-supabase.mjs) > "$RUNNER_TEMP/android-mock.log" 2>&1 &
-pids+=("$!")
 (cd "$SOURCE" && npx --no-install vite preview --port 5178 --host 127.0.0.1) > "$RUNNER_TEMP/android-preview.log" 2>&1 &
-pids+=("$!")
 node scripts/android-webview/prepare.mjs serve > "$RUNNER_TEMP/android-fixture.log" 2>&1 &
-pids+=("$!")
 (cd "$SOURCE/native" && npx --no-install expo start --localhost --port 8081) > "$RUNNER_TEMP/android-metro.log" 2>&1 &
-pids+=("$!")
 for port in 5179 8081; do
   for attempt in $(seq 1 60); do curl -fsS "http://127.0.0.1:$port/" >/dev/null && break; sleep 1; done
   curl -fsS "http://127.0.0.1:$port/" >/dev/null
