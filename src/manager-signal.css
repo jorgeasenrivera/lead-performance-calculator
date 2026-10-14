@@ -905,3 +905,26 @@ html.manager-signal .topbar-right:has(.view-select) .manager-store-name{display:
   html.manager-signal .help-sheet .help-tab{flex:1 1 min-content;min-width:0;max-width:100%;min-height:44px;white-space:normal;overflow-wrap:normal}
 }
 /* End Help category reflow. */
+
+/* Phone hierarchy: warm canvas, forest selection, sand action accent. */
+@media(max-width:760px){
+  html.manager-signal .lpc{background-color:#f4f1e7}
+  html.manager-signal .topstack,html.manager-signal .topbar{background-color:#fffdf4}
+  html.manager-signal .lpc .sect-strip{background-color:#edeada;border-color:#827b68}
+  html.manager-signal .lpc .sect-strip .sect-chip{color:#514d40}
+  html.manager-signal .lpc .sect-strip .sect-chip.on{background-color:#173d2b;color:#fffdf4}
+  html.manager-signal .botnav{background-color:#fffdf4;border-top-color:#827b68}
+  html.manager-signal .botnav-btn{color:#514d40}
+  html.manager-signal .botnav-btn.on{background-color:#173d2b;color:#fffdf4}
+  html.manager-signal .botnav-btn.on::after{background-color:#e4c98d}
+  html.manager-signal .manager-context-action{background-color:#e4c98d;border-color:#876d31;color:#3f361f}
+  html.manager-signal .manager-context-action small{color:#51452b}
+  html.manager-signal .assoc-search-trigger,html.manager-signal .topbar-right .view-select{border-color:#827b68}
+  html.manager-signal .search-top .search-input{border-color:#827b68}
+  html.manager-signal .assoc-search-done{background-color:#edeada}
+  html.manager-signal .qpick,html.manager-signal .drawer{background-color:#fffdf4}
+  html.manager-signal .lpc .qpick .qpick-btn.on{background-color:#edeada}
+  html.manager-signal .drawer .drawer-item.on{background-color:#173d2b;color:#fffdf4}
+  html.manager-signal .drawer .drawer-item.on .drawer-tick{color:#e4c98d}
+  html.manager-signal :is(.botnav-btn.on,.drawer-item.on):focus-visible{outline-color:#e4c98d}
+}

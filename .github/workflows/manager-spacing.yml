@@ -9,6 +9,7 @@ on:
       - scripts/manager-selector.mjs
       - scripts/manager-spacing.mjs
       - scripts/search-runtime.sha256
+      - scripts/color-phone.mjs
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
 jobs:
@@ -51,6 +52,11 @@ jobs:
           ref: 99644a52fce58ce91ace9b9a5299661ba116a775
           path: .composition-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 3573082e31d716c866021eec0f6e87f1f7367ce4
+          path: .color-baseline
+          persist-credentials: false
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Verify frozen preview runtime
@@ -59,15 +65,21 @@ jobs:
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
           npm run build
+          ln -s "$PWD/node_modules" .color-baseline/node_modules
+          cd .color-baseline
+          VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build
       - name: Measure before and after
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: e727ce1ffc8000d3423d0aab487eea191bebee81
+          SEARCH_RUNTIME_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          npx vite preview --outDir .color-baseline/dist --port 5180 --host 127.0.0.1 > color-baseline.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5180/ > /dev/null && break; sleep 0.2; done
+          node scripts/color-phone.mjs
           node scripts/search-keyboard.mjs
           node scripts/manager-selector.mjs
           node scripts/manager-spacing.mjs
@@ -79,4 +91,5 @@ jobs:
             manager-spacing/
             manager-selector/
             search-keyboard/
+            color-phone/
           retention-days: 14
