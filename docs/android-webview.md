@@ -1,7 +1,8 @@
 # Android WebView review check
 
-Prepared for parent review, not executed on an emulator. No physical Android
-result exists. Jorge does not own an Android device.
+AVD discovery correction prepared for parent review. The previous run built the
+debug APK but failed to find its AVD before Android UI testing. No physical
+Android result exists. Jorge does not own an Android device.
 
 ## Scope and ownership
 
@@ -111,7 +112,55 @@ Android Gradle plugin default 3.22.1 are requested. The generated template conta
 Prebuild warns that React Native 0.81.5 is recommended instead of locked 0.81.4,
 that expo-system-ui is absent, and that the iOS Apple team id is unset. These
 existing configuration warnings were not repaired in this test-only task.
-No Gradle compilation or emulator/UI evidence has been obtained.
+These were the initial preparation results. The later run below compiled the
+debug APK; no Android UI assertions have executed.
+
+## Latest run and AVD discovery correction
+
+[Run 38618082440](https://github.com/jorgeasenrivera/lead-performance-calculator/actions/runs/38618082440),
+head `5ea0dd9c0ec709dee45dacca12cb387120caed4a`, attempt 1, passed the
+package/license preflight, installed-metadata check and KVM acceleration check.
+The debug APK build succeeded in 5m 1s. The ADB device wait then timed out after
+120 seconds, before APK installation or any WebView/keyboard assertions.
+Both exit-trap and final cleanup verified descendants stopped/reaped, the complete
+original ACL and device metadata restored, and runner access revoked:
+`shutdown=0 restore=0` twice.
+
+The parent independently inspected Jorge's supplied artifact and verified its
+ZIP SHA-256 against the uploaded digest:
+`4ce7dee8bfef35de3edb188a2ed4663ae772d967cbf66448991ecee3160553d4`.
+`emulator.txt` reported `Unknown AVD name [sage-review]` and no registration in
+its searched directories. That establishes an AVD registration/discovery failure.
+It does not establish slow boot, unusable KVM or an application defect.
+This session's direct artifact download returned HTTP 403 and was not bypassed.
+
+The correction sources `start-emulator.sh` from the existing supervised run.
+It creates a fresh `$RUNNER_TEMP/sage-review-avd`, exports it as
+`ANDROID_AVD_HOME` for creation, listing and launch, and gives avdmanager the
+explicit data path `$ANDROID_AVD_HOME/sage-review.avd`. It requires nonempty
+registration/configuration files, exactly one registration path matching that
+data directory, and an exact `sage-review` entry from successful
+`emulator -list-avds`. Only then does the unchanged emulator command launch.
+Warnings alone cannot satisfy these checks. A failed create/list command stops
+immediately; no manual registration repair or forced overwrite is attempted.
+
+Official [Android environment-variable documentation](https://developer.android.com/tools/variables)
+defines `ANDROID_AVD_HOME` as the AVD location and first emulator search location.
+The [avdmanager reference](https://developer.android.com/tools/avdmanager) documents
+`--path`/`-p` for the data directory; the [emulator reference](https://developer.android.com/studio/run/emulator-commandline)
+documents `-list-avds`. Google's [common 31.13.0 source archive](https://dl.google.com/dl/android/maven2/com/android/tools/common/31.13.0/common-31.13.0-sources.jar),
+`com/android/prefs/AbstractAndroidLocations.kt` and `AndroidLocation.java`, also
+confirm the AVD override is honored by the Java tooling. Other inherited home
+variables and the SDK location are left unchanged.
+
+Seven offline cases execute the real helper with fictional tools: differing
+inherited Android home variables, failed creation, absent registration, absent
+configuration, wrong registration path, absent listing entry and failed listing
+command. They verify no launch on failure and identical explicit AVD locations
+for creation/listing/launch on success. No SDK/emulator or KVM runs locally.
+The existing boot timeouts, launch flags, assertions, license gates, permission
+scope, supervision and cleanup remain unchanged. No activation accompanies this
+correction; a new exact-head review is required before another run.
 
 ## Sources checked 14 October 2026
 

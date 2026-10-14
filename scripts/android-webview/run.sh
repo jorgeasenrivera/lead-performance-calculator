@@ -29,9 +29,7 @@ node scripts/android-webview/prepare.mjs prepare "$SOURCE"
 test -f "$SOURCE/native/android/app/debug.keystore"
 (cd "$SOURCE/native/android" && timeout 1200 ./gradlew :app:assembleDebug -PreactNativeArchitectures=x86_64 -Pandroid.builder.sdkDownload=false --console=plain)
 npm install --prefix "$RUNNER_TEMP/android-driver" --no-package-lock --no-save playwright@1.63.0
-printf 'no\n' | "$AVDMANAGER" create avd --name sage-review --package 'system-images;android-36;google_apis;x86_64' --device pixel_2
-# The outer subreaper owns bounded shutdown and waits for all descendants.
-emulator -avd sage-review -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel on > "$OUT/emulator.txt" 2>&1 &
+source scripts/android-webview/start-emulator.sh
 timeout 120 adb wait-for-device
 for attempt in $(seq 1 120); do
   test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 && break
