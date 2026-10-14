@@ -1,0 +1,21 @@
+{
+  "base": "2fba7db0d12879578bf02679d08fa020e06391a8",
+  "reviewClock": "2026-10-14T12:00:00Z",
+  "sourceSha256": {
+    "app.mjs": "92a0115841dfe361132dee417d3e671e096130462a4cadc8a3385e6b1720768a",
+    "model.mjs": "4da9871871ffc052c5732b90b63e138e81bdda0a025a3d691ba84d41740be0a1",
+    "style.css": "24800b249f81b7d77434b807c167ffbab4952a5b7bd39e71c6766c1c8aa10490",
+    "index.html": "2f15dbe85bfc38eac55e1bf3ca86cf7d6bea2dd1c9f135b8f42c7c5829df9ed8",
+    "probe.mjs": "3b27e4e8f1800da70f5acab864a4660ad136cb670cbe5df55380af9e19669b10"
+  },
+  "screenshotsSha256": {
+    "phone-week.png": "5cfebea0ee23652305d3c7e4293b7a06ce8509f2764f9a14eda5b0899e07d3ea",
+    "phone-override.png": "4fcce440737f0a634a5c33ae4cd4dcb3e4179c89253c2cc5b29801cfd97ecdd6",
+    "phone-person.png": "94d3b53aa6f216eb3c6f04dc6a3ac23860987fb450b9952e62d4a99608734dc0",
+    "desktop-week.png": "8d6d130470bdb423544c4c050ff168aec845314d8e04c817965dbfa70dea76f3",
+    "phone-store.png": "6f14f85b1b39829c6d7552a4886631392c1ded8fd81d7ee33cf82b7b41baaabf"
+  },
+  "browser": "Chromium via /usr/bin/chromium",
+  "webkit": "Launch blocked: missing system libraries",
+  "physicalPhone": "Not tested"
+}

@@ -1,0 +1,59 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "checks": [
+      "initial week",
+      "closed/unknown",
+      "blocked review",
+      "person edit",
+      "dated store edit",
+      "override conflicts",
+      "manager review",
+      "store isolation",
+      "week selection",
+      "no horizontal overflow",
+      "200% root text",
+      "no external requests",
+      "no page errors"
+    ]
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "checks": [
+      "initial week",
+      "closed/unknown",
+      "blocked review",
+      "person edit",
+      "dated store edit",
+      "override conflicts",
+      "manager review",
+      "store isolation",
+      "week selection",
+      "no horizontal overflow",
+      "200% root text",
+      "no external requests",
+      "no page errors"
+    ]
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "checks": [
+      "initial week",
+      "closed/unknown",
+      "blocked review",
+      "person edit",
+      "dated store edit",
+      "override conflicts",
+      "manager review",
+      "store isolation",
+      "week selection",
+      "no horizontal overflow",
+      "200% root text",
+      "no external requests",
+      "no page errors"
+    ]
+  }
+]
