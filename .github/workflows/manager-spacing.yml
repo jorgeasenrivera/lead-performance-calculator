@@ -42,6 +42,11 @@ jobs:
           ref: c4d5c032158e573314ca9a12a23a211ec24c7a4c
           path: .rail-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 99644a52fce58ce91ace9b9a5299661ba116a775
+          path: .composition-baseline
+          persist-credentials: false
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Build fictional app

@@ -146,13 +146,15 @@ try {
   assert.ok(await page.locator('.view-select').isVisible(),'multi-store selector is present');
   assert.equal(await page.locator('.sect-chip').count(),5,'all five manager section tabs are present');
   await page.evaluate(() => document.fonts.ready);
+  const railBefore=await readFile('.composition-baseline/src/manager-signal.css','utf8');
+  assert.equal(createHash('sha256').update(railBefore).digest('hex'),'20f9538020c6f80a5b49d89dcfbc1c77746d5282370e9c09336f22233051b74f','immutable flat rail baseline');
   const compactBefore=await readFile('.rail-baseline/src/manager-signal.css','utf8');
   assert.equal(createHash('sha256').update(compactBefore).digest('hex'),'df61b077ae859454022425873637eed87df18a98348fcbf05aa49e590017071a','immutable compact dock baseline');
   const dockBefore=await readFile('.dock-baseline/src/manager-signal.css','utf8');
   assert.equal(createHash('sha256').update(dockBefore).digest('hex'),'8cf478b56e8066b6bd1262980428311ad76c9ab88aacbd16f5d09f652a8c1704','immutable dock baseline');
   for(const size of [{width:320,height:667},{width:390,height:667},{width:667,height:320}]) for(const inset of [0,34]) for(const scale of [1,1.5]) {
     await page.setViewportSize(size);
-    for(const [phase,css] of [['before',dockBefore],['compact',compactBefore],['after',after]]) {
+    for(const [phase,css] of [['before',dockBefore],['compact',compactBefore],['rail',railBefore],['after',after]]) {
       await page.evaluate(async({css,inset,scale})=>{
         [...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch')).textContent=css;
         document.documentElement.style.setProperty('--shell-inset-bottom',`${inset}px`);
@@ -166,10 +168,11 @@ try {
       const geometry=await page.evaluate(()=>{
         const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
         const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
-        const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
+        const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,fontFamily:getComputedStyle(n).fontFamily,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
+        const iconCenters=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
         const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
         const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
-        return {dock,search,band,targets,labels,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
+        return {dock,search,band,targets,labels,iconCenters,scrollY,top,occlusion:innerHeight-top,contentSpace:top-document.querySelector('.topstack').getBoundingClientRect().bottom-band.height,documentWidth:document.documentElement.scrollWidth};
       });
       results.push({dockSearch:{phase,...size,inset,scale,...geometry}});
       await page.screenshot({path:`manager-spacing/dock-search-${phase}-${size.width}x${size.height}-inset${inset}-text${scale*100}.png`});
@@ -181,9 +184,10 @@ try {
         assert.ok(geometry.targets.every(t=>t.width>=44 && t.height>=44),'dock and help retain 44px targets');
         assert.ok(geometry.targets.every(t=>t.x>=0 && t.right<=size.width && t.bottom<=size.height-inset),'dock targets clear viewport and safe area');
         for(let i=0;i<geometry.targets.length;i++)for(let j=i+1;j<geometry.targets.length;j++){const a=geometry.targets[i],b=geometry.targets[j];assert.ok(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1,'dock targets do not overlap');}
-        assert.ok(geometry.labels.every(l=>Math.abs(parseFloat(l.fontSize)-10*scale)<.01),'dock label text is genuinely enlarged');
+        assert.ok(geometry.labels.every(l=>Math.abs(parseFloat(l.fontSize)-11*scale)<.01),'dock label text is genuinely enlarged');
         assert.ok(geometry.labels.every(l=>l.rects.every(r=>r.x>=l.box.x-1 && r.right<=l.box.right+1 && r.y>=l.box.y-1 && r.bottom<=l.box.bottom+1)),'dock labels fully fit');
         assert.ok(geometry.search.height>=44 && geometry.documentWidth<=size.width,'search target and document fit');
+        if(scale===1){assert.ok(Math.max(...geometry.iconCenters)-Math.min(...geometry.iconCenters)<1,'normal-size icons share one optical centerline');assert.ok(Math.max(...geometry.labels.map(l=>l.rects[0].y))-Math.min(...geometry.labels.map(l=>l.rects[0].y))<1,'normal-size navigation and Import labels share a baseline');}
       }
       await page.evaluate(()=>{for(const s of window.dockRestore){if(s.style===null)s.n.removeAttribute('style');else s.n.setAttribute('style',s.style);}delete window.dockRestore;});
     }

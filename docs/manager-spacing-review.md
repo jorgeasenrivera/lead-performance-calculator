@@ -174,3 +174,23 @@ The browser comparison now includes three pinned stylesheets: original dock
 4d050292, compact trial c4d5c03, and this Signal rail. The same safe-area, label,
 target, variant and full prior spacing/navigation checks remain. This is a
 protected review candidate, not production or physical-phone approval.
+
+
+## Composition revision after the flat-rail phone trial
+
+Jorge accepted the flatness but found the rail basic and appended. The actual
+320px and 390px fictional Chromium screenshots were inspected directly through
+selected screenshot bytes in the existing CI log, because artifact ZIP fetching
+is blocked by the workspace proxy. They showed a broken Performance label,
+misaligned Import icon/label, and three competing box treatments.
+
+The revision uses a shared 26px icon row and aligned label row, explicit 11px UI
+labels, space allocated for Performance, and a consistent 19px glyph box.
+Performance/Activity form the destination group; two hairline dividers bound
+Import's compact progress/action area; Rooms/More/Help share utility geometry.
+Import has no competing dark tile, Help has a matching label and no outline box,
+and selection uses one fixed forest marker with stronger text. A restrained
+inset edge finishes the cream surface without adding layout height or animation.
+The probe compares the exact prior flat rail 99644a52 as well as older baselines,
+and asserts normal-size icon-center and label alignment in actual browser geometry.
+Search and its unapplied integration proposal remain held.
