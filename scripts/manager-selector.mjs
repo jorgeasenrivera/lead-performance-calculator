@@ -81,7 +81,7 @@ try{
  for(const reduced of [false,true]){
   await page.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});
   for(const kind of ['Rooms','More'])await check(`${kind}-${reduced}`,async()=>{
-   const trigger=page.locator('.botnav').getByRole('button',{name:kind,exact:true});await trigger.focus();await page.keyboard.press('Enter');const dialog=page.locator(kind==='Rooms'?'.qpick':'.drawer');await dialog.waitFor({state:'visible'});await shot(kind.toLowerCase()+(reduced?'-reduce':''),!reduced);if(reduced){await page.evaluate(()=>document.documentElement.style.fontSize='32px');await shot(kind.toLowerCase()+'-text200',true);assert.ok(await dialog.evaluate(n=>n.getBoundingClientRect().right<=innerWidth+1));await page.evaluate(()=>document.documentElement.style.fontSize='16px');}
+   const trigger=page.locator('.botnav').getByRole('button',{name:kind,exact:true});await trigger.focus();await page.keyboard.press('Enter');const dialog=page.locator(kind==='Rooms'?'.qpick':'.drawer');await dialog.waitFor({state:'visible'});await shot(kind.toLowerCase()+(reduced?'-reduce':''),!reduced);if(kind==='Rooms')assert.ok(await page.locator('.qpick-btn').evaluateAll(ns=>ns.every(n=>getComputedStyle(n).color==='rgb(35, 73, 57)')),'room labels retain readable foreground');if(reduced){await page.evaluate(()=>document.documentElement.style.fontSize='32px');await shot(kind.toLowerCase()+'-text200',true);assert.ok(await dialog.evaluate(n=>n.getBoundingClientRect().right<=innerWidth+1));await page.evaluate(()=>document.documentElement.style.fontSize='16px');}
    assert.ok(await dialog.evaluate(n=>n.contains(document.activeElement)));await page.keyboard.press('Shift+Tab');assert.ok(await dialog.evaluate(n=>n.contains(document.activeElement)));await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));
    for(let i=0;i<3;i++){await trigger.dispatchEvent('click');await page.keyboard.press('Escape');}assert.equal(await trigger.getAttribute('aria-expanded'),'false');
   });
@@ -96,7 +96,7 @@ try{
   await page.locator('.qpick').getByRole('button',{name:label,exact:true}).click();
   await page.locator('.qpick').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.querySelector('.botnav-btn[aria-label="Rooms"]')?.classList.contains('on'));
-  await shot(`room-${label.replaceAll(' ','-')}`,label==='Phone Line');
+  await page.waitForFunction(()=>!document.querySelector('.floor-load'));await shot(`room-${label.replaceAll(' ','-')}`,label==='Phone Line');
   await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
  });
  await check('help',async()=>{await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).click();await page.locator('.drawer').getByRole('button',{name:'Help',exact:true}).click();await page.getByRole('dialog',{name:'Help',exact:true}).waitFor();assert.ok(await page.locator('.help-sheet').evaluate(n=>n.contains(document.activeElement)));await shot('help');await page.keyboard.press('Escape');await page.getByRole('dialog',{name:'Help',exact:true}).waitFor({state:'hidden'});assert.ok(await page.locator('.botnav').getByRole('button',{name:'More',exact:true}).evaluate(n=>n===document.activeElement));});

@@ -857,9 +857,9 @@ html.manager-signal .coaching :is(button,input,select,textarea):focus-visible{ou
   html.manager-signal .qpick{left:12px;right:12px;bottom:calc(100% + 8px);display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:14px;background:#fffdf4;border:1px solid #cbd3c5;backdrop-filter:none;-webkit-backdrop-filter:none;max-height:calc(100dvh - 130px);overflow-y:auto}
   html.manager-signal .selector-sheet-heading{display:flex;justify-content:space-between;align-items:center;padding-left:10px;font:600 .875rem/1.3 var(--font-ui);color:#234939}
   html.manager-signal .selector-sheet-heading button{width:44px;min-height:44px;border:0;background:none;color:inherit;border-radius:8px;cursor:pointer}
-  html.manager-signal .qpick-btn{flex-direction:row;gap:12px;min-height:52px;padding:8px 10px;border-radius:8px;color:#234939;transition:background-color 160ms ease-out;transform:none}
-  html.manager-signal .qpick-btn:active,html.manager-signal .qpick-btn.on{background:#e8eedf;transform:none}
-  html.manager-signal .qpick-ico{width:28px;height:28px;background:none;color:inherit;border-radius:0;flex:none}
+  html.manager-signal .lpc .qpick .qpick-btn{flex-direction:row;gap:12px;min-height:52px;padding:8px 10px;border-radius:8px;background:transparent;color:#234939;transition:background-color 160ms ease-out;transform:none}
+  html.manager-signal .lpc .qpick .qpick-btn:active,html.manager-signal .lpc .qpick .qpick-btn.on{background:#e8eedf;transform:none}
+  html.manager-signal .lpc .qpick .qpick-btn .qpick-ico{width:28px;height:28px;background:none;color:inherit;border-radius:0;flex:none}
   html.manager-signal .qpick-lbl{font:600 .875rem/1.4 var(--font-ui);white-space:normal;text-align:left;flex:1}
   html.manager-signal .drawer{top:auto;bottom:0;left:0;right:0;width:100%;height:auto;display:flex;flex-direction:column;background:#fffdf4;color:#234939;border-radius:18px 18px 0 0;max-height:85dvh}
   html.manager-signal .drawer-scroll{min-height:0;padding-bottom:calc(20px + var(--sab))}

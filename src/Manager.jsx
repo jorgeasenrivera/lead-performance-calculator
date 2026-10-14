@@ -16460,23 +16460,11 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
         </div>
 
         <div className="drawer-scroll">
-          {/* A module without tabs (The Board) opens the drawer for Switch tool
-              alone, so the "Go to" heading would sit over nothing. */}
-          {items && items.length > 0 && (
-            <>
-              <div className="drawer-section-label">Sections</div>
-              <nav className="drawer-nav">
-                {items.filter(([id]) => id !== "import" || !onImport).map(([id, label]) => (
-                  <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
-                    <span>{label}</span>
-                    {/* The dock's centre button carries the import count on the phone; a second copy here said it twice (consistency pass, item 9). */}
-                    {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
-                  </button>
-                ))}
-              </nav>
-            </>
-          )}
-
+          <div className="drawer-section-label">Utilities</div>
+          <div className="drawer-nav">
+            {onImport && <button type="button" className="drawer-item" onClick={() => { onClose(); onImport(); }}>Import</button>}
+            <button type="button" className="drawer-item" onClick={() => { onClose(); onHelp?.(); }}>Help</button>
+          </div>
           <div className="drawer-section-label">Destinations</div>
           <nav className="drawer-nav">
             {tools.map(([id, label]) => (
@@ -16486,11 +16474,20 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
               </button>
             ))}
           </nav>
-          <div className="drawer-section-label">Utilities</div>
-          <div className="drawer-nav">
-            {onImport && <button type="button" className="drawer-item" onClick={() => { onClose(); onImport(); }}>Import</button>}
-            <button type="button" className="drawer-item" onClick={() => { onClose(); onHelp?.(); }}>Help</button>
-          </div>
+          {items && items.length > 0 && (
+            <>
+              <div className="drawer-section-label">Sections</div>
+              <nav className="drawer-nav">
+                {items.filter(([id]) => id !== "import" || !onImport).map(([id, label]) => (
+                  <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
+                    <span>{label}</span>
+                    {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
+
         </div>
       </aside>
     </div>
