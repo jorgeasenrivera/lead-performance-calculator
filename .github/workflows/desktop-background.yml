@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         id: signal_source
         with:
-          ref: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
+          ref: d9320e253b603260f6a7355d4bc1c77a59fefa5b
           path: .desktop-signal
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -60,7 +60,7 @@ jobs:
         shell: bash
         env:
           FEEL_BROWSER: webkit
-          DESKTOP_SOURCE_SHA: 7fdf5aeac8499d1a25a10e7b57ae8259dfb759d5
+          DESKTOP_SOURCE_SHA: d9320e253b603260f6a7355d4bc1c77a59fefa5b
           DESKTOP_BACKGROUND_RECORDING: unprofiled
           CHECKED_DIAGNOSTIC_SHA: ${{ steps.diagnostic_source.outputs.commit }}
           CHECKED_BASELINE_SHA: ${{ steps.baseline_source.outputs.commit }}
