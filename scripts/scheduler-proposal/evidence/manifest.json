@@ -1,26 +1,38 @@
 {
-  "base": "2fba7db0d12879578bf02679d08fa020e06391a8",
+  "base": "15ea1a80db1c17e7f5d9b99db026f7fc09b30697",
   "reviewClock": "2026-10-14T12:00:00Z",
   "sourceSha256": {
-    "app.mjs": "f084700971a8bf477ba77e8e97e6df4eae27cc4f85471bb0b70e0e3b7760d0eb",
+    "app.mjs": "8fde7316dc357f6ddcf7cbd424840fe9d36c0239a81b07928c5bd27730fd0547",
     "model.mjs": "4da9871871ffc052c5732b90b63e138e81bdda0a025a3d691ba84d41740be0a1",
     "store-editor.mjs": "3b4c7266b8aa3f4dea6ee2d579c02fa3e54bb96bfb5f792ab4ce62faa2e21842",
     "store-editor.test.mjs": "7ff5f1efd33a1d2b880a221f50da1fbe18ba61cb05a5aa5ac50d9d1dd84ff624",
     "style.css": "24800b249f81b7d77434b807c167ffbab4952a5b7bd39e71c6766c1c8aa10490",
     "index.html": "2f15dbe85bfc38eac55e1bf3ca86cf7d6bea2dd1c9f135b8f42c7c5829df9ed8",
-    "probe.mjs": "4be26ecc0bf51d5a2b29389ae35e4e3f1ed40d09bcdc1a6d3476f2f7a138c45e"
+    "probe.mjs": "1f38d58dad63106807af7790044341e15af1964ffa8f8229319ec7afa078331d",
+    "preview-config.json": "a9cd20396b3aae2e8ab40c703f30c1727a31a269936222044cb253f64e184275"
   },
   "screenshotsSha256": {
-    "phone-repeat-save.png": "0686f43fa9eecdd948c7e99b137427ecaf818545d2192c29ad8aeea317546acf",
+    "chromium-320-text200-store.png": "30c36310188e4d9189f7dbe6ca59f42e314d92cc784c0fde2eeb0301eb5959a8",
+    "phone-repeat-save.png": "6a3cc52d0857d3c7873256e4d9c06ecedb94390cb2ff71d1ec3c3e6aae141ca6",
+    "webkit-320-text200-store.png": "6e11f30b826104a55580b697f670d578eb1cb54340b026e1906215af97227176",
     "phone-week.png": "5cfebea0ee23652305d3c7e4293b7a06ce8509f2764f9a14eda5b0899e07d3ea",
-    "phone-dated-rule.png": "d93d0adbf8e5b8b446accf304118354404719bd6d35e3f189ff6332a3015d645",
-    "phone-override.png": "4fcce440737f0a634a5c33ae4cd4dcb3e4179c89253c2cc5b29801cfd97ecdd6",
-    "phone-person.png": "94d3b53aa6f216eb3c6f04dc6a3ac23860987fb450b9952e62d4a99608734dc0",
+    "phone-dated-rule.png": "62d752cd4f6271611705a015936793117989b1272c2f59c342bbeea64c76018f",
+    "phone-override.png": "b8ee2050c7cb31fc25571be7bf3d17bd28171713b156ae5f35396b68aea2434d",
+    "phone-person.png": "5071ec2b6319e1036bbaac17e1ffdc1fc6ac96239b7e4a761b34cfd7599ca337",
     "desktop-week.png": "8d6d130470bdb423544c4c050ff168aec845314d8e04c817965dbfa70dea76f3",
-    "phone-store.png": "4cc3b59e24b373ec0bf5e539c8909f4ff3f90f5417b8e00b82f3fb6c062a1cd7"
+    "phone-store.png": "39c79ebe4b2e2c2cd2c34b1e017550141a5732ee5bd673b7dfddb3173bc5c413",
+    "webkit-phone-week.png": "e6db7b11fe64c347d1371ee3e2696c1e296a6055f91a8f2038a9eb5d5169e9fb",
+    "webkit-desktop-week.png": "0a0b90ed19f7e75b9f4562d2508a1fe4ceaa42a26583241ca817063fdcd26d67"
   },
   "browser": "Chromium via /usr/bin/chromium",
-  "webkit": "Launch blocked: missing system libraries",
-  "physicalPhone": "Not tested",
-  "correctsHead": "2177bcb947259bdab9ecee3c3f1caf303fb7518b"
+  "webkit": "Passed all six scenarios with temporary libraries; cache-only host preflight bypassed after GLES load verification. No application test skipped.",
+  "physicalPhone": "Not tested; mobile/touch browser emulation only",
+  "correctsHead": "2177bcb947259bdab9ecee3c3f1caf303fb7518b",
+  "previousReviewedHead": "f09be75954604a99199aaee950bd7c99aa7bfc2e",
+  "tests": {
+    "passed": 936,
+    "failed": 0,
+    "build": "passed",
+    "browserScenarios": 12
+  }
 }

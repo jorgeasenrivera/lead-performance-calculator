@@ -14,11 +14,11 @@ The browser probe accepts `BROWSER=webkit`, `CHROMIUM_PATH`, and `EVIDENCE_DIR`.
 ## Source and ownership
 
 - Repository: `jorgeasenrivera/lead-performance-calculator`.
-- Base: `2fba7db0d12879578bf02679d08fa020e06391a8`, origin/main verified 14 October 2026.
+- Original base: `2fba7db0d12879578bf02679d08fa020e06391a8`. Refreshed onto main `15ea1a80db1c17e7f5d9b99db026f7fc09b30697` on 14 October 2026. The upstream change is the separate mock-CORS test fix; no proposal paths overlap.
 - Prototype branch: `codex/scheduler-fictional-proposal`.
 - Read `AGENTS.md`, `README.md`, `docs/in-flight.md`, and the relevant C111 / H-C31 / H-X50 handoffs before editing. `/workspace/.agents` contained no skills.
 - [C111 draft #464](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/464) read at `9dba9a622ceae39a52d83bde2d43519ce0e46263`, including review closure. No code or data from that branch is imported. Its pending loader, tables, real-data reconciliation and X15 integration remain separate gates.
-- Existing Manager/UI and C111 ownership would conflict with production integration or loader edits. All changes here are new files beneath this directory. No shared source, board, handoff, claim, dependency, workflow, security setting or deployment configuration is edited. The user's explicit isolated-prototype instruction governs this work; no claim is renewed or transferred.
+- Existing Manager/UI and C111 ownership would conflict with production integration or loader edits. All changes here are new files beneath this directory. No shared source, board, handoff, claim, dependency, workflow, security setting or project deployment configuration is edited. The optional static preview uses its own deployment-local preview-config.json, with no install/build command or application functions. The user's explicit isolated-prototype instruction governs this work; no claim is renewed or transferred.
 - [The original five-option artifact](https://claude.ai/artifact/9SLVwjUu3LtVyecMvt6ToU) was unavailable. Nothing here claims to reproduce or implement its approved choices. The page includes five review decisions marked Not reviewed.
 
 ## What is implemented
@@ -33,22 +33,38 @@ The proposal assigns full store-hour shifts using availability and weekly caps, 
 
 ## Verification
 
-- `npm test`: 932 passed, including 16 proposal behavioral tests (five cover the store editor corrections).
+- `npm test`: 936 passed, including 16 proposal behavioral tests (five cover the store editor corrections).
 - `npm run build`: passed; existing large-chunk warning remains.
-- Chromium: full editing/review flow at 1440, 390 and 320 pixels, including repeated coverage saves, optional exception editing, October 26 then October 19 edits, switching effective dates, earlier-save isolation and focus returning to each sheet’s actual opener. No horizontal overflow at baseline or 200% root text. No page errors or external requests. The CSP also prohibits connections.
+- Chromium and WebKit: the full editing/review flow at 1440, 390 and 320 pixels, at both 100% and 200% root text (12 complete scenarios), including repeated coverage saves, optional exception editing, October 26 then October 19 edits, switching effective dates, earlier-save isolation and focus returning to each sheet’s actual opener. No horizontal overflow at baseline or 200% root text. No page errors or external requests. The CSP also prohibits connections.
 - Initial browser run exposed malformed holiday options. Fixed the markup, then reran the complete browser flow successfully. No failed assertion was removed or weakened.
-- WebKit: attempted, but launch blocked by missing GTK4, Graphene, HarfBuzz ICU, Manette, Hyphen and GLES system libraries. This is not a WebKit pass.
+- WebKit now passes the scheduler-specific flow. Debian libraries were downloaded and extracted beneath `/tmp/scheduler-libs`, then linked into the temporary WebKit bundle’s `sys/lib`; no system packages were installed. Playwright’s final GLES preflight reads `/sbin/ldconfig -p` and cannot see that temporary library. After verifying `ctypes.CDLL('libGLESv2.so.2')` loads successfully, `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` bypassed that cache-only preflight. The actual WebKit browser and every application assertion ran; no test was skipped. This launch setup is environment-specific, not a required application dependency.
 - No physical phone, native WebView, native keyboard, screen-reader, production UI integration, legal staffing policy, real forecasting accuracy or backend verification. 200% root text is a layout stress check, not full browser zoom or OS accessibility certification.
-- The existing salesperson/rooms/motion feel harness was not run: those surfaces and their harness are unchanged. This proposal has its own browser checks.
+- The existing salesperson/rooms/motion feel harness was not run locally: those surfaces and their harness are unchanged. This proposal has its own browser checks.
 
-Selected screenshots are committed under `evidence/`; the complete local set and machine-readable results are in `/workspace/scheduler-evidence`. The evidence manifest hashes the exact UI/model/probe files used for capture. Screenshots are fictional. No protected hosted preview is provisioned; the local page and draft source are the review deliverables. The repository's existing deployment ignore rule excludes scripts-only changes.
+Selected screenshots are committed under `evidence/`; the complete local set and machine-readable results are in `/workspace/scheduler-evidence`. The evidence manifest hashes the exact UI/model/probe files used for capture. Screenshots are fictional. The repository's existing deployment ignore rule excludes scripts-only changes. A separately requested static preview uses the existing Sage project, whose preview SSO protection was confirmed enabled. Only index.html, app.mjs, model.mjs, store-editor.mjs, style.css and the deployment-local preview configuration are eligible for upload. No project settings, access rules or credentials are changed. The exact preview URL and remote verification outcome are reported on the PR; local browser evidence does not claim authenticated remote browser coverage.
 
 ## Independent-review corrections
 
 The original single-save browser probe missed three real defects: ordinary coverage saves overwrote a confirmed Open exception with Unknown, a future rule seeded earlier edits, and closing Store sheet focused Person sheet. Corrected within this directory only. Five new editor regressions and the expanded browser flow exercise repeated saves, optional exception edits, date-based initialization and both focus return paths. The first correction browser attempt received an empty response from the stale local static server; restarting that server restored access, then the full probe passed. This was a local serving failure, not an assertion failure or a browser pass.
+
+## Extended browser verification
+
+Both engines execute repeated coverage saves, date switches, explicit Closed / Unknown / Open transitions, blocked and successful manager review, overrides, person edits, store/week isolation, and both normal and enlarged-text flows. Phone widths use mobile/touch emulation, not a physical device. Close and Escape discard unsaved edits and restore the correct opener; cancelling exception editing also restores the displayed saved status. The latter two small interaction fixes are covered by the browser flow. Root-text enlargement is not OS font scaling or physical Android verification.
+
+To repeat WebKit in this workspace after the temporary library setup:
+
+```sh
+PLAYWRIGHT_BROWSERS_PATH=/tmp/scheduler-browsers \
+PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 BROWSER=webkit \
+node scripts/scheduler-proposal/probe.mjs
+```
+
+On a normally provisioned Playwright host, use `BROWSER=webkit` without the temporary setup or preflight override. Browser versions and each scenario’s viewport, text scale and checks are recorded in the JSON results.
 
 ## Review images
 
 [Desktop week](evidence/desktop-week.png) · [Phone week](evidence/phone-week.png) · [Phone person sheet](evidence/phone-person.png) · [Phone store sheet](evidence/phone-store.png) · [Phone override conflict](evidence/phone-override.png) · [Repeated save](evidence/phone-repeat-save.png) · [Earlier rule after future-rule edit](evidence/phone-dated-rule.png)
 
 Remaining implementation limits: no partial shifts, breaks, cross-store staffing, store-local timezone configuration, durable saves, history top-up, forecast validation, manager authentication, salespeople's app hours or production wiring. These require later scoped work and ownership coordination. User review of the five proposed defaults remains outstanding.
+
+[WebKit desktop](evidence/webkit-desktop-week.png) · [WebKit phone](evidence/webkit-phone-week.png) · [WebKit 320px enlarged store sheet](evidence/webkit-320-text200-store.png) · [Chromium 320px enlarged store sheet](evidence/chromium-320-text200-store.png)
