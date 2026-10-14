@@ -82,7 +82,10 @@ http.createServer((req, res) => {
   req.on("data", (c) => { bodyText += c; });
   const send = (code, body) => {
     res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*",
-      "access-control-allow-headers": "*", "access-control-allow-methods": "*" });
+      // Authorization is a CORS non-wildcard header. Name the mock client's
+      // auth and PostgREST headers so browser preflights can permit them.
+      "access-control-allow-headers": "authorization, apikey, content-type, x-client-info, x-supabase-api-version, accept-profile, content-profile, prefer",
+      "access-control-allow-methods": "*" });
     res.end(body === undefined ? "" : JSON.stringify(body));
   };
   if (req.method === "OPTIONS") return send(204);
