@@ -170,7 +170,7 @@ try {
         const targets=[...document.querySelectorAll('.botnav-btn,.botnav-fab,.help-fab:not(.inline)')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent||n.getAttribute('aria-label'),...rect(n)}));
         const labels=[...document.querySelectorAll('.botnav-lbl,.botnav-fablbl')].map(n=>{const range=document.createRange();range.selectNodeContents(n);return {text:n.textContent,fontSize:getComputedStyle(n).fontSize,fontFamily:getComputedStyle(n).fontFamily,box:rect(n),rects:[...range.getClientRects()].map(r=>({x:r.x,right:r.right,y:r.y,bottom:r.bottom}))};});
         const help=document.querySelector('.help-fab:not(.inline)'), hs=getComputedStyle(help), ps=getComputedStyle(help,'::after');
-        const helpLabel={fontSize:ps.fontSize,lineHeight:parseFloat(ps.lineHeight),height:help.getBoundingClientRect().height,required:parseFloat(hs.paddingTop)+22+parseFloat(ps.lineHeight)+parseFloat(hs.paddingBottom)};
+        const helpLabel={fontSize:ps.fontSize,lineHeight:parseFloat(ps.lineHeight),height:help.getBoundingClientRect().height,required:parseFloat(hs.paddingTop)+20+parseFloat(ps.lineHeight)+parseFloat(hs.paddingBottom)};
         const iconCenters=[...document.querySelectorAll('.botnav-ico>.pix,.botnav-fab>.pix,.help-fab:not(.inline)>.pix')].map(n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;});
         const dock=rect(document.querySelector('.botnav')), search=rect(document.querySelector('.search-top')), band=rect(document.querySelector('.search-top').parentElement);
         const top=Math.min(dock.y,...targets.map(r=>r.y),document.querySelector('.botnav-halo').getBoundingClientRect().y);
