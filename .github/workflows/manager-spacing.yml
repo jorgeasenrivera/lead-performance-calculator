@@ -8,6 +8,7 @@ on:
       - src/manager-signal.css
       - scripts/manager-selector.mjs
       - scripts/manager-spacing.mjs
+      - scripts/search-runtime.sha256
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
 jobs:
@@ -53,7 +54,7 @@ jobs:
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Verify frozen preview runtime
-        run: git diff --exit-code e727ce1ffc8000d3423d0aab487eea191bebee81 HEAD -- . ':(exclude)scripts' ':(exclude).github'
+        run: sha256sum --check scripts/search-runtime.sha256
       - name: Build fictional app
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
