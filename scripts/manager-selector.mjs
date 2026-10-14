@@ -117,9 +117,11 @@ try{
    return{scrollWidth:n.scrollWidth,clientWidth:n.clientWidth,tabs:tabs.map(b=>{const r=b.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(b);return{text:b.textContent,x:r.x,right:r.right,width:r.width,height:r.height,font:getComputedStyle(b).fontSize,fits:[...range.getClientRects()].every(t=>t.x>=r.x-1&&t.right<=r.right+1&&t.y>=r.y-1&&t.bottom<=r.bottom+1)};})};
   });
   const candidateCSS=await page.evaluate(()=>{
-   const sheet=[...document.querySelectorAll('style')].find(s=>s.textContent.includes('/* Help category reflow:'));
-   if(!sheet)throw Error('built Help candidate CSS missing');
-   const css=sheet.textContent;sheet.textContent=css.replace(/\/\* Help category reflow:[\s\S]*?\/\* End Help category reflow\. \*\//,'');return css;
+   const sheet=[...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch'));
+   const rules=[...sheet.sheet.cssRules];
+   const correction=rules.find(r=>r.cssRules?.length===2&&r.cssRules[0].selectorText==='html.manager-signal .help-sheet .help-tabs');
+   if(!correction)throw Error('built Help candidate rules missing');
+   const css=sheet.textContent;sheet.textContent=rules.filter(r=>r!==correction).map(r=>r.cssText).join('\n');return css;
   });
   const baseline=await helpGeometry();
   await shot(`help-baseline-${width}-text${scale*100}`,true);
