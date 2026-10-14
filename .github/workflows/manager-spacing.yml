@@ -51,6 +51,8 @@ jobs:
           persist-credentials: false
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
+      - name: Apply local-only Help candidate for verification
+        run: git apply --check scripts/help-category-candidate.patch && git apply scripts/help-category-candidate.patch
       - name: Build fictional app
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local

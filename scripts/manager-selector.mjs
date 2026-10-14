@@ -112,10 +112,31 @@ try{
    return samples.map(({n,before})=>({text:n.textContent.slice(0,60),before,after:parseFloat(getComputedStyle(n).fontSize)}));
   },scale);
   assert.ok(textSizes.every(s=>Math.abs(s.after-s.before*scale)<.01),'Help text enlargement is measured');
-  await shot(`help-settled-${width}-text${scale*100}`,true);
+  const helpGeometry=()=>panel.evaluate(n=>{
+   const tabs=[...n.querySelectorAll('.help-tab')];
+   return{scrollWidth:n.scrollWidth,clientWidth:n.clientWidth,tabs:tabs.map(b=>{const r=b.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(b);return{text:b.textContent,x:r.x,right:r.right,width:r.width,height:r.height,font:getComputedStyle(b).fontSize,fits:[...range.getClientRects()].every(t=>t.x>=r.x-1&&t.right<=r.right+1&&t.y>=r.y-1&&t.bottom<=r.bottom+1)};})};
+  });
+  const candidateCSS=await page.evaluate(()=>{
+   const sheet=[...document.querySelectorAll('style')].find(s=>s.textContent.includes('/* Help category reflow:'));
+   if(!sheet)throw Error('built Help candidate CSS missing');
+   const css=sheet.textContent;sheet.textContent=css.replace(/\/\* Help category reflow:[\s\S]*?\/\* End Help category reflow\. \*\//,'');return css;
+  });
+  const baseline=await helpGeometry();
+  await shot(`help-baseline-${width}-text${scale*100}`,true);
+  await page.evaluate(css=>{const sheet=[...document.querySelectorAll('style')].find(s=>s.textContent.includes('.manager-signal.manager-signal-switch'));sheet.textContent=css;},candidateCSS);
+  await shot(`help-corrected-${width}-text${scale*100}`,true);
+  const corrected=await helpGeometry();evidence.push({helpComparison:{width,scale,baseline,corrected}});
+  assert.ok(corrected.scrollWidth<=corrected.clientWidth,'Help no longer clips horizontally');
+  assert.equal(corrected.tabs.length,3);
+  assert.ok(corrected.tabs.every(t=>t.fits&&t.height>=44&&t.x>=0&&t.right<=width),'every complete category fits a reachable target');
+  assert.deepEqual(corrected.tabs.map(t=>t.font),baseline.tabs.map(t=>t.font),'text is not shrunk');
+
   const settled=await panel.evaluate(n=>{const r=n.getBoundingClientRect(),style=getComputedStyle(n);return{opacity:style.opacity,transform:style.transform,x:r.x,y:r.y,width:r.width,height:r.height,scrollWidth:n.scrollWidth,clientWidth:n.clientWidth,scrollHeight:n.scrollHeight,clientHeight:n.clientHeight,active:document.activeElement?.getAttribute('aria-label'),running:n.getAnimations().filter(a=>a.playState==='running').length};});
   evidence.push({helpSettled:{width,scale,textSizes,...settled}});
   assert.equal(settled.opacity,'1');assert.equal(settled.running,0,'Help entrance completed naturally');
+  for(const tab of await panel.locator('.help-tab').all()){
+   await tab.click();assert.ok(await tab.evaluate(n=>n.classList.contains('on')),'each category remains operable');
+  }
   await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});
   assert.ok(await more.evaluate(n=>n===document.activeElement),'Escape returns focus to More');
  });
