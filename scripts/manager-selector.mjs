@@ -56,20 +56,23 @@ async function geometry(name){
   assert.ok(g.scroll<=g.width+1,'page fits');assert.equal(g.buttons.length,4);
   for(const b of g.buttons){assert.ok(b.box.w>=48 && b.box.h>=48,'comfortable full cell');assert.ok(b.range.every(r=>r.x>=b.box.x-1&&r.right<=b.box.right+1&&r.y>=b.box.y-1&&r.bottom<=b.box.bottom+1),'label fits');}
   assert.ok(g.buttons.every(b=>Math.abs(b.box.w-g.buttons[0].box.w)<1),'equal columns');
+  if(name.includes('text200'))assert.equal(parseFloat(g.buttons[0].font),24,'nav labels genuinely doubled');
+  const top=await page.locator('.sect-chip').evaluateAll(nodes=>nodes.map(n=>{const b=n.getBoundingClientRect(),r=document.createRange();r.selectNodeContents(n);return {y:b.y,bottom:b.bottom,fits:[...r.getClientRects()].every(t=>t.x>=b.x-1&&t.right<=b.right+1&&t.y>=b.y-1&&t.bottom<=b.bottom+1)};}));
+  assert.ok(top.every(t=>t.y===top[0].y&&t.bottom===top[0].bottom&&t.fits),'top tabs stay one row with complete labels');
 }
 try{
  await page.goto(url);await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');await page.locator('input[type="password"]').fill('x');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.locator('.bp-row').first().waitFor({timeout:40000});await page.evaluate(()=>document.fonts.ready);
  for(const width of [320,360,375,390,414,430,667]){
   await page.setViewportSize({width,height:width===667?320:667});
   for(const scale of [1,2])for(const inset of [0,34]){
-   await page.evaluate(({scale,inset})=>{document.documentElement.style.fontSize=`${scale*16}px`;document.documentElement.style.setProperty('--sab',`${inset}px`);},{scale,inset});
+   await page.evaluate(({scale,inset})=>{document.documentElement.style.fontSize=`${scale*16}px`;document.documentElement.style.setProperty('--sab',`${inset}px`);document.querySelectorAll('.sect-chip').forEach(n=>{n.style.removeProperty('font-size');if(scale===2)n.style.fontSize=`${parseFloat(getComputedStyle(n).fontSize)*2}px`;});},{scale,inset});
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    const name=`performance-${width}-text${scale*100}-safe${inset}`;
    await shot(name,[320,390].includes(width)&&inset===0);
    await check(name,()=>geometry(name));
   }
  }
- await page.evaluate(()=>{document.documentElement.style.fontSize='16px';document.documentElement.style.setProperty('--sab','0px')});await page.setViewportSize({width:320,height:667});
+ await page.evaluate(()=>{document.documentElement.style.fontSize='16px';document.documentElement.style.setProperty('--sab','0px');document.querySelectorAll('.sect-chip').forEach(n=>n.style.removeProperty('font-size'))});await page.setViewportSize({width:320,height:667});
  await check('search',async()=>{
   const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});
   assert.equal(await field.isVisible(),false);await trigger.click();assert.ok(await field.evaluate(n=>n===document.activeElement));await field.fill('no-such-fictional-associate');await page.locator('.bp-stand .fr-empty').waitFor();await page.keyboard.press('Escape');assert.ok(await trigger.evaluate(n=>n===document.activeElement));assert.match(await trigger.innerText(),/no-such/);await shot('active-query',true);await page.evaluate(()=>document.documentElement.style.fontSize='32px');await shot('active-query-text200',true);await geometry('active-query-text200');await page.evaluate(()=>document.documentElement.style.fontSize='16px');
@@ -83,6 +86,11 @@ try{
    for(let i=0;i<3;i++){await trigger.dispatchEvent('click');await page.keyboard.press('Escape');}assert.equal(await trigger.getAttribute('aria-expanded'),'false');
   });
  }
+ await check('rooms-to-more-interruption',async()=>{
+  const rooms=page.locator('.botnav').getByRole('button',{name:'Rooms',exact:true}),more=page.locator('.botnav').getByRole('button',{name:'More',exact:true});
+  await rooms.click();await more.click();await page.locator('.drawer-root.open').waitFor();
+  assert.equal(await page.locator('.qpick').count(),0);await page.keyboard.press('Escape');assert.ok(await more.evaluate(n=>n===document.activeElement));
+ });
  for(const label of ['Live Floor','Phone Line','Online'])await check(`room-${label}`,async()=>{
   await page.locator('.botnav').getByRole('button',{name:'Rooms',exact:true}).click();
   await page.locator('.qpick').getByRole('button',{name:label,exact:true}).click();

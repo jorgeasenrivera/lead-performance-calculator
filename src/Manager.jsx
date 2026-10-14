@@ -16285,7 +16285,9 @@ function useSelectorFocus(open, ref, onClose) {
     document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      if (previous?.isConnected) previous.focus();
+      // A pointer may already have moved focus to a different selector.
+      // Do not steal it back while that next panel is taking ownership.
+      if (previous?.isConnected && (node?.contains(document.activeElement) || document.activeElement === document.body)) previous.focus();
     };
   }, [open, ref]);
 }
