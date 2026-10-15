@@ -102,6 +102,8 @@ try {
       const ret = page.getByRole("button", { name: "Return to Performance" }),
         f = page.frames().find((f) => f.url().includes("/planner/"));
       await f.locator("#month").waitFor();
+      assert.equal(await f.locator("#people").count(), 0);
+      await f.getByRole("button", { name: "Make Schedule", exact: true }).click();
       assert.equal(
         await page.locator(".fr-k-onoff").count(),
         0,
@@ -343,6 +345,7 @@ try {
         true,
       );
       await entry.click();
+      await f.getByRole("button", { name: "Make Schedule", exact: true }).click();
       await f.locator("#people").click();
       assert.equal(await f.locator("[name=maxHours]").inputValue(), "32");
       await fit();
@@ -421,9 +424,10 @@ try {
         const fresh = page.frames().find((x) => x.url().includes("/planner/"));
         await fresh.locator("#month").waitFor();
         assert.equal(await fresh.locator("#month").inputValue(), "2026-10");
+        await fresh.getByRole("button", { name: "Make Schedule", exact: true }).click();
         assert.match(
           await fresh.locator("#day-2026-10-14").innerText(),
-          /2 assigned/,
+          /2 suggested/,
         );
         await fresh.locator("#people").click();
         assert.equal(await fresh.locator("[name=maxHours]").inputValue(), "40");

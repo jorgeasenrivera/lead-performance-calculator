@@ -769,3 +769,12 @@ button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; 
 .coverage-note { display:inline-flex; align-items:center; gap:6px; font:600 .6875rem/1.5 "Geist Mono",monospace; color:inherit; }
 .calendar-list .coverage-note { grid-column:2; }
 .month-day .coverage-low { text-decoration:underline; text-underline-offset:3px; }
+
+/* Existing Sage red/amber signals, isolated from observed-sales cell shading. */
+.staff-status { display:inline-flex; align-items:center; gap:6px; padding:4px 7px; border-radius:4px; background:#fffdf4; color:#234939; font:600 .75rem/1.5 Geist,sans-serif; }
+.staff-status.needs-schedule { border-left:4px solid #E5473C; }
+.staff-status.low-staff { border-left:4px solid #C77800; }
+.needs-schedule .sage-icon { color:#E5473C; }
+.low-staff .sage-icon { color:#C77800; }
+.day-staffing { overflow-wrap:normal; }
+.toolbar button.primary { background:#234939; color:#fffdf4; border-color:#3c5f49; }

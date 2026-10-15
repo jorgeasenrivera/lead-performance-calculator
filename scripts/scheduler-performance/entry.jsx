@@ -66,6 +66,7 @@ function Preview() {
     const open = (e) => {
       opener.current = e.detail.opener;
       scroll.current = window.scrollY;
+      frame.current.contentWindow?.dispatchEvent(new Event("scheduler-view"));
       dialog.current.showModal();
       document.body.style.overflow = "hidden";
       dialog.current.querySelector("button").focus();

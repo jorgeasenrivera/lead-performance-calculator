@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import { finalizeHtml, MAIN_POLICY, PLANNER_POLICY } from "./html-finalize.mjs";
+import { fixtures } from "../scheduler-proposal/model.mjs";
+import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
   "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
@@ -73,6 +75,11 @@ export function patchManager(source) {
 }
 export async function buildPreview() {
   const seed = buildDemo(new Date("2026-10-14T16:00:00Z"));
+  // One synthetic daily-sales source drives the hero roll-up and calendar.
+  const total = monthSales(fixtures()[0], "2026-10", "2026-10-14").total;
+  const stated = seed.storeData.months["2026-10"].stated;
+  stated.deliveries = stated.sold = total;
+  stated.vehicles = { new: Math.round(total * .46), used: total - Math.round(total * .46), other: 0 };
   seed.storeData.uploadedAt = "2026-10-14T16:00:00.000Z";
   seed.storeConfig.name = "Cedar Motors";
   seed.storeConfig.id = "fictional-0";
@@ -113,6 +120,7 @@ export async function buildPreview() {
   await writeFile(planner + "/store-editor.mjs", editor);
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
   await cp("scripts/scheduler-performance/sage-icons.mjs", planner + "/sage-icons.mjs");
+  await cp("scripts/scheduler-performance/assignment-view.mjs", planner + "/assignment-view.mjs");
   let monthlyModel = await readFile(
     "scripts/scheduler-performance/month-model.mjs",
     "utf8",
