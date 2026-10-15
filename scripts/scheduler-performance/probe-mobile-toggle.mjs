@@ -16,7 +16,7 @@ for(const engine of ['chromium','webkit']) {
   if(width>700){assert.equal(await page.locator('.sp-calendar-toggle').count(),0);assert.ok(await grid.isVisible());}
   else {
    const toggle=page.locator('.sp-calendar-toggle');assert.equal(await toggle.getAttribute('aria-expanded'),'false');assert.equal(await grid.isVisible(),false);
-   assert.match(await entry.innerText(),/October 2026/);assert.match(await entry.innerText(),/Today 14 · Units Delivered: 65/);assert.match(await entry.innerText(),/Needs schedule: \d+/);assert.match(await entry.innerText(),/Low staff: \d+/);
+   assert.match(await entry.innerText(),/October 2026/);assert.match(await entry.innerText(),/Month Units Delivered: 65 · Today 14: Unknown/);assert.match(await entry.innerText(),/Needs schedule: \d+/);assert.match(await entry.innerText(),/Low staff: \d+/);
    assert.ok(await entry.locator('.sp-mobile-warnings .pix').evaluateAll(es=>es.every(e=>getComputedStyle(e).fill==='rgb(35, 73, 57)')));
    const compactHeight=(await page.locator('.sp-mobile-calendar').boundingBox()).height;
    await page.screenshot({path:`${out}/${key}-compact.png`});

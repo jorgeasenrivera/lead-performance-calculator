@@ -16,13 +16,15 @@ export function teamsFor(people, mode) {
 }
 export function assignmentSummary(people, teams, record, row) {
   const valid = new Set(people.map(p => p.id));
-  const on = [...new Set(record?.on || [])].filter(id => valid.has(id));
-  const off = [...new Set(record?.off || [])].filter(id => valid.has(id) && !on.includes(id));
-  const unknown = [...valid].filter(id => !on.includes(id) && !off.includes(id));
-  const teamRows = teams.map(t => ({ ...t, state: t.ids.length && t.ids.every(id => on.includes(id)) ? 'On' : t.ids.length && t.ids.every(id => off.includes(id)) ? 'Off' : t.ids.some(id => on.includes(id)) ? 'Partly on' : 'Unknown' }));
+  const assigned = [...new Set(record?.on || [])].filter(id => valid.has(id));
+  const on = assigned.filter(id => (row.eligibleIds || []).includes(id));
+  const conflicting = assigned.filter(id => !on.includes(id));
+  const off = [...new Set(record?.off || [])].filter(id => valid.has(id) && !assigned.includes(id));
+  const unknown = [...valid].filter(id => !assigned.includes(id) && !off.includes(id));
+  const teamRows = teams.map(t => ({ ...t, state: t.ids.some(id => conflicting.includes(id)) ? 'Conflict' : t.ids.length && t.ids.every(id => on.includes(id)) ? 'On' : t.ids.length && t.ids.every(id => off.includes(id)) ? 'Off' : t.ids.some(id => on.includes(id)) ? 'Partly on' : 'Unknown' }));
   const members = new Set(teams.flatMap(t => t.ids));
-  const additional = { on: on.filter(id => !members.has(id)).length, off: off.filter(id => !members.has(id)).length, unknown: unknown.filter(id => !members.has(id)).length };
-  const covering = on.filter(id => { const p = people.find(p => p.id === id); return row.rule && p.start <= row.rule.open && p.end >= row.rule.close; }).length;
-  const status = row.state === 'closed' ? 'Closed' : row.state !== 'open' ? 'Hours unknown' : !record ? 'Needs schedule' : covering < row.rule.minimum ? 'Low staff' : 'Scheduled';
-  return { on, off, unknown, teams: teamRows, additional, covering, status };
+  const additional = { on: on.filter(id => !members.has(id)).length, off: off.filter(id => !members.has(id)).length, unknown: unknown.filter(id => !members.has(id)).length, conflicts: conflicting.filter(id => !members.has(id)).length };
+  const covering = on.length;
+  const status = row.state === 'closed' ? (row.issues?.length ? 'Schedule conflict' : 'Closed') : row.state !== 'open' ? 'Hours unknown' : !record ? 'Needs schedule' : covering < row.rule.minimum ? 'Low staff' : row.issues?.length || conflicting.length ? 'Schedule conflict' : 'Scheduled';
+  return { on, assigned, conflicting, off, unknown, teams: teamRows, additional, covering, status };
 }

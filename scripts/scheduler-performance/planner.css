@@ -778,3 +778,6 @@ button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; 
 .low-staff .sage-icon { color:#C77800; }
 .day-staffing { overflow-wrap:normal; }
 .toolbar button.primary { background:#234939; color:#fffdf4; border-color:#3c5f49; }
+.team-fields { min-inline-size:0; }
+.team-fields label { min-width:0; flex:1 1 100%; }
+.team-fields select { width:100%; min-width:0; max-width:100%; }

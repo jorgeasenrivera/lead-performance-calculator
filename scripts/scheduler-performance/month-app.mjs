@@ -14,9 +14,9 @@ import { storeRuleDraft, applyStoreRuleForm, effectiveExceptions } from "./store
 import { fixtureAssignments, teamsFor, assignmentSummary } from "./assignment-view.mjs";
 import { icon } from "./sage-icons.mjs";
 const stores = fixtures(),
-  planner = createPlanner(stores),
+  planner = createPlanner(stores, { assignmentForDay: fixtureAssignments }),
   app = document.querySelector("#app");
-let editing = false, mode = "mixed";
+let editing = false, mode = "mixed", selectedDay = null;
 let selected = 0,
   month = storeToday().slice(0, 7);
 const today = () => storeToday();
@@ -58,10 +58,9 @@ const markChanged = () => {
   draft().accepted = false;
   draft().reviewFingerprint = null;
 };
-const assignment = day => Object.hasOwn(draft().assignments || {}, day) ? draft().assignments[day] : fixtureAssignments(day);
-const staffing = row => assignmentSummary(draft().store.people, teamsFor(draft().store.people, mode), row.state === "closed" ? null : assignment(row.day), row);
-const staffingText = s => s.status === "Closed" ? "Store closed" : [...s.teams.map(t => `${t.name}: ${t.state}`), ...(mode === "team" ? [] : [ `${mode === "mixed" ? "Additional people" : "People"}: ${s.additional.on} on · ${s.additional.off} off · ${s.additional.unknown} unknown`])].join(" · ");
-const statusMarkup = s => `<span class="staff-status ${s.status === "Needs schedule" ? "needs-schedule" : s.status === "Low staff" ? "low-staff" : ""}">${icon(s.status === "Scheduled" ? "check" : "warn")}${s.status}</span>`;
+const staffing = row => assignmentSummary(draft().store.people, teamsFor(draft().store.people, mode), row.record, row);
+const staffingText = s => s.status === "Closed" ? "Store closed" : [...s.teams.map(t => `${t.name}: ${t.state}`), ...(mode === "team" ? [] : [ `${mode === "mixed" ? "Additional people" : "People"}: ${s.additional.on} on · ${s.additional.off} off · ${s.additional.unknown} unknown${s.additional.conflicts ? ` · ${s.additional.conflicts} conflicting` : ""}`])].join(" · ");
+const statusMarkup = s => `<span class="staff-status ${(s.status === "Needs schedule" || s.status === "Schedule conflict") ? "needs-schedule" : s.status === "Low staff" ? "low-staff" : ""}">${icon(s.status === "Scheduled" ? "check" : "warn")}${s.status}</span>`;
 function syncCalendarLayout() {
   const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
   app.classList.toggle("calendar-list", app.clientWidth < 7 * 8 * font);
@@ -94,7 +93,7 @@ function render(focusId, announcement = "") {
      if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
      const r = byDay.get(day),
        sales = heat.get(day), staff = staffing(r);
-     return `<button class="month-day ${r.state} sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span><span class="day-staffing">${editing ? (r.state === "open" ? `${r.ids.length} ${r.override ? "assigned" : "suggested"} / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours") : esc(staffingText(staff))}</span>${statusMarkup(staff)}<small class="day-sales">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${editing && r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
+     return `<button class="month-day ${r.state} sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span><span class="day-staffing">${editing ? (r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours") : esc(staffingText(staff))}</span>${statusMarkup(staff)}<small class="day-sales">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
    })
    .join("")}</section>
  <details class="month-glance"><summary>Month details</summary><p>${sales.known} recorded days · ${sales.closed} recorded Closed · ${sales.unknown} missing · ${sales.future} future.</p><p>${sales.best ? `Best recorded ${sales.bestDays.length > 1 ? "days (tied)" : "day"}: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."} No sales goal is entered, so no goal-based pace is shown.</p><p>Today uses America/New_York. Fictional history ends 13 Oct 2026. Future sales are unavailable; planning ranges are estimates.</p></details>
@@ -113,6 +112,7 @@ function render(focusId, announcement = "") {
       e.target.reportValidity();
       return;
     }
+    selectedDay = null;
     month = e.target.value;
     render("month");
   };
@@ -121,6 +121,7 @@ function render(focusId, announcement = "") {
     ["next", 1],
   ])
     document.getElementById(id).onclick = () => {
+      selectedDay = null;
       month = shiftMonth(month, delta);
       render(id);
     };
@@ -130,7 +131,7 @@ function render(focusId, announcement = "") {
     daySheet(today(), "today");
   };
   document.querySelector("#mode").onchange = e => { mode = e.target.value; render("mode"); };
-  document.querySelector("#workspace").onclick = () => { editing = !editing; render("workspace"); };
+  document.querySelector("#workspace").onclick = () => { editing = !editing; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); };
   if (editing) document.querySelector("#people").onclick = () => personSheet();
   if (editing) document.querySelector("#rules").onclick = () => storeSheet();
   document
@@ -152,8 +153,12 @@ function render(focusId, announcement = "") {
     d.reviewFingerprint = fingerprint(list);
     render("accept");
   };
-  const statuses = list.map(staffing);
-  window.parent.dispatchEvent(new CustomEvent("scheduler-summary", { detail: { store: d.store.id, month, needs: statuses.filter(s=>s.status==="Needs schedule").length, low: statuses.filter(s=>s.status==="Low staff").length } }));
+  // A neighboring-month edit can change the current hero's complete-week caps.
+  for (const summaryMonth of new Set([month, today().slice(0, 7)])) {
+    const summaryRows = summaryMonth === month ? list : planner.rows(selected, summaryMonth), summaryStore = summaryMonth === month ? d.store : planner.get(selected, summaryMonth).store;
+    const statuses = summaryRows.map(r => assignmentSummary(summaryStore.people, [], r.record, r));
+    window.parent.dispatchEvent(new CustomEvent("scheduler-summary", { detail: { store: summaryStore.id, month: summaryMonth, needs: statuses.filter(s=>s.status==="Needs schedule").length, low: statuses.filter(s=>s.status==="Low staff").length, conflicts: summaryRows.filter(r=>Object.keys(r.conflicts).length).length } }));
+  }
   syncCalendarLayout();
   if (focusId) {
     const target = document.getElementById(focusId);
@@ -168,6 +173,7 @@ function openSheet(html, openerId) {
   sheet.innerHTML = html;
   sheet.querySelector("[data-close]").onclick = () => {
     sheet.hidden = true;
+    selectedDay = null;
     document.getElementById(openerId)?.focus();
   };
   sheet.onkeydown = (e) => {
@@ -185,16 +191,16 @@ function openSheet(html, openerId) {
 function daySheet(day, openerId = `day-${day}`) {
   let r = rows().find((r) => r.day === day);
   if (!r) return;
+  selectedDay = day;
   const summary = staffing(r);
   if (!editing) {
-    openSheet(`<h2>${dateLabel(day)}</h2><p class="day-staffing">${esc(staffingText(summary))}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p><button type="button" data-close>Back to month</button>`, openerId);
+    openSheet(`<h2>${dateLabel(day)}</h2><p class="day-staffing">${esc(staffingText(summary))}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}<button type="button" data-close>Back to month</button>`, openerId);
     return;
   }
-  if (assignment(day)) r = { ...r, ids: summary.on };
   const sheet = openSheet(
     `<h2>${dateLabel(day)}</h2><p class="day-staffing">${esc(staffingText(summary))}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p><span class="badge ${r.state}">${r.state}</span></p>${
       r.state === "open"
-        ? `<h3>Planning range</h3><div class="range">${r.estimate ? `${r.estimate.low} to ${r.estimate.high}` : "Unknown"}<small>delivered cars</small></div><p>${r.estimate?.reason || "Insufficient known history."}</p><p><strong>${r.required} people needed</strong> · ${r.rule.open}:00–${r.rule.close}:00. Minimum ${r.rule.minimum}${r.rule.useCapacity ? `; entered capacity ${r.rule.capacity} cars per full shift` : "; capacity adjustment off"}. Rule effective ${r.rule.effective}.</p><p>Assigned: ${r.ids.map((id) => esc(draft().store.people.find((p) => p.id === id)?.name || id)).join(", ") || "Nobody yet"}.</p><form><fieldset><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set team status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset><legend>Manager assignments for this date</legend>${draft()
+        ? `<h3>Planning range</h3><div class="range">${r.estimate ? `${r.estimate.low} to ${r.estimate.high}` : "Unknown"}<small>delivered cars</small></div><p>${r.estimate?.reason || "Insufficient known history."}</p><p><strong>${r.required} people needed</strong> · ${r.rule.open}:00–${r.rule.close}:00. Minimum ${r.rule.minimum}${r.rule.useCapacity ? `; entered capacity ${r.rule.capacity} cars per full shift` : "; capacity adjustment off"}. Rule effective ${r.rule.effective}.</p><p>Assigned: ${r.ids.map((id) => esc(draft().store.people.find((p) => p.id === id)?.name || id)).join(", ") || "Nobody yet"}.</p><form><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set team status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset><legend>Manager assignments for this date</legend>${draft()
             .store.people.map(
               (p) =>
                 `<label class="check"><input type="checkbox" name="assigned" value="${p.id}" ${r.ids.includes(p.id) ? "checked" : ""}>${p.name} on</label><label class="check"><input type="checkbox" name="off" value="${p.id}" ${summary.off.includes(p.id)?"checked":""}>${p.name} confirmed off</label>`,
@@ -218,19 +224,16 @@ function daySheet(day, openerId = `day-${day}`) {
       e.preventDefault();
       const values = new FormData(e.target), on = values.getAll("assigned"), off = values.getAll("off");
       if (on.some(id => off.includes(id))) { e.target.querySelector("[name=assigned]").setCustomValidity("A person cannot be both on and off."); e.target.reportValidity(); e.target.onchange = () => e.target.querySelector("[name=assigned]").setCustomValidity(""); return; }
-      draft().assignments ??= {};
-      draft().assignments[day] = { on, off };
-      draft().overrides[day] = on;
+      planner.setAssignment(selected, day, { on, off });
       markChanged();
       render(`day-${day}`, `Assignments updated for ${dateLabel(day)}. Review the visible warnings.`);
     };
     sheet.querySelector("#suggest").onclick = () => {
-      const saved = draft().overrides[day];
-      delete draft().overrides[day];
-      const suggestion = rows().find(row => row.day === day).ids;
-      if (saved !== undefined) draft().overrides[day] = saved;
-      sheet.querySelectorAll('[name="assigned"]').forEach(box => box.checked = suggestion.includes(box.value));
-      sheet.querySelectorAll('[name="off"]').forEach(box => box.checked = false);
+      const suggestion = rows().find(row => row.day === day).suggestions;
+      sheet.querySelectorAll('[name="assigned"]').forEach(box => {
+        const off = sheet.querySelector(`[name="off"][value="${box.value}"]`);
+        if (suggestion.includes(box.value) && !off.checked) box.checked = true;
+      });
     };
   }
 }
@@ -323,7 +326,7 @@ function storeSheet(effective = month + "-01") {
   };
 }
 render();
-window.addEventListener("scheduler-view", () => { editing = false; render("workspace"); });
+window.addEventListener("scheduler-view", () => { editing = false; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); });
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !e.defaultPrevented) {
     e.preventDefault();

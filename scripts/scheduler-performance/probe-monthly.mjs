@@ -43,7 +43,8 @@ try {
       const entry = page.locator(".sp-plan-entry");
       if (width <= 700) await page.getByRole("button", { name: "Show calendar", exact: true }).click();
       assert.match(await entry.innerText(), /October 2026/);
-      assert.doesNotMatch(await entry.evaluate(e => [...e.children].filter(n => !n.classList.contains("sp-sr-only")).map(n => n.innerText).join(" ")), /Schedule|Staffing & sales/);
+      assert.doesNotMatch(await entry.evaluate(e => [...e.children].filter(n => !n.classList.contains("sp-sr-only")).map(n => n.innerText).join(" ")), /Staffing & sales/);
+      assert.equal(await entry.getByText("Schedule", { exact: true }).count(), 0);
       assert.equal(await page.getByRole("button", { name: /open Schedule for staffing and daily sales/i }).count(), 1);
       assert.equal(await page.locator(".s2-lampbtn").count(), 0);
       const dateBefore = await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize));
@@ -428,7 +429,7 @@ try {
         await fresh.getByRole("button", { name: "Make Schedule", exact: true }).click();
         assert.match(
           await fresh.locator("#day-2026-10-14").innerText(),
-          /2 suggested/,
+          /3 assigned/,
         );
         await fresh.locator("#people").click();
         assert.equal(await fresh.locator("[name=maxHours]").inputValue(), "40");

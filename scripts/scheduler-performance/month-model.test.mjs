@@ -108,33 +108,49 @@ test("effective dates and exact holiday/override dates survive leap-month planni
   assert.deepEqual(r[28].ids, ["b"]);
   assert.equal(p.rows(0, "2028-03")[0].required, 1);
 });
-test("weekly caps reset on Monday, not on the first or every seventh day of a month", () => {
-  const s = store();
-  s.people = s.people.slice(0, 1);
+test("entered shifts, not suggestions, consume complete neighboring weeks", () => {
+  const s = store(); s.people = s.people.slice(0, 1);
   const p = createPlanner([s]);
-  const r = p.rows(0, "2028-02"); // Feb 1 Tuesday, Jan 31 Monday contributes eight hours.
-  assert.deepEqual(r[0].ids, ["a"]);
-  assert.deepEqual(r[3].ids, ["a"]);
-  assert.deepEqual(r[4].ids, []);
-  assert.deepEqual(r[5].ids, []);
-  assert.deepEqual(r[6].ids, ["a"]);
-});
-test("a previous-month override contributes hours without mutating either draft", () => {
-  const s = store();
-  s.people = s.people.slice(0, 1);
-  const p = createPlanner([s]);
-  const jan = p.get(0, "2028-01");
-  jan.overrides["2028-01-31"] = [];
-  const feb = p.get(0, "2028-02");
-  feb.overrides["2028-02-05"] = ["a"];
-  const saved = JSON.stringify([jan, feb]);
-  let r = p.rows(0, "2028-02");
-  assert.ok(!r[4].issues.some((x) => x.includes("weekly hours")));
-  assert.equal(JSON.stringify([jan, feb]), saved);
+  assert.ok(p.rows(0, "2028-02").every(r => r.ids.length === 0));
+  const jan = p.get(0, "2028-01"), feb = p.get(0, "2028-02");
   jan.overrides["2028-01-31"] = ["a"];
-  r = p.rows(0, "2028-02");
-  assert.ok(r[4].issues.some((x) => x.includes("weekly hours")));
-  assert.deepEqual(feb.overrides["2028-02-05"], ["a"]);
+  for (let n=1;n<=5;n++) feb.overrides[`2028-02-0${n}`] = ["a"];
+  let r = p.rows(0, "2028-02");
+  assert.equal(r[0].weeklyHours.a,48);
+  assert.ok(r[0].issues.some(i=>i.includes("weekly hours exceeded")));
+  assert.equal(r[0].eligibleIds.length,0);
+  assert.deepEqual(r[0].ids,["a"], "invalid manual choices remain entered");
+  assert.equal(r[6].weeklyHours.a,0, "Monday starts a new complete week");
+  const saved=JSON.stringify([jan,feb]);p.rows(0,"2028-01");assert.equal(JSON.stringify([jan,feb]),saved);
+  jan.overrides["2028-01-31"]=[];
+  r=p.rows(0,"2028-02");assert.equal(r[0].weeklyHours.a,40);assert.deepEqual(r[0].eligibleIds,["a"]);
+});
+test("next-month entered shifts invalidate an earlier month's boundary-week review", () => {
+  const s=store();s.people[0].maxHours=8;const p=createPlanner([s]);
+  p.setAssignment(0,"2026-10-31",{on:["a"],off:[]});
+  const before=JSON.stringify(p.rows(0,"2026-10"));
+  p.setAssignment(0,"2026-11-01",{on:["a"],off:[]});
+  const r=p.rows(0,"2026-10").at(-1);
+  assert.equal(r.weeklyHours.a,16);assert.match(r.issues.join(' '),/weekly hours exceeded/);
+  assert.notEqual(JSON.stringify(p.rows(0,"2026-10")),before);
+});
+test("fixtures, overrides and review rows share exactly one entered source", () => {
+  const p=createPlanner([store()],{assignmentForDay:day=>day==='2026-10-14'?{on:['b'],off:['a']}:null});
+  assert.deepEqual(p.rows(0,'2026-10')[13].record,p.record(0,'2026-10-14'));
+  assert.deepEqual(p.rows(0,'2026-10')[13].ids,['b']);
+  const before=JSON.stringify(p.get(0,'2026-10'));
+  assert.ok(p.rows(0,'2026-10')[14].suggestions.length);
+  assert.equal(p.record(0,'2026-10-15'),null);assert.equal(JSON.stringify(p.get(0,'2026-10')),before);
+  p.setAssignment(0,'2026-10-14',{on:['a','a'],off:['b']});
+  assert.deepEqual(p.rows(0,'2026-10')[13].ids,['a']);
+  assert.equal(p.rows(0,'2026-10')[13].weeklyHours.a,8);
+  assert.deepEqual(p.record(0,'2026-10-14').off,['b']);
+});
+test("days off, insufficient availability and unknown policy cannot clear coverage",()=>{
+ const s=store();s.people[0].off=[3];s.people[1].maxHours=undefined;
+ const p=createPlanner([s]);p.setAssignment(0,'2026-10-14',{on:['a','b'],off:[]});
+ const r=p.rows(0,'2026-10')[13];assert.deepEqual(r.ids,['a','b']);assert.deepEqual(r.eligibleIds,[]);
+ assert.match(r.issues.join(' '),/day off/);assert.match(r.issues.join(' '),/unknown/);
 });
 
 test("recorded sales distinguish known zero, Closed, missing and future from estimates", () => {
@@ -194,4 +210,16 @@ test("calendar has seven Monday-first columns with exact leading and trailing bl
         assert.equal(i % 7, (new Date(day + "T12:00:00Z").getUTCDay() + 6) % 7);
     });
   }
+});
+
+test('unknown neighboring shift hours cannot be treated as zero for weekly clearance',()=>{
+ const s=store();s.rules[0].effective='2028-02-01';const p=createPlanner([s]);
+ p.setAssignment(0,'2028-01-31',{on:['a'],off:[]});p.setAssignment(0,'2028-02-01',{on:['a'],off:[]});
+ const r=p.rows(0,'2028-02')[0];assert.match(r.issues.join(' '),/weekly hours unknown/);assert.deepEqual(r.eligibleIds,[]);assert.ok(!r.suggestions.includes('a'));
+});
+test('missing sales history is advisory and does not replace entered store minimum',()=>{
+ const s=store();s.rules[0].closedDays=[0,1,2,3,4,5,6];s.rules[0].holidays={'2026-10-14':'open'};
+ const p=createPlanner([s]);p.setAssignment(0,'2026-10-14',{on:['b'],off:['a']});
+ const rows=p.rows(0,'2026-10');assert.ok(rows.every(r=>r.issues.length===0));
+ assert.equal(rows[13].estimate,null);assert.equal(rows[13].required,1);assert.deepEqual(rows[13].ids,['b']);
 });

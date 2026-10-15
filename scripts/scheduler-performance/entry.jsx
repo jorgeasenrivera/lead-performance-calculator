@@ -56,11 +56,12 @@ function Preview() {
     const sheet = frame.current?.contentDocument?.querySelector(
       "#sheet:not([hidden])",
     );
-    sheet?.querySelector("[data-close]")?.click();
+    if (sheet) sheet.hidden = true;
     dialog.current.close();
     document.body.style.overflow = "";
     window.scrollTo({ top: scroll.current, behavior: "instant" });
-    opener.current?.focus({ preventScroll: true });
+    const target = opener.current?.isConnected ? opener.current : document.querySelector(".sp-calendar-entry");
+    target?.focus({ preventScroll: true });
   };
   useEffect(() => {
     const open = (e) => {
