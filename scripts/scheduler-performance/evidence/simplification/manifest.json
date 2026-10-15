@@ -154,5 +154,11 @@
     "webkit-startup-diagnostic.log": "05f77cc1dd9724f183bcc5b485c65eb08711f2563fb38652a5499122216b95e7",
     "webkit-startup-failure.log": "becf046efc0bb0a63161f8717608386e612c811bad43d3f424f9e61546bd7513",
     "webkit-startup-second-failure.log": "becf046efc0bb0a63161f8717608386e612c811bad43d3f424f9e61546bd7513"
+  },
+  "verificationCorrection": {
+    "commit": "7fc8e3a8d004aa6c6213a742b423d98713fbf392",
+    "invalidEvidence": "WebKit compact text200 images at 320 and 390 did not enlarge the visible labels; do not use these as 200% compact coverage",
+    "supersededBy": "../compact-scaling/manifest.json",
+    "retainedCoverage": "Card-layout, scheduling and planner checks remain valid; the follow-up changes only compact entry reduced-motion styling"
   }
 }

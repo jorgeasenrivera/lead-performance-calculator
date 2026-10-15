@@ -1,0 +1,5 @@
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+{"clock":false,"reducedMotion":"no-preference","before":{"root":"16px","month":"16px","cta":"14px","button":"15px"},"after":{"root":"32px","month":"32px","cta":"28px","button":"30px"},"styled":{"root":"32px","month":"32px","cta":"28px","button":"30px"}}
+{"clock":false,"reducedMotion":"reduce","before":{"root":"16px","month":"16px","cta":"14px","button":"15px"},"after":{"root":"32px","month":"16px","cta":"14px","button":"30px"},"styled":{"root":"32px","month":"16px","cta":"14px","button":"30px"}}
+{"clock":true,"reducedMotion":"no-preference","before":{"root":"16px","month":"16px","cta":"14px","button":"15px"},"after":{"root":"32px","month":"32px","cta":"28px","button":"30px"},"styled":{"root":"32px","month":"32px","cta":"28px","button":"30px"}}
+{"clock":true,"reducedMotion":"reduce","before":{"root":"16px","month":"16px","cta":"14px","button":"15px"},"after":{"root":"32px","month":"16px","cta":"14px","button":"30px"},"styled":{"root":"32px","month":"16px","cta":"14px","button":"30px"}}

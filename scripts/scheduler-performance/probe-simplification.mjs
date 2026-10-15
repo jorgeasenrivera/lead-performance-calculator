@@ -12,8 +12,11 @@ for(const engine of (process.env.BROWSER?[process.env.BROWSER]:['chromium','webk
   await p.clock.install({time:new Date('2026-10-14T16:00:00Z')});
   await p.route('**/__axe.js',r=>r.fulfill({contentType:'application/javascript',body:readFileSync('/workspace/qa-tools/node_modules/axe-core/axe.min.js','utf8')}));
   await p.goto('http://127.0.0.1:5190');if(width>700)await p.getByRole('button',{name:'Close the round-up'}).click();
-  await p.evaluate(s=>document.documentElement.style.fontSize=`${s*100}%`,scale);
   let entry=p.locator('.sp-calendar-entry');
+  const compactFonts=async()=>entry.evaluate(e=>[e.querySelector('.sp-entry-month'),e.lastElementChild].map(n=>parseFloat(getComputedStyle(n).fontSize)));
+  const compactBefore=width<=700?await compactFonts():null;
+  await p.evaluate(s=>document.documentElement.style.fontSize=`${s*100}%`,scale);
+  if(width<=700)assert.deepEqual(await compactFonts(),compactBefore.map(n=>n*scale),'both visible compact labels scale');
   if(width<=700){
    assert.equal((await entry.innerText()).replace(/\s+/g,' ').trim(),'October 2026 Open calendar');
    assert.equal(await p.locator('.sp-mobile-warnings,.sp-mobile-summary,.sp-calendar-toggle').count(),0);
