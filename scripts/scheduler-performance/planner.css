@@ -670,3 +670,22 @@ main:has(#sheet:not([hidden])) .month-glance {
     gap: 12px;
   }
 }
+/* Preserve date tokens; give narrow, enlarged-text rows their own date line. */
+.month-days {
+  container-type: inline-size;
+}
+.month-day .day-date {
+  white-space: nowrap;
+  flex-wrap: wrap;
+}
+.day-date > * {
+  flex-shrink: 0;
+}
+@container (max-width: 20rem) {
+  .calendar-list .month-day {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+}

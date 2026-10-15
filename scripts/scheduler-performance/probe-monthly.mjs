@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
+import { assertDateReadability } from "./date-readability.mjs";
 const { chromium, webkit } = createRequire(import.meta.url)(
   process.env.PLAYWRIGHT_MODULE ||
     "/workspace/cloud-tools/node_modules/playwright",
@@ -13,7 +14,7 @@ const browser = await { chromium, webkit }[engine].launch(
 );
 const out =
   process.env.EVIDENCE_DIR ||
-  "scripts/scheduler-performance/evidence/hero-calendar";
+  "scripts/scheduler-performance/evidence/date-readability";
 mkdirSync(out, { recursive: true });
 const results = [];
 try {
@@ -160,6 +161,7 @@ try {
         assert.equal(d.at(-1), m + "-" + n);
         assert.equal(new Set(d).size, n);
         assert.ok(d.every((x) => x.startsWith(m + "-")));
+        await assertDateReadability(f);
       };
       const cycle = async () => {
         await ret.focus();
@@ -251,6 +253,8 @@ try {
       await page.screenshot({ path: `${out}/${key}-overview.png` });
       await f.locator(".month-days").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${out}/${key}-calendar.png` });
+      await f.locator("#day-2026-10-17").scrollIntoViewIfNeeded();
+      await f.locator("#day-2026-10-17").screenshot({ path: `${out}/${key}-oct17.png` });
       // Current-month override and person settings survive future planning.
       await f.locator("#day-2026-10-14").click();
       for (const box of await f.locator("[name=assigned]").all())
