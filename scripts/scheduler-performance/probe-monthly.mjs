@@ -41,13 +41,13 @@ try {
       if (width > 700)
         await page.getByRole("button", { name: "Close the round-up" }).click();
       const entry = page.locator(".sp-plan-entry");
-      if (width <= 700) await page.getByRole("button", { name: "Show calendar", exact: true }).click();
+
       assert.match(await entry.innerText(), /October 2026/);
       assert.doesNotMatch(await entry.evaluate(e => [...e.children].filter(n => !n.classList.contains("sp-sr-only")).map(n => n.innerText).join(" ")), /Staffing & sales/);
       assert.equal(await entry.getByText("Schedule", { exact: true }).count(), 0);
-      assert.equal(await page.getByRole("button", { name: /open Schedule for staffing and daily sales/i }).count(), 1);
+      assert.equal(await page.getByRole("button", { name: width <= 700 ? /October 2026 Open calendar/ : /open Schedule for staffing and daily sales/i }).count(), 1);
       assert.equal(await page.locator(".s2-lampbtn").count(), 0);
-      const dateBefore = await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize));
+      const dateBefore = width > 700 ? await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize)) : null;
       const entryBefore = await entry.evaluate((e) =>
         parseFloat(getComputedStyle(e).fontSize),
       );
@@ -59,7 +59,7 @@ try {
         await entry.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)),
         entryBefore * scale,
       );
-      assert.equal(await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize)), dateBefore * scale);
+      if (width > 700) assert.equal(await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize)), dateBefore * scale);
       await page.keyboard.press("Tab");
       await entry.focus();
       assert.equal(await entry.evaluate(e => getComputedStyle(e).outlineStyle), "solid");
@@ -92,7 +92,7 @@ try {
       );
       assert.equal(
         await entry.locator(".sp-mini-grid").count(),
-        1,
+        width > 700 ? 1 : 0,
         "calendar visual belongs to Schedule entry",
       );
       assert.equal(
@@ -103,7 +103,7 @@ try {
       await entry.click();
       const ret = page.getByRole("button", { name: "Return to Performance" }),
         f = page.frames().find((f) => f.url().includes("/planner/"));
-      await f.locator("#month").waitFor();
+      await f.locator("#period-heading").waitFor();
       assert.equal(await f.locator("#people").count(), 0);
       await f.getByRole("button", { name: "Make Schedule", exact: true }).click();
       assert.equal(
@@ -114,7 +114,7 @@ try {
       assert.equal(await f.locator("#month").inputValue(), "2026-10");
       const fonts = async () =>
         Promise.all(
-          ["#month", "#store", "#people"].map((s) =>
+          ["#period-heading", "#store", "#people"].map((s) =>
             f
               .locator(s)
               .evaluate((e) => parseFloat(getComputedStyle(e).fontSize)),
@@ -151,9 +151,10 @@ try {
           "focus restored after rerender",
         );
       const selectMonth = async (m) => {
+        await f.locator("#period-heading").click();
         await f.locator("#month").fill(m);
         await f.locator("#month").dispatchEvent("change");
-        await focus("month");
+        await focus("period-heading");
         assert.equal(await f.locator("#month").inputValue(), m);
       };
       const dates = async (m, n) => {
@@ -387,13 +388,14 @@ try {
       await f
         .getByRole("button", { name: "Back to month", exact: true })
         .click();
+      await f.locator("#period-heading").click();
       await f.locator("#today").click();
       assert.equal(await f.locator("#month").inputValue(), "2026-10");
       assert.match(await f.locator("#sheet h2").innerText(), /Oct 14, 2026/);
       await f
         .getByRole("button", { name: "Back to month", exact: true })
         .click();
-      await focus("today");
+      await focus("period-heading");
       await selectMonth("2028-02");
       assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
       await f.locator("#reset").click();
@@ -408,7 +410,7 @@ try {
         await f.locator("#day-2026-10-14").innerText(),
         /0 assigned/,
       );
-      await f.locator("#month").press("Escape");
+      await f.locator("#period-heading").press("Escape");
       assert.equal(
         await page.locator(".sp-dialog").evaluate((e) => e.open),
         false,
@@ -424,7 +426,7 @@ try {
         if (await recap.count()) await recap.click();
         await entry.click();
         const fresh = page.frames().find((x) => x.url().includes("/planner/"));
-        await fresh.locator("#month").waitFor();
+        await fresh.locator("#period-heading").waitFor();
         assert.equal(await fresh.locator("#month").inputValue(), "2026-10");
         await fresh.getByRole("button", { name: "Make Schedule", exact: true }).click();
         assert.match(

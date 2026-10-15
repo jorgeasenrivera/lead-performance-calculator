@@ -1,0 +1,20 @@
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+{"scroll":296,"width":290,"doc":320,"viewport":320,"active":"<select data-team=\"0\"><option value=\"\">Set team status</option><option>On</option><option>Off</option><option>Unknown</option></select>","overflow":[{"tag":"FORM","cls":"","text":"TeamsNorthwestCommercialFleetAndInternetSalesTeamSet team statusOnOffUnknownPine","width":250,"right":285,"scroll":276,"client":250},{"tag":"FIELDSET","cls":"team-fields","text":"TeamsNorthwestCommercialFleetAndInternetSalesTeamSet team statusOnOffUnknownPine","width":250,"right":285,"scroll":275,"client":248},{"tag":"LABEL","cls":"","text":"NorthwestCommercialFleetAndInternetSalesTeamSet team statusOnOffUnknown","width":224,"right":272,"scroll":263,"client":224},{"tag":"LABEL","cls":"","text":"Pine customer experience and delivery teamSet team statusOnOffUnknown","width":224,"right":272,"scroll":263,"client":224}]}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+  assert.ok(sheetFit.scroll<=sheetFit.width)
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-card-layout.mjs:31:850 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

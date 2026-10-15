@@ -1,0 +1,23 @@
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 8000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Close the round-up' })[22m
+[2m    - locator resolved to <button type="button" class="ru-x x-close" aria-label="Close the round-up">…</button>[22m
+[2m  - attempting click action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-monthly.mjs:42:72 {
+  log: [
+    "  - waiting for getByRole('button', { name: 'Close the round-up' })",
+    '    - locator resolved to <button type="button" class="ru-x x-close" aria-label="Close the round-up">…</button>',
+    '  - attempting click action',
+    '    - waiting for element to be visible, enabled and stable'
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

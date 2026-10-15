@@ -325,20 +325,15 @@ html.manager-signal .sp-heat-key { display:flex; flex-wrap:wrap; gap:4px 8px; }
 @media(max-width:700px) { .sp-dialog { border-radius:0; } .sp-dialog-bar { padding:12px; } }
 
 @media(max-width:360px) { html.manager-signal .sp-mini-grid { gap:5px; } }
-/* Phone summary keeps urgent staffing visible while dates are collapsed. */
+/* The phone calendar entry stays separate from Performance metrics. */
 html.manager-signal .sp-performance .bp-h5 .bp-r1.sp-mobile-calendar {
   grid-column:1/-1; grid-row:4; align-self:stretch; margin-top:8px; width:100%;
   min-width:0; border-radius:4px; box-shadow:0 0 0 4px #234939, 0 0 0 5px #bfd0b473;
 }
 html.manager-signal .sp-mobile-calendar .sp-calendar-entry { box-shadow:none; }
 html.manager-signal .sp-calendar-entry [hidden] { display:none; }
-html.manager-signal .sp-mobile-summary { font:500 .875rem/1.5 var(--font-ui); }
-html.manager-signal .sp-mobile-warnings { display:flex; flex-wrap:wrap; gap:8px; }
-html.manager-signal .sp-mobile-warnings > span { display:inline-flex; align-items:center; gap:6px; background:#fffdf4; color:#234939; border-radius:4px; padding:4px 6px; font:600 .75rem/1.5 var(--font-ui); }
-html.manager-signal .sp-mobile-warnings .sp-needs { border-left:4px solid #E5473C; }
-html.manager-signal .sp-mobile-warnings .sp-low { border-left:4px solid #C77800; }
-html.manager-signal .sp-calendar-toggle { width:100%; min-height:44px; margin-top:8px; padding:8px; border:1px solid #bfd0b473; border-radius:4px; background:#183c2f; color:#fffdf4; font:600 .875rem/1.5 var(--font-ui); cursor:pointer; }
-html.manager-signal .sp-calendar-toggle:focus-visible { outline:3px solid #e4c98d; outline-offset:3px; }
 .sp-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-/* Override the inherited phone hero's white icon ink on paper warning chips. */
-html.manager-signal .sp-mobile-warnings .pix { color:#234939 !important; fill:#234939; }
+.sp-dialog-bar h1 { margin:0; font:600 1.125rem/1.4 Geist,sans-serif; color:#fffdf4; }
+html.manager-signal .sp-mobile-calendar .sp-compact-entry { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px; }
+html.manager-signal .sp-mobile-calendar .sp-compact-entry .sp-entry-month { flex:1; min-width:0; }
+html.manager-signal .sp-mobile-calendar .sp-compact-entry > span:last-child { font-size:.875rem; text-decoration:underline; text-underline-offset:3px; }

@@ -59,7 +59,11 @@ const markChanged = () => {
   draft().reviewFingerprint = null;
 };
 const staffing = row => assignmentSummary(draft().store.people, teamsFor(draft().store.people, mode), row.record, row);
-const staffingText = s => s.status === "Closed" ? "Store closed" : [...s.teams.map(t => `${t.name}: ${t.state}`), ...(mode === "team" ? [] : [ `${mode === "mixed" ? "Additional people" : "People"}: ${s.additional.on} on · ${s.additional.off} off · ${s.additional.unknown} unknown${s.additional.conflicts ? ` · ${s.additional.conflicts} conflicting` : ""}`])].join(" · ");
+const staffingMarkup = s => {
+  if (s.status === "Closed") return `<span class="staff-closed">${icon("clock")}Store closed</span>`;
+  const counts = mode === "team" ? "" : `<span class="staff-people"><span class="staff-group-title">${icon("users")}${mode === "mixed" ? "Additional people" : "People"}</span><span class="staff-counts">${[["on","On","check"],["off","Off","close"],["unknown","Unknown","question"],...(s.additional.conflicts ? [["conflicts","Conflicting","warn"]] : [])].map(([key,label,glyph])=>`<span class="staff-count" data-count="${key}">${icon(glyph)}<strong>${s.additional[key]}</strong><span>${label}</span></span>`).join("")}</span></span>`;
+  return `<span class="staffing-groups">${s.teams.length ? `<span class="staff-teams">${s.teams.map(t=>`<span class="staff-team" data-state="${t.state}"><span class="staff-team-name">${icon("users")}${esc(t.name)}</span><span class="staff-team-state">${icon(t.state === "On" ? "check" : t.state === "Off" ? "close" : t.state === "Unknown" ? "question" : "warn")}${t.state}</span></span>`).join("")}</span>` : ""}${counts}</span>`;
+};
 const statusMarkup = s => `<span class="staff-status ${(s.status === "Needs schedule" || s.status === "Schedule conflict") ? "needs-schedule" : s.status === "Low staff" ? "low-staff" : ""}">${icon(s.status === "Scheduled" ? "check" : "warn")}${s.status}</span>`;
 function syncCalendarLayout() {
   const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -79,11 +83,13 @@ function render(focusId, announcement = "") {
   const heat = new Map(salesHeat(d.store, month, today()).map(r => [r.day, r]));
   const reviewed = d.accepted && d.reviewFingerprint === fingerprint(list);
   const byDay = new Map(list.map((r) => [r.day, r]));
-  app.innerHTML = `<div class="notice">Fictional draft · Lost on refresh · Nothing published</div>
- <div class="toolbar"><label>Store<select id="store">${stores.map((s, i) => `<option value="${i}" ${i === selected ? "selected" : ""}>${s.name}</option>`).join("")}</select></label><label>Month<input id="month" type="month" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button id="today">${icon("calendar")}Today</button>${editing ? `<button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button>` : ""}<label>Fixture assignment mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label><button id="workspace" class="primary">${icon(editing?"arrowleft":"calendar")}${editing ? "Return to manager view" : "Make Schedule"}</button></div><h2>${editing ? "Monthly editing workspace" : "Manager schedule"}</h2>
- <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><h1 id="period-heading" aria-live="polite">${monthLabel(month)}</h1><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button></div>
- <div class="month-summary" aria-label="Month summary"><span><strong id="recorded-total">${sales.total ?? (sales.future === dates.length ? "Not yet available" : "Unknown")}</strong> Units Delivered <small>(${sales.known} days)</small></span><span>${editing ? (issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager") : "Saved fictional assignments"}</span></div>
- <div class="heat-legend" aria-label="Recorded sales shading"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Known sales only. Missing, closed and future dates stay separate.</small></div>
+  app.innerHTML = `<div class="toolbar"><label>Store<select id="store">${stores.map((s, i) => `<option value="${i}" ${i === selected ? "selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="workspace" class="primary">${icon(editing?"arrowleft":"calendar")}${editing ? "Return to manager view" : "Make Schedule"}</button></div>
+ <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button></div>
+ <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button id="today">${icon("calendar")}Today</button><button data-dismiss="month-picker">Done</button></div>
+ <div class="month-summary" aria-label="Month summary"><span>Month Units Delivered: <strong id="recorded-total">${sales.total ?? (sales.future === dates.length ? "Not yet available" : "Unknown")}</strong> <small>(${sales.known} recorded days)</small></span><button id="sales-key" popovertarget="sales-help">Sales key</button></div>
+ <p class="notice">${editing ? "Editing fictional assignments" : "Saved fictional assignments"} · In this page only · Lost on refresh</p>
+ <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Future sales are not yet available.</small></div><p>Red means Needs schedule or Schedule conflict. Orange means Low staff. Staffing surfaces do not describe sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
+ ${editing ? `<div class="editor-tools"><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
  <section id="sheet" class="panel" hidden aria-label="${editing ? "Editing sheet" : "Day details"}"></section>
  <p class="sr-only" id="day-plan-help">${monthLabel(month)}. Open this date’s daily plan.</p>
  <section class="month-days" aria-label="${monthLabel(month)} daily plans">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((n) => `<span class="weekday-heading">${n}</span>`).join("")}${calendarCells(
@@ -93,13 +99,21 @@ function render(focusId, announcement = "") {
      if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
      const r = byDay.get(day),
        sales = heat.get(day), staff = staffing(r);
-     return `<button class="month-day ${r.state} sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span><span class="day-staffing">${editing ? (r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours") : esc(staffingText(staff))}</span>${statusMarkup(staff)}<small class="day-sales">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
+     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
    })
    .join("")}</section>
+ <details class="demo-options"><summary>Demo options</summary><label>Fixture assignment mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label><p>Fictional display only. No live access or publishing.</p></details>
  <details class="month-glance"><summary>Month details</summary><p>${sales.known} recorded days · ${sales.closed} recorded Closed · ${sales.unknown} missing · ${sales.future} future.</p><p>${sales.best ? `Best recorded ${sales.bestDays.length > 1 ? "days (tied)" : "day"}: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."} No sales goal is entered, so no goal-based pace is shown.</p><p>Today uses America/New_York. Fictional history ends 13 Oct 2026. Future sales are unavailable; planning ranges are estimates.</p></details>
  ${editing ? `<div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button><p id="message" role="status">${announcement ? esc(announcement) : reviewed ? "Manager review recorded for this month in this page only." : ""}</p></div>
  <details class="panel review"><summary>Draft scope and proposed defaults</summary><p>The monthly planning period and ability to plan future months follow Jorge’s correction. The layout and remaining UI defaults are proposals for review, not approved Claude choices. The original five-option artifact is unavailable.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects only the selected store/month.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
  <p class="footer">Full store-hour shifts only. No appointments, inferred historical staffing, partial shifts, breaks, overtime policy, database connection or publishing.</p>` : `<p id="message" role="status">${esc(announcement)}</p>`}`;
+  for (const pop of document.querySelectorAll("[popover]")) {
+    const trigger = document.querySelector(`[popovertarget="${pop.id}"]`);
+    pop.addEventListener("toggle", e => { trigger.setAttribute("aria-expanded", String(e.newState === "open")); if (e.newState === "open") pop.querySelector("input,button")?.focus(); });
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-controls", pop.id);
+    pop.querySelector("[data-dismiss]").onclick = () => { pop.hidePopover(); trigger.focus(); };
+  }
   document.querySelector("#store").onchange = (e) => {
     selected = Number(e.target.value);
     render("store");
@@ -114,7 +128,7 @@ function render(focusId, announcement = "") {
     }
     selectedDay = null;
     month = e.target.value;
-    render("month");
+    render("period-heading");
   };
   for (const [id, delta] of [
     ["previous", -1],
@@ -127,10 +141,10 @@ function render(focusId, announcement = "") {
     };
   document.querySelector("#today").onclick = () => {
     month = today().slice(0, 7);
-    render("today");
-    daySheet(today(), "today");
+    render("period-heading");
+    daySheet(today(), "period-heading");
   };
-  document.querySelector("#mode").onchange = e => { mode = e.target.value; render("mode"); };
+  document.querySelector("#mode").onchange = e => { mode = e.target.value; render(); document.querySelector(".demo-options").open = true; document.querySelector("#mode").focus(); };
   document.querySelector("#workspace").onclick = () => { editing = !editing; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); };
   if (editing) document.querySelector("#people").onclick = () => personSheet();
   if (editing) document.querySelector("#rules").onclick = () => storeSheet();
@@ -162,7 +176,7 @@ function render(focusId, announcement = "") {
   syncCalendarLayout();
   if (focusId) {
     const target = document.getElementById(focusId);
-    (target?.disabled ? document.getElementById("month") : target)?.focus({
+    (target?.disabled ? document.getElementById("period-heading") : target)?.focus({
       preventScroll: true,
     });
   }
@@ -188,19 +202,28 @@ function openSheet(html, openerId) {
   sheet.scrollIntoView({ block: "start" });
   return sheet;
 }
+function dayContext(row, summary) {
+  const people = draft().store.people, members = new Set(summary.teams.flatMap(t => t.ids));
+  const groups = [...summary.teams.map(t => ({name:t.name, ids:t.ids})), {name:summary.teams.length ? "Additional people" : "People", ids:people.filter(p=>!members.has(p.id)).map(p=>p.id)}].filter(g=>g.ids.length);
+  const state = id => summary.conflicting.includes(id) ? "Conflict" : summary.on.includes(id) ? "On" : summary.off.includes(id) ? "Off" : "Unknown";
+  const sale = recordedDay(draft().store, row.day, today());
+  const context = sale.state === "known" ? "An entered daily delivery count. Zero is an observation, not missing data." : sale.state === "closed" ? "The sales record is marked Closed. It is not a zero-delivery observation." : sale.state === "future" ? "This date is in the future. No daily sales observation is available." : "No daily sales observation is recorded. Unknown does not mean zero.";
+  return `<details class="day-context"><summary>Team members and sales context</summary>${groups.map(g=>`<section><h3>${esc(g.name)}</h3><ul>${g.ids.map(id=>`<li><span>${esc(people.find(p=>p.id===id)?.name || id)}</span><strong>${state(id)}</strong></li>`).join("")}</ul></section>`).join("")}<section><h3>Coverage</h3><p>${row.state === "open" ? `${summary.covering} eligible people / ${row.rule.minimum} minimum for the full store day. Invalid assignments remain visible but do not count as coverage.` : row.state === "closed" ? "Store closed. Retained assignment conflicts, if any, still need review." : "Store hours are unknown; coverage cannot be confirmed."}</p></section><section><h3>Sales context</h3><p>${context}</p></section></details>`;
+}
+
 function daySheet(day, openerId = `day-${day}`) {
   let r = rows().find((r) => r.day === day);
   if (!r) return;
   selectedDay = day;
   const summary = staffing(r);
   if (!editing) {
-    openSheet(`<h2>${dateLabel(day)}</h2><p class="day-staffing">${esc(staffingText(summary))}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}<button type="button" data-close>Back to month</button>`, openerId);
+    openSheet(`<h2>${dateLabel(day)}</h2><p class="day-staffing">${staffingMarkup(summary)}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}<button type="button" data-close>Back to month</button>`, openerId);
     return;
   }
   const sheet = openSheet(
-    `<h2>${dateLabel(day)}</h2><p class="day-staffing">${esc(staffingText(summary))}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p><span class="badge ${r.state}">${r.state}</span></p>${
+    `<h2>${dateLabel(day)}</h2><p class="day-staffing">${staffingMarkup(summary)}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p><span class="badge ${r.state}">${r.state}</span></p>${dayContext(r, summary)}${
       r.state === "open"
-        ? `<h3>Planning range</h3><div class="range">${r.estimate ? `${r.estimate.low} to ${r.estimate.high}` : "Unknown"}<small>delivered cars</small></div><p>${r.estimate?.reason || "Insufficient known history."}</p><p><strong>${r.required} people needed</strong> · ${r.rule.open}:00–${r.rule.close}:00. Minimum ${r.rule.minimum}${r.rule.useCapacity ? `; entered capacity ${r.rule.capacity} cars per full shift` : "; capacity adjustment off"}. Rule effective ${r.rule.effective}.</p><p>Assigned: ${r.ids.map((id) => esc(draft().store.people.find((p) => p.id === id)?.name || id)).join(", ") || "Nobody yet"}.</p><form><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set team status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset><legend>Manager assignments for this date</legend>${draft()
+        ? `<h3>Planning range</h3><div class="range">${r.estimate ? `${r.estimate.low} to ${r.estimate.high}` : "Unknown"}<small>delivered cars</small></div><p>${r.estimate?.reason || "Insufficient known history."}</p><p><strong>${r.required} people needed</strong> · ${r.rule.open}:00–${r.rule.close}:00. Minimum ${r.rule.minimum}${r.rule.useCapacity ? `; entered capacity ${r.rule.capacity} cars per full shift` : "; capacity adjustment off"}. Rule effective ${r.rule.effective}.</p><p>Assigned: ${r.ids.map((id) => esc(draft().store.people.find((p) => p.id === id)?.name || id)).join(", ") || "Nobody yet"}.</p><form><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset><legend>Manager assignments for this date</legend>${draft()
             .store.people.map(
               (p) =>
                 `<label class="check"><input type="checkbox" name="assigned" value="${p.id}" ${r.ids.includes(p.id) ? "checked" : ""}>${p.name} on</label><label class="check"><input type="checkbox" name="off" value="${p.id}" ${summary.off.includes(p.id)?"checked":""}>${p.name} confirmed off</label>`,
@@ -329,6 +352,8 @@ render();
 window.addEventListener("scheduler-view", () => { editing = false; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); });
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !e.defaultPrevented) {
+    const pop = document.querySelector(":popover-open");
+    if (pop) { e.preventDefault(); pop.hidePopover(); document.querySelector(`[popovertarget="${pop.id}"]`).focus(); return; }
     e.preventDefault();
     window.parent.dispatchEvent(new Event("scheduler-close"));
   }

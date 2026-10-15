@@ -781,3 +781,64 @@ button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; 
 .team-fields { min-inline-size:0; }
 .team-fields label { min-width:0; flex:1 1 100%; }
 .team-fields select { width:100%; min-width:0; max-width:100%; }
+
+/* Compact manager controls, using the existing paper, forest and warning tokens. */
+.toolbar { margin:0 0 10px; padding:0; border:0; gap:10px; align-items:end; }
+.toolbar > label { flex:1 1 12rem; min-width:0; gap:4px; }
+.toolbar select { min-width:0; width:100%; }
+.toolbar > button { flex:0 1 auto; }
+.month-navigation { display:flex; flex-wrap:nowrap; gap:8px; margin:10px 0; }
+.month-navigation #period-heading { width:auto; flex:1; min-width:0; font-size:1.125rem; padding:8px 4px; }
+.month-summary { background:transparent; color:#234939; border:0; padding:0; margin:8px 0; gap:8px; align-items:center; font-size:.875rem; }
+.month-summary small { color:var(--muted); }
+.month-summary strong { font:inherit; font-weight:600; }
+.month-summary button { padding:6px 10px; }
+.notice { background:transparent; border:0; padding:0; margin:8px 0; font:400 .75rem/1.5 Geist,sans-serif; }
+.scheduler-popover { width:min(26rem,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:18px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:#234939; box-shadow:0 6px 24px #183c2f33; }
+.scheduler-popover input { max-width:100%; min-width:0; }
+.scheduler-popover button { margin-top:12px; }
+.scheduler-popover h2 { margin:0; }
+.scheduler-popover label { display:grid; gap:8px; }
+.scheduler-popover::backdrop { background:#183c2f22; }
+.editor-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0; }
+.demo-options { margin:16px 0; }
+.demo-options label { display:grid; gap:6px; margin:10px 0; max-width:20rem; }
+.month-day { background:var(--paper); color:#234939; }
+.month-day.staff-needs { background:color-mix(in srgb,#E5473C 16%,var(--paper)); border-color:#E5473C; }
+.month-day.staff-low { background:color-mix(in srgb,#C77800 20%,var(--paper)); border-color:#C77800; }
+.staff-status { background:transparent; padding:0; border-radius:0; }
+.staff-status.needs-schedule,.staff-status.low-staff { border:0; }
+.month-day .day-sales { display:block; width:100%; padding:5px 7px; border-radius:3px; }
+.month-day .day-sales.heat-0,.month-day .day-sales.heat-1,.month-day .day-sales.heat-2,.month-day .day-sales.heat-3 { color:#fffdf4; }
+.month-day .day-sales.heat-4 { color:#173d2b; }
+.day-sales.sales-unknown,.day-sales.sales-future { background:var(--paper); color:#234939; }
+.day-sales.sales-closed { background:#e9e9e1; color:#234939; }
+@media(max-width:400px) { .toolbar > button { flex:1 1 auto; } }
+.toolbar > label { flex:0 1 20rem; max-width:100%; }
+.toolbar > #workspace { margin-inline-start:auto; }
+/* One card hierarchy at every size: date, status, staffing groups, sales. */
+.month-day,.calendar-list .month-day { display:flex; flex-direction:column; align-items:stretch; gap:10px; min-width:0; text-align:left; }
+.month-day > * { min-width:0; max-width:100%; }
+.month-day .day-date { width:100%; padding-bottom:6px; border-bottom:1px solid #23493933; }
+.month-day .staff-status { align-self:flex-start; flex-wrap:wrap; }
+.day-staffing,.staffing-groups,.staff-teams,.staff-people { display:grid; gap:10px; min-width:0; width:100%; }
+.staff-team { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 10px; padding-bottom:6px; border-bottom:1px solid #23493922; min-width:0; }
+.staff-team-name { flex:1 1 9rem; min-width:0; overflow-wrap:anywhere; font-weight:600; }
+.staff-team-state { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; font-weight:500; }
+.staff-group-title { display:flex; align-items:center; gap:6px; font-size:.75rem; font-weight:600; }
+.staff-counts { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,6rem),1fr)); gap:6px; }
+.staff-count { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-width:0; font-size:.75rem; }
+.staff-count strong { font:600 1rem/1.4 "Geist Mono",monospace; }
+.staff-count .sage-icon { margin:0; }
+.staff-team-name .sage-icon { margin-inline-end:6px; }
+.staff-closed { display:flex; align-items:center; gap:6px; }
+.month-day .day-sales { margin-top:auto; border-top:1px solid #23493922; padding:8px; }
+.day-coverage,.issues,.recorded-day,#sheet label,#sheet p { overflow-wrap:anywhere; }
+#sheet .day-staffing { margin:12px 0; }
+#sheet .staffing-groups { max-width:36rem; }
+
+.day-context { margin:16px 0; padding:12px; border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
+.day-context section { margin-top:16px; }
+.day-context ul { list-style:none; padding:0; margin:8px 0; }
+.day-context li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; padding:6px 0; border-bottom:1px solid var(--line); }
+.day-context li > span { flex:1 1 12rem; min-width:0; }

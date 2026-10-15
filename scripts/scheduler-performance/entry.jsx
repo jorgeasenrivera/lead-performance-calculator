@@ -170,9 +170,7 @@ function Preview() {
           >
             <PixIcon glyph="arrowleft" size={16} /> Performance
           </button>
-          <span id="sp-title">
-            Schedule <small>Fictional planning preview</small>
-          </span>
+          <h1 id="sp-title">Schedule</h1>
         </header>
         <iframe
           ref={frame}

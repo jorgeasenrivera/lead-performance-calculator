@@ -20,26 +20,17 @@ export function patchManager(source) {
     const [today,setToday]=useState(previewStoreToday);
     useEffect(()=>{const timer=setInterval(()=>setToday(previewStoreToday()),1000);return()=>clearInterval(timer);},[]);
     const month=today.slice(0,7),cells=previewCalendarCells(month);
-    const mobile=className.includes('bp-r1'),[expanded,setExpanded]=useState(()=>previewHeroState.expanded);
-    const initial=useMemo(()=>previewHeroPlanner.rows(0,month).map(r=>previewAssignmentSummary(previewCalendarStore.people,[],r.record,r)),[month]);
-    const [warnings,setWarnings]=useState(()=>previewHeroState.warnings[month]||{month,needs:initial.filter(r=>r.status==='Needs schedule').length,low:initial.filter(r=>r.status==='Low staff').length,conflicts:initial.filter(r=>r.conflicting.length).length});
-    useEffect(()=>{const update=e=>{if(e.detail.store==='fictional-0'){previewHeroState.warnings[e.detail.month]=e.detail;if(e.detail.month===month)setWarnings(e.detail);}};window.addEventListener('scheduler-summary',update);return()=>window.removeEventListener('scheduler-summary',update);},[month]);
-    useEffect(()=>setWarnings(previewHeroState.warnings[month]||{month,needs:initial.filter(r=>r.status==='Needs schedule').length,low:initial.filter(r=>r.status==='Low staff').length,conflicts:initial.filter(r=>r.conflicting.length).length}),[month]);
+    const mobile=className.includes('bp-r1');
     const heat=previewSalesHeat(previewCalendarStore,month,today),byDay=new Map(heat.map(r=>[r.day,r]));
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
-    const total=previewMonthSales(previewCalendarStore,month,today).total;
-    const daily=byDay.get(today);
-    const compact='Month Units Delivered: '+(total??'Unknown')+' · Today '+Number(today.slice(-2))+': '+(daily?.state==='known'?daily.units+' Units Delivered':'Unknown');
     const bestText=heat.some(r=>r.best)?'Best'+(heat.filter(r=>r.best).length>1?' (tied)':'')+': '+heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(', '):'No recorded best day';
-    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={mobile?undefined:title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>
+    const openCalendar=e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}));
+    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={mobile?undefined:title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={openCalendar}>
       <strong className="sp-entry-month">{title}</strong>
-      {mobile && <span className="sp-mobile-summary">{compact}</span>}
-      {mobile && <span className="sp-mobile-warnings">{warnings.needs>0 && <span className="sp-needs"><PixIcon glyph="warn" size={14}/>Needs schedule: {warnings.needs}</span>}{warnings.low>0 && <span className="sp-low"><PixIcon glyph="warn" size={14}/>Low staff: {warnings.low}</span>}{warnings.conflicts>0 && <span className="sp-needs"><PixIcon glyph="warn" size={14}/>Schedule conflicts: {warnings.conflicts}</span>}</span>}
-      <span id={mobile?'sp-hero-days':undefined} className="sp-mini-grid" aria-hidden="true" hidden={mobile&&!expanded}>{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':''))} title={day?(byDay.get(day).state==='known'?byDay.get(day).units+' recorded sales'+(byDay.get(day).best?' · '+byDay.get(day).bestLabel:''):'Sales: '+byDay.get(day).state):undefined}>{day?Number(day.slice(-2)):''}</i>)}</span>
-      <span className="sp-heat-note" hidden={mobile&&!expanded}>{bestText}</span>
-      {mobile && <span className="sp-sr-only">Open Schedule for staffing and daily sales.</span>}
+      <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':''))} title={day?(byDay.get(day).state==='known'?byDay.get(day).units+' recorded sales'+(byDay.get(day).best?' · '+byDay.get(day).bestLabel:''):'Sales: '+byDay.get(day).state):undefined}>{day?Number(day.slice(-2)):''}</i>)}</span>
+      <span className="sp-heat-note">{bestText}</span>
     </button>;
-    return mobile?<div className={className+' sp-mobile-calendar'}>{calendar}<button type="button" className="sp-calendar-toggle" aria-expanded={expanded} aria-controls="sp-hero-days" onClick={()=>setExpanded(value=>{previewHeroState.expanded=!value;return !value;})}>{expanded?'Hide calendar':'Show calendar'}</button></div>:calendar;
+    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-entry sp-compact-entry" onClick={openCalendar}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong><span>Open calendar</span></button></div>:calendar;
   }
   function SignalSchedule({children}) {
     const signal=useSignal();
