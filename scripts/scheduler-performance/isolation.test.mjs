@@ -10,8 +10,8 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   assert.throws(() => patchManager(source + "\n"), /Re-review entry points/);
   const patched = patchManager(source);
   assert.equal((patched.match(/scheduler-open/g) || []).length, 2);
-  assert.ok(patched.includes('onClick={() => setPop({ k: "onoff" })}'));
-  assert.ok(patched.includes("onClickCapture:()=>setPinned(true)"));
+  assert.ok(!patched.includes('onClick={() => setPop({ k: "onoff" })}'));
+  assert.ok(patched.includes("onClickCapture:()=>setOpen(true)"));
   assert.equal(
     await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8"),
     source,

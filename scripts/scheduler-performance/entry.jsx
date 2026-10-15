@@ -69,9 +69,46 @@ function Preview() {
       document.body.style.overflow = "hidden";
       dialog.current.querySelector("button").focus();
     };
+    // Native modal traversal can leave the document at the iframe boundary.
+    // Close that loop explicitly in both directions, using currently visible controls.
+    const trapTab = (e) => {
+      if (e.key !== "Tab" || !dialog.current.open) return;
+      const selector =
+        'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex="0"]';
+      const visible = (e) =>
+        e.getClientRects().length > 0 && !e.closest("[hidden]");
+      const outer = [...dialog.current.querySelectorAll(selector)].filter(
+        visible,
+      );
+      const inner = [
+        ...(frame.current.contentDocument?.querySelectorAll(selector) || []),
+      ].filter(visible);
+      const first = outer[0],
+        last = inner.at(-1) || outer.at(-1);
+      const active = e.target.ownerDocument.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    };
+    let childDocument;
+    const attach = () => {
+      childDocument?.removeEventListener("keydown", trapTab);
+      childDocument = frame.current.contentDocument;
+      childDocument?.addEventListener("keydown", trapTab);
+    };
+    attach();
+    frame.current.addEventListener("load", attach);
+    document.addEventListener("keydown", trapTab);
     window.addEventListener("scheduler-open", open);
     window.addEventListener("scheduler-close", close);
     return () => {
+      childDocument?.removeEventListener("keydown", trapTab);
+      frame.current?.removeEventListener("load", attach);
+      document.removeEventListener("keydown", trapTab);
       window.removeEventListener("scheduler-open", open);
       window.removeEventListener("scheduler-close", close);
       document.body.style.overflow = "";
@@ -137,7 +174,7 @@ function Preview() {
         <iframe
           ref={frame}
           src="/planner/index.html"
-          title="Weekly schedule planner"
+          title="Monthly schedule planner"
         />
       </dialog>
     </>

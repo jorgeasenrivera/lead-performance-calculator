@@ -1,20 +1,30 @@
-# Performance Schedule proposal
+# Monthly Performance Schedule proposal
 
-This is an isolated, fictional preview for Jorge's review. Open **Plan next week** in the Performance hero's Schedule area, review the week, then use **Performance** to return. Person and store edits are separate. Escape closes the current sheet first, then returns to Performance. Closing an unfinished sheet discards its edits; applied changes last only in this page.
+Open **Schedule** in the Performance hero. This single entry replaces the preview's old Who's on interaction. Select a complete month, directly choose future months, or use **Today's staffing**. Every calendar date opens a daily plan with recorded sales, a separate planning range and manager assignments. **Back to month** returns to the same calendar; **Performance** closes the workspace and restores the hero entry's focus.
 
-## Scope and ownership
+## Monthly drafts
 
-This dependent proposal preserves standalone draft PR #476 at `d3a07b2620868601c919de5cf76d1a6b84eb6462`. Its production source is main `15ea1a80db1c17e7f5d9b99db026f7fc09b30697`. All changes are under `scripts/scheduler-performance/`. No claims are renewed or transferred. C111/PR #464, Manager, core, shared styles and the standalone candidate are untouched.
+Each fictional store/month owns its availability, dated store rules, exceptions, overrides and review state. Switching months or returning to Performance retains applied edits in memory. Refreshing or closing the page loses all drafts. Reset affects only the selected store/month. Closing a sheet discards its unfinished edits.
 
-The preview mounts the real AppShell, StoreHero, Board and BoardRoomPhone against the repository's fictional demo seed. A build-only transform adds two entry points and retains the existing today/month handlers. The transform pins Manager's SHA-256 and refuses changed source, so another owner's edit cannot silently receive an outdated patch. This is a review mechanism, not a proposed production architecture.
+Each new monthly draft starts with its own copy of the fictional defaults. Settings are not automatically carried into another month's draft. Rules take effect on their entered date inside that draft; exceptions are exact dates in that month. Earlier dates keep the earlier rule. Person limits remain Monday–Sunday weekly limits. The first week includes earlier dates from the previous month's draft, or fictional defaults if no draft exists. Changing an earlier month can change later boundary-week suggestions and invalidate their review; saved overrides remain intact. Editing a future month never changes an earlier month's draft.
 
-Sage's existing Geist, Space Grotesk and Geist Mono fonts, forest green, warm paper, muted sage surfaces and rounded controls carry into the planner. The new control has a 44-pixel minimum touch height and a visible focus ring. The modal has no entrance animation; its button colour transition respects reduced motion. Browser zoom remains enabled in the preview.
+Month selection supports January 2014 through December 2100. Month lengths, year crossings and leap years are calculated from dates. Missing store status stays Unknown; entered closures stay Closed. Staffing uses entered coverage and optional capacity, with manager overrides, never sales alone.
 
-## Fictional boundary
+## Sales and month context
 
-No sign-in flow is mounted. Database environment values are replaced with empty strings at build time, and both documents prohibit network connections with `connect-src 'none'`. The preview only serves local static assets. No real workbook, appointments, database, live SQL or publishing path is used. Performance's other action callbacks are inert fixture callbacks, so this is not a full application demonstration.
+The actual Sage implementations were inspected: Month at a Glance contains calendar, pace, best-day and import context; Sold by Day uses recorded store deliveries and explicitly distinguishes unavailable daily totals. The prototype brings those concepts into one selected-month workspace without copying personal totals into sales history.
 
-The scheduler reuses PR #476's six fictional long-history stores and model unchanged. Forecast ranges are illustrative prior same-weekday delivered-car counts, not validated prediction intervals. Staffing uses entered minimum coverage and optional capacity, with manager overrides. Explicit NA is Closed; missing status is Unknown. Store rules are effective-dated and are never inferred from historical staffing. The manager makes the final decision. The unavailable Claude five-option artifact is not represented as approved choices.
+The month summary shows the sum of known fictional recorded deliveries and discloses missing days. A collapsed Month at a Glance adds completeness and best recorded day. Selecting a date shows its recorded sales separately from its planning range and staffing. Future dates say **Sales not yet available**, even if a source accidentally contains a future row. Missing sales are Unknown; known zero is zero; recorded Closed is distinct from planned closure. No monthly sales goal is supplied for these scheduling fixtures, so goal-based pace is not invented. The six synthetic histories end on 13 October 2026; future ranges reuse available history and are not validated forecast intervals.
+
+The original Month at a Glance and Sold by Day entry points remain in the preview and production source. The preview removes only the competing Who's on entry/popover. The monthly period and advance planning follow Jorge's correction; layout defaults remain proposals, not approved Claude choices. The original five-option artifact is unavailable.
+
+## Isolation and ownership
+
+Production source is main `15ea1a80db1c17e7f5d9b99db026f7fc09b30697`. Standalone draft #476 remains at `d3a07b2620868601c919de5cf76d1a6b84eb6462`. The preceding weekly integration is preserved at `f5b7a6566ef779ea156b06849c14c79e845e5097`, with its original screenshots/results still in `evidence/`. New evidence is in `evidence/monthly/`.
+
+Only `scripts/scheduler-performance/` changes. The real AppShell, StoreHero, Board and BoardRoomPhone mount against fictional demo data through a SHA-256-pinned build-only transform. This refuses changed Manager source rather than silently patching another owner's work. Manager, core, shared styles, C111/#464, claims and the standalone candidate are unchanged. Other Performance actions use inert fixture callbacks. This is not a full application demonstration or a proposed production architecture.
+
+No sign-in flow is mounted. Database build values are blank, and both documents prohibit network connections with `connect-src 'none'`. There is no private workbook, database storage, live SQL, publishing, credential change or protection bypass. The preview supports full store-hour shifts only, not appointments, partial shifts, breaks or overtime policy.
 
 ## Run and verify
 
@@ -25,15 +35,15 @@ npm test
 npm run build
 node scripts/scheduler-performance/build.mjs
 python3 -m http.server 5190 --bind 127.0.0.1 --directory dist-harness/scheduler-performance
-# In another terminal, with Playwright installed:
-node scripts/scheduler-performance/probe.mjs
-BROWSER=webkit node scripts/scheduler-performance/probe.mjs
+# In another terminal:
+node scripts/scheduler-performance/probe-monthly.mjs
+BROWSER=webkit node scripts/scheduler-performance/probe-monthly.mjs
 ```
 
-Set `PLAYWRIGHT_MODULE` if Playwright is not at the workspace tool path. Set `EVIDENCE_DIR` for screenshots elsewhere. The generated fictional `fixture.json` is ignored. Browser dependencies are local tooling, not application dependencies.
+Set `PLAYWRIGHT_MODULE`, browser paths and `EVIDENCE_DIR` for your environment. The old `probe.mjs` belongs to the preserved weekly candidate and should not be run against the monthly build. The generated fictional fixture is ignored.
 
-The probe checks the actual hero entry, original today control, modal focus containment, return focus, Escape/cancel, repeated edits, unchanged Closed/Unknown status, no page errors or external requests, and horizontal reflow at 1440, 390 and 320 pixels. At each width it tests 100% and 200% text. Computed font sizes on the entry, planner buttons, select and date input must actually double. This is text enlargement testing, not a claim of physical-device or OS zoom testing. Unchanged Performance widgets still include pixel-sized typography; the new planner uses scalable text. The original bottom navigation's large-text wrapping is outside this proposal.
+Local verification: 944 tests, normal build and isolated build pass, with the existing large-chunk warning. The seven monthly model tests cover every valid date from 2014 through 2100, leap/century rules, year navigation, draft isolation/reset, dated rules/exceptions/overrides, weekly boundary hours and recorded/future sales semantics. Standard CI runs these unit tests, build and the repository's usual feel/shots checks. It does **not** currently run the scheduler-specific browser probe.
 
-Local results: 937 tests pass, normal build and isolated build pass (existing large-chunk warning). Chromium 151 and WebKit 26.6 each pass all six browser scenarios. WebKit used workspace-local libraries; only the host library-cache preflight was bypassed, not browser execution or assertions. Physical iOS/Android, assistive technology and authenticated hosted rendering remain unverified. No Android KVM diagnostics were run.
+The separate local probe runs Chromium 151 and WebKit 26.6 at 1440, 390 and 320 pixels with 100% and 200% text. Computed sizes of the entry and actual planner controls must double. It checks one Schedule entry with no Who's on popup, retained Month at a Glance access, period/store/reset focus, complete forward/reverse iframe focus cycles at desktop and narrow enlarged text, sheet interactions, Escape/cancel/return, year crossings, February/leap dates, independent drafts, selected-month reset, Today navigation, reload loss, sales/estimate separation, no page errors/external requests and no horizontal planner overflow. Screenshots are inspected separately. WebKit uses workspace-local libraries; only its host library-cache preflight is bypassed.
 
-The Vercel package is static and must use the existing project's protected preview environment, with no production target, aliases, project-setting changes or protection bypass. The old standalone preview does not contain this integration. Hosted verification must be reported separately from local browser results.
+Physical iOS/Android, screen readers and OS zoom remain unverified. Unchanged Performance widgets still include pixel-sized text and existing large-text navigation wrapping. No Android KVM diagnostics or grants were used. Hosted rendering must be reported separately: the executor proxy previously rejected the protected preview hostname before Vercel. Static deployment hashes and READY status do not establish an authenticated hosted-browser pass.

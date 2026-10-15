@@ -188,3 +188,44 @@ html.manager-signal .sp-phone-schedule .sp-plan-entry {
     transition: none;
   }
 }
+html.manager-signal .sp-month-trigger {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  min-height: 44px;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+html.manager-signal .sp-month-context {
+  position: relative;
+}
+html.manager-signal .sp-month-context .sg-schedule-details {
+  top: 100%;
+}
+html.manager-signal .bp-r3.sp-plan-entry {
+  margin: 0;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+  color: #173d2b;
+}
+html.manager-signal .bp-r3.sp-plan-entry small {
+  font-size: 0.75rem;
+}
+/* The former count pill is too narrow for a readable Schedule entry at large text. */
+html.manager-signal .bp-r3.sp-plan-entry {
+  grid-column: 1/-1;
+  grid-row: 4;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+html.manager-signal .bp-r3.sp-plan-entry > * {
+  max-width: 100%;
+  min-width: 0;
+}

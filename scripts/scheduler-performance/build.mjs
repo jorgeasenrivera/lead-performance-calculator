@@ -10,30 +10,33 @@ export function patchManager(source) {
     throw Error(
       "Manager source changed. Re-review entry points before building.",
     );
-  const desktop =
-    "{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}";
+  const begin = source.indexOf("function SignalSchedule("),
+    end = source.indexOf("function SignalPenaltyRank(", begin);
+  if (begin < 0 || end < 0) throw Error("Schedule boundary not found");
+  const desktop = `function SignalSchedule({children}) {
+    const signal=useSignal();
+    const [open,setOpen]=React.useState(false);
+    const parts=React.Children.toArray(children).filter(React.isValidElement);
+    if(!signal)return children;
+    const calendar=React.Children.toArray(parts[1].props.children);
+    return <div className="sg-schedule">
+      <div className="sp-month-context" onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setOpen(false);}} onKeyDown={e=>{if(e.key==='Escape')setOpen(false);}}>
+        <button className="sp-month-trigger" aria-label="Month at a glance" aria-expanded={open} onClick={()=>setOpen(v=>!v)}>{calendar[0]}</button>
+        {React.cloneElement(calendar[1],{onClickCapture:()=>setOpen(true)})}{calendar[2]}
+        {open&&<div className="sg-schedule-details"><div className="sg-schedule-month">{calendar[3].props.children}</div></div>}
+      </div>
+      <button type="button" className="sg-schedule-trigger sp-plan-entry" aria-label="Open Schedule" onClick={e=>{setOpen(false);window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}));}}><span>Schedule</span><small>View today · Plan months</small></button>
+    </div>;
+  }
+  `;
+  source = source.slice(0, begin) + desktop + source.slice(end);
   const phone =
-    '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>';
-  for (const needle of [desktop, phone])
-    if (source.split(needle).length !== 2)
-      throw Error("Entry patch is not unique");
-  source = source.replace(
-    desktop,
-    desktop +
-      `<button type="button" className="sp-plan-entry" onClick={e=>{e.stopPropagation();window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}));}}><span>Plan next week</span><small>Set hours and review coverage</small></button>`,
-  );
-  source = source.replace(
-    phone,
-    `<div className="bp-r3 sp-phone-schedule"><button type="button" className="sp-today" onClick={() => setPop({ k: "onoff" })}>`,
-  );
-  const end =
-    '<span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>\n          </button>';
-  if (source.split(end).length !== 2)
-    throw Error("Phone schedule closing patch is not unique");
+    '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>\n            <span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>\n          </button>';
+  if (source.split(phone).length !== 2)
+    throw Error("Phone Schedule boundary not unique");
   return source.replace(
-    end,
-    end +
-      `<button type="button" className="sp-plan-entry" onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>Plan next week</button></div>`,
+    phone,
+    `<button type="button" className="bp-r3 sp-plan-entry" aria-label="Open Schedule" onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}><span>Schedule</span><small>View today · Plan months</small></button>`,
   );
 }
 export async function buildPreview() {
@@ -73,47 +76,20 @@ export async function buildPreview() {
   await mkdir(planner, { recursive: true });
   for (const name of ["model.mjs", "store-editor.mjs"])
     await cp("scripts/scheduler-proposal/" + name, planner + "/" + name);
-  let app = await readFile("scripts/scheduler-proposal/app.mjs", "utf8");
-  app = app
-    .replace("SAGE / SCHEDULE / ISOLATED PROPOSAL", "SCHEDULE / WEEKLY PLAN")
-    .replace(
-      "Use the existing Schedule area (represented here only)",
-      "Open from the Performance hero’s Schedule area",
-    )
-    .replace("Build next week together.", "Plan the week")
-    .replace(
-      "Plan coverage first. Use delivered-car ranges as context, then review each person’s hours.",
-      "Set availability, check coverage, then make the call.",
-    );
-  app = app
-    .replace(
-      '<section class="panel review">',
-      '<details class="panel review"><summary>Proposed choices for review</summary>',
-    )
-    .replace(
-      '</section>\n <p class="footer">',
-      '</details>\n <p class="footer">',
-    );
-  // Keep provenance available without pushing the week's first day off the phone.
-  const history = app.match(/<p class="history">[^<]*<\/p>/)?.[0];
-  if (!history)
-    throw Error("Scheduler history note changed. Review the layout transform.");
-  app = app
-    .replace(history, "")
-    .replace(
-      "<summary>Proposed choices for review</summary>",
-      "<summary>Proposed choices for review</summary>" + history,
-    );
-  app = app.replace(
-    "<strong>Fictional data only. Proposed defaults for review.</strong><br>No schedule is published. Changes last only in this page. The manager makes the final decision.",
-    "<strong>Fictional draft. Proposed defaults for review.</strong><br>The manager decides. Edits stay in this page; nothing is published.",
+  await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
+  let monthlyModel = await readFile(
+    "scripts/scheduler-performance/month-model.mjs",
+    "utf8",
   );
-  app += `\nwindow.addEventListener('keydown',e=>{if(e.key==='Escape'&&!e.defaultPrevented){e.preventDefault();window.parent.dispatchEvent(new Event('scheduler-close'));}});`;
-  await writeFile(planner + "/app.mjs", app);
+  monthlyModel = monthlyModel.replace(
+    "../scheduler-proposal/model.mjs",
+    "./model.mjs",
+  );
+  await writeFile(planner + "/month-model.mjs", monthlyModel);
   await cp("scripts/scheduler-performance/planner.css", planner + "/style.css");
   await writeFile(
     planner + "/index.html",
-    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; connect-src \'none\'; style-src \'self\' \'unsafe-inline\'; object-src \'none\'; base-uri \'none\'"><title>Plan the week · Sage</title><link rel="stylesheet" href="style.css"></head><body><main id="app"></main><script type="module" src="app.mjs"></script></body></html>',
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; connect-src \'none\'; style-src \'self\' \'unsafe-inline\'; object-src \'none\'; base-uri \'none\'"><title>Plan the month · Sage</title><link rel="stylesheet" href="style.css"></head><body><main id="app"></main><script type="module" src="app.mjs"></script></body></html>',
   );
   let html = await readFile(outDir + "/index.html", "utf8");
   html = html
