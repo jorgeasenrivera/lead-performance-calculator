@@ -220,7 +220,7 @@ function dedupeName(s) {
   return m ? m[1].trim() : t;
 }
 
-function stripVocabWith(vocab, tokens) {
+function stripVocabWith(vocab, tokens, keepPunctuation = false) {
   const kept = [];
   let i = 0;
   while (i < tokens.length) {
@@ -232,7 +232,7 @@ function stripVocabWith(vocab, tokens) {
     }
     if (consumed) { i += consumed; continue; }
     const t = tokens[i];
-    if (squashT(t)) kept.push(t);
+    if (keepPunctuation || squashT(t)) kept.push(t);
     i++;
   }
   return kept;
@@ -266,6 +266,29 @@ const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone"
      salesperson's name. */
   "visit","visits"]);
 
+const isDailyActivityNumber = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "?" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
+const dailyActivityValue = (t) => (t === "-" || t === "?" || t === "∞" || t == null) ? null : toNum(t);
+
+function scanDailyActivityLine(line) {
+  const texts = line.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+  const nonNum = texts.filter((t) => !isDailyActivityNumber(t) && t !== "%");
+  const isHeader = vocabCountWith(DA_VOCAB, nonNum) >= 3;
+  // The printed name precedes one of the three observed heading lines. Keep
+  // that prefix verbatim even when the name itself contains "Phone" or "Visit".
+  const start = isHeader ? texts.findIndex((_, index) => [1, 2, 3, 4].some((length) =>
+    ["netleads", "appconfirmed", "opentasks"].includes(squashT(texts.slice(index, index + length).join(""))))) : -1;
+  const prefix = start < 0 ? [] : texts.slice(0, start);
+  const columns = start < 0 ? texts : texts.slice(start);
+  return {
+    texts, parts: line.parts, rowTag: texts[0],
+    hasHeaderSig: squashT(texts.join("")).includes("netleads"),
+    isHeader,
+    fragment: isHeader ? stripVocabWith(DA_VOCAB, nonNum).join(" ") : "",
+    printedFragment: isHeader ? [...prefix, ...stripVocabWith(DA_VOCAB, columns.filter((t) => t !== "%"), true)].join(" ") : "",
+    columns: columns.filter((token) => DA_VOCAB.has(squashT(token))).join(""),
+  };
+}
+
 function mapDailyActivityGrid(lines) {
   /* Same decimal fix as the Delivery Summary: Units Delivered carries half credit
      on split deals, and one dropped token knocks the whole row out.
@@ -278,8 +301,8 @@ function mapDailyActivityGrid(lines) {
      entirely, and every later person carrying a "?" was dropped in a way that
      welded their name onto the next one: "Luke Pancake Mike Ganus", one person,
      nobody's numbers. All of it silent. */
-  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "?" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
-  const val = (t) => (t === "-" || t === "?" || t === "∞" || t == null) ? null : toNum(t);
+  const isNum = isDailyActivityNumber;
+  const val = dailyActivityValue;
 
   let storeName = null, sawHeaderSig = false;
   let nameParts = [];
@@ -290,10 +313,10 @@ function mapDailyActivityGrid(lines) {
   const people = {};
 
   for (const L of lines) {
-    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+    const scanned = scanDailyActivityLine(L);
+    const { texts, rowTag } = scanned;
     if (!texts.length) continue;
-    if (squashT(texts.join("")).includes("netleads")) sawHeaderSig = true;
-    const rowTag = texts[0];
+    if (scanned.hasHeaderSig) sawHeaderSig = true;
 
     if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
       if (rowTag !== "All") continue;
@@ -326,11 +349,7 @@ function mapDailyActivityGrid(lines) {
       continue;
     }
 
-    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
-    if (vocabCountWith(DA_VOCAB, nonNum) >= 3) {
-      const frag = stripVocabWith(DA_VOCAB, nonNum);
-      if (frag.length) nameParts.push(frag.join(" "));
-    }
+    if (scanned.fragment) nameParts.push(scanned.fragment);
   }
   if (!sawHeaderSig || Object.keys(people).length < 3) return null;
 
@@ -348,6 +367,153 @@ function mapDailyActivityGrid(lines) {
       c.length > 19 ? c[19] : null]);
   }
   return { storeName, rows };
+}
+
+function readDailyActivityHeading(heading) {
+  const fragments = heading.map((h) => h.printedFragment).filter(Boolean);
+  const plain = { name: fragments.join(" ").trim(), fragments,
+    signature: squashT(heading.map((h) => h.columns).join("")) };
+  const parts = heading.flatMap((h) => h.parts);
+  if (parts.length < 19 || !parts.every((p) => [p.x, p.y, p.w].every(Number.isFinite))) return plain;
+  // PDF line extraction groups baselines, so "Phone" can precede "Net Leads"
+  // in the text array even though it is three columns to the right. The two
+  // words of each stacked caption share a center, within two PDF points.
+  const clusters = [];
+  for (const part of [...parts].sort((a, b) => (a.x + a.w / 2) - (b.x + b.w / 2))) {
+    const center = part.x + part.w / 2;
+    const last = clusters.at(-1);
+    if (last && Math.abs(last.center - center) <= 2) last.parts.push(part);
+    else clusters.push({ center, parts: [part] });
+  }
+  const readingOrder = (a, b) => a.y - b.y || a.x - b.x;
+  const labels = clusters.map((cluster) => squashT([...cluster.parts].sort(readingOrder).map((p) => p.str).join("")));
+  const start = labels.indexOf("netleads");
+  if (start < 0) return { ...plain, signature: "" };
+  const expected = ["netleads", "showroom", "phoneups", "ilmleads", "campaign",
+    "appcreated", "appscheduled", "appconfirmed", "appshow", "callsmade", "connects",
+    "texts", "emails", "videos", "video", "opentasks", "completedtasks", "totaldelivered", "totalclosing"];
+  const aliases = { texts: ["text", "texts"], emails: ["email", "emails"], videos: ["video", "videos"], visit: ["visit", "visits"] };
+  const columns = labels.slice(start);
+  if (columns.length === 20) expected.push("visit");
+  if (columns.length !== expected.length || columns.some((label, index) =>
+    !(aliases[expected[index]] || [expected[index]]).includes(label))) return { ...plain, signature: "" };
+  const printedParts = clusters.slice(0, start).flatMap((cluster) => cluster.parts).sort(readingOrder);
+  return { name: printedParts.map((p) => p.str.trim()).join(" "),
+    fragments: printedParts.map((p) => p.str.trim()), signature: columns.join(""),
+    columnCenters: clusters.slice(start).map((cluster) => cluster.center) };
+}
+
+/* This evidence reader is deliberately separate from the employee mapper's
+   acceptance rules. The first printed block owns the store even when its All
+   row is broken. Waiting for a readable All would promote the first employee,
+   the same mistake the old missing-"?" token caused in the import pipeline. */
+function readDailyActivityStoreTotals(lines) {
+  const result = (storeName, status, reason, total = null, vehicles = { new: null, used: null }) =>
+    ({ reportType: "activity", scope: "store", storeName, status, reason, total, vehicles });
+  const blocks = [];
+  let current = null, heading = [];
+  const flushHeading = () => {
+    if (!heading.length) return;
+    const { name, fragments, signature, columnCenters } = readDailyActivityHeading(heading);
+    if (name || !current) {
+      current = { name, fragments, signatures: [signature], activity: heading.some((h) => h.hasHeaderSig),
+        rows: [], ended: false, continued: false };
+      blocks.push(current);
+    } else {
+      // A page break repeats columns without starting another person's block.
+      current.signatures.push(signature);
+      current.continued = true;
+    }
+    current.columnCenters = columnCenters;
+    heading = [];
+  };
+  for (const line of Array.isArray(lines) ? lines : []) {
+    if (!Array.isArray(line?.parts) || line.parts.some((p) => typeof p?.str !== "string")) continue;
+    const scanned = scanDailyActivityLine(line);
+    const { rowTag, texts } = scanned;
+    if (["New", "Used", "All"].includes(rowTag)) {
+      flushHeading();
+      if (!current) continue;
+      if (rowTag !== "All" && current.ended && !current.continued) {
+        // No printed name or page header says whose next vehicle group this is.
+        current = { name: "", fragments: [], signatures: [], rows: [], implicit: true };
+        blocks.push(current);
+      }
+      current.rows.push({ tag: rowTag, cells: texts.slice(1), signature: current.signatures.at(-1),
+        parts: scanned.parts, columnCenters: current.columnCenters });
+      if (rowTag === "All") { current.ended = true; current.continued = false; }
+    } else if (scanned.isHeader) {
+      // Keep an empty or malformed first block rather than gluing the next
+      // employee heading onto it when a store row was omitted altogether.
+      if (scanned.hasHeaderSig && heading.some((h) => h.hasHeaderSig)) flushHeading();
+      heading.push(scanned);
+    }
+  }
+  flushHeading();
+
+  const first = blocks[0];
+  if (!first?.activity) {
+    return result(null, "missing", "not-daily-activity");
+  }
+  if (!first.name) return result(null, "incomplete", "missing-store-name");
+  // These are the observed grid columns, not the looser CSV report detector.
+  // A net-leads label alone cannot establish the meaning of numeric cell 18.
+  const firstColumns = "netleadsshowroomphoneupsilmleadscampaignappcreatedappscheduledappconfirmedappshowcallsmadeconnectstexts?emails?videos?video";
+  const lastColumns = "opentaskscompletedtaskstotaldeliveredtotalclosing";
+  const gridSignature = new RegExp(`^(?:${firstColumns}(?:visits?)?${lastColumns}|${firstColumns}${lastColumns}visits?)$`);
+  const supported = (signature) => gridSignature.test(signature);
+  if (!supported(first.signatures[0])) {
+    return result(first.name, "incomplete", "unsupported-activity-header");
+  }
+  const ambiguous = blocks.some((block, index) => block.implicit &&
+    norm(blocks[index - 1]?.name) === norm(first.name));
+  if (ambiguous) {
+    // The employee mapper guesses that a second name fragment belongs to a
+    // pending salesperson. The same text can be a split store name followed by
+    // repeated rows, so source evidence must leave that distinction unresolved.
+    return result(first.fragments.length > 1 ? null : first.name, "incomplete",
+      first.fragments.length > 1 ? "ambiguous-store-heading" : "ambiguous-store-rows");
+  }
+
+  const storeBlocks = blocks.filter((block) => norm(block.name) === norm(first.name));
+  const observations = { All: [], New: [], Used: [] };
+  const malformed = { All: false, New: false, Used: false };
+  const number = /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/;
+  const unknown = (cell) => cell === "-" || cell === "?" || cell === "∞";
+  for (const block of storeBlocks) {
+    for (const { tag, cells, signature, parts, columnCenters } of block.rows) {
+      const width = signature?.includes("visit") ? 20 : 19;
+      const positioned = parts.every((p) => [p.x, p.w].every(Number.isFinite));
+      const aligned = !columnCenters || !positioned || (parts.length === width + 1 &&
+        parts.slice(1).every((p, index) => Math.abs(p.x + p.w / 2 - columnCenters[index]) <= 2));
+      const valid = aligned && supported(signature || "") && cells.length === width && cells.every((cell, index) => {
+        if (unknown(cell)) return true;
+        const numeric = (index === 7 || index === 14 || index === 18) ? cell.replace(/%$/, "") : cell;
+        return number.test(numeric) && Number.isFinite(Number(numeric.replace(/,/g, "")));
+      });
+      malformed[tag] ||= !valid;
+      observations[tag].push(valid ? dailyActivityValue(cells[17]) : null);
+    }
+  }
+  const counts = {}, conflicts = {}, incomplete = {};
+  for (const tag of ["All", "New", "Used"]) {
+    const seen = observations[tag];
+    const values = new Set(seen.filter((value) => value !== null));
+    const disagree = values.size > 1;
+    conflicts[tag] = disagree;
+    incomplete[tag] = seen.includes(null);
+    counts[tag] = disagree || seen.includes(null) || !seen.length ? null : seen[0];
+  }
+  const vehicles = { new: counts.New, used: counts.Used };
+  if (conflicts.All) return result(first.name, "conflict", "conflicting-store-counts", null, vehicles);
+  if (incomplete.All) return result(first.name, "incomplete", malformed.All ? "malformed-store-row" : "unknown-store-count", null, vehicles);
+  if (!observations.All.length) return result(first.name, first.rows.length ? "incomplete" : "missing", "missing-store-all-row", null, vehicles);
+  // The selected metric is All. An unreadable stock split must not erase a
+  // readable store total, and neither split can be derived by subtraction.
+  const reason = conflicts.New || conflicts.Used ? "conflicting-vehicle-counts" :
+    malformed.New || malformed.Used ? "malformed-vehicle-row" :
+    incomplete.New || incomplete.Used ? "unknown-vehicle-count" : null;
+  return result(first.name, "available", reason, counts.All, vehicles);
 }
 
 /* =========================================================================
@@ -611,7 +777,7 @@ export {
   norm, toNum, squashT,
   detectReportType, parseReport, parseDeliverySummaryRows, parseStoreRollup,
   dedupeName, stripVocabWith, vocabCountWith,
-  DA_VOCAB, mapDailyActivityGrid,
+  DA_VOCAB, mapDailyActivityGrid, readDailyActivityStoreTotals,
   DS_VOCAB, DS_SOURCES, DS_VEHICLE, mapDeliverySummaryGrid,
   matchStoreByName,
 };
