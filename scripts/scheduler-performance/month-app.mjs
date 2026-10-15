@@ -6,14 +6,16 @@ import {
   shiftMonth,
   recordedDay,
   monthSales,
+  storeToday,
+  calendarCells,
 } from "./month-model.mjs";
 import { storeRuleDraft, ruleFromForm } from "./store-editor.mjs";
 const stores = fixtures(),
   planner = createPlanner(stores),
   app = document.querySelector("#app");
 let selected = 0,
-  month = new Date().toISOString().slice(0, 7);
-const today = () => new Date().toISOString().slice(0, 10);
+  month = storeToday().slice(0, 7);
+const today = () => storeToday();
 const salesLabel = (r) =>
   r.state === "known"
     ? `${r.units} recorded delivered cars`
@@ -52,6 +54,15 @@ const markChanged = () => {
   draft().accepted = false;
   draft().reviewFingerprint = null;
 };
+function syncCalendarLayout() {
+  const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  app.classList.toggle("calendar-list", app.clientWidth < 7 * 8 * font);
+}
+window.addEventListener("resize", syncCalendarLayout);
+new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
+  attributes: true,
+  attributeFilter: ["style"],
+});
 function render(focusId) {
   const dates = monthDays(month),
     list = rows(),
@@ -59,16 +70,24 @@ function render(focusId) {
     issues = list.reduce((n, r) => n + r.issues.length, 0);
   const sales = monthSales(d.store, month, today());
   const reviewed = d.accepted && d.reviewFingerprint === fingerprint(list);
-  app.innerHTML = `<p class="eyebrow">SCHEDULE / MONTHLY PLAN</p><div class="notice"><strong>Fictional draft. The manager makes the final decision.</strong><br>Months are saved separately in this open page. Drafts are lost on refresh or closing this page. Nothing is published.</div>
- <h1>Plan the month</h1><p class="muted">Choose any month ahead, then open a day to review coverage.</p>
- <div class="toolbar"><label>Fictional store<select id="store">${stores.map((s, i) => `<option value="${i}" ${i === selected ? "selected" : ""}>${s.name}</option>`).join("")}</select></label><label>Planning month<input id="month" type="month" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required aria-describedby="month-help"></label><button id="today">Today’s staffing</button><button id="people">Person sheet</button><button id="rules">Store sheet</button></div>
- <p id="month-help" class="muted compact">Choose month and year directly to plan ahead. Supported years: 2014–2100. Applied edits stay with this store and month.</p>
- <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">← Previous</button><h2 id="period-heading" aria-live="polite">${monthLabel(month)}</h2><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">Next →</button></div>
- <section class="summary" aria-label="Month summary"><article><small>Review status</small><strong>${reviewed ? "Reviewed locally" : issues ? "Needs input" : "Ready for manager"}</strong></article><article><small>Recorded delivered cars · fictional</small><strong id="recorded-total">${sales.total ?? (sales.future === dates.length ? "Not yet available" : "Unknown")}</strong><small>${sales.known} recorded days · ${sales.unknown} missing</small></article><article><small>${dates.length} calendar days</small><strong>${list.filter((r) => r.state === "open").length} Open · ${list.filter((r) => r.state === "closed").length} Closed · ${list.filter((r) => r.state === "unknown").length} Unknown</strong><small>${issues} items to resolve</small></article></section>
- <details class="month-glance"><summary>Month at a glance · ${monthLabel(month)}</summary><p>Sold by day is recorded store deliveries, not staffing or a forecast. ${sales.known} days recorded, ${sales.closed} recorded Closed, ${sales.unknown} unknown, ${sales.future} not yet available.</p><p>${sales.best ? `Best recorded day: ${dateLabel(sales.best.day)}, ${sales.best.units} delivered cars.` : "No recorded best day available."} No monthly sales goal is entered for this fictional schedule, so no goal-based pace is shown.</p><p>Latest fictional history date: 13 Oct 2026. Open a date below to compare its recorded sales, planning range and staffing.</p></details>
+  const byDay = new Map(list.map((r) => [r.day, r]));
+  app.innerHTML = `<div class="notice">Fictional draft · Lost on refresh · Nothing published</div>
+ <div class="toolbar"><label>Store<select id="store">${stores.map((s, i) => `<option value="${i}" ${i === selected ? "selected" : ""}>${s.name}</option>`).join("")}</select></label><label>Month<input id="month" type="month" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button id="today">Today</button><button id="people">People</button><button id="rules">Store hours</button></div>
+ <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">←</button><h1 id="period-heading" aria-live="polite">${monthLabel(month)}</h1><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">→</button></div>
+ <div class="month-summary" aria-label="Month summary"><span><strong id="recorded-total">${sales.total ?? (sales.future === dates.length ? "Not yet available" : "Unknown")}</strong> recorded sales <small>(${sales.known} days)</small></span><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>
  <section id="sheet" class="panel" hidden aria-label="Editing sheet"></section>
- <section class="month-days" aria-label="${monthLabel(month)} daily plans">${list.map((r) => `<button class="month-day ${r.state}" id="day-${r.day}" data-day="${r.day}" aria-label="${dateLabel(r.day)}, ${r.state}, open daily plan"><span class="day-date">${dateLabel(r.day).replace(", " + r.day.slice(0, 4), "")}</span><span class="badge ${r.state}">${r.state[0].toUpperCase() + r.state.slice(1)}</span>${r.state === "open" ? `<span>${r.ids.length} assigned / ${r.required} needed</span><small>${salesLabel(recordedDay(d.store, r.day, today()))}</small>` : `<small>${(r.state === "closed" ? "No shifts · " : "Confirm status · ") + salesLabel(recordedDay(d.store, r.day, today()))}</small>`}${r.override ? "<small>Manager edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${r.issues.length} to resolve</span>` : ""}</button>`).join("")}</section>
- <div class="actions"><button id="accept" class="primary">Mark month reviewed locally</button><button id="reset">Reset this month’s draft</button><p id="message" role="status">${reviewed ? "Manager review recorded for this month in this page only." : ""}</p></div>
+ <section class="month-days" aria-label="${monthLabel(month)} daily plans">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((n) => `<span class="weekday-heading">${n}</span>`).join("")}${calendarCells(
+   month,
+ )
+   .map((day) => {
+     if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
+     const r = byDay.get(day),
+       sales = recordedDay(d.store, day, today());
+     return `<button class="month-day ${r.state} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" ${day === today() ? 'aria-current="date"' : ""} aria-label="${dateLabel(day)}, ${r.state}, open daily plan"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span><span class="day-staffing">${r.state === "open" ? `${r.ids.length} assigned / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span><small class="day-sales">${sales.state === "known" ? `Recorded: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${r.issues.length} to resolve</span>` : ""}</button>`;
+   })
+   .join("")}</section>
+ <details class="month-glance"><summary>Month details</summary><p>${sales.known} recorded days · ${sales.closed} recorded Closed · ${sales.unknown} missing · ${sales.future} future.</p><p>${sales.best ? `Best recorded day: ${dateLabel(sales.best.day)}, ${sales.best.units} cars.` : "No recorded best day."} No sales goal is entered, so no goal-based pace is shown.</p><p>Today uses America/New_York. Fictional history ends 13 Oct 2026. Future sales are unavailable; planning ranges are estimates.</p></details>
+ <div class="actions"><button id="accept" class="primary">Mark reviewed</button><button id="reset">Reset this draft</button><p id="message" role="status">${reviewed ? "Manager review recorded for this month in this page only." : ""}</p></div>
  <details class="panel review"><summary>Draft scope and proposed defaults</summary><p>The monthly planning period and ability to plan future months follow Jorge’s correction. The layout and remaining UI defaults are proposals for review, not approved Claude choices. The original five-option artifact is unavailable.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects only the selected store/month.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
  <p class="footer">Full store-hour shifts only. No appointments, inferred historical staffing, partial shifts, breaks, overtime policy, database connection or publishing.</p>`;
   document.querySelector("#store").onchange = (e) => {
@@ -120,6 +139,7 @@ function render(focusId) {
     d.reviewFingerprint = fingerprint(list);
     render("accept");
   };
+  syncCalendarLayout();
   if (focusId) {
     const target = document.getElementById(focusId);
     (target?.disabled ? document.getElementById("month") : target)?.focus({

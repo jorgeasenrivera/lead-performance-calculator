@@ -6,6 +6,8 @@ import {
   createPlanner,
   recordedDay,
   monthSales,
+  storeToday,
+  calendarCells,
 } from "./month-model.mjs";
 const store = () => ({
   name: "Fictional",
@@ -161,4 +163,35 @@ test("recorded sales distinguish known zero, Closed, missing and future from est
   assert.equal(r.best.day, "2028-02-02");
   assert.equal(monthSales(s, "2028-03", "2028-02-14").total, null);
   assert.equal(monthSales(s, "2028-01", "2028-02-14").total, null);
+});
+
+test("Today follows New York at midnight, year boundaries and both DST offsets", () => {
+  for (const [instant, expected] of [
+    ["2027-01-01T04:59:59Z", "2026-12-31"],
+    ["2027-01-01T05:00:00Z", "2027-01-01"],
+    ["2026-03-08T04:59:59Z", "2026-03-07"],
+    ["2026-03-08T05:00:00Z", "2026-03-08"],
+    ["2026-03-09T03:59:59Z", "2026-03-08"],
+    ["2026-03-09T04:00:00Z", "2026-03-09"],
+    ["2026-11-01T03:59:59Z", "2026-10-31"],
+    ["2026-11-01T04:00:00Z", "2026-11-01"],
+    ["2026-11-02T04:59:59Z", "2026-11-01"],
+    ["2026-11-02T05:00:00Z", "2026-11-02"],
+  ])
+    assert.equal(storeToday(new Date(instant)), expected, instant);
+});
+test("calendar has seven Monday-first columns with exact leading and trailing blanks", () => {
+  const october = calendarCells("2026-10");
+  assert.deepEqual(october.slice(0, 4), [null, null, null, "2026-10-01"]);
+  assert.equal(october.length, 35);
+  assert.equal(october.at(-1), null);
+  for (const month of ["2026-03", "2026-10", "2028-02", "2100-02"]) {
+    const cells = calendarCells(month);
+    assert.equal(cells.length % 7, 0);
+    assert.deepEqual(cells.filter(Boolean), monthDays(month));
+    cells.forEach((day, i) => {
+      if (day)
+        assert.equal(i % 7, (new Date(day + "T12:00:00Z").getUTCDay() + 6) % 7);
+    });
+  }
 });

@@ -13,30 +13,54 @@ export function patchManager(source) {
   const begin = source.indexOf("function SignalSchedule("),
     end = source.indexOf("function SignalPenaltyRank(", begin);
   if (begin < 0 || end < 0) throw Error("Schedule boundary not found");
-  const desktop = `function SignalSchedule({children}) {
+  const desktop = `function PreviewScheduleEntry({className=""}) {
+    const today=previewStoreToday(),month=today.slice(0,7),cells=previewCalendarCells(month);
+    const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:'UTC'});
+    return <button type="button" className={className+' sp-plan-entry sp-calendar-entry'} aria-label="Open Schedule" onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>
+      <span className="sp-entry-copy"><strong>Schedule</strong><small>Staffing &amp; sales</small><small>{title}</small></span>
+      <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':day===today?'today':''}>{day?Number(day.slice(-2)):''}</i>)}</span>
+    </button>;
+  }
+  function SignalSchedule({children}) {
     const signal=useSignal();
-    const [open,setOpen]=React.useState(false);
-    const parts=React.Children.toArray(children).filter(React.isValidElement);
-    if(!signal)return children;
-    const calendar=React.Children.toArray(parts[1].props.children);
-    return <div className="sg-schedule">
-      <div className="sp-month-context" onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setOpen(false);}} onKeyDown={e=>{if(e.key==='Escape')setOpen(false);}}>
-        <button className="sp-month-trigger" aria-label="Month at a glance" aria-expanded={open} onClick={()=>setOpen(v=>!v)}>{calendar[0]}</button>
-        {React.cloneElement(calendar[1],{onClickCapture:()=>setOpen(true)})}{calendar[2]}
-        {open&&<div className="sg-schedule-details"><div className="sg-schedule-month">{calendar[3].props.children}</div></div>}
-      </div>
-      <button type="button" className="sg-schedule-trigger sp-plan-entry" aria-label="Open Schedule" onClick={e=>{setOpen(false);window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}));}}><span>Schedule</span><small>View today · Plan months</small></button>
-    </div>;
+    return signal?<div className="sg-schedule"><PreviewScheduleEntry/></div>:children;
   }
   `;
   source = source.slice(0, begin) + desktop + source.slice(end);
-  const phone =
-    '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>\n            <span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>\n          </button>';
-  if (source.split(phone).length !== 2)
-    throw Error("Phone Schedule boundary not unique");
-  return source.replace(
-    phone,
-    `<button type="button" className="bp-r3 sp-plan-entry" aria-label="Open Schedule" onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}><span>Schedule</span><small>View today · Plan months</small></button>`,
+  // The spread remains a metric, with its separate sales popover removed in this preview.
+  const salesBegin = source.indexOf('<BloopWin cls="dn s2-salewin">');
+  const salesEnd = source.indexOf("</BloopWin>", salesBegin);
+  if (salesBegin < 0 || salesEnd < 0)
+    throw Error("Sold by Day boundary not found");
+  source =
+    source.slice(0, salesBegin) +
+    "null" +
+    source.slice(salesEnd + "</BloopWin>".length);
+  source = source.replace(
+    '<div className="s2-splitwrap bloop-host" tabIndex={0}>',
+    '<div className="s2-splitwrap">',
+  );
+  const phoneBegin = source.indexOf(
+    '<button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>',
+  );
+  const phoneEnd = source.indexOf("</button>", phoneBegin);
+  if (phoneBegin < 0 || phoneEnd < 0)
+    throw Error("Phone calendar boundary not found");
+  source =
+    source.slice(0, phoneBegin) +
+    '<PreviewScheduleEntry className="bp-r1"/>' +
+    source.slice(phoneEnd + "</button>".length);
+  const onoffBegin = source.indexOf(
+    '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>',
+  );
+  const onoffEnd = source.indexOf("</button>", onoffBegin);
+  if (onoffBegin < 0 || onoffEnd < 0)
+    throw Error("Phone staffing boundary not found");
+  source =
+    source.slice(0, onoffBegin) + source.slice(onoffEnd + "</button>".length);
+  return (
+    'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells} from "/scripts/scheduler-performance/month-model.mjs";\n' +
+    source
   );
 }
 export async function buildPreview() {

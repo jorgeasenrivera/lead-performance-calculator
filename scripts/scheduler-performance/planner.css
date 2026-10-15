@@ -498,3 +498,175 @@ select {
 .summary article strong {
   overflow-wrap: anywhere;
 }
+/* A calm month overview; day editing takes its place rather than adding another panel. */
+main {
+  padding: 16px 24px;
+}
+.notice {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.toolbar {
+  margin: 16px 0;
+  gap: 8px;
+}
+.toolbar > label {
+  flex: 1 1 160px;
+}
+.toolbar button {
+  padding-inline: 12px;
+}
+.month-navigation {
+  justify-content: flex-start;
+  gap: 16px;
+  margin: 14px 0;
+}
+.month-navigation h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  flex: 1;
+}
+.month-navigation button {
+  width: 44px;
+  flex: none;
+}
+.month-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.month-days {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+.weekday-heading {
+  font:
+    0.75rem/1.4 "Geist Mono",
+    monospace;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+.month-day {
+  display: flex;
+  min-height: 112px;
+  gap: 5px;
+  padding: 10px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  align-items: flex-start;
+}
+.month-day .day-date {
+  font-size: 1.125rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.day-date > small {
+  font-size: 0.6875rem;
+  color: #315d43;
+}
+.day-weekday {
+  display: none;
+}
+.month-day.is-today {
+  border: 2px solid #567d61;
+  padding: 9px;
+}
+.day-staffing {
+  font-weight: 500;
+}
+.day-sales,
+.day-issue {
+  font-size: 0.75rem;
+}
+.month-day.closed {
+  background: #edeada;
+}
+.month-day.unknown {
+  background: #fff5e3;
+}
+.calendar-list .weekday-heading,
+.calendar-list .calendar-blank {
+  display: none;
+}
+.calendar-list .month-days {
+  grid-template-columns: minmax(0, 1fr);
+}
+.calendar-list .month-day {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  min-height: 76px;
+  gap: 6px 12px;
+}
+.calendar-list .day-weekday {
+  display: inline;
+}
+.calendar-list .day-date {
+  grid-row: span 2;
+}
+.calendar-list .day-sales,
+.calendar-list .day-staffing,
+.calendar-list .day-issue {
+  grid-column: 2;
+}
+.calendar-list .day-date > small {
+  display: block;
+}
+.month-glance {
+  border: 0;
+  margin: 8px 0;
+}
+.month-glance summary {
+  font-weight: 500;
+}
+.actions {
+  margin: 12px 0;
+}
+.review {
+  margin-top: 8px;
+}
+.review p,
+.footer {
+  font-size: 0.8125rem;
+}
+main:has(#sheet:not([hidden])) .month-days,
+main:has(#sheet:not([hidden])) .month-glance {
+  display: none;
+}
+@media (max-width: 600px) {
+  main {
+    padding: 14px;
+  }
+  .month-navigation h1 {
+    order: 0;
+    flex-basis: auto;
+    font-size: 1.375rem;
+  }
+  .month-navigation button {
+    flex: none;
+  }
+  .toolbar label {
+    flex-basis: 100%;
+  }
+  .toolbar button {
+    flex: 1;
+  }
+  .calendar-list .month-day > span:not(.day-date) {
+    grid-column: 2;
+  }
+  .month-summary {
+    font-size: 0.8125rem;
+  }
+  .month-navigation {
+    gap: 12px;
+  }
+}

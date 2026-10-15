@@ -229,3 +229,76 @@ html.manager-signal .bp-r3.sp-plan-entry > * {
   max-width: 100%;
   min-width: 0;
 }
+html.manager-signal .sp-calendar-entry {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+html.manager-signal .sp-entry-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+html.manager-signal .sp-entry-copy strong {
+  font-size: 1rem;
+}
+html.manager-signal .sp-entry-copy small {
+  font-size: 0.75rem;
+}
+html.manager-signal .sp-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 10px);
+  gap: 3px;
+  flex: none;
+}
+html.manager-signal .sp-mini-grid i {
+  font: 500 8px/12px var(--font-mono);
+  width: 10px;
+  height: 12px;
+  font-style: normal;
+  text-align: center;
+  border-radius: 3px;
+  background: #d5e1c7;
+  color: #234939;
+}
+html.manager-signal .sp-mini-grid i.blank {
+  visibility: hidden;
+}
+html.manager-signal .sp-mini-grid i.today {
+  background: #e4c98d;
+  color: #173d2b;
+  outline: 1px solid #9e7940;
+}
+html.manager-signal .sg-schedule {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+html.manager-signal .bp-r1.sp-calendar-entry {
+  grid-column: 1/-1;
+  grid-row: 4;
+  margin-top: 8px;
+  width: 100%;
+}
+html.manager-signal .sp-calendar-entry:focus-visible {
+  outline: 3px solid #e4c98d;
+  outline-offset: 3px;
+}
+html.manager-signal .sp-calendar-entry {
+  flex-wrap: wrap;
+}
+html.manager-signal .sp-entry-copy {
+  flex: 1 1 140px;
+}
+html.manager-signal .sp-performance .bp-h5 .bp-r1.sp-calendar-entry {
+  grid-column: 1/-1;
+  grid-row: 4;
+  align-self: stretch;
+}

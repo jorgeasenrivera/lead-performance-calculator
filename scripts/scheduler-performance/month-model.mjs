@@ -193,3 +193,22 @@ export function monthSales(store, month, today) {
       )[0] || null,
   };
 }
+
+export const STORE_TIME_ZONE = "America/New_York";
+export function storeToday(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: STORE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (name) => parts.find((p) => p.type === name).value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+export function calendarCells(month) {
+  const days = monthDays(month),
+    leading = (weekday(days[0]) + 6) % 7;
+  const cells = [...Array(leading).fill(null), ...days];
+  while (cells.length % 7) cells.push(null);
+  return cells;
+}

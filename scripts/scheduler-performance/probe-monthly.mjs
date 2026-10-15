@@ -12,7 +12,8 @@ const browser = await { chromium, webkit }[engine].launch(
     : {},
 );
 const out =
-  process.env.EVIDENCE_DIR || "scripts/scheduler-performance/evidence/monthly";
+  process.env.EVIDENCE_DIR ||
+  "scripts/scheduler-performance/evidence/calendar-refinement";
 mkdirSync(out, { recursive: true });
 const results = [];
 try {
@@ -62,13 +63,26 @@ try {
         }),
         "entry text fits its button",
       );
+      if (width < 700) {
+        const units = await page.locator(".bp-l1").boundingBox(),
+          schedule = await entry.boundingBox();
+        assert.ok(
+          schedule.y >= units.y + units.height,
+          "Schedule must not cover the Performance units",
+        );
+      }
       await page.screenshot({ path: `${out}/${key}-entry.png` });
       assert.equal(await entry.count(), 1, "one unified Schedule entry");
-      const oldMonth = page.locator(
-        width > 700 ? ".sp-month-trigger" : ".bp-r1",
+      assert.equal(
+        await page.locator(".s2-salewin").count(),
+        0,
+        "no standalone Sold by Day popover",
       );
-      await oldMonth.click();
-      await page.keyboard.press("Escape");
+      assert.equal(
+        await entry.locator(".sp-mini-grid").count(),
+        1,
+        "calendar visual belongs to Schedule entry",
+      );
       assert.equal(
         await page.locator(".sp-today").count(),
         0,
@@ -173,6 +187,54 @@ try {
       await ret.focus();
       await fit();
       await dates("2026-10", 31);
+      if (width === 1440 && scale === 1) {
+        assert.equal(await f.locator(".weekday-heading").count(), 7);
+        assert.equal(
+          await f
+            .locator(".month-days")
+            .evaluate(
+              (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length,
+            ),
+          7,
+        );
+        const headers = await f
+          .locator(".weekday-heading")
+          .evaluateAll((es) => es.map((e) => e.getBoundingClientRect().left));
+        for (const day of await f.locator("[data-day]").evaluateAll((es) =>
+          es.map((e) => ({
+            day: e.dataset.day,
+            x: e.getBoundingClientRect().left,
+          })),
+        ))
+          assert.ok(
+            Math.abs(
+              day.x -
+                headers[(new Date(day.day + "T12:00:00Z").getUTCDay() + 6) % 7],
+            ) < 1,
+            "weekday alignment",
+          );
+        assert.equal(
+          await f
+            .locator(".month-days")
+            .evaluate((e) =>
+              [...e.children].indexOf(e.querySelector("[data-day]")),
+            ),
+          10,
+          "three leading blanks after seven headings",
+        );
+      } else
+        assert.equal(
+          await f
+            .locator("#app")
+            .evaluate((e) => e.classList.contains("calendar-list")),
+          true,
+          "readable list at narrow widths or enlarged text",
+        );
+      assert.equal(
+        await f.locator('[aria-current="date"]').getAttribute("data-day"),
+        "2026-10-14",
+      );
+
       assert.notEqual(
         await f.locator("#recorded-total").innerText(),
         "Not yet available",
@@ -318,7 +380,11 @@ try {
       assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
       await f.locator("#reset").click();
       await focus("reset");
-      assert.match(await f.locator("#day-2028-02-29").innerText(), /Open/);
+      assert.ok(
+        await f
+          .locator("#day-2028-02-29")
+          .evaluate((e) => e.classList.contains("open")),
+      );
       await selectMonth("2026-10");
       assert.match(
         await f.locator("#day-2026-10-14").innerText(),
