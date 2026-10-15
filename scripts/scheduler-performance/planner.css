@@ -842,3 +842,50 @@ button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; 
 .day-context ul { list-style:none; padding:0; margin:8px 0; }
 .day-context li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; padding:6px 0; border-bottom:1px solid var(--line); }
 .day-context li > span { flex:1 1 12rem; min-width:0; }
+.compact-key { display:none; }
+/* Phone browsing starts with dates; full staffing and sales remain in day details. */
+main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; }
+.compact-month .month-navigation { order:0; margin:0 0 8px; }
+.compact-month .toolbar { order:1; gap:8px; margin:0 0 8px; }
+.compact-month .toolbar > label { flex:1 1 0; font-size:.8125rem; }
+.compact-month .toolbar > #workspace { flex:1 1 0; margin:0; padding:8px 4px; }
+.compact-month #sheet,.compact-month .month-days { order:2; }
+.compact-month .compact-key { display:block; order:3; font-size:.75rem; line-height:1.5; margin:8px 0; }
+.compact-month .month-summary { order:4; }
+.compact-month .notice { order:5; }
+.compact-month .editor-tools { order:1; }
+.compact-month .demo-options,.compact-month .month-glance,.compact-month .actions,.compact-month .review,.compact-month .footer,.compact-month #message { order:6; }
+.compact-month .month-days { grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; margin:0; }
+.compact-month .weekday-heading { display:block; padding:4px 0; text-align:center; }
+.compact-month .calendar-blank { display:block; }
+.compact-month .month-day { min-height:48px; padding:4px 1px; gap:2px; align-items:center; justify-content:center; border-radius:4px; }
+.compact-month .month-day .day-date { width:auto; border:0; padding:0; font-size:1rem; line-height:1.3; gap:0; }
+.compact-month .month-day .day-weekday,.compact-month .month-day .day-date small { display:none; }
+.compact-month .month-day :is(.day-staffing,.day-sales,.day-issue,.day-coverage,.best-day) { display:none; }
+.compact-month .month-day .staff-status { align-self:center; min-height:1em; }
+.compact-month .month-day .staff-status :is(.sage-icon,.status-label) { display:none; }
+.compact-month .month-day .staff-status::after { content:'?'; font:600 .75rem/1 "Geist Mono",monospace; }
+.compact-month .month-day[data-status="Needs schedule"] .staff-status::after,.compact-month .month-day[data-status="Schedule conflict"] .staff-status::after { content:'!'; }
+.compact-month .month-day[data-status="Low staff"] .staff-status::after { content:'↓'; }
+.compact-month .month-day[data-status="Scheduled"] .staff-status::after { content:'✓'; }
+.compact-month .month-day[data-status="Closed"] .staff-status::after { content:'–'; }
+.compact-month.compact-reflow .month-days { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.compact-reflow .weekday-heading,.compact-reflow .calendar-blank { display:none; }
+.compact-reflow .month-day .day-weekday { display:inline; }
+.compact-reflow .month-day .day-date { gap:6px; }
+.compact-reflow .month-day { min-height:80px; }
+.additional-names { display:grid; gap:6px; min-width:0; width:100%; }
+.additional-person { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 8px; min-width:0; border-top:1px solid #23493922; padding-top:6px; }
+.additional-person > span { flex:1 1 8rem; min-width:0; overflow-wrap:anywhere; }
+.additional-person > strong { font-weight:500; }
+.additional-preview-more,.additional-more summary { font-size:.8125rem; }
+.additional-more { margin-top:8px; }
+.additional-more .additional-names { margin-top:8px; }
+.compact-month .month-navigation { position:sticky; top:0; z-index:3; background:#f5f5ee; }
+.compact-month .month-navigation > button:not(#period-heading) { padding:4px; }
+.compact-reflow .toolbar { display:grid; grid-template-columns:minmax(0,1fr); }
+.compact-reflow .toolbar > #workspace { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px; }
+.compact-reflow .toolbar > #workspace { padding:6px 4px; }
+.compact-reflow .toolbar select { padding-block:6px; }
+/* Keep backward keyboard focus below the sticky month controls at either text size. */
+:root:has(main.compact-month) { scroll-padding-top:4rem; }

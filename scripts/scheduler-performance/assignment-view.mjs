@@ -24,7 +24,8 @@ export function assignmentSummary(people, teams, record, row) {
   const teamRows = teams.map(t => ({ ...t, state: t.ids.some(id => conflicting.includes(id)) ? 'Conflict' : t.ids.length && t.ids.every(id => on.includes(id)) ? 'On' : t.ids.length && t.ids.every(id => off.includes(id)) ? 'Off' : t.ids.some(id => on.includes(id)) ? 'Partly on' : 'Unknown' }));
   const members = new Set(teams.flatMap(t => t.ids));
   const additional = { on: on.filter(id => !members.has(id)).length, off: off.filter(id => !members.has(id)).length, unknown: unknown.filter(id => !members.has(id)).length, conflicts: conflicting.filter(id => !members.has(id)).length };
+  const additionalPeople = [...new Map(people.map(p => [p.id, p])).values()].filter(p => !members.has(p.id)).map(p => ({id:p.id, name:p.name || p.id, state:conflicting.includes(p.id) ? 'Conflict' : on.includes(p.id) ? 'On' : off.includes(p.id) ? 'Off' : 'Unknown'}));
   const covering = on.length;
   const status = row.state === 'closed' ? (row.issues?.length ? 'Schedule conflict' : 'Closed') : row.state !== 'open' ? 'Hours unknown' : !record ? 'Needs schedule' : covering < row.rule.minimum ? 'Low staff' : row.issues?.length || conflicting.length ? 'Schedule conflict' : 'Scheduled';
-  return { on, assigned, conflicting, off, unknown, teams: teamRows, additional, covering, status };
+  return { on, assigned, conflicting, off, unknown, teams: teamRows, additional, additionalPeople, covering, status };
 }

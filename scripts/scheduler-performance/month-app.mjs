@@ -59,16 +59,38 @@ const markChanged = () => {
   draft().reviewFingerprint = null;
 };
 const staffing = row => assignmentSummary(draft().store.people, teamsFor(draft().store.people, mode), row.record, row);
-const staffingMarkup = s => {
+const staffingMarkup = (s, expandable = false) => {
   if (s.status === "Closed") return `<span class="staff-closed">${icon("clock")}Store closed</span>`;
-  const counts = mode === "team" ? "" : `<span class="staff-people"><span class="staff-group-title">${icon("users")}${mode === "mixed" ? "Additional people" : "People"}</span><span class="staff-counts">${[["on","On","check"],["off","Off","close"],["unknown","Unknown","question"],...(s.additional.conflicts ? [["conflicts","Conflicting","warn"]] : [])].map(([key,label,glyph])=>`<span class="staff-count" data-count="${key}">${icon(glyph)}<strong>${s.additional[key]}</strong><span>${label}</span></span>`).join("")}</span></span>`;
-  return `<span class="staffing-groups">${s.teams.length ? `<span class="staff-teams">${s.teams.map(t=>`<span class="staff-team" data-state="${t.state}"><span class="staff-team-name">${icon("users")}${esc(t.name)}</span><span class="staff-team-state">${icon(t.state === "On" ? "check" : t.state === "Off" ? "close" : t.state === "Unknown" ? "question" : "warn")}${t.state}</span></span>`).join("")}</span>` : ""}${counts}</span>`;
+  const wrap = expandable ? "div" : "span";
+  const person = p => `<span class="additional-person" data-person="${esc(p.id)}"><span>${esc(p.name)}</span><strong>${p.state}</strong></span>`;
+  const people = s.additionalPeople || [], first = people.slice(0,3).map(person).join(""), rest = people.slice(3);
+  const named = `<span class="additional-names">${first || "No additional people"}</span>${rest.length ? expandable ? `<details class="additional-more"><summary aria-expanded="false" aria-controls="additional-remaining">${rest.length} more ${rest.length === 1 ? "person" : "people"}</summary><span id="additional-remaining" class="additional-names">${rest.map(person).join("")}</span></details>` : `<span class="additional-preview-more">${rest.length} more ${rest.length === 1 ? "person" : "people"} in day details</span>` : ""}`;
+  const counts = mode === "team" ? "" : `<${wrap} class="staff-people"><span class="staff-group-title">${icon("users")}${mode === "mixed" ? "Additional people" : "People"}</span><span class="staff-counts">${[["on","On","check"],["off","Off","close"],["unknown","Unknown","question"],...(s.additional.conflicts ? [["conflicts","Conflicting","warn"]] : [])].map(([key,label,glyph])=>`<span class="staff-count" data-count="${key}">${icon(glyph)}<strong>${s.additional[key]}</strong><span>${label}</span></span>`).join("")}</span>${named}</${wrap}>`;
+  return `<${wrap} class="staffing-groups">${s.teams.length ? `<span class="staff-teams">${s.teams.map(t=>`<span class="staff-team" data-state="${t.state}"><span class="staff-team-name">${icon("users")}${esc(t.name)}</span><span class="staff-team-state">${icon(t.state === "On" ? "check" : t.state === "Off" ? "close" : t.state === "Unknown" ? "question" : "warn")}${t.state}</span></span>`).join("")}</span>` : ""}${counts}</${wrap}>`;
 };
-const statusMarkup = s => `<span class="staff-status ${(s.status === "Needs schedule" || s.status === "Schedule conflict") ? "needs-schedule" : s.status === "Low staff" ? "low-staff" : ""}">${icon(s.status === "Scheduled" ? "check" : "warn")}${s.status}</span>`;
+const statusMarkup = s => `<span class="staff-status ${(s.status === "Needs schedule" || s.status === "Schedule conflict") ? "needs-schedule" : s.status === "Low staff" ? "low-staff" : ""}">${icon(s.status === "Scheduled" ? "check" : "warn")}<span class="status-label">${s.status}</span></span>`;
 function syncCalendarLayout() {
   const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
   app.classList.toggle("calendar-list", app.clientWidth < 7 * 8 * font);
+  const compact = app.clientWidth <= 700;
+  app.classList.toggle("compact-month", compact);
+  app.classList.toggle("compact-reflow", compact && font >= 24);
+  for (const button of app.querySelectorAll("[data-day]")) {
+    if (compact) button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. Open day details.`);
+    else button.removeAttribute("aria-label");
+  }
 }
+// WebKit's native backward focus scroll can ignore the sticky header inset.
+app.addEventListener("focusin", event => {
+  const target = event.target;
+  if (!app.classList.contains("compact-month") || !target.matches("[data-day]")) return;
+  requestAnimationFrame(() => {
+    if (document.activeElement !== target) return;
+    const rect = target.getBoundingClientRect(), nav = app.querySelector(".month-navigation").getBoundingClientRect();
+    if (rect.top < nav.bottom + 4) window.scrollBy({top:rect.top - nav.bottom - 8, behavior:"instant"});
+    else if (rect.bottom > innerHeight - 4) window.scrollBy({top:rect.bottom - innerHeight + 8, behavior:"instant"});
+  });
+});
 window.addEventListener("resize", syncCalendarLayout);
 new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
   attributes: true,
@@ -99,9 +121,10 @@ function render(focusId, announcement = "") {
      if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
      const r = byDay.get(day),
        sales = heat.get(day), staff = staffing(r);
-     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
+     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" data-status="${staff.status}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
    })
    .join("")}</section>
+ <p class="compact-key">! Needs schedule / conflict · ↓ Low staff · ✓ Scheduled · – Closed · ? Unknown hours. Tap a date for staffing and sales.</p>
  <details class="demo-options"><summary>Demo options</summary><label>Fixture assignment mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label><p>Fictional display only. No live access or publishing.</p></details>
  <details class="month-glance"><summary>Month details</summary><p>${sales.known} recorded days · ${sales.closed} recorded Closed · ${sales.unknown} missing · ${sales.future} future.</p><p>${sales.best ? `Best recorded ${sales.bestDays.length > 1 ? "days (tied)" : "day"}: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."} No sales goal is entered, so no goal-based pace is shown.</p><p>Today uses America/New_York. Fictional history ends 13 Oct 2026. Future sales are unavailable; planning ranges are estimates.</p></details>
  ${editing ? `<div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button><p id="message" role="status">${announcement ? esc(announcement) : reviewed ? "Manager review recorded for this month in this page only." : ""}</p></div>
@@ -185,6 +208,8 @@ function openSheet(html, openerId) {
   const sheet = document.querySelector("#sheet");
   sheet.hidden = false;
   sheet.innerHTML = html;
+  const more = sheet.querySelector(".additional-more");
+  if (more) more.addEventListener("toggle", () => more.querySelector("summary").setAttribute("aria-expanded", String(more.open)));
   sheet.querySelector("[data-close]").onclick = () => {
     sheet.hidden = true;
     selectedDay = null;
@@ -217,11 +242,11 @@ function daySheet(day, openerId = `day-${day}`) {
   selectedDay = day;
   const summary = staffing(r);
   if (!editing) {
-    openSheet(`<h2>${dateLabel(day)}</h2><p class="day-staffing">${staffingMarkup(summary)}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}<button type="button" data-close>Back to month</button>`, openerId);
+    openSheet(`<h2>${dateLabel(day)}</h2><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}<button type="button" data-close>Back to month</button>`, openerId);
     return;
   }
   const sheet = openSheet(
-    `<h2>${dateLabel(day)}</h2><p class="day-staffing">${staffingMarkup(summary)}</p><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p><span class="badge ${r.state}">${r.state}</span></p>${dayContext(r, summary)}${
+    `<h2>${dateLabel(day)}</h2><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p><span class="badge ${r.state}">${r.state}</span></p>${dayContext(r, summary)}${
       r.state === "open"
         ? `<h3>Planning range</h3><div class="range">${r.estimate ? `${r.estimate.low} to ${r.estimate.high}` : "Unknown"}<small>delivered cars</small></div><p>${r.estimate?.reason || "Insufficient known history."}</p><p><strong>${r.required} people needed</strong> · ${r.rule.open}:00–${r.rule.close}:00. Minimum ${r.rule.minimum}${r.rule.useCapacity ? `; entered capacity ${r.rule.capacity} cars per full shift` : "; capacity adjustment off"}. Rule effective ${r.rule.effective}.</p><p>Assigned: ${r.ids.map((id) => esc(draft().store.people.find((p) => p.id === id)?.name || id)).join(", ") || "Nobody yet"}.</p><form><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset><legend>Manager assignments for this date</legend>${draft()
             .store.people.map(

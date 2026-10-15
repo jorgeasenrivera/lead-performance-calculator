@@ -40,12 +40,13 @@ try {
       await page.goto("http://127.0.0.1:5190");
       if (width > 700)
         await page.getByRole("button", { name: "Close the round-up" }).click();
-      const entry = page.locator(".sp-plan-entry");
+      const entry = page.locator(".sp-calendar-entry");
+      if (width <= 700) await page.locator(".sp-calendar-toggle").click();
 
-      assert.match(await entry.innerText(), /October 2026/);
+      assert.match(await entry.getAttribute("aria-label"), /October 2026/);
       assert.doesNotMatch(await entry.evaluate(e => [...e.children].filter(n => !n.classList.contains("sp-sr-only")).map(n => n.innerText).join(" ")), /Staffing & sales/);
       assert.equal(await entry.getByText("Schedule", { exact: true }).count(), 0);
-      assert.equal(await page.getByRole("button", { name: width <= 700 ? /October 2026 Open calendar/ : /open Schedule for staffing and daily sales/i }).count(), 1);
+      assert.equal(await page.getByRole("button", { name: /open Schedule for staffing and daily sales/i }).count(), 1);
       assert.equal(await page.locator(".s2-lampbtn").count(), 0);
       const dateBefore = width > 700 ? await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize)) : null;
       const entryBefore = await entry.evaluate((e) =>
@@ -92,7 +93,7 @@ try {
       );
       assert.equal(
         await entry.locator(".sp-mini-grid").count(),
-        width > 700 ? 1 : 0,
+        1,
         "calendar visual belongs to Schedule entry",
       );
       assert.equal(
@@ -267,7 +268,7 @@ try {
       await f.getByRole("button", { name: "Apply day override" }).click();
       await focus("day-2026-10-14");
       assert.match(
-        await f.locator("#day-2026-10-14").innerText(),
+        await f.locator("#day-2026-10-14").textContent(),
         /0 assigned/,
       );
       await f.locator("#people").click();
@@ -283,7 +284,7 @@ try {
         "Not yet available",
       );
       assert.match(
-        await f.locator("#day-2028-02-29").innerText(),
+        await f.locator("#day-2028-02-29").textContent(),
         /Sales not yet available/,
       );
       await f.locator("#people").click();
@@ -318,14 +319,14 @@ try {
       await page.screenshot({ path: `${out}/${key}-store.png` });
       await f.getByRole("button", { name: "Apply dated local rule" }).click();
       await focus("rules");
-      assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
+      assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       for (const min of ["4", "3"]) {
         await f.locator("#rules").click();
         await f.locator("[name=effective]").fill("2028-02-15");
         await f.locator("[name=effective]").dispatchEvent("change");
         await f.locator("[name=minimum]").fill(min);
         await f.getByRole("button", { name: "Apply dated local rule" }).click();
-        assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
+        assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       }
       await f.locator("#rules").click();
       await f.locator("[name=minimum]").fill("9");
@@ -335,10 +336,10 @@ try {
       await selectMonth("2026-10");
       await dates("2026-10", 31);
       assert.match(
-        await f.locator("#day-2026-10-14").innerText(),
+        await f.locator("#day-2026-10-14").textContent(),
         /0 assigned/,
       );
-      assert.match(await f.locator("#day-2026-10-21").innerText(), /Unknown/);
+      assert.match(await f.locator("#day-2026-10-21").textContent(), /Unknown/);
       await f.locator("#people").click();
       assert.equal(await f.locator("[name=maxHours]").inputValue(), "32");
       await f.locator("[name=maxHours]").fill("1");
@@ -357,7 +358,7 @@ try {
       await f.locator("[name=maxHours]").press("Escape");
       await focus("people");
       await selectMonth("2028-02");
-      assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
+      assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       await f.locator("#people").click();
       assert.equal(await f.locator("[name=maxHours]").inputValue(), "24");
       await f.getByRole("button", { name: "Close sheet", exact: true }).click();
@@ -365,7 +366,7 @@ try {
       await focus("store");
       await f.locator("#store").selectOption("0");
       await focus("store");
-      assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
+      assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       await selectMonth("2026-12");
       await f.locator("#next").click();
       await focus("next");
@@ -381,7 +382,7 @@ try {
       await f.locator("#reset").click();
       await focus("reset");
       await selectMonth("2028-02");
-      assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
+      assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       await f.locator("#day-2028-02-15").click();
       assert.match(await f.locator("#sheet").innerText(), /3 people needed/);
       await page.screenshot({ path: `${out}/${key}-day.png` });
@@ -397,7 +398,7 @@ try {
         .click();
       await focus("period-heading");
       await selectMonth("2028-02");
-      assert.match(await f.locator("#day-2028-02-29").innerText(), /Closed/);
+      assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       await f.locator("#reset").click();
       await focus("reset");
       assert.ok(
@@ -407,7 +408,7 @@ try {
       );
       await selectMonth("2026-10");
       assert.match(
-        await f.locator("#day-2026-10-14").innerText(),
+        await f.locator("#day-2026-10-14").textContent(),
         /0 assigned/,
       );
       await f.locator("#period-heading").press("Escape");

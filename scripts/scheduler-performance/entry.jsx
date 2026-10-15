@@ -60,7 +60,7 @@ function Preview() {
     dialog.current.close();
     document.body.style.overflow = "";
     window.scrollTo({ top: scroll.current, behavior: "instant" });
-    const target = opener.current?.isConnected ? opener.current : document.querySelector(".sp-calendar-entry");
+    const target = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.querySelector(".sp-calendar-toggle") || document.querySelector(".sp-calendar-entry");
     target?.focus({ preventScroll: true });
   };
   useEffect(() => {

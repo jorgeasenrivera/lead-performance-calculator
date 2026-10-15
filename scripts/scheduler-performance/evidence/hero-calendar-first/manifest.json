@@ -1,0 +1,307 @@
+{
+  "startingHead": "3b7b810c47461fe70d508c0263fa502065240667",
+  "provenance": "Inherited preview-only successor diff preserved and reconciled to the three current requirements; no unrelated changes found. Coordinator confirmed no other writer.",
+  "inheritedDiffSha256": "779dbb45be9162b39bb3868492e13c09219ec71432d7f4cbe753f21e1956fbb1",
+  "sourceHashes": {
+    "README.md": "b0d2ffaef181e53e57a93e06c06ce7de1f90b998e96bce7a96ab5de9808059cc",
+    "assignment-view.mjs": "7b7875b99faa686d79dd2a8aff80bb38fbd1016a0ec1463226d2a861d28028d8",
+    "assignment-view.test.mjs": "0946e3c11e7baecd25766e3ea78541f4a763d4ac50dbc49042c6b5a8ea407820",
+    "build.mjs": "fec79e48ab61bcf6e82a84511a9a9e67d3db5ef24e6cd0c79e844338bbc55d34",
+    "entry.css": "a2f9a31bfe5016281c639772a81d8212b1c2a44c9ca9fdfbdbab528b8e46bc61",
+    "entry.jsx": "2cfd51890f377d3f66dd94081b7e1ca93fda54aab6c01a135059070333e21e84",
+    "month-app.mjs": "7749f03b9c1ba37a27695bd58405252cb626ee79e4183462843bc3562a91634b",
+    "planner.css": "ecae924e9148ee0f787a13775585d9c51dedc35ad7289b79189db56d40d8d8d1",
+    "probe-monthly.mjs": "3ff455bb768427237e7d617efb75fb89ecc74227e18fb5cd820ee39145eed1fc",
+    "probe-additional-people.mjs": "59b099c6cde8605427490e0b47b215b29a2b60839e2d15aaa1d4332ec719062b",
+    "probe-calendar-first.mjs": "7eca9a0cb9ddab6fab7674274846c4aa5263396e052488445a2ab165ab427610",
+    "probe-hero-bottom.mjs": "314660c8a02a4a1bb4951521fc8264f1e93efdc125f81a4859d472b4c7c49394"
+  },
+  "browserCases": {
+    "calendar-first-chromium": 6,
+    "hero-bottom-chromium": 8,
+    "additional-people-chromium": 16,
+    "monthly-chromium": 6,
+    "calendar-first-webkit": 6,
+    "hero-bottom-webkit": 8,
+    "additional-people-webkit": 16,
+    "monthly-webkit": 6
+  },
+  "totalBrowserCases": 72,
+  "unitTests": 967,
+  "builds": [
+    "production passed",
+    "isolated passed; production Manager hash guard retained"
+  ],
+  "scopedAxeScans": 8,
+  "extraCheck": "Unmodified individual fixture: first three names visible; expansion reveals all six.",
+  "staticFiles": [
+    {
+      "file": "app-icon-dark.svg",
+      "sha": "f94b68c8593750c4cf9c7a01d6be0f7026931a8a",
+      "size": 1661
+    },
+    {
+      "file": "app-icon-light.svg",
+      "sha": "c5bcad468aa5c0783309777eb70a03509521bb9b",
+      "size": 1661
+    },
+    {
+      "file": "apple-touch-icon.png",
+      "sha": "a105377985e809268f05e51c085392ac69ab5c93",
+      "size": 6794
+    },
+    {
+      "file": "assets/FenceEditor-LmzYkBMB.js",
+      "sha": "e9b7f7ff7408ebfe65eac74048fe0e93c4568d3d",
+      "size": 7763
+    },
+    {
+      "file": "assets/index-BAz-TQPG.css",
+      "sha": "328017a62330afb86c748b8ffc173c4e823105c5",
+      "size": 8805
+    },
+    {
+      "file": "assets/index-DHq5Resz.js",
+      "sha": "8554d212fc9f43bd2136ae84aaf9a3b5e6a86db4",
+      "size": 2022000
+    },
+    {
+      "file": "assets/leaderboard-template-BWPwLIt8.js",
+      "sha": "f6ee020ebb0a93e0b21445851802f59e869e5b26",
+      "size": 86914
+    },
+    {
+      "file": "assets/leaflet-CIGW-MKW.css",
+      "sha": "1927d806eaea2db99c54ce4f9d43acb40802dab9",
+      "size": 15607
+    },
+    {
+      "file": "assets/leaflet-src-CBOgTJfX.js",
+      "sha": "3a62c84a13947a5f6939138dbeea0c0b87f33f7d",
+      "size": 149983
+    },
+    {
+      "file": "assets/papaparse.min-hvfEuHP4.js",
+      "sha": "00523e465720a1bb6ca4eb183a17bba75833d7da",
+      "size": 18888
+    },
+    {
+      "file": "assets/pdf-DXLgRC1v.js",
+      "sha": "6ca12ba481c7c5807f20c49bde71aa40b7d4246a",
+      "size": 329143
+    },
+    {
+      "file": "assets/pdf.worker.min-CElaEpGn.js",
+      "sha": "d4c62537a775dd90dae2559ba1ebe750ddf645f6",
+      "size": 67
+    },
+    {
+      "file": "assets/pdf.worker.min-DKQKFyKK.js",
+      "sha": "49162d546a1a5a11bd2c932b2d1b2520daef1ec3",
+      "size": 1087212
+    },
+    {
+      "file": "favicon-16.png",
+      "sha": "dd3eb6ccd3edad79e339ebef731a6f053597f358",
+      "size": 520
+    },
+    {
+      "file": "favicon-32.png",
+      "sha": "a25d5c8bf5cacb06e80d2a311cdf027f9635bd87",
+      "size": 1131
+    },
+    {
+      "file": "favicon.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "fonts/README.md",
+      "sha": "8bbde3da436c65059125f00ee02f937d9a824e43",
+      "size": 920
+    },
+    {
+      "file": "fonts/geist-latin-ext.woff2",
+      "sha": "66a33f6a78ae71cd10e9cce31bd3c987af14297e",
+      "size": 16540
+    },
+    {
+      "file": "fonts/geist-latin.woff2",
+      "sha": "9d846db84c501327431670fe23b1a8ea1d2a5349",
+      "size": 29288
+    },
+    {
+      "file": "fonts/geist-mono-latin-ext.woff2",
+      "sha": "fbd56f5f92011dd1c11b39396cef32d44d8be3ab",
+      "size": 14712
+    },
+    {
+      "file": "fonts/geist-mono-latin.woff2",
+      "sha": "0e04bb6e7b54057d64c421b959c8c22774ae632d",
+      "size": 23108
+    },
+    {
+      "file": "fonts/space-grotesk-latin-ext.woff2",
+      "sha": "1efa87763419826a7a5376a1616fa19d4e9bc2e4",
+      "size": 18924
+    },
+    {
+      "file": "fonts/space-grotesk-latin.woff2",
+      "sha": "cbee7234c1d753e7c63f8ea9bdb19c87f5378bfb",
+      "size": 22320
+    },
+    {
+      "file": "icon-512.png",
+      "sha": "12cdf94012dd65f272296448503f4bedffdfaa36",
+      "size": 21112
+    },
+    {
+      "file": "index.html",
+      "sha": "1c8aa0140f679b066b41aa7bce7cfce6eab31368",
+      "size": 6144
+    },
+    {
+      "file": "planner/app.mjs",
+      "sha": "7591dfa76d88041aac5e73527840127998e382aa",
+      "size": 31588
+    },
+    {
+      "file": "planner/assignment-view.mjs",
+      "sha": "dc549ff32e93021b49f7f4b51d9f26b67ef79b1f",
+      "size": 2531
+    },
+    {
+      "file": "planner/index.html",
+      "sha": "90b6f66d347f2a621ac96f885c14bced33a65a23",
+      "size": 459
+    },
+    {
+      "file": "planner/model.mjs",
+      "sha": "e6be66633b06fe17cbfd541297be546ba69893f9",
+      "size": 5180
+    },
+    {
+      "file": "planner/month-model.mjs",
+      "sha": "3b368c1d13975dc8b8c21ca6fbebb3670ffa491b",
+      "size": 9297
+    },
+    {
+      "file": "planner/sage-icons.mjs",
+      "sha": "9ba07d4c4473fdc6c6ff09e2f38ec4e0d0e25d15",
+      "size": 1951
+    },
+    {
+      "file": "planner/store-editor.mjs",
+      "sha": "284f583922624dddd948f88df64b1424984fc2d7",
+      "size": 2271
+    },
+    {
+      "file": "planner/style.css",
+      "sha": "a5016cfbbb053d7234bafb5c3c806e8d7163bf88",
+      "size": 26262
+    },
+    {
+      "file": "privacy.html",
+      "sha": "da0980e6bea256ff5fef5d403d600e774c6152ad",
+      "size": 10901
+    },
+    {
+      "file": "sage-lockup-on-ink.svg",
+      "sha": "250d0fcff16b7b6dcfc9196b30d5ca1a42a6c672",
+      "size": 5468
+    },
+    {
+      "file": "sage-lockup-print.svg",
+      "sha": "18d74801980cb78f689f6eb724b2a6bc98638a87",
+      "size": 5434
+    },
+    {
+      "file": "sage-lockup.svg",
+      "sha": "a65b000931acef7aa1f1742231cb1bb14fcd5b9b",
+      "size": 5434
+    },
+    {
+      "file": "sage-mark.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "support.html",
+      "sha": "aa4dc253e75addc4717b5f5381e38f799cb74db8",
+      "size": 5669
+    }
+  ],
+  "limits": [
+    "Root-font and viewport emulation; no physical device, real screen reader or OS zoom.",
+    "Protected hosted rendering is separate from local browser results and Vercel READY/hash verification.",
+    "Existing full-day fixture, policy, persistence and closed-assignment-removal limits retained.",
+    "No private user attachment inspected, committed or published."
+  ],
+  "evidenceHashes": {
+    "additional-people-chromium-320-text100-expanded.png": "79e4c0046cb807bd00fcbd71487f37e3719822b268774f66395fe8e9a262a977",
+    "additional-people-chromium-320-text200-expanded.png": "50fe15afa61ba167623b62006c623a5c42e15593c31c7ade4cf9625ee380e7c0",
+    "additional-people-chromium-390-text100-expanded.png": "8b83aec18ca139d23570d9870c2766d16d69ece0060e0fd51fa0bebec0d23bce",
+    "additional-people-chromium-390-text200-expanded.png": "03e4caf0c630629ace95cdc07db1814cbe8633fa55143ca932dc2648c2e9a7c6",
+    "additional-people-chromium-results.json": "369fc8d3abc6de63849e70b4d6398a157d7c9f447e2f759b62e081203d3b286e",
+    "additional-people-webkit-320-text100-expanded.png": "aa2ba9532f3660e151632b9933d3e92a3c20fe8751c91bc25bfb1bc689e51c51",
+    "additional-people-webkit-320-text200-expanded.png": "09fb3656ec80b20e9e9396280d29d9de8100245b1ce091f8b45cac7a995b572e",
+    "additional-people-webkit-390-text100-expanded.png": "1637603c0060a3ba04521303bf4f11d5c0b07da279f493cd72a15f93899e0dfc",
+    "additional-people-webkit-390-text200-expanded.png": "ee3672de9b4a54fd87620eda85f0b1619c305603a2f79e99d64fccbf40279b46",
+    "additional-people-webkit-results.json": "06f87e25e8e7d68f811395ea50e97c202f7d5d1c7c7864cc61b6394a2d5f25f5",
+    "calendar-first-chromium-320x640-text100-detail.png": "f0a4a39d2e3c06e9c6995ad53009795a3c8b250669683f241aac174b65bbb857",
+    "calendar-first-chromium-320x640-text100-hero.png": "a132df87c762eaba6abbb0a8ab40ec185aec7ae6ce76b0f0973efdd513d98323",
+    "calendar-first-chromium-320x640-text100-month.png": "5b472f01eb63fead36225bbb03ba30bfe4d55d30f9b8501a6d0f7809a68413f2",
+    "calendar-first-chromium-320x640-text200-detail.png": "50cd0de14c2b83289db856fc2e0781c39af9be2eecf5e2868e872e22ad5aa34d",
+    "calendar-first-chromium-320x640-text200-hero.png": "1dbdb189963bb072b62292c9ad23614e38f8ba5ca09eba6e4b4c5385a468d2f8",
+    "calendar-first-chromium-320x640-text200-month.png": "63a81052649414da62f16da2ae6fe08608b3d5ec1467d4e05e239ff417db82e5",
+    "calendar-first-chromium-390x844-text100-detail.png": "b16085e4eb0302bcde9bbd6186f8f485eeaa0f8deb2b49aa029cd93dc3b562ea",
+    "calendar-first-chromium-390x844-text100-hero.png": "4dd0a9e4aaddd3954fef2077d8f310bb34ba5c011cacfe14043916bd8f3f946e",
+    "calendar-first-chromium-390x844-text100-month.png": "e0ac957f52dbd42120a0e99d236600a3f297d09b7206cf3e19cf7f93adce4417",
+    "calendar-first-chromium-390x844-text200-detail.png": "f67308f02a80f05ab58ae06ef6f39ccafc1507e8aef7a8c925083635f0427f0b",
+    "calendar-first-chromium-390x844-text200-hero.png": "fc5ce0773122d56ac43d024309a098f69588794b6c30332aaeeb0950189d2d64",
+    "calendar-first-chromium-390x844-text200-month.png": "128f599a42ddbf67b73ba933205dc0197ff592068b5662ffe8b5f030ee283093",
+    "calendar-first-chromium-430x932-text100-detail.png": "8f079b1f4387a7b48262442a4cd85b5f273a7db8a4768c20f3b363e1784d3cee",
+    "calendar-first-chromium-430x932-text100-hero.png": "961e8bbb593aad647a6d07a4156da70b15444a2d2fa562508b1adb09f66fc9fe",
+    "calendar-first-chromium-430x932-text100-month.png": "d34b3b133c71a95ca548ce66b45b775bdf924418af7889ddae6ee2e15a6183dd",
+    "calendar-first-chromium-430x932-text200-detail.png": "a4ad9fc661acecd218ab3d7a307658f906adf6d06ec7dde2f76093d960d15570",
+    "calendar-first-chromium-430x932-text200-hero.png": "142b596274b22feb2744fdd9ce6fa0b154e9c294723c878cc71f1779541bae07",
+    "calendar-first-chromium-430x932-text200-month.png": "235f7913f03b95f9574c934cc082eb28361518fa1ca48ff639a2f4eae58b03f5",
+    "calendar-first-chromium-results.json": "331cc252cc2759cdf58ddd2b4e4b05508935cf99f47792ab836eea6992903120",
+    "calendar-first-webkit-320x640-text100-detail.png": "da482b3feeb47327b04f62c1f062458449aba41a77b5297c145261ae3394c312",
+    "calendar-first-webkit-320x640-text100-hero.png": "758abb4f536e132ec8998b360dc0969f4da84515c16723a6fdd48d8d21145a15",
+    "calendar-first-webkit-320x640-text100-month.png": "38f744f6c4c69ace3e46107381ad10002bb6d57ad7806e5b9170d44941309924",
+    "calendar-first-webkit-320x640-text200-detail.png": "0ff8abbf3e734d4bc28e8f63c77bdd7d1eb4b1b8f27ecdcd87ed1fee4b7955c1",
+    "calendar-first-webkit-320x640-text200-hero.png": "a7e3380ea962a1cad08e822f4a71ce4f00da17958e03b1d4931c3a54865aee05",
+    "calendar-first-webkit-320x640-text200-month.png": "c47d0b245ecaf749cd74657d3f906c83205b9a94e24ff88e78dc6f686cf2324d",
+    "calendar-first-webkit-390x844-text100-detail.png": "04c104cc642e6d2e281fe03af57fa49a035f56ca32d6f8f8a23af89cf6939408",
+    "calendar-first-webkit-390x844-text100-hero.png": "eaf41113b9655ec92506842cedd18458e7c8efc41fe3b2a56f6ca05c566153ab",
+    "calendar-first-webkit-390x844-text100-month.png": "c5ab904b9f365f97206bd4a5accb5e81826184127aab6d8e73569d4c3b146f64",
+    "calendar-first-webkit-390x844-text200-detail.png": "6d6ba94eb9ed4b1489e94d2d437312c6243c6e8ee9e006c7fabf678bf3f34dcb",
+    "calendar-first-webkit-390x844-text200-hero.png": "2393d604679678482ea582efdc2b70e3a2965b2ea1dcc6f4705498a9d81e51f7",
+    "calendar-first-webkit-390x844-text200-month.png": "0f18e266fac7ee96065c83392a3d72614d2c09b93a9b1756a544a5925fffac3c",
+    "calendar-first-webkit-430x932-text100-detail.png": "747cad78d4b9dad9c398f3857e38bfc6da299ca4f96c4b25119aea5eb21b442d",
+    "calendar-first-webkit-430x932-text100-hero.png": "eb99f178286dda5672e16c9b8cbdfa3f46732ab48f9554d66c28fc2cc15b38a7",
+    "calendar-first-webkit-430x932-text100-month.png": "28b06746568effdaad47cdc1f65717bc6aed6df845d847fe7eb7edbf0e3ef63c",
+    "calendar-first-webkit-430x932-text200-detail.png": "f4af3f4e813591b15bbe539cde07be50486663a64acfa337d2907ea4bb612797",
+    "calendar-first-webkit-430x932-text200-hero.png": "b0314b0b18e50b2083c64b2f9ba58fef297629ed6a3700164b9cf79b1a9b9eb6",
+    "calendar-first-webkit-430x932-text200-month.png": "b613a4a62e5ab5ee3b9c2310e39faac11229d7fd486aab148d46ea33a27b1187",
+    "calendar-first-webkit-results.json": "644956a506426e4ca6744dd4a7dd7990a10e8e474bcd26c62a30d5afe0dc55c6",
+    "desktop-calendar-initial.png": "cf172942d354816efa8a7f3bae0a340962e097f94797de225ce5a5b5c2467fdf",
+    "hero-bottom-chromium-390-text100-reduce-collapsed.png": "c14674d53db7e7c5cda04fc6591d0392fae43c4e7c66038e6f24fd464903620a",
+    "hero-bottom-chromium-390-text100-reduce-expanded.png": "8ba3a67f0625d52379f73418d7f4e7c8e90c4bf39359693b38664236eed99123",
+    "hero-bottom-chromium-390-text200-reduce-collapsed.png": "577653860f1441c9258c3df209fd0579ab7ebb63f7529450752b1cc3e92cc207",
+    "hero-bottom-chromium-390-text200-reduce-expanded.png": "b70ac152fe9be38c8dba6e2414244f6f1c7e20e8f4bcdddd63b3e5dc4794aea2",
+    "hero-bottom-chromium-results.json": "29a3119d92cedee1376de7d3d02da6eec9228a8222911f432c9e8b4dd70160dc",
+    "hero-bottom-webkit-390-text100-reduce-collapsed.png": "ed4d03a0f67732173e9e9e3c17d28433f95319d588002c8a8bbb38715104fc3b",
+    "hero-bottom-webkit-390-text100-reduce-expanded.png": "200b2b1a27d788f53dd14f9ba1a20adab2396bddfa8eceb6f4805e4b333aa709",
+    "hero-bottom-webkit-390-text200-reduce-collapsed.png": "4d9213eee2bcca03510edde66917ef54d09b36cf4ad6f263c6c93cc0f72ef049",
+    "hero-bottom-webkit-390-text200-reduce-expanded.png": "cb16df7fc152b53c09cdd59cebffa3414aba4d55ba299964aa73fd8291262806",
+    "hero-bottom-webkit-results.json": "aa6937a99d9b3efd6192287cf20ce1dbf66af3e9cc40891ebd72998ac5e4cd31",
+    "monthly-chromium-1440-text100-entry.png": "90dd8496876c48f5ba2d99bc2954d23f5c93544378434ec6f9b2359a52a9adf5",
+    "monthly-chromium-1440-text200-entry.png": "5dc194a00e3a7ad6d34ff43d68e92234549ecfcc8b68d617abfdd3621d2028ce",
+    "monthly-chromium-results.json": "c50a52bcdc1ad68bcabe7556afc4725988fcc4c68aab0584c08fb5ece7421f4f",
+    "monthly-webkit-1440-text100-entry.png": "2f1be1884d23f4da3cf50d48fcbd8219d32e8334f9562d7c60fc07b7549043c9",
+    "monthly-webkit-1440-text200-entry.png": "a11616fd482c05466a98b106272b984170c82155ab0b38e0d919184ae4c14345",
+    "monthly-webkit-results.json": "fe1bde4f1a72519bdcb72e9896fac32666b3fd3ab4a57825e15aa4df8a812e9b"
+  }
+}

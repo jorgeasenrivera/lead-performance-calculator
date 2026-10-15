@@ -38,3 +38,10 @@ test('an incomplete team is not a made-up store coverage minimum',()=>{
  const s=assignmentSummary(people,teamsFor(people,'team'),{on:['p0','p1'],off:[]},{...row,issues:[]});
  assert.equal(s.teams[0].state,'Partly on');assert.equal(s.covering,2);assert.equal(s.status,'Scheduled');
 });
+for (const count of [0,1,3,4]) test(`additional names preserve unique states and exclude teams (${count} people)`,()=>{
+ const named=people.map((p,i)=>({...p,name:`Person ${i}`}));named.push(named[4]);
+ const s=assignmentSummary(named,[{name:'A',ids:people.slice(0,6-count).map(p=>p.id)},{name:'Overlap',ids:['p0']}],{on:['p0','p1','p2','p4','p4'],off:['p3']},{...row,eligibleIds:['p0','p1','p4']});
+ assert.equal(s.additionalPeople.length,count);assert.equal(new Set(s.additionalPeople.map(p=>p.id)).size,count);
+ assert.deepEqual(s.additionalPeople.map(p=>p.state),['Conflict','Off','On','Unknown'].slice(4-count));
+ assert.ok(s.additionalPeople.every(p=>p.name===`Person ${p.id.slice(1)}`));
+});

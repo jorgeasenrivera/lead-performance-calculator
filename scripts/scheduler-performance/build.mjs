@@ -20,17 +20,18 @@ export function patchManager(source) {
     const [today,setToday]=useState(previewStoreToday);
     useEffect(()=>{const timer=setInterval(()=>setToday(previewStoreToday()),1000);return()=>clearInterval(timer);},[]);
     const month=today.slice(0,7),cells=previewCalendarCells(month);
-    const mobile=className.includes('bp-r1');
+    const mobile=className.includes('bp-r1'),[expanded,setExpanded]=useState(()=>previewHeroState.expanded);
+    useEffect(()=>{if(mobile&&expanded){const frame=requestAnimationFrame(()=>document.querySelector('.sp-mobile-calendar')?.scrollIntoView({block:'nearest',behavior:'instant'}));return()=>cancelAnimationFrame(frame);}},[mobile,expanded]);
     const heat=previewSalesHeat(previewCalendarStore,month,today),byDay=new Map(heat.map(r=>[r.day,r]));
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
     const bestText=heat.some(r=>r.best)?'Best'+(heat.filter(r=>r.best).length>1?' (tied)':'')+': '+heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(', '):'No recorded best day';
     const openCalendar=e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}));
-    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={mobile?undefined:title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={openCalendar}>
-      <strong className="sp-entry-month">{title}</strong>
+    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={openCalendar}>
+      {!mobile && <strong className="sp-entry-month">{title}</strong>}
       <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':''))} title={day?(byDay.get(day).state==='known'?byDay.get(day).units+' recorded sales'+(byDay.get(day).best?' · '+byDay.get(day).bestLabel:''):'Sales: '+byDay.get(day).state):undefined}>{day?Number(day.slice(-2)):''}</i>)}</span>
       <span className="sp-heat-note">{bestText}</span>
     </button>;
-    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-entry sp-compact-entry" onClick={openCalendar}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong><span>Open calendar</span></button></div>:calendar;
+    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-toggle sp-compact-entry" aria-label={title+', calendar'} aria-expanded={expanded} aria-controls="sp-mobile-calendar-panel" onClick={()=>setExpanded(value=>{previewHeroState.expanded=!value;return !value;})}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong></button><div id="sp-mobile-calendar-panel" hidden={!expanded}>{calendar}</div></div>:calendar;
   }
   function SignalSchedule({children}) {
     const signal=useSignal();
@@ -64,8 +65,10 @@ export function patchManager(source) {
     throw Error("Phone calendar boundary not found");
   source =
     source.slice(0, phoneBegin) +
-    '<PreviewScheduleEntry className="bp-r1"/>' +
     source.slice(phoneEnd + "</button>".length);
+  const heroBottom = '        </div>\n      </div>\n\n      {canSetGoal && !goalMonth.set';
+  if (source.split(heroBottom).length !== 2) throw Error("Phone hero bottom boundary changed");
+  source = source.replace(heroBottom, '        </div>\n        <PreviewScheduleEntry className="bp-r1"/>\n      </div>\n\n      {canSetGoal && !goalMonth.set');
   const onoffBegin = source.indexOf(
     '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>',
   );
