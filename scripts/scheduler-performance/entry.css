@@ -299,7 +299,7 @@ html.manager-signal .sp-calendar-entry:focus-visible {
   html.manager-signal .sp-performance .s2-chip-state .sp-mini-grid { flex: 1; }
 }
 /* The hero calendar is part of Sage's forest surface; heat uses recorded sales only. */
-html.manager-signal .sp-calendar-entry { padding:0; border:0; border-radius:4px; background:transparent; color:#fffdf4; gap:10px; }
+html.manager-signal .sp-calendar-entry { padding:0; border:0; border-radius:4px; box-shadow:0 0 0 4px #234939, 0 0 0 5px #bfd0b473; background:transparent; color:#fffdf4; gap:10px; }
 html.manager-signal .sp-calendar-entry:hover { background:#193b2e; }
 html.manager-signal .sp-mini-grid { gap:6px; }
 html.manager-signal .sp-mini-grid i { min-height:1.75rem; border:1px solid #bfd0b473; background:#183c2f; color:#fffdf4; position:relative; }

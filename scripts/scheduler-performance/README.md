@@ -108,3 +108,9 @@ Run `node scripts/scheduler-performance/probe-polish.mjs` with the browser envir
 The sensible sequence is this bounded visual/QA pass, then integration of Claude’s pure model/contracts/fixtures/tests, then clearly labeled fictional audit/access UI. No new team/interval/holiday-hours algorithm is duplicated in this branch. No production integration, report automation, schema or permission work is included. Remaining browser/device limits from earlier sections still apply.
 
 Final checks for this pass: 952 tests and both builds pass. Both six-case monthly matrices pass. Twelve additional axe/name/contrast/date-layout cases plus three real 32px Chromium default-font cases pass. F1/F2 were reproduced on the previous head; the same 32px profile proves the old 16px root suppression and the corrected 32px result. Both generated document policies were checked before scripts. See the new manifest for source/evidence hashes. Final-head CI and publication details are recorded on PR #478.
+
+## Hero mini-card correction
+
+From `2ebfe568e25d94985f967a24958962738bdf3f61`, restore a subtle Sage enclosing frame using exterior shadows so the calendar keeps its existing content width. Remove the visible recorded-sales explanation and state legend from the hero. Month/year, dates, heat colors, best-day value, accessible name and focus outline remain. The monthly planner is unchanged. No pending model package was integrated.
+
+A padded border initially clipped dates in Chromium at 320px/200%; the exterior frame passes all 12 Chromium/WebKit monthly cases with the existing assertions unchanged. All 952 tests and production/isolated builds passed. Evidence is in `evidence/mini-card/`. The supplied Library image could not be materialized because its download returned 403; this correction follows the explicit text instruction, not an inspection of that image. No private attachment is included.
