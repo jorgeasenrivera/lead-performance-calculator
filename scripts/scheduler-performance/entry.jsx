@@ -8,6 +8,7 @@ import {
 } from "../../src/Manager.jsx";
 import {
   DEFAULT_TIERS,
+  PixIcon,
   usePhoneLayout,
 } from "../../src/LeadPerformanceCalculator.jsx";
 import seed from "./fixture.json";
@@ -165,7 +166,7 @@ function Preview() {
             onClick={close}
             aria-label="Return to Performance"
           >
-            ← Performance
+            <PixIcon glyph="arrowleft" size={16} /> Performance
           </button>
           <span id="sp-title">
             Schedule <small>Fictional planning preview</small>

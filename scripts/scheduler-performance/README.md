@@ -76,3 +76,35 @@ The list now stacks date and details when its actual container is at most 20rem 
 946 unit tests, normal/isolated builds, both full monthly browser matrices and the focused readability matrix pass. New evidence is retained in `evidence/date-readability/`, including October 17 and the Today marker at desktop, 390px, 320px and 100%/200% text. Existing physical-device, screen-reader, OS-zoom and hosted-browser limitations still apply.
 
 The standard screenshot job in run 38771827959 initially reported page/browser loss at the largest-text sign-in wait after 10 captures, with no OOM kill. After inspecting the stage, logs and unchanged production source, one retry of the failed job passed without code or test changes. That supports a transient failure; its underlying cause remains unknown. Final-commit CI status is reported on PR #478.
+
+
+## Sage heatmap and QA corrections
+
+This pass starts from `c6429f66f0c90fdd21b19fb848fc2ae505582e1b`. The hero calendar now sits on the existing forest surface with wider day gaps. Both calendars shade **recorded sales only** from Sage forest green to its brighter mint. Each selected store/month uses five levels between zero and its largest known observation. A text label and trophy mark every tied best day, including honest ties when all known values are zero. Missing, recorded Closed, future and known zero stay distinct through labels, borders/markers and color. No planning range enters the heatmap. Date, staffing and sales numbers are unchanged.
+
+The planner uses Signal’s warm paper, forest controls, mono labels and exact PIX glyph patterns from `src/LeadPerformanceCalculator.jsx`, with a source-equality test. Below-target counts gain a warning label without changing scheduling calculations. Sheets use a 160ms opacity/3px entrance; reduced motion removes it. Inputs and actions stay enabled immediately, initial focus remains stable, and applied edits get live change feedback.
+
+### Reproduced and repaired findings
+
+- **F1:** Set October 15 minimum to three, reopen the default October 1 sheet and set October 23 Open. The old cell stayed Closed while Existing entries said Open. Exceptions now update the rule actually governing their date. Existing entries and status selection use effective exceptions across versions. The October 15 minimum remains three; earlier dates retain two. Unit and Chromium/WebKit UI regressions cover this sequence.
+- **F2:** The old day aria-label replaced visible staffing, sales and issues, producing 31 axe label-content-name-mismatch violations. Day buttons now derive names from their full visible contents, with the month/year and opening instruction supplied as a description. The browser probe verifies each visible name and runs axe naming/label/contrast checks.
+- **F3:** `:root` now uses 100% rather than fixed 16px. A Chromium profile with a real 32px default font keeps the planner root and Month input at 32px without an injected style. The same profile reproduces the old stylesheet’s forced 16px behavior. Both engines also receive the independent 100%/200% CSS scaling matrix.
+- **CSP hardening:** Both built document heads are finalized with their existing policies before scripts. Head attributes, uppercase and multiline head tags are accepted. Missing, duplicate, reversed or malformed heads and unexpected CSPs reject the build. `connect-src 'none'` is unchanged; no access/protection setting changes.
+
+Run `node scripts/scheduler-performance/probe-polish.mjs` with the browser environment above and axe-core 4.10.3 via `AXE_PATH` (default `/workspace/qa-tools/node_modules/axe-core/axe.min.js`). `BASELINE=1` reproduces F1/F2 from the prior head. Results, screenshots, source/evidence hashes and the baseline reproduction are in `evidence/sage-heatmap/`. Standard CI still does not run these separate scheduler probes.
+
+### Boundary for the next model integration
+
+| Requirement | Current preview | Next contract/integration |
+| --- | --- | --- |
+| Individual schedules and overrides | Existing in-memory individual assignments, month-local settings, visible warnings | Structured override reasons and warning classifications |
+| Low coverage | Existing assigned/needed counts plus a visible warning label | Separate advisory recommendation warnings from availability/hour-cap constraints |
+| Uncovered intervals | Full store-hour shifts only; counts do not prove interval coverage | Claude’s interval-aware model and precise uncovered spans |
+| Holiday policy | Store/month-specific exact-date Open, Closed and Unknown exceptions; no automatic closure by holiday name | Holiday hours, partial/split schedules and policy precedence |
+| Team and mixed schedules | Not represented | Claude’s team membership/assignment contract; unique-person resolution and deduplication |
+| Sales-informed recommendations | Entered minimum plus optional cars-per-person/full-shift capacity; range of up to eight prior known same-weekday observations, minimum four | Explainable comparable-day samples, freshness and adjustable assumptions with advisory-only classification |
+| Audit and edit access | No actor history or access enforcement | Later fictional audit/access flows, based on the separate contract; no real accounts, grants, storage or permissions here |
+
+The sensible sequence is this bounded visual/QA pass, then integration of Claude’s pure model/contracts/fixtures/tests, then clearly labeled fictional audit/access UI. No new team/interval/holiday-hours algorithm is duplicated in this branch. No production integration, report automation, schema or permission work is included. Remaining browser/device limits from earlier sections still apply.
+
+Final checks for this pass: 952 tests and both builds pass. Both six-case monthly matrices pass. Twelve additional axe/name/contrast/date-layout cases plus three real 32px Chromium default-font cases pass. F1/F2 were reproduced on the previous head; the same 32px profile proves the old 16px root suppression and the corrected 32px result. Both generated document policies were checked before scripts. See the new manifest for source/evidence hashes. Final-head CI and publication details are recorded on PR #478.

@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
+import { finalizeHtml, MAIN_POLICY, PLANNER_POLICY } from "./html-finalize.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
   "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
@@ -15,10 +16,14 @@ export function patchManager(source) {
   if (begin < 0 || end < 0) throw Error("Schedule boundary not found");
   const desktop = `function PreviewScheduleEntry({className=""}) {
     const today=previewStoreToday(),month=today.slice(0,7),cells=previewCalendarCells(month);
+    const heat=previewSalesHeat(previewCalendarStore,month,today),byDay=new Map(heat.map(r=>[r.day,r]));
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
-    return <button type="button" className={className+' sp-plan-entry sp-calendar-entry'} aria-label={"Open Schedule for "+title+", staffing and daily sales"} onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>
+    return <button type="button" className={className+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>
       <strong className="sp-entry-month">{title}</strong>
-      <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':day===today?'today':''}>{day?Number(day.slice(-2)):''}</i>)}</span>
+      <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':''))} title={day?(byDay.get(day).state==='known'?byDay.get(day).units+' recorded sales'+(byDay.get(day).best?' · '+byDay.get(day).bestLabel:''):'Sales: '+byDay.get(day).state):undefined}>{day?Number(day.slice(-2)):''}</i>)}</span>
+      <span className="sp-heat-note">Recorded sales · dark to light</span>
+      <span className="sp-heat-key"><span>○ Missing</span><span>× Closed</span><span>· Future</span></span>
+      <span className="sp-heat-note">{heat.some(r=>r.best)?'Best'+(heat.filter(r=>r.best).length>1?' (tied)':'')+': '+heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(', '):'No recorded best day'}</span>
     </button>;
   }
   function SignalSchedule({children}) {
@@ -64,8 +69,8 @@ export function patchManager(source) {
   source =
     source.slice(0, onoffBegin) + source.slice(onoffEnd + "</button>".length);
   return (
-    'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells} from "/scripts/scheduler-performance/month-model.mjs";\n' +
-    source
+    'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells,salesHeat as previewSalesHeat} from "/scripts/scheduler-performance/month-model.mjs";\n' +
+    'import {fixtures as previewFixtures} from "/scripts/scheduler-proposal/model.mjs"; const previewCalendarStore=previewFixtures()[0];\n' + source
   );
 }
 export async function buildPreview() {
@@ -103,9 +108,13 @@ export async function buildPreview() {
   });
   const planner = outDir + "/planner";
   await mkdir(planner, { recursive: true });
-  for (const name of ["model.mjs", "store-editor.mjs"])
+  for (const name of ["model.mjs"])
     await cp("scripts/scheduler-proposal/" + name, planner + "/" + name);
+  const editor = (await readFile("scripts/scheduler-performance/store-editor.mjs", "utf8"))
+    .replace("../scheduler-proposal/model.mjs", "./model.mjs");
+  await writeFile(planner + "/store-editor.mjs", editor);
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
+  await cp("scripts/scheduler-performance/sage-icons.mjs", planner + "/sage-icons.mjs");
   let monthlyModel = await readFile(
     "scripts/scheduler-performance/month-model.mjs",
     "utf8",
@@ -124,10 +133,9 @@ export async function buildPreview() {
   html = html
     .replace(/, maximum-scale=1.0, user-scalable=no/, "")
     .replace(/<script>([\s\S]*?)<\/script>/g, "");
-  html = html.replace(
-    "<head>",
-    "<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; connect-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'\">",
-  );
+  html = finalizeHtml(html, MAIN_POLICY);
+  const plannerHtml = await readFile(planner + "/index.html", "utf8");
+  await writeFile(planner + "/index.html", finalizeHtml(plannerHtml, PLANNER_POLICY));
   await writeFile(outDir + "/index.html", html);
   console.log(
     "Isolated Performance preview built; no production source edited.",

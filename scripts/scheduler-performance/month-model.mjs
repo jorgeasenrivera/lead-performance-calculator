@@ -180,7 +180,9 @@ export function monthSales(store, month, today) {
     ...recordedDay(store, day, today),
   }));
   const known = days.filter((r) => r.state === "known");
+  const maximum = known.length ? Math.max(...known.map(r => r.units)) : null;
   return {
+    bestDays: known.filter(r => r.units === maximum),
     days,
     total: known.length ? known.reduce((n, r) => n + r.units, 0) : null,
     known: known.length,
@@ -211,4 +213,17 @@ export function calendarCells(month) {
   const cells = [...Array(leading).fill(null), ...days];
   while (cells.length % 7) cells.push(null);
   return cells;
+}
+
+// A visual scale of observed sales only. Planning estimates never enter this path.
+export function salesHeat(store, month, today) {
+  const summary = monthSales(store, month, today);
+  const maximum = summary.best?.units ?? null;
+  const tied = summary.bestDays.length > 1;
+  return summary.days.map(row => ({
+    ...row,
+    level: row.state === "known" ? (maximum > 0 ? Math.round(row.units / maximum * 4) : 0) : null,
+    best: row.state === "known" && row.units === maximum,
+    bestLabel: row.state === "known" && row.units === maximum ? (tied ? "Best recorded · tied" : "Best recorded") : "",
+  }));
 }

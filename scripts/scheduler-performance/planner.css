@@ -12,7 +12,7 @@
 }
 :root {
   font-family: Geist, system-ui, sans-serif;
-  font-size: 16px;
+  font-size: 100%;
   color: #234939;
   background: #f3f2e9;
   --paper: #fffdf4;
@@ -689,3 +689,83 @@ main:has(#sheet:not([hidden])) .month-glance {
     gap: 8px;
   }
 }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Sage Signal: forest instruments, warm paper, mono labels and the shared PIX marks. */
+:root { --paper:#fffef8; --line:#cdd5c8; --muted:#4c5942; color:#234939; background:#f5f5ee; }
+main { padding:20px 24px 32px; }
+.sage-icon { width:1em; height:1em; flex:none; display:inline-block; vertical-align:-.1em; }
+button .sage-icon { margin-inline-end:.5em; }
+.month-navigation button .sage-icon { margin:0; }
+button, input, select { border-radius:7px; border-color:#aab9a5; background:#fffef8; }
+button { font-weight:600; }
+button:hover { background:#e4eedc; filter:none; }
+button.primary { background:#234939; border-color:#234939; color:#fffdf4; }
+button.primary:hover { background:#183c2f; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline:3px solid #267d62; outline-offset:3px; }
+label { font-size:.8125rem; color:#315d43; }
+.toolbar { align-items:end; gap:12px; margin:18px 0 22px; padding-bottom:20px; border-bottom:1px solid var(--line); }
+.toolbar label { gap:8px; }
+.toolbar button { min-height:46px; background:#e4eedc; }
+.month-navigation { margin:20px 0; gap:16px; }
+.month-navigation h1 { letter-spacing:-.035em; font-size:1.75rem; }
+.month-navigation button { background:#234939; color:#fffdf4; border-color:#3c5f49; }
+.month-summary { background:#234939; color:#fffdf4; border:1px solid #3c5f49; border-radius:9px; padding:16px 18px; gap:14px; }
+.month-summary small { color:#fffdf4; }
+.month-summary strong { font-family:"Geist Mono",monospace; }
+.heat-legend { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin:18px 0; font-size:.8125rem; }
+.heat-legend > span:first-child { font-weight:600; }
+.heat-legend > small { flex-basis:100%; }
+.heat-scale { display:flex; align-items:center; gap:5px; }
+.heat-scale i { display:block; width:1rem; height:1rem; border-radius:2px; }
+.month-days { gap:12px; }
+.weekday-heading { padding:6px 10px; font-weight:600; letter-spacing:.04em; }
+.month-day { border-radius:8px; gap:9px; padding:12px; min-height:160px; border:1px solid #bac8b2; }
+.calendar-list .month-day { min-height:88px; gap:10px 18px; }
+.month-day.is-today { padding:11px; border:2px solid #9e7940; }
+.month-day .day-date { font-family:"Geist Mono",monospace; font-weight:600; }
+.month-day :is(small,.day-weekday,.day-sales,.day-issue) { color:inherit; }
+.month-day .day-issue { font-weight:600; line-height:1.5; }
+.month-day .day-issue .sage-icon { margin-inline-end:.4em; }
+.best-day { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; padding:4px 6px; background:#e4c98d; color:#234939; border-radius:4px; font:600 .6875rem/1.5 "Geist Mono",monospace; }
+.calendar-list .best-day { grid-column:2; justify-self:start; }
+.best-day .sage-icon { margin:0; }
+.month-day.sales-unknown { background:#fffef8; border:1px dashed #9e7940; color:#234939; }
+.month-day.sales-closed { background:#e9e9e1; border:1px solid #8d9988; color:#234939; }
+.month-day.sales-future { background:#fffef8; border:1px solid #bac8b2; color:#234939; }
+.heat-0, .month-day.heat-0 { background:#183c2f; color:#fffdf4; border-color:#3c5f49; }
+.heat-1, .month-day.heat-1 { background:#234939; color:#fffdf4; border-color:#3c5f49; }
+.heat-2, .month-day.heat-2 { background:#3c5f49; color:#fffdf4; border-color:#567d61; }
+.heat-3, .month-day.heat-3 { background:#567d61; color:#fffdf4; border-color:#567d61; }
+.heat-4, .month-day.heat-4 { background:#8fd8af; color:#173d2b; border-color:#567d61; }
+.month-day:focus-visible { outline-color:#9e7940; }
+.month-day:hover { box-shadow:0 0 0 2px #9e7940; }
+.panel { background:#fffef8; border-color:var(--line); border-radius:9px; padding:20px; }
+.panel h2 { display:flex; align-items:center; gap:10px; color:#234939; }
+.panel label { color:#234939; }
+.recorded-day { background:#e4eedc; }
+.badge { background:#e4eedc; color:#234939; border-color:#aab9a5; }
+.notice { font:500 .75rem/1.5 "Geist Mono",monospace; color:#4c5942; }
+.month-glance summary, .review summary { color:#234939; }
+@media(max-width:600px) {
+  main { padding:16px 14px 28px; }
+  .toolbar { gap:10px; }
+  .month-navigation h1 { font-size:1.375rem; }
+  .month-summary { padding:14px; }
+  .month-days { gap:14px; }
+}
+@container (max-width:20rem) {
+  .calendar-list .month-day { gap:10px; }
+}
+button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; }
+#sheet:not([hidden]) { animation:sheet-arrive 160ms ease-out both; }
+@keyframes sheet-arrive { from { opacity:.65; transform:translateY(3px); } to { opacity:1; transform:none; } }
+#message:not(:empty) { border-left:3px solid #567d61; padding:8px 12px; background:#e4eedc; color:#234939; }
+@media(prefers-reduced-motion:reduce) { button { transition:none; } #sheet:not([hidden]) { animation:none; } }
+.toolbar button { display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:1 1 max-content; }
+.toolbar button .sage-icon { margin:0; }
+.heat-scale { max-width:100%; flex-wrap:wrap; gap:4px; }
+.heat-scale i { width:.625rem; height:.75rem; }
+.coverage-note { display:inline-flex; align-items:center; gap:6px; font:600 .6875rem/1.5 "Geist Mono",monospace; color:inherit; }
+.calendar-list .coverage-note { grid-column:2; }
+.month-day .coverage-low { text-decoration:underline; text-underline-offset:3px; }

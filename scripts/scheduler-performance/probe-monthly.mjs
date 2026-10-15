@@ -14,7 +14,7 @@ const browser = await { chromium, webkit }[engine].launch(
 );
 const out =
   process.env.EVIDENCE_DIR ||
-  "scripts/scheduler-performance/evidence/date-readability";
+  "scripts/scheduler-performance/evidence/sage-heatmap";
 mkdirSync(out, { recursive: true });
 const results = [];
 try {
@@ -42,8 +42,8 @@ try {
         await page.getByRole("button", { name: "Close the round-up" }).click();
       const entry = page.locator(".sp-plan-entry");
       assert.match(await entry.innerText(), /October 2026/);
-      assert.doesNotMatch(await entry.innerText(), /Schedule|Staffing|sales/);
-      assert.match(await entry.getAttribute("aria-label"), /Open Schedule for October 2026, staffing and daily sales/);
+      assert.doesNotMatch(await entry.innerText(), /Schedule|Staffing & sales/);
+      assert.match(await entry.getAttribute("aria-label"), /October 2026, open Schedule for staffing and daily sales/);
       assert.equal(await page.locator(".s2-lampbtn").count(), 0);
       const dateBefore = await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize));
       const entryBefore = await entry.evaluate((e) =>
