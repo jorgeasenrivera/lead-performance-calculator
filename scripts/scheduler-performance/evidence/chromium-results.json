@@ -1,0 +1,144 @@
+{
+  "engine": "chromium",
+  "version": "151.0.7922.173",
+  "results": [
+    {
+      "width": 1440,
+      "scale": 1,
+      "actualFonts": {
+        "before": [
+          15,
+          16,
+          16
+        ],
+        "after": [
+          15,
+          16,
+          16
+        ],
+        "entry": [
+          15,
+          15
+        ]
+      },
+      "errors": [],
+      "external": [],
+      "status": "passed"
+    },
+    {
+      "width": 1440,
+      "scale": 2,
+      "actualFonts": {
+        "before": [
+          15,
+          16,
+          16
+        ],
+        "after": [
+          30,
+          32,
+          32
+        ],
+        "entry": [
+          15,
+          30
+        ]
+      },
+      "errors": [],
+      "external": [],
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "actualFonts": {
+        "before": [
+          15,
+          16,
+          16
+        ],
+        "after": [
+          15,
+          16,
+          16
+        ],
+        "entry": [
+          15,
+          15
+        ]
+      },
+      "errors": [],
+      "external": [],
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "scale": 2,
+      "actualFonts": {
+        "before": [
+          15,
+          16,
+          16
+        ],
+        "after": [
+          30,
+          32,
+          32
+        ],
+        "entry": [
+          15,
+          30
+        ]
+      },
+      "errors": [],
+      "external": [],
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "actualFonts": {
+        "before": [
+          15,
+          16,
+          16
+        ],
+        "after": [
+          15,
+          16,
+          16
+        ],
+        "entry": [
+          15,
+          15
+        ]
+      },
+      "errors": [],
+      "external": [],
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "scale": 2,
+      "actualFonts": {
+        "before": [
+          15,
+          16,
+          16
+        ],
+        "after": [
+          30,
+          32,
+          32
+        ],
+        "entry": [
+          15,
+          30
+        ]
+      },
+      "errors": [],
+      "external": [],
+      "status": "passed"
+    }
+  ]
+}

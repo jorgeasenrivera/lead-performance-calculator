@@ -1,0 +1,190 @@
+.sp-preview-note {
+  box-sizing: border-box;
+  max-width: 1320px;
+  margin: 12px auto;
+  padding: 10px 20px;
+  color: #234939;
+  font: 600 0.875rem/1.4 var(--font-ui);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sp-preview-note span {
+  font-weight: 400;
+}
+.sp-performance {
+  padding: 12px 20px !important;
+}
+html.manager-signal .sp-plan-entry {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #b6c6a4;
+  border-radius: 8px;
+  background: #e8eedf;
+  color: #173d2b;
+  font: 600 0.9375rem/1.35 var(--font-ui);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  transition: background-color 140ms ease-out;
+  transform: none !important;
+}
+html.manager-signal .sp-plan-entry small {
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+html.manager-signal .sp-plan-entry:hover {
+  background: #d5e1c7;
+}
+html.manager-signal .sp-plan-entry:focus-visible {
+  outline: 3px solid #e4c98d;
+  outline-offset: 3px;
+}
+html.manager-signal .sp-phone-schedule {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  gap: 4px;
+}
+.sp-today {
+  color: inherit;
+  border: 0;
+  background: none;
+  font: inherit;
+  min-height: 44px;
+  text-align: right;
+}
+.sp-phone-schedule .sp-plan-entry {
+  font-size: 0.875rem;
+  align-items: center;
+  padding: 8px;
+  margin: 0;
+}
+.sp-dialog {
+  box-sizing: border-box;
+  width: min(1200px, calc(100vw - 32px));
+  max-width: none;
+  height: calc(100dvh - 32px);
+  max-height: none;
+  border: 1px solid #b7c5ad;
+  border-radius: 16px;
+  padding: 0;
+  background: #f3f2e9;
+  color: #234939;
+  overflow: hidden;
+}
+.sp-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.sp-dialog::backdrop {
+  background: #102a24b3;
+}
+.sp-dialog-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #173d2b;
+  color: #fffdf4;
+  font: 600 1rem/1.3 var(--font-ui);
+}
+.sp-dialog-bar button {
+  flex-shrink: 0;
+  background: #fffdf4;
+  color: #234939;
+  border: 1px solid #cbd3c5;
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  font: 600 0.9375rem/1.3 var(--font-ui);
+  cursor: pointer;
+}
+.sp-dialog-bar button:focus-visible {
+  outline: 3px solid #e4c98d;
+  outline-offset: 3px;
+}
+.sp-dialog-bar span {
+  min-width: 0;
+  text-align: right;
+}
+.sp-dialog-bar small {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+.sp-dialog iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  min-width: 0;
+}
+.sp-dialog-bar,
+.sp-dialog-bar * {
+  box-sizing: border-box;
+}
+@media (max-width: 700px) {
+  .sp-dialog {
+    width: 100vw;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+  }
+  .sp-dialog-bar {
+    padding: 10px 12px;
+  }
+  .sp-dialog-bar small {
+    display: none;
+  }
+  .sp-performance {
+    padding: 0 12px !important;
+  }
+  .sp-preview-note {
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+  }
+}
+/* Use the available viewport width, including classic scrollbar layouts. */
+.sp-dialog {
+  width: min(1200px, calc(100% - 32px));
+}
+.sp-dialog-bar {
+  flex-wrap: wrap;
+}
+.sp-dialog-bar span {
+  overflow-wrap: anywhere;
+}
+html.manager-signal .sp-phone-schedule .sp-today {
+  min-height: 44px;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+html.manager-signal .sp-phone-schedule .sp-plan-entry {
+  margin-top: 0;
+  align-items: center;
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .sp-dialog {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.manager-signal .sp-plan-entry {
+    transition: none;
+  }
+}
