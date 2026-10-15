@@ -13,7 +13,7 @@ const browser = await { chromium, webkit }[engine].launch(
 );
 const out =
   process.env.EVIDENCE_DIR ||
-  "scripts/scheduler-performance/evidence/calendar-refinement";
+  "scripts/scheduler-performance/evidence/hero-calendar";
 mkdirSync(out, { recursive: true });
 const results = [];
 try {
@@ -40,7 +40,11 @@ try {
       if (width > 700)
         await page.getByRole("button", { name: "Close the round-up" }).click();
       const entry = page.locator(".sp-plan-entry");
-      assert.match(await entry.innerText(), /Schedule/);
+      assert.match(await entry.innerText(), /October 2026/);
+      assert.doesNotMatch(await entry.innerText(), /Schedule|Staffing|sales/);
+      assert.match(await entry.getAttribute("aria-label"), /Open Schedule for October 2026, staffing and daily sales/);
+      assert.equal(await page.locator(".s2-lampbtn").count(), 0);
+      const dateBefore = await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize));
       const entryBefore = await entry.evaluate((e) =>
         parseFloat(getComputedStyle(e).fontSize),
       );
@@ -52,6 +56,10 @@ try {
         await entry.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)),
         entryBefore * scale,
       );
+      assert.equal(await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize)), dateBefore * scale);
+      await page.keyboard.press("Tab");
+      await entry.focus();
+      assert.equal(await entry.evaluate(e => getComputedStyle(e).outlineStyle), "solid");
       assert.ok((await entry.boundingBox()).height >= 44);
       assert.ok(
         await entry.evaluate((e) => {
@@ -71,6 +79,7 @@ try {
           "Schedule must not cover the Performance units",
         );
       }
+      assert.ok(await entry.locator("i:not(.blank)").evaluateAll(es => es.every(e => e.scrollWidth <= e.clientWidth && e.scrollHeight <= e.clientHeight)), "dates fit without clipping");
       await page.screenshot({ path: `${out}/${key}-entry.png` });
       assert.equal(await entry.count(), 1, "one unified Schedule entry");
       assert.equal(

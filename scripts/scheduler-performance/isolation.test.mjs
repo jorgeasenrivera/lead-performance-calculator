@@ -13,6 +13,10 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   assert.ok(!patched.includes('onClick={() => setPop({ k: "onoff" })}'));
   assert.ok(!patched.includes('<BloopWin cls="dn s2-salewin">'));
   assert.ok(patched.includes("sp-mini-grid"));
+  assert.ok(!patched.includes('<button className={"s2-imp s2-lampbtn"'));
+  for (const route of ['function ManagerContextAction(', 'function ImportPanel(', 'onClick={() => { onClose(); onImport(); }}>Import</button>']) {
+    assert.ok(source.includes(route) && patched.includes(route), "manual Import route preserved");
+  }
   assert.equal(
     await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8"),
     source,

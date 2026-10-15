@@ -229,61 +229,58 @@ html.manager-signal .bp-r3.sp-plan-entry > * {
   max-width: 100%;
   min-width: 0;
 }
+/* One full-width calendar surface, with dates that follow the reader's text size. */
 html.manager-signal .sp-calendar-entry {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   margin: 0;
-  padding: 12px;
+  padding: 6px;
   overflow-wrap: anywhere;
 }
-html.manager-signal .sp-entry-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-html.manager-signal .sp-entry-copy strong {
-  font-size: 1rem;
-}
-html.manager-signal .sp-entry-copy small {
-  font-size: 0.75rem;
+html.manager-signal .sp-entry-month {
+  font: 600 1rem/1.4 var(--font-ui);
+  text-align: left;
 }
 html.manager-signal .sp-mini-grid {
   display: grid;
-  grid-template-columns: repeat(7, 10px);
-  gap: 3px;
-  flex: none;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
 }
 html.manager-signal .sp-mini-grid i {
-  font: 500 8px/12px var(--font-mono);
-  width: 10px;
-  height: 12px;
+  display: grid;
+  place-items: center;
+  font: 500 0.8125rem/1.5 var(--font-mono);
+  min-height: 1.75rem;
   font-style: normal;
-  text-align: center;
+  white-space: nowrap;
+  transition: none;
   border-radius: 3px;
   background: #d5e1c7;
   color: #234939;
 }
-html.manager-signal .sp-mini-grid i.blank {
-  visibility: hidden;
-}
+html.manager-signal .sp-mini-grid i.blank { visibility: hidden; }
 html.manager-signal .sp-mini-grid i.today {
   background: #e4c98d;
   color: #173d2b;
   outline: 1px solid #9e7940;
 }
-html.manager-signal .sg-schedule {
-  padding: 0;
-  border: 0;
-  background: none;
+html.manager-signal .sp-performance .s2-rail .s2-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-html.manager-signal .bp-r1.sp-calendar-entry {
+html.manager-signal .sp-performance .s2-chip-state {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+html.manager-signal .sp-performance .bp-h5 .bp-r1.sp-calendar-entry {
   grid-column: 1/-1;
   grid-row: 4;
+  align-self: stretch;
   margin-top: 8px;
   width: 100%;
 }
@@ -291,14 +288,13 @@ html.manager-signal .sp-calendar-entry:focus-visible {
   outline: 3px solid #e4c98d;
   outline-offset: 3px;
 }
-html.manager-signal .sp-calendar-entry {
-  flex-wrap: wrap;
-}
-html.manager-signal .sp-entry-copy {
-  flex: 1 1 140px;
-}
-html.manager-signal .sp-performance .bp-h5 .bp-r1.sp-calendar-entry {
-  grid-column: 1/-1;
-  grid-row: 4;
-  align-self: stretch;
+
+@media (min-width: 1101px) {
+  html.manager-signal .sp-performance .s2-hero.s2-hasrail {
+    grid-template-columns: minmax(0, 1fr) 15rem;
+  }
+  html.manager-signal .sp-performance .s2-rail .s2-chips { height: 100%; }
+  html.manager-signal .sp-performance .s2-chip-state { flex: 1; }
+  html.manager-signal .sp-performance .s2-chip-state .sp-calendar-entry { flex: 1; }
+  html.manager-signal .sp-performance .s2-chip-state .sp-mini-grid { flex: 1; }
 }

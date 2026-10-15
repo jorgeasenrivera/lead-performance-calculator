@@ -15,18 +15,23 @@ export function patchManager(source) {
   if (begin < 0 || end < 0) throw Error("Schedule boundary not found");
   const desktop = `function PreviewScheduleEntry({className=""}) {
     const today=previewStoreToday(),month=today.slice(0,7),cells=previewCalendarCells(month);
-    const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:'UTC'});
-    return <button type="button" className={className+' sp-plan-entry sp-calendar-entry'} aria-label="Open Schedule" onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>
-      <span className="sp-entry-copy"><strong>Schedule</strong><small>Staffing &amp; sales</small><small>{title}</small></span>
+    const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
+    return <button type="button" className={className+' sp-plan-entry sp-calendar-entry'} aria-label={"Open Schedule for "+title+", staffing and daily sales"} onClick={e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}))}>
+      <strong className="sp-entry-month">{title}</strong>
       <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':day===today?'today':''}>{day?Number(day.slice(-2)):''}</i>)}</span>
     </button>;
   }
   function SignalSchedule({children}) {
     const signal=useSignal();
-    return signal?<div className="sg-schedule"><PreviewScheduleEntry/></div>:children;
+    return signal?<PreviewScheduleEntry/>:children;
   }
   `;
   source = source.slice(0, begin) + desktop + source.slice(end);
+  // Remove only the hero reminder; AppShell and other manual Import routes remain.
+  const importBegin = source.indexOf('<button className={"s2-imp s2-lampbtn"');
+  const importEnd = source.indexOf("</button>", importBegin);
+  if (importBegin < 0 || importEnd < 0) throw Error("Hero import boundary not found");
+  source = source.slice(0, importBegin) + source.slice(importEnd + "</button>".length);
   // The spread remains a metric, with its separate sales popover removed in this preview.
   const salesBegin = source.indexOf('<BloopWin cls="dn s2-salewin">');
   const salesEnd = source.indexOf("</BloopWin>", salesBegin);

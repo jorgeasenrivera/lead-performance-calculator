@@ -29,7 +29,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         String(Number(expected.slice(-2))),
       );
       await page
-        .getByRole("button", { name: "Open Schedule", exact: true })
+        .getByRole("button", { name: /^Open Schedule for/ })
         .click();
       const frame = page.frames().find((f) => f.url().includes("/planner/"));
       await frame.locator("#month").waitFor();
@@ -60,7 +60,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     await browser.close();
   }
 }
-const out = "scripts/scheduler-performance/evidence/calendar-refinement";
+const out = "scripts/scheduler-performance/evidence/hero-calendar";
 mkdirSync(out, { recursive: true });
 writeFileSync(`${out}/timezone-results.json`, JSON.stringify(results, null, 2));
 console.log("Four New York/browser-timezone boundary scenarios passed.");
