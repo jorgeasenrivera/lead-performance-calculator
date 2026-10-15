@@ -1,0 +1,63 @@
+{
+  "startingHead": "0ecdd3c863a830a55ae60fd105d58c718e52adb3",
+  "sourceHashes": {
+    "build.mjs": "10cb58f35731afb0c7223083ac150a5eeed0117d853fc6b598b751e63aca2463",
+    "entry.css": "dabccfde244a5b8a7c049cc2e5505eb209accc7420b2a945a0737672681df9bf",
+    "entry.jsx": "c38dc459c7c4c8c4bcc617e9439777c8c44e98c3e609733f3baa8fce08475034",
+    "month-app.mjs": "28a4e2b24addf82b2e93b20012d172e992904372a07cc26386fefaf6f9ea575c",
+    "assignment-view.mjs": "abedf69ca9f78c774aa1b601670be7e5a967a5d4fe0e71fc33447034d250fa65",
+    "probe-manager.mjs": "d389789f175f73f734a1c42b521e84d6251c08edc68c5836d4d6f776cdacc155",
+    "probe-monthly.mjs": "63391a1b8f187d3ac6ce6ea6c71471e62d964e135b5281496c8d19842bd2c406",
+    "probe-mobile-toggle.mjs": "cc76b6b5b7e37decc79cf4fb6f23e27fc1963a6f1b4bf994ff03ba6096b73764"
+  },
+  "evidenceHashes": {
+    "chromium-320-text200-expanded.png": "b43a1d60f0b47397bb26e02d5d37389509ee99b1c10f46b9ecf8cdf2b56763f3",
+    "chromium-390-default32.png": "405b5f4be408e75df421e142021694afc03d275de0379cacfe410a9d49f75373",
+    "chromium-320-text100-compact.png": "3d33975877d1b8d7dd1c2c92e4b4e6b82b57567d6ec666e80fe4f8baba90e86e",
+    "webkit-editor-regressions.json": "b02bce10762504d98bcf0be080ebba35d30d2a7ee90c05944225fbedf1a024e2",
+    "chromium-390-text200-compact.png": "ee2fadfb69636b0b2e69937ca2be085034d13ca61deb49160aaa1e94c637a6fa",
+    "results.json": "4bdf3fbff01a9f935792fddbc32220296fce0e04ef9ec99efef14f320f912493",
+    "webkit-390-text200-compact.png": "a5e336ef4e01130c7766d63c12ba28f7ba9acad2db271c7eee56246770432a9a",
+    "chromium-editor-regressions.json": "fff57326676b0b5df6f44c358a795d56ee4a7576076d91737efe869ce497d7be",
+    "chromium-320-text200-compact.png": "2e6b1dfce22376fb4ec8e950d0266a193ca02f64dfe3195afd1e5ff17f038881",
+    "chromium-390-text200-expanded.png": "01bd710c624ad850550f89467fe5a70a28f444108f9398cbbf01e4efe47c8aea",
+    "chromium-1440-default32.png": "99d0b5ca0fc9c9a238f6340741412af7c495bc2c2fbbf56949504e7f9900951d",
+    "chromium-390-text100-compact.png": "67dfaf5f01bc96645d8ddade0d40707e9adca4e4312dd95b301c1bc5442692e7",
+    "webkit-390-text100-expanded.png": "48ad666d38e42f7f1da5b1b1a123957f9f7c1ab7e353120682931b175f5904e2",
+    "manager-results.json": "c8f4baea9a489d1bd858a1680c9dfb183b7103be9dac8bc800a10d1c6be621f4",
+    "webkit-320-text200-expanded.png": "bb81940b7a8414b9e04f19e170a1bedecb96b5791348a68c533626858992468b",
+    "chromium-320-default32.png": "5875163ca8e53fb830d6ca5f06a5cda25ba91576bb51f09fa5995eef5595ebef",
+    "chromium-390-text100-expanded.png": "e0369dced53734e00416a2965e2ca11670036974b64b645e3ddeb76e4cc89fd9",
+    "webkit-390-text200-expanded.png": "045ef933229839382ce80b878f8e48b37fbf6f5a92e6b614fbdc5fe328d67e01",
+    "chromium-320-text100-expanded.png": "38e1711716ba056b0b8d3474dd9e48f213ec7910c88709de5701fc5e212534c7",
+    "webkit-320-text200-compact.png": "c89049425f71ca7c0b63b6668fc998bb19338c81d895f92a4813306df523b18c",
+    "webkit-390-text100-compact.png": "d5e055b7ddc1a993ddbd6380405963432eef307fe6eda7510c14283dd786d490",
+    "webkit-320-text100-expanded.png": "34b3f719361137b187921bee7da32fd981eb2bd5ed15d6c06a5b4bf3311acdb9",
+    "webkit-320-text100-compact.png": "3bbbbb2fd2e0322e2deaf0bd7ec3fe9d55f84a9866222c04346adac11c62aaf2"
+  },
+  "checks": {
+    "unitTests": 957,
+    "productionBuild": "passed",
+    "isolatedBuild": "passed",
+    "toggleCases": 12,
+    "managerCases": 12,
+    "actualChromium32pxPlannerCases": 3,
+    "monthlyEditorRegressionCases": 12,
+    "keyboardToggle": "passed",
+    "monthDayPreservation": "passed",
+    "warningsRemainVisibleAndUpdate": "passed",
+    "mobileAccessibleNameAndContrast": "passed",
+    "desktopToggleAbsent": "passed"
+  },
+  "verificationNotes": [
+    "A WebKit startup click timed out in an earlier concurrent run; no OOM recorded. Instrumented full run passed all six cases without changed assertions or timeouts. Root cause remains unconfirmed.",
+    "Manager/editor suites passed before the final icon-ink-only CSS correction; the final toggle matrix verifies that correction in Chromium and WebKit.",
+    "Visible-fit checks exclude intentionally clipped screen-reader text; visible-date assertions remain unchanged."
+  ],
+  "limits": [
+    "No physical-device or screen-reader testing",
+    "Hosted rendering blocked by executor proxy on prior candidate",
+    "Claude r2 not integrated or validated",
+    "Only exposed Sage design-guide skill read; other authorized skills unavailable"
+  ]
+}

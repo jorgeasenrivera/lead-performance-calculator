@@ -17,8 +17,9 @@ for(const engine of ['chromium','webkit']){
   if(width>700)await page.getByRole('button',{name:'Close the round-up'}).click();
   await page.evaluate(s=>document.documentElement.style.fontSize=`${s*100}%`,scale);
   const entry=page.locator('.sp-calendar-entry');
+  if(width<=700)await page.getByRole('button',{name:'Show calendar',exact:true}).click();
   assert.equal(await entry.count(),1);assert.doesNotMatch(await entry.innerText(),/Recorded sales|Missing|Future/);
-  assert.notEqual(await entry.evaluate(e=>getComputedStyle(e).boxShadow),'none');
+  assert.notEqual(await (width<=700?page.locator('.sp-mobile-calendar'):entry).evaluate(e=>getComputedStyle(e).boxShadow),'none');
   assert.equal(await entry.locator('i:not(.blank)').count(),31);
   assert.ok(await entry.locator('i:not(.blank)').evaluateAll(es=>es.every(e=>e.scrollWidth<=e.clientWidth)));
   if(width<=700) assert.equal(await page.locator('.bp-num .dotnum').getAttribute('aria-label'),'65');

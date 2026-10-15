@@ -152,6 +152,8 @@ function render(focusId, announcement = "") {
     d.reviewFingerprint = fingerprint(list);
     render("accept");
   };
+  const statuses = list.map(staffing);
+  window.parent.dispatchEvent(new CustomEvent("scheduler-summary", { detail: { store: d.store.id, month, needs: statuses.filter(s=>s.status==="Needs schedule").length, low: statuses.filter(s=>s.status==="Low staff").length } }));
   syncCalendarLayout();
   if (focusId) {
     const target = document.getElementById(focusId);

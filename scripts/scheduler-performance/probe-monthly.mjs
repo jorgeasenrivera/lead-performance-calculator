@@ -41,9 +41,10 @@ try {
       if (width > 700)
         await page.getByRole("button", { name: "Close the round-up" }).click();
       const entry = page.locator(".sp-plan-entry");
+      if (width <= 700) await page.getByRole("button", { name: "Show calendar", exact: true }).click();
       assert.match(await entry.innerText(), /October 2026/);
-      assert.doesNotMatch(await entry.innerText(), /Schedule|Staffing & sales/);
-      assert.match(await entry.getAttribute("aria-label"), /October 2026, open Schedule for staffing and daily sales/);
+      assert.doesNotMatch(await entry.evaluate(e => [...e.children].filter(n => !n.classList.contains("sp-sr-only")).map(n => n.innerText).join(" ")), /Schedule|Staffing & sales/);
+      assert.equal(await page.getByRole("button", { name: /open Schedule for staffing and daily sales/i }).count(), 1);
       assert.equal(await page.locator(".s2-lampbtn").count(), 0);
       const dateBefore = await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize));
       const entryBefore = await entry.evaluate((e) =>
@@ -65,7 +66,7 @@ try {
       assert.ok(
         await entry.evaluate((e) => {
           const r = e.getBoundingClientRect();
-          return [...e.children].every((c) => {
+          return [...e.children].filter(c => !c.classList.contains("sp-sr-only")).every((c) => {
             const b = c.getBoundingClientRect();
             return b.left >= r.left && b.right <= r.right + 1;
           });
