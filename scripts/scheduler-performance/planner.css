@@ -1045,3 +1045,64 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 .absence-choice select { width:100%; min-width:0; }
 .people-team-groups ul { padding-left:1.25em; }
 #add-team-form { border-top:1px solid var(--line); padding-top:16px; margin-top:16px; }
+
+/* Generation uses the existing planner palette and form rhythm. */
+#generation-sheet:not([hidden]) { margin:16px 0; border:2px solid #234939; min-width:0; }
+#generation-sheet :is(p,summary,label,li) { overflow-wrap:anywhere; }
+#generation-sheet details { margin-block:12px; }
+#generation-sheet details > div { padding-block:8px; }
+#generation-sheet .generation-people { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:12px; }
+#generation-sheet fieldset { min-inline-size:0; }
+#generation-sheet .generation-days { display:grid; gap:4px; }
+#generation-sheet .generation-days details { border-bottom:1px solid var(--line); padding-block:8px; margin:0; }
+#generation-sheet input[type=checkbox] { flex:none; }
+.compact-month #generation-sheet { order:2; }
+@media(max-width:700px) { #generation-sheet .fields { grid-template-columns:1fr; } #generation-sheet .actions { display:flex;flex-wrap:wrap; } }
+
+.mobile-quick-roster,.mobile-critical-warning,.mobile-low-marker,.mobile-sales-mark,.mobile-nav-label { display:none; }
+/* Phone viewing is a quick roster. Planning detail remains in the editor. */
+.compact-month:not(.planning-workspace) .month-navigation { gap:4px; align-items:center; }
+.compact-month:not(.planning-workspace) #period-heading { font-size:1rem; padding:6px 2px; }
+.compact-month:not(.planning-workspace) .toolbar > #workspace { flex:0 1 auto; padding:6px 10px; font-size:.8125rem; }
+.compact-month:not(.planning-workspace) .toolbar > #sales-key { margin-left:auto; background:transparent; border-color:transparent; font-size:.8125rem; padding:6px; }
+.compact-month:not(.planning-workspace) .month-day { background:var(--paper); border-color:var(--line); position:relative; }
+.compact-month:not(.planning-workspace) .month-day.is-today { border-color:#9e7940; }
+.compact-month:not(.planning-workspace) .month-day .staff-status { display:none; }
+.compact-month:not(.planning-workspace) .mobile-sales-mark { display:block; position:absolute; bottom:2px; left:3px; right:3px; height:3px; border-radius:2px; }
+.compact-month:not(.planning-workspace) .mobile-low-marker { display:inline-flex; color:#234939; position:absolute; right:2px; top:2px; }
+.compact-month:not(.planning-workspace) .mobile-low-marker .sage-icon { width:.75rem;height:.75rem; }
+.compact-month:not(.planning-workspace) :is(.desktop-roster,.desktop-planning-detail,.demo-options) { display:none; }
+.compact-month:not(.planning-workspace) #sheet { padding:12px; border:0; background:var(--paper); }
+.compact-month:not(.planning-workspace) .day-heading { display:block; font-size:1rem; }
+.compact-month:not(.planning-workspace) .day-actions { gap:4px; margin:4px 0 12px; }
+.compact-month:not(.planning-workspace) .day-actions button { padding:6px 8px; min-height:44px; font-size:.8125rem; }
+.compact-month:not(.planning-workspace) .day-actions #edit-day { background:transparent;color:#234939;border-color:var(--line); }
+.compact-month:not(.planning-workspace) .day-actions #edit-day .sage-icon { display:none; }
+.compact-month:not(.planning-workspace) .desktop-nav-label { display:none; }
+.compact-month:not(.planning-workspace) .mobile-nav-label { display:inline; }
+.compact-month:not(.planning-workspace) .mobile-critical-warning { display:flex;align-items:center;gap:6px;color:#234939;font-size:.8125rem;margin-block:8px; }
+.compact-month:not(.planning-workspace) .mobile-quick-roster { display:grid; gap:12px; }
+.mobile-quick-roster h3 { font-size:1rem; margin:0 0 4px; }
+.mobile-quick-roster h3 small { font:inherit; color:var(--muted); }
+.mobile-quick-roster p { margin:4px 0; overflow-wrap:anywhere; }
+.mobile-quick-roster p strong { font-size:.875rem; }
+.mobile-quick-roster details { margin-top:6px; }
+.mobile-quick-roster summary { min-height:44px; display:flex;align-items:center; cursor:pointer; }
+
+/* A single phone detail sheet keeps calendar spacing and scroll position stable. */
+:root { --schedule-space-1:4px; --schedule-space-2:8px; --schedule-space-3:12px; --schedule-space-4:16px; }
+.day-modal-open { overflow:hidden; }
+#mobile-day-dialog { color:#234939; background:var(--paper); border:1px solid var(--line); border-radius:12px; width:calc(100% - 2 * var(--schedule-space-2)); max-width:32rem; max-height:calc(100dvh - 2 * var(--schedule-space-2)); padding:0; overscroll-behavior:contain; }
+#mobile-day-dialog::backdrop { background:rgb(18 43 33 / 40%); }
+.compact-month:not(.planning-workspace) .schedule-layout > #sheet { display:none; }
+.compact-month:not(.planning-workspace) #mobile-day-dialog #sheet { animation:none; display:block; margin:0; padding:max(var(--schedule-space-4),env(safe-area-inset-top)) max(var(--schedule-space-4),env(safe-area-inset-right)) max(var(--schedule-space-4),env(safe-area-inset-bottom)) max(var(--schedule-space-4),env(safe-area-inset-left)); border-radius:0; }
+.compact-month:not(.planning-workspace) .schedule-layout .month-days { gap:var(--schedule-space-1); }
+.compact-month:not(.planning-workspace) .schedule-layout .month-day { min-height:48px; margin:0; }
+.compact-month:not(.planning-workspace) :is(.month-navigation,.day-actions) { gap:var(--schedule-space-1); }
+.compact-month:not(.planning-workspace) .mobile-quick-roster { gap:var(--schedule-space-4); }
+.compact-month:not(.planning-workspace) .mobile-quick-roster p { margin:var(--schedule-space-1) 0; }
+.compact-month:not(.planning-workspace) .day-actions { margin:var(--schedule-space-2) 0 var(--schedule-space-4); }
+.compact-month:not(.planning-workspace) #mobile-day-dialog .recorded-day { margin:var(--schedule-space-4) 0 0; }
+/* Embedded Schedule already owns the modal. Its day sheet is a detail page,
+   so only one dialog is exposed and the calendar keeps its geometry behind it. */
+#mobile-day-dialog.embedded-day-page:not([hidden]) { display:block; position:fixed; inset:0; z-index:20; margin:0; width:100%; height:100dvh; max-width:none; max-height:none; overflow:auto; border:0; border-radius:0; }

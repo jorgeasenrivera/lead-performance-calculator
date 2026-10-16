@@ -1,0 +1,242 @@
+[
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 2,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 1,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  }
+]

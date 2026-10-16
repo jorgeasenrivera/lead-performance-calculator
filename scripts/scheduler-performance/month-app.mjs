@@ -1,3 +1,5 @@
+import { quickRosterGroups, verifiedLow } from "./mobile-roster.mjs";
+import { openGeneration } from "./generation-ui.mjs";
 import { teamsOnDay, membershipAt, teamSnapshot, dayAbsence, absenceKind, absenceLabel } from "./team-model.mjs";
 import { balanceMarkup, teamDayMarkup, openTeamEditor, peopleTeamsMarkup, personTeamLabel } from "./team-ui.mjs";
 import { openScheduleImport } from "./import-ui.mjs";
@@ -22,7 +24,10 @@ const stores = fixtures(),
   planner = createPlanner(stores, { assignmentForDay: fixtureAssignments }),
   app = document.querySelector("#app");
 let quickEdit = false;
+let mobileDaySession = null, restoringDayFocus = false;
+const embeddedPlanner = window.parent !== window;
 let closeImport = () => {};
+let closeGeneration = () => {};
 // Unapplied choices are local to a store/date and never enter coverage calculations.
 const pendingAssignments = new Map();
 const pendingSettings = new Map();
@@ -108,7 +113,7 @@ function syncCalendarLayout() {
 // WebKit's native backward focus scroll can ignore the sticky header inset.
 app.addEventListener("focusin", event => {
   const target = event.target;
-  if (!app.classList.contains("compact-month") || !target.matches("[data-day]")) return;
+  if (restoringDayFocus || !app.classList.contains("compact-month") || !target.matches("[data-day]")) return;
   requestAnimationFrame(() => {
     if (document.activeElement !== target) return;
     const rect = target.getBoundingClientRect(), nav = app.querySelector(".month-navigation").getBoundingClientRect();
@@ -116,13 +121,15 @@ app.addEventListener("focusin", event => {
     else if (rect.bottom > innerHeight - 4) window.scrollBy({top:rect.bottom - innerHeight + 8, behavior:"instant"});
   });
 });
-window.addEventListener("resize", syncCalendarLayout);
+window.addEventListener("resize", () => {syncCalendarLayout();if(innerWidth>700)closeMobileDay(false);});
 document.fonts.ready.then(syncCalendarLayout);
 new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["style"],
 });
 function render(focusId, announcement = "") {
+  closeMobileDay(false);
+  closeGeneration();
   closeImport();
   if (!selectedDay?.startsWith(month)) selectedDay = initialDay();
   app.classList.toggle("planning-workspace", editing);
@@ -138,7 +145,8 @@ function render(focusId, announcement = "") {
  <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button><button id="today">Today</button></div>
  <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button data-dismiss="month-picker">Done</button></div>
  <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Pending means future sales are not yet available. Unknown means no known sales record.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
- ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people at each time, including imported partial shifts.</p></div><div class="editor-tools"><button id="import-schedule">Import schedule</button><button id="teams">Teams</button><button id="balance">Team balance</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
+ ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people at each time, including imported partial shifts.</p></div><div class="editor-tools"><button id="generate-month">Generate month</button><button id="import-schedule">Import schedule</button><button id="teams">Teams</button><button id="balance">Team balance</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
+ <section id="generation-sheet" class="panel" hidden aria-label="Monthly schedule generation"></section>
  <section id="import-sheet" class="panel" hidden aria-label="Import schedule review"></section>
  <section id="settings-sheet" class="panel" hidden aria-label="Planning settings"></section>
  ${editing ? monthDemandMarkup(d.store) : ""}
@@ -151,9 +159,9 @@ function render(focusId, announcement = "") {
      if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
      const r = byDay.get(day),
        sales = heat.get(day), staff = staffing(r);
-     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" data-status="${staff.status}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${deliveredMarkup(sales)}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
+     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" data-status="${staff.status}" data-verified-low="${verifiedLow(r,staff)}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}${verifiedLow(r,staff)?`<span class="mobile-low-marker" aria-hidden="true">${icon("warn")}</span>`:""}${sales.state==="known"?`<span class="mobile-sales-mark heat-${sales.level}" aria-hidden="true"></span>`:""}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${deliveredMarkup(sales)}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
    })
-   .join("")}</section></section><section id="sheet" class="panel day-panel" aria-label="Selected day roster"></section></div>
+   .join("")}</section></section><section id="sheet" class="panel day-panel" aria-label="Selected day roster"></section></div>${embeddedPlanner?'<section id="mobile-day-dialog" class="embedded-day-page" role="region" aria-labelledby="selected-day-heading" hidden></section>':'<dialog id="mobile-day-dialog" aria-labelledby="selected-day-heading"></dialog>'}
 
  ${editing ? balanceMarkup(planner,selected,month) : ""}
  <details class="demo-options"><summary>Demo options</summary><label>Roster display mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label><p>Fictional display only. No live access or publishing.</p></details>
@@ -201,8 +209,9 @@ function render(focusId, announcement = "") {
     daySheet(today(), "period-heading");
   };
   document.querySelector("#mode").onchange = e => { mode = e.target.value; render(); document.querySelector(".demo-options").open = true; document.querySelector("#mode").focus(); };
-  document.querySelector("#workspace").onclick = () => { quickEdit = false; editing = !editing; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); };
-  document.querySelector("#selected-roster").onclick = () => { document.querySelector(".day-heading")?.focus(); };
+  document.querySelector("#workspace").onclick = () => { quickEdit = false; editing = !editing; render("workspace"); if(editing)startGeneration(); };
+  if(editing)document.querySelector("#generate-month").onclick=startGeneration;
+  document.querySelector("#selected-roster").onclick = () => daySheet(selectedDay);
   if(editing)document.querySelector('#teams').onclick=()=>{
     closeImport();
     if([...pendingAssignments.keys()].some(k=>k.startsWith(selected+':'))||[...pendingSettings.keys()].some(k=>k.startsWith(selected+':'))){document.querySelector('#message').textContent='Apply or cancel pending edits before changing teams.';return;}
@@ -213,7 +222,7 @@ function render(focusId, announcement = "") {
   if (editing) document.querySelector("#rules").onclick = () => storeSheet();
   document
     .querySelectorAll("[data-day]")
-    .forEach((el) => (el.onclick = () => { daySheet(el.dataset.day, undefined, false); document.querySelector("#message").textContent = `${dateLabel(el.dataset.day)} roster shown${editing ? "; editing workspace" : ""}.`; }));
+    .forEach((el) => (el.onclick = () => { daySheet(el.dataset.day, undefined, innerWidth<=700&&!editing); document.querySelector("#message").textContent = `${dateLabel(el.dataset.day)} roster shown${editing ? "; editing workspace" : ""}.`; }));
   if (editing) document.querySelector("#reset").onclick = () => {
     for (const drafts of [pendingAssignments,pendingSettings]) for (const key of drafts.keys()) if (key.startsWith(`${selected}:${month}`)) drafts.delete(key);
     planner.reset(selected, month);
@@ -246,10 +255,33 @@ function render(focusId, announcement = "") {
     });
   }
 }
+function startGeneration() {
+  if([...pendingAssignments.keys(),...pendingSettings.keys()].some(k=>k.startsWith(selected+":"))){document.querySelector("#message").textContent="Apply or cancel pending edits before generating a month.";return;}
+  closeGeneration();closeImport();
+  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,onMonth:value=>{month=value;selectedDay=null;render();startGeneration();},onApply:result=>{mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Generated draft applied in this page. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>document.querySelector("#generate-month")?.focus(),onPeople:()=>personSheet(),onRules:()=>storeSheet()});
+}
+function closeMobileDay(restore = true) {
+  if(!mobileDaySession)return;
+  const session=mobileDaySession;mobileDaySession=null;
+  const dialog=document.querySelector('#mobile-day-dialog'),sheet=document.querySelector('#sheet');
+  restoringDayFocus=true;if(embeddedPlanner){dialog.hidden=true;for(const element of session.inert||[])element.inert=false;}else dialog?.close();document.documentElement.classList.remove('day-modal-open');
+  if(sheet)document.querySelector('.schedule-layout')?.append(sheet);
+  if(restore){document.getElementById(`day-${selectedDay}`)?.focus({preventScroll:true});window.scrollTo({top:session.scrollY,left:0,behavior:'instant'});}
+  requestAnimationFrame(()=>{if(restore)window.scrollTo({top:session.scrollY,left:0,behavior:'instant'});restoringDayFocus=false;});
+}
+function showMobileDay(sheet) {
+  const dialog=document.querySelector('#mobile-day-dialog');
+  if(!mobileDaySession){mobileDaySession={scrollY:window.scrollY};dialog.append(sheet);document.documentElement.classList.add('day-modal-open');if(embeddedPlanner){mobileDaySession.inert=[...app.children].filter(e=>e!==dialog&&!e.inert);for(const element of mobileDaySession.inert)element.inert=true;dialog.hidden=false;}else dialog.showModal();}
+  dialog.oncancel=e=>{e.preventDefault();closeMobileDay();};
+  dialog.onclick=e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeMobileDay();}};
+  dialog.scrollTop=0;
+}
 function openSheet(html, openerId, isDay = false, focus = true, settingsId = "") {
+  closeGeneration();
   const sheet = document.querySelector(isDay ? "#sheet" : "#settings-sheet");
   sheet.hidden = false;
   sheet.innerHTML = html;
+  if(isDay&&!editing&&innerWidth<=700&&(focus||mobileDaySession))showMobileDay(sheet);
   if (!isDay) {
     closeImport();
     const key = `${selected}:${month}:${openerId}:${settingsId}`;
@@ -278,10 +310,16 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   const more = sheet.querySelector(".additional-more");
   if (more) more.addEventListener("toggle", () => more.querySelector("summary").setAttribute("aria-expanded", String(more.open)));
   sheet.querySelector("[data-close]").onclick = () => {
+    if(isDay&&mobileDaySession){closeMobileDay();return;}
     if (!isDay) { pendingSettings.delete(sheet.dataset.pendingKey); sheet.hidden = true; }
     document.getElementById(openerId || `day-${selectedDay}`)?.focus();
   };
   sheet.onkeydown = e => {
+    if(mobileDaySession&&e.key==='Tab'){
+      const controls=[...sheet.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')].filter(el=>el.getClientRects().length);
+      const first=controls[0],last=controls.at(-1);
+      if(controls.length&&(e.shiftKey&&(document.activeElement===first||!controls.includes(document.activeElement))||!e.shiftKey&&document.activeElement===last)){e.preventDefault();(e.shiftKey?last:first).focus();}
+    }
     if (e.key === "Escape") {
       e.preventDefault();
       sheet.querySelector("[data-close]").click();
@@ -303,6 +341,11 @@ function dayDemandMarkup(row) {
   const demandLinked=Boolean(estimate && row.rule.useCapacity && row.rule.capacity>0);
   return `<section class="day-demand" aria-label="Illustrative demand and staffing suggestion"><h3>Busyness estimate</h3><p class="demand-range">${estimate ? `${estimate.low} to ${estimate.high} delivered cars` : "Unavailable: fewer than four comparable days"}</p><p>Fictional estimate, not actual sales.</p><dl class="suggested-coverage"><div><dt>Suggested staffing</dt><dd>${row.recommendationTarget}</dd></div><div><dt>Applied eligible</dt><dd>${row.minimumCoverage}</dd></div><div><dt>Gap to suggestion</dt><dd>${Math.max(0,row.recommendationTarget-row.minimumCoverage)}</dd></div></dl><p>${demandLinked ? `Uses the upper estimate and your entered capacity of ${row.rule.capacity} cars per person per full shift, never below the configured minimum of ${row.required}.` : `Minimum-only suggestion (${row.required}). ${!estimate ? "History is insufficient." : "Capacity adjustment is off."} History-based staffing is unavailable until comparable history and an enabled capacity input are present.`}</p><details><summary>Estimate basis &amp; candidate people</summary><p>${context.count} prior known same-weekday samples${context.first ? `, ${context.first} through ${context.last}; latest comparable is ${context.daysSinceComparable} days before this date` : ""}. ${context.historyThrough ? `Latest prior fixture observation: ${context.historyThrough}.` : "No prior fixture observations."}</p><p>Minimum and maximum of up to eight prior known same weekdays; at least four are required. This is an illustrative range, not a calibrated forecast or confidence interval. Missing and closed observations are excluded; recorded zero remains zero. Older history is not made current by planning a future month.</p><p>${row.suggestions.length} eligible candidate${row.suggestions.length===1?"":"s"}: ${row.suggestions.map(id=>esc(draft().store.people.find(p=>p.id===id)?.name || id)).join(", ") || "None available"}. Availability and complete-week limits can leave the suggestion unfilled. Use suggestion adds candidates to unapplied choices; it does not remove manual choices or publish a schedule.</p><p>No hourly or role demand is inferred from daily deliveries. Configured minimum coverage remains the hard rule.</p></details></section>`;
 }
+function mobileRosterMarkup(row,summary) {
+  const groups=quickRosterGroups(draft().store.people,summary,row.record);
+  const groupNames=items=>{const chunks=[];for(const item of items){const prior=chunks.at(-1);if(prior&&prior.team===item.team)prior.items.push(item);else chunks.push({team:item.team,items:[item]});}return chunks.map(g=>`<p>${g.team?`<strong>${esc(g.team)}</strong> `:''}${g.items.map(p=>`${esc(p.name)}${p.note?` <small>(${esc(p.note)})</small>`:''}`).join(', ')}</p>`).join('');};
+  return `<div class="mobile-quick-roster">${row.state==='closed'?'<p>Store closed</p>':row.state==='unknown'?'<p>Store hours unconfirmed</p>':''}${groups.filter(g=>g.label!=='Unconfirmed'||g.items.length).map(g=>`<section aria-label="${g.label}"><h3>${g.label} <small>${g.items.length}</small></h3>${groupNames(g.items.slice(0,3))||'<p>None confirmed</p>'}${g.items.length>3?`<details><summary>${g.items.length-3} more ${g.label.toLowerCase()}</summary>${groupNames(g.items.slice(3))}</details>`:''}</section>`).join('')}</div>`;
+}
 function dayContext(row, summary) {
   if (row.state !== "open") return `<p class="day-coverage">${row.state === "closed" ? "Store closed" : "Confirm store hours before planning coverage"}</p>`;
   return `<section class="coverage-summary" aria-label="Applied effective coverage"><h3>${editing ? "Applied coverage" : "Effective coverage"}</h3><dl><div><dt>Required</dt><dd>${row.required}</dd></div><div><dt>Eligible</dt><dd>${summary.covering}</dd></div><div><dt>Still needed</dt><dd>${Math.max(0,row.required-summary.covering)}</dd></div></dl><p>${row.rule.open}:00 to ${row.rule.close}:00 · ${summary.conflicting.length} conflicting · ${summary.unknown.length} unknown</p>${row.coverage?.some(s=>s.count<row.required) ? `<ul class="coverage-gaps">${row.coverage.filter(s=>s.count<row.required).map(s=>`<li>${timeLabel(s.start)} to ${timeLabel(s.end)}: ${s.count}/${row.required} covered</li>`).join("")}</ul>` : ""}${editing ? '<small>Coverage reflects applied assignments. Unapplied choices below do not count yet.</small>' : ''}</section>`;
@@ -310,10 +353,11 @@ function dayContext(row, summary) {
 
 function importedShifts(row) {
   const shifts=row.record?.shifts||[];
-  return shifts.length ? `<section class="imported-shifts"><h3>Applied shift times</h3><ul>${shifts.map(s=>`<li>${esc(draft().store.people.find(p=>p.id===s.personId)?.name||s.personId)}: ${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)} · ${esc(s.date)} · ${esc(s.timezone)}<small>Source: ${esc(s.source?.file||'CSV')}, line ${esc(s.source?.line)}</small></li>`).join('')}</ul><p>On keeps these exact times. Unchecking On and applying removes that person’s imported shifts.</p></section>` : '';
+  return shifts.length ? `<section class="imported-shifts"><h3>Applied shift times</h3><ul>${shifts.map(s=>`<li>${esc(draft().store.people.find(p=>p.id===s.personId)?.name||s.personId)}: ${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)} · ${esc(s.date)} · ${esc(s.timezone)}<small>Source: ${esc(s.source?.file||s.source?.kind||'CSV')}${s.source?.line?', line '+esc(s.source.line):''}</small></li>`).join('')}</ul><p>On keeps these exact times. Unchecking On and applying removes that person’s imported shifts.</p></section>` : '';
 }
 function dayHeader(day, row) {
-  return `<h2 class="day-heading" tabindex="-1">${dateLabel(day)}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close>Month calendar</button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary">${icon("calendar")}Edit day</button>` : ""}`}</nav>`;
+  const smallWarning=!editing&&verifiedLow(row,staffing(row));
+  return `<h2 id="selected-day-heading" class="day-heading" tabindex="-1">${dateLabel(day)}${smallWarning?` <span class="mobile-critical-warning">${icon("warn")}Below minimum: ${row.minimumCoverage}/${row.required}</span>`:""}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close aria-label="Month calendar"><span class="desktop-nav-label">Month calendar</span><span class="mobile-nav-label">Calendar</span></button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary" aria-label="Edit day">${icon("calendar")}<span class="desktop-nav-label">Edit day</span><span class="mobile-nav-label">Edit</span></button>` : ""}`}</nav>`;
 }
 function bindDayActions(sheet, day) {
   for (const [id,delta] of [["day-previous",-1],["day-next",1]]) {
@@ -336,7 +380,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   if (changed && document.querySelector("#message")) document.querySelector("#message").textContent = `${dateLabel(day)} roster shown.`;
   const summary = staffing(r);
   if (!editing) {
-    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
+    const sheet = openSheet(`${dayHeader(day, r)}${mobileRosterMarkup(r,summary)}<div class="desktop-roster day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><div class="desktop-planning-detail"><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
     bindDayActions(sheet,day);
     return;
   }
@@ -384,7 +428,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       if(protectedOn){const input=e.target.querySelector(`[name=assigned][value="${protectedOn}"]`);input.setCustomValidity('This person has a recorded absence or is unavailable. Clear or resolve it explicitly and apply before assigning work.');input.reportValidity();e.target.onchange=()=>input.setCustomValidity('');return;}
       const absences=Object.fromEntries(off.map(id=>{const kind=sheet.querySelector(`[data-absence="${id}"]`).value;return [id,r.record?.absences?.[id]?.kind===kind?r.record.absences[id]:{kind,source:{kind:'manager day edit'}}];}));
       pendingAssignments.delete(pendingKey(day));
-      planner.setAssignment(selected, day, { on, off, absences, teamSnapshot:r.record?.teamSnapshot, unknownNotes:Object.fromEntries(Object.entries(r.record?.unknownNotes||{}).filter(([id])=>!on.includes(id)&&!off.includes(id))), ...(r.record?.shifts ? {shifts:r.record.shifts.filter(shift=>on.includes(shift.personId))} : {}) });
+      planner.setAssignment(selected, day, { on, off, absences, generationLocks:draft().store.people.map(p=>p.id), teamSnapshot:r.record?.teamSnapshot, unknownNotes:Object.fromEntries(Object.entries(r.record?.unknownNotes||{}).filter(([id])=>!on.includes(id)&&!off.includes(id))), ...(r.record?.shifts ? {shifts:r.record.shifts.filter(shift=>on.includes(shift.personId))} : {}) });
       markChanged();
       if (quickEdit) editing=false;
       quickEdit=false;
@@ -406,7 +450,7 @@ function personSheet(id = "p0") {
   const store = draft().store,
     p = store.people.find((p) => p.id === id);
   const sheet = openSheet(
-    `<h2>People</h2>${peopleTeamsMarkup(store,selectedDay||month+"-01",planner.record(selected,selectedDay||month+"-01"))}<p class="people-team-label">${esc(personTeamLabel(store,p.id,selectedDay||month+"-01"))}</p><p>Availability and Monday–Sunday weekly limit for this store and month only. Other monthly drafts retain their own settings. Unapplied settings stay in this page while browsing. Cancel settings discards them.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Maximum weekly hours<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><fieldset><legend>Recurring unavailable weekdays</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${p.off.includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply to local proposal</button><button type="button" data-close>Cancel settings</button></div></form>`,
+    `<h2>People</h2>${peopleTeamsMarkup(store,selectedDay||month+"-01",planner.record(selected,selectedDay||month+"-01"))}<p class="people-team-label">${esc(personTeamLabel(store,p.id,selectedDay||month+"-01"))}</p><p>Availability and Monday–Sunday weekly limit for this store and month only. Other monthly drafts retain their own settings. Unapplied settings stay in this page while browsing. Cancel settings discards them.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Maximum weekly hours<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><fieldset><legend>Recurring unavailable weekdays</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${(p.off||[]).includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply to local proposal</button><button type="button" data-close>Cancel settings</button></div></form>`,
     "people", false, true, id,
   );
   for(const button of sheet.querySelectorAll("[data-person-open]"))button.onclick=()=>personSheet(button.dataset.personOpen);

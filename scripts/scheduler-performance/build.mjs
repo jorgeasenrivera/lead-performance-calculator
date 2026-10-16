@@ -135,7 +135,8 @@ export async function buildPreview() {
   const editor = (await readFile("scripts/scheduler-performance/store-editor.mjs", "utf8"))
     .replace("../scheduler-proposal/model.mjs", "./model.mjs");
   await writeFile(planner + "/store-editor.mjs", editor);
-  for (const name of ["name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
+  for (const name of ["mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
+  await writeFile(planner+"/generation.mjs",(await readFile("scripts/scheduler-performance/generation.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
   await cp("scripts/scheduler-performance/sage-icons.mjs", planner + "/sage-icons.mjs");
   await cp("scripts/scheduler-performance/assignment-view.mjs", planner + "/assignment-view.mjs");

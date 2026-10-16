@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "key": "webkit-390-1",
+      "ms": 2098,
+      "view": {
+        "violations": [],
+        "passes": 11
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "webkit-320-2",
+      "ms": 1357,
+      "view": {
+        "violations": [],
+        "passes": 11
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "webkit-failure-cancel",
+      "workerFailure": true,
+      "inflightCancel": true,
+      "escapeFocus": true
+    }
+  ],
+  "latency": [],
+  "errors": []
+}

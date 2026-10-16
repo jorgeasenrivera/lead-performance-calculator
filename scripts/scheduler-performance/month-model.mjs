@@ -1,6 +1,6 @@
 import { nameKey, reservedTeamName } from './name-key.mjs';
 import { seedTeams, teamSnapshot, validateMembership } from "./team-model.mjs";
-import { personIntervals, unionMinutes, coverageSegments, shiftProblem, storeTimezone } from "./shift-intervals.mjs";
+import { personIntervals, unionMinutes, coverageSegments, shiftProblem, stableLocalDate, storeTimezone } from "./shift-intervals.mjs";
 import {
   addDays,
   weekday,
@@ -145,6 +145,8 @@ export function enteredMonth(month, resolveDay) {
           if (total > p.maxHours*60) reasons.push(`weekly hours exceeded (${total/60}/${p.maxHours})`);
         }
         if ((r.record?.off || []).includes(id)) reasons.push("also marked off");
+        if(r.store.planningPolicy && r.store.planningPolicy.people?.[id]?.eligible!==true)reasons.push("Store eligibility unknown or excluded");
+        if(r.store.planningPolicy&&(r.record?.shifts||[]).some(s=>s.personId===id&&s.role&&!r.store.planningPolicy.people?.[id]?.roles?.includes(s.role)))reasons.push("Assigned role not qualified");
       }
       if (r.state !== 'open') reasons.push(r.state === 'closed' ? "assigned on a closed date" : "store hours unknown");
       if (reasons.length) { conflicts[id] = reasons; issues.push(`${p?.name || id}: ${reasons.join('; ')}.`); }
@@ -155,6 +157,12 @@ export function enteredMonth(month, resolveDay) {
     const coverage = r.state === 'open' ? coverageSegments(r.rule,r.record,eligibleIds) : [];
     const minimumCoverage = coverage.length ? Math.min(...coverage.map(s=>s.count)) : 0;
     if (r.state === 'open' && r.record && minimumCoverage < r.rule.minimum) issues.push(`${r.rule.minimum - minimumCoverage} more eligible people needed for entered minimum coverage.`);
+    if(r.state==='open'&&r.store.planningPolicy){
+      const policy=r.store.planningPolicy;
+      if(!stableLocalDate(r.day,storeTimezone(r.store)))issues.push('Generated planning does not support this DST-change date.');
+      if(r.store.people.some(p=>!Array.isArray(p.off)||!Number.isFinite(p.start)||!Number.isFinite(p.end)||p.end<=p.start||!Number.isFinite(p.maxHours)||policy.people?.[p.id]?.eligible===undefined||!Array.isArray(policy.people?.[p.id]?.roles)||r.record?.unknownNotes?.[p.id]||r.record?.generationLocks?.includes(p.id)&&!r.ids.includes(p.id)&&!(r.record?.off||[]).includes(p.id)))issues.push('Planning inputs incomplete: review availability, eligibility and roles.');
+      for(const [role,minimum] of Object.entries(policy.requiredRoles||{}))if(coverage.some(segment=>new Set(eligibleIds.filter(id=>personIntervals(r.record,id,r.rule).some(([a,b])=>a<=segment.start&&b>=segment.end&&((r.record?.shifts||[]).find(s=>s.personId===id&&s.startMinute===a&&s.endMinute===b)?.role||(policy.people[id]?.roles?.length===1?policy.people[id].roles[0]:null))===role))).size<minimum))issues.push(`Required ${role} coverage is incomplete.`);
+    }
     const estimate = r.state === 'open' ? forecast(r.store.history, r.day) : null;
     const target = r.state === 'open' ? Math.max(r.rule.minimum, r.rule.useCapacity && estimate && r.rule.capacity > 0 ? Math.ceil(estimate.high / r.rule.capacity) : 0) : null;
     const suggestions = r.state !== 'open' ? [] : r.store.people.filter(p => !(r.record?.shifts || []).some(s=>s.personId===p.id) && !unknownWeeks.has(r.week + ':' + p.id) && !(r.record?.off || []).includes(p.id) && Array.isArray(p.off) && !p.off.includes(weekday(r.day)) && p.start <= r.rule.open && p.end >= r.rule.close && Number.isFinite(p.maxHours) && (totals.get(r.week + ':' + p.id) || 0) - (r.ids.includes(p.id) ? unionMinutes(personIntervals(r.record,p.id,r.rule)) : 0) + r.hours*60 <= p.maxHours*60).slice(0, target).map(p => p.id);

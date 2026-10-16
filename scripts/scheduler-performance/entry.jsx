@@ -75,11 +75,11 @@ function Preview() {
     // Native modal traversal can leave the document at the iframe boundary.
     // Close that loop explicitly in both directions, using currently visible controls.
     const trapTab = (e) => {
-      if (e.key !== "Tab" || !dialog.current.open) return;
+      if (e.defaultPrevented || e.key !== "Tab" || !dialog.current.open) return;
       const selector =
         'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex="0"]';
       const visible = (e) =>
-        e.getClientRects().length > 0 && !e.closest("[hidden]");
+        e.getClientRects().length > 0 && !e.closest("[hidden],[inert]");
       const outer = [...dialog.current.querySelectorAll(selector)].filter(
         visible,
       );
@@ -157,7 +157,7 @@ function Preview() {
           e.preventDefault();
           const win = frame.current.contentWindow;
           const sheet = win.document.querySelector("#sheet");
-          if (sheet && !sheet.hidden) {
+          if (sheet && !sheet.hidden && sheet.getClientRects().length) {
             sheet.querySelector("[data-close]").click();
           } else close();
         }}
