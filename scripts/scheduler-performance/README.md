@@ -248,3 +248,13 @@ Visual sources are the existing `src/manager-signal.css` forest/warm-paper langu
 Current verification probes are `probe-connected-workspace.mjs`, `probe-demand.mjs`, and adapted monthly, coherent-flow, additional-people and native-touch probes. Older screenshots and totals above are historical. Automated desktop/touch-capable viewport emulation is separate from physical hybrid hardware. The scope still excludes physical iOS/Android, screen readers, real browser-menu zoom, live schedules and backend rollout. Full-day-only planning, cross-month policy limitations and the lack of direct closed-day assignment removal remain as documented above.
 
 Final connected-workspace verification: 973 unit tests, production and isolated builds, all 100 browser cases and 68 scoped axe scans pass. Final enlarged-text metric labels stack without word fragmentation. Evidence, source/artifact hashes, screenshots, matrices and intermediate findings are in `evidence/connected-workspace/manifest.json` and `verification-notes.md`. The final remote SHA, CI and protected deployment identity are recorded on PR #478.
+
+### Delivered row cleanup
+
+The calendar sales strip and connected day roster now say Delivered. Label and value share one row with consistent dimensions across dates; zero remains zero, missing stays Unknown, and future observations say Pending with an accessible explanation. The desktop calendar takes the full workspace width when two panes would squeeze that row. At larger text or intermediate widths, cards reflow with weekday labels. The compact phone month keeps its date-only layout and shows Delivered in the connected roster and applied-roster disclosure.
+
+The visible monthly actuals summary, store selector and memory-only notice are removed. Sales key remains available beside Make Schedule. Internal store context, isolated drafts, month navigation, historical demand guidance and daily sales remain intact. This adds no persistence.
+
+Focused evidence is in `evidence/delivered-row/manifest.json`. The geometry fixture deliberately includes 0, 123456, missing, closed and future states; screenshots using it are stress-test evidence, not changed sales history. Actual browser menu zoom, physical devices and screen readers are not covered. Hosted rendering remains subject to the protected-preview access boundary.
+
+Final cleanup checks: 973 tests, production and isolated builds, 24 Delivered layout cases and 12 coherent-flow regressions passed. All 36 scoped axe scans passed. Final remote SHA, CI and protected deployment identity are recorded on PR #478.

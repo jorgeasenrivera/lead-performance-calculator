@@ -33,14 +33,7 @@ let editing = false, mode = "mixed", selectedDay = null;
 let selected = 0,
   month = storeToday().slice(0, 7);
 const today = () => storeToday();
-const salesLabel = (r) =>
-  r.state === "known"
-    ? `${r.units}`
-    : r.state === "future"
-      ? "Sales not yet available"
-      : r.state === "closed"
-        ? "Sales record: Closed"
-        : "Unknown";
+const deliveredMarkup = r => `<span class="delivered-label">Delivered</span><span class="delivered-value">${r.state === "known" ? r.units : r.state === "future" ? "Pending" : r.state === "closed" ? "Closed" : "Unknown"}</span>${r.state === "future" ? '<span class="sr-only">Sales not yet available</span>' : ''}`;
 const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const esc = (s) =>
   String(s).replace(
@@ -87,6 +80,7 @@ const statusIcon = status => status === "Scheduled" ? "check" : status === "Clos
 const statusMarkup = s => `<span class="staff-status ${(s.status === "Needs schedule" || s.status === "Schedule conflict") ? "needs-schedule" : s.status === "Low staff" ? "low-staff" : ""}">${icon(statusIcon(s.status))}<span class="status-label">${s.status}</span></span>`;
 function syncCalendarLayout() {
   const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  app.classList.remove("delivered-grid-reflow");
   app.classList.toggle("stacked-workspace", app.clientWidth < 60 * font);
   app.classList.toggle("calendar-list", app.clientWidth < 7 * 8 * font);
   const compact = app.clientWidth <= 700;
@@ -94,6 +88,13 @@ function syncCalendarLayout() {
   if(document.documentElement.style.getPropertyValue("--month-bar-height")!==inset)document.documentElement.style.setProperty("--month-bar-height",inset);
   app.classList.toggle("compact-month", compact);
   app.classList.toggle("compact-reflow", compact && font >= 24);
+  // Preserve readable single-line sales strips before keeping the desktop panes side by side.
+  if (!compact && !editing) {
+    const grid = app.querySelector(".month-days");
+    const cellWidth = () => (grid.clientWidth - 6 * parseFloat(getComputedStyle(grid).columnGap)) / 7;
+    if (cellWidth() < 7 * font) app.classList.add("stacked-workspace");
+    if (cellWidth() < 7 * font) app.classList.add("delivered-grid-reflow");
+  }
   for (const button of app.querySelectorAll("[data-day]")) {
     if (compact) button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. Open day details.`);
     else button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. Show day roster.`);
@@ -111,6 +112,7 @@ app.addEventListener("focusin", event => {
   });
 });
 window.addEventListener("resize", syncCalendarLayout);
+document.fonts.ready.then(syncCalendarLayout);
 new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["style"],
@@ -126,12 +128,10 @@ function render(focusId, announcement = "") {
   const heat = new Map(salesHeat(d.store, month, today()).map(r => [r.day, r]));
   const reviewed = d.accepted && d.reviewFingerprint === fingerprint(list);
   const byDay = new Map(list.map((r) => [r.day, r]));
-  app.innerHTML = `<div class="toolbar"><label>Store<select id="store">${stores.map((s, i) => `<option value="${i}" ${i === selected ? "selected" : ""}>${s.name}</option>`).join("")}</select></label><button id="workspace" class="primary">${icon(editing?"arrowleft":"calendar")}${editing ? "Return to manager view" : "Make Schedule"}</button></div>
+  app.innerHTML = `<div class="toolbar"><button id="workspace" class="primary">${icon(editing?"arrowleft":"calendar")}${editing ? "Return to manager view" : "Make Schedule"}</button><button id="sales-key" popovertarget="sales-help">Sales key</button></div>
  <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button><button id="today">Today</button></div>
  <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button data-dismiss="month-picker">Done</button></div>
- <div class="month-summary" aria-label="Month summary"><span>Month Units Delivered: <strong id="recorded-total">${sales.total ?? (sales.future === dates.length ? "Not yet available" : "Unknown")}</strong> <small>(${sales.known} recorded days)</small></span><button id="sales-key" popovertarget="sales-help">Sales key</button></div>
- <p class="notice">Fictional draft · Not published · Lost on refresh</p>
- <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Future sales are not yet available.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
+ <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Pending means future sales are not yet available. Unknown means no known sales record.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
  ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people across full store hours.</p></div><div class="editor-tools"><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
  <section id="settings-sheet" class="panel" hidden aria-label="Planning settings"></section>
  ${editing ? monthDemandMarkup(d.store) : ""}
@@ -144,7 +144,7 @@ function render(focusId, announcement = "") {
      if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
      const r = byDay.get(day),
        sales = heat.get(day), staff = staffing(r);
-     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" data-status="${staff.status}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${sales.state === "known" ? `Units Delivered: ${sales.units}` : sales.state === "future" ? "Sales not yet available" : sales.state === "closed" ? "Sales record: Closed" : "Sales unknown"}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
+     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" data-status="${staff.status}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${deliveredMarkup(sales)}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
    })
    .join("")}</section></section><section id="sheet" class="panel day-panel" aria-label="Selected day roster"></section></div>
 
@@ -160,10 +160,6 @@ function render(focusId, announcement = "") {
     trigger.setAttribute("aria-controls", pop.id);
     pop.querySelector("[data-dismiss]").onclick = () => { pop.hidePopover(); trigger.focus(); };
   }
-  document.querySelector("#store").onchange = (e) => {
-    selected = Number(e.target.value);
-    render("store");
-  };
   document.querySelector("#month").onchange = (e) => {
     if (!validMonth(e.target.value)) {
       e.target.setCustomValidity(
@@ -314,7 +310,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   if (changed && document.querySelector("#message")) document.querySelector("#message").textContent = `${dateLabel(day)} roster shown.`;
   const summary = staffing(r);
   if (!editing) {
-    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
+    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
     bindDayActions(sheet,day);
     return;
   }
@@ -323,7 +319,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       r.state === "open"
         ? `<form class="assignment-form"><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset class="people-assignments"><legend>People for ${dateLabel(day)}</legend>${draft().store.people.map(p => `<div class="assignment-person"><div><strong>${esc(p.name)}</strong><small>${r.conflicts[p.id]?.map(esc).join("; ") || (summary.on.includes(p.id) ? "Eligible" : summary.off.includes(p.id) ? "Confirmed off" : "Unknown")}</small></div><label class="check"><input type="checkbox" name="assigned" value="${p.id}" ${r.ids.includes(p.id) ? "checked" : ""} aria-label="${esc(p.name)} on">On</label><label class="check"><input type="checkbox" name="off" value="${p.id}" ${summary.off.includes(p.id)?"checked":""} aria-label="${esc(p.name)} confirmed off">Off</label></div>`).join("")}</fieldset><p>Unchecked people remain unknown. Mark on or confirmed off, not both. Browsing keeps unapplied choices in this page. Cancel discards this date’s choices. Conflicts remain visible after applying.</p><p class="pending-note" id="pending-status" role="status"></p><div class="actions"><button class="primary">Apply day override</button><button type="button" id="suggest">Use suggestion</button><button type="button" id="cancel-day">Cancel edits</button></div></form>`
         : `<p>${r.state === "closed" ? "Confirmed closed. No shifts or forecast." : "No staffing suggestion until the store status is confirmed."}</p>`
-    }<details class="applied-roster"><summary>Applied roster &amp; sales</summary><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">Units Delivered: ${salesLabel(recordedDay(draft().store, day, today()))}</p></details>${r.issues.length ? `<ul class="issues">${r.issues.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}`,
+    }<details class="applied-roster"><summary>Applied roster &amp; sales</summary><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p></details>${r.issues.length ? `<ul class="issues">${r.issues.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}`,
     openerId, true, focus,
   );
   bindDayActions(sheet,day);

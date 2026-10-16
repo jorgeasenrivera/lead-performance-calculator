@@ -1004,3 +1004,22 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 .compact-reflow :is(.coverage-summary dl,.suggested-coverage) { grid-template-columns:minmax(0,1fr); }
 .compact-reflow :is(.coverage-summary dl,.suggested-coverage) > div { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
 .compact-reflow :is(.coverage-summary dt,.suggested-coverage dt) { overflow-wrap:normal; }
+/* One aligned delivered line for every state, with no ellipsis or hidden values. */
+.schedule-layout .month-day .day-sales {
+ display:flex; align-items:center; justify-content:space-between; gap:.25em;
+ height:2em; min-height:2em; padding:2px; line-height:1.3; flex-shrink:0;
+ white-space:nowrap; overflow-wrap:normal; font-variant-numeric:tabular-nums;
+}
+.recorded-day {
+ display:flex; align-items:center; justify-content:space-between; gap:.5em;
+ font-size:.8125rem; line-height:1.4; height:3em; min-height:3em;
+ padding:8px; white-space:nowrap; overflow-wrap:normal; font-variant-numeric:tabular-nums;
+}
+.delivered-label,.delivered-value { flex:none; white-space:nowrap; }
+.compact-month .schedule-layout .month-day .day-sales,
+.planning-workspace .schedule-layout .month-day .day-sales { display:none; }
+.delivered-grid-reflow .schedule-layout .month-days { grid-template-columns:repeat(auto-fit,minmax(min(100%,12em),1fr)); }
+.delivered-grid-reflow .schedule-layout :is(.weekday-heading,.calendar-blank) { display:none; }
+.delivered-grid-reflow .schedule-layout .month-day .day-weekday { display:inline; }
+/* Today's accent must not shrink its sales strip relative to adjacent dates. */
+.schedule-layout .month-day.is-today { border-width:1px; }
