@@ -842,7 +842,6 @@ button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; 
 .day-context ul { list-style:none; padding:0; margin:8px 0; }
 .day-context li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; padding:6px 0; border-bottom:1px solid var(--line); }
 .day-context li > span { flex:1 1 12rem; min-width:0; }
-.compact-key { display:none; }
 /* Phone browsing starts with dates; full staffing and sales remain in day details. */
 main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; }
 .compact-month .month-navigation { order:0; margin:0 0 8px; }
@@ -850,7 +849,6 @@ main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; 
 .compact-month .toolbar > label { flex:1 1 0; font-size:.8125rem; }
 .compact-month .toolbar > #workspace { flex:1 1 0; margin:0; padding:8px 4px; }
 .compact-month #sheet,.compact-month .month-days { order:2; }
-.compact-month .compact-key { display:block; order:3; font-size:.75rem; line-height:1.5; margin:8px 0; }
 .compact-month .month-summary { order:4; }
 .compact-month .notice { order:5; }
 .compact-month .editor-tools { order:1; }
@@ -863,12 +861,8 @@ main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; 
 .compact-month .month-day .day-weekday,.compact-month .month-day .day-date small { display:none; }
 .compact-month .month-day :is(.day-staffing,.day-sales,.day-issue,.day-coverage,.best-day) { display:none; }
 .compact-month .month-day .staff-status { align-self:center; min-height:1em; }
-.compact-month .month-day .staff-status :is(.sage-icon,.status-label) { display:none; }
-.compact-month .month-day .staff-status::after { content:'?'; font:600 .75rem/1 "Geist Mono",monospace; }
-.compact-month .month-day[data-status="Needs schedule"] .staff-status::after,.compact-month .month-day[data-status="Schedule conflict"] .staff-status::after { content:'!'; }
-.compact-month .month-day[data-status="Low staff"] .staff-status::after { content:'↓'; }
-.compact-month .month-day[data-status="Scheduled"] .staff-status::after { content:'✓'; }
-.compact-month .month-day[data-status="Closed"] .staff-status::after { content:'–'; }
+.compact-month .month-day .staff-status .status-label { display:none; }
+.compact-month .month-day .staff-status .sage-icon { display:inline-block; width:1rem; height:1rem; margin:0; }
 .compact-month.compact-reflow .month-days { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
 .compact-reflow .weekday-heading,.compact-reflow .calendar-blank { display:none; }
 .compact-reflow .month-day .day-weekday { display:inline; }
@@ -888,4 +882,35 @@ main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; 
 .compact-reflow .toolbar > #workspace { padding:6px 4px; }
 .compact-reflow .toolbar select { padding-block:6px; }
 /* Keep backward keyboard focus below the sticky month controls at either text size. */
-:root:has(main.compact-month) { scroll-padding-top:4rem; }
+:root:has(main.compact-month) { scroll-padding-top:calc(var(--month-bar-height, 4rem) + 8px); }
+
+.day-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0 16px; }
+.day-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.day-actions #edit-day { margin-left:auto; }
+.icon-key { list-style:none; padding:0; display:grid; gap:10px; }
+.icon-key li { display:flex; align-items:center; gap:10px; }
+#sales-help h3 { margin-top:16px; }
+#sales-help p { margin-top:10px; }
+.day-heading:focus-visible { outline:2px solid #234939; outline-offset:4px; }
+
+.compact-month .month-navigation { gap:6px; }
+.compact-month .month-navigation #today { font-size:.8125rem; padding:6px; min-height:44px; }
+.compact-reflow .month-navigation #today { flex-basis:100%; }
+.day-context h3 { margin-bottom:6px; }
+.month-navigation #today { width:auto; flex-shrink:0; }
+.compact-reflow .month-navigation { flex-wrap:wrap; }
+
+.team-members { flex-basis:100%; display:grid; gap:6px; margin-top:6px; min-width:0; }
+.team-member { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 8px; font-weight:400; }
+.team-member > span { min-width:0; overflow-wrap:anywhere; }
+.team-member > strong { font-weight:500; }
+
+.calendar-swipe-strip { display:none; }
+@media(any-pointer:coarse) {
+ .compact-reflow .calendar-swipe-strip { display:flex; grid-column:1/-1; height:44px; align-items:center; justify-content:center; gap:12px; color:var(--muted); }
+}
+.calendar-swipe-strip > span { width:3rem; height:1px; background:var(--line); }
+@media(max-height:400px) {
+ .compact-month .month-navigation { position:static; }
+ :root:has(main.compact-month) { scroll-padding-top:0; }
+}

@@ -67,10 +67,10 @@ function Preview() {
     const open = (e) => {
       opener.current = e.detail.opener;
       scroll.current = window.scrollY;
-      frame.current.contentWindow?.dispatchEvent(new Event("scheduler-view"));
       dialog.current.showModal();
+      frame.current.contentWindow?.dispatchEvent(new CustomEvent("scheduler-view", {detail:{day:e.detail.day,store:e.detail.store}}));
       document.body.style.overflow = "hidden";
-      dialog.current.querySelector("button").focus();
+      (e.detail.day ? frame.current.contentDocument?.querySelector(".day-heading") : dialog.current.querySelector("button"))?.focus();
     };
     // Native modal traversal can leave the document at the iframe boundary.
     // Close that loop explicitly in both directions, using currently visible controls.

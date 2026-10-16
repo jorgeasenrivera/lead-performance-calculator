@@ -1,0 +1,74 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "height": 900,
+    "scale": 1,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "independent width/text check"
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "height": 900,
+    "scale": 2,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "independent width/text check"
+  },
+  {
+    "engine": "chromium",
+    "width": 720,
+    "height": 450,
+    "scale": 1,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "200% of 1440 CSS viewport"
+  },
+  {
+    "engine": "chromium",
+    "width": 720,
+    "height": 450,
+    "scale": 2,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "200% of 1440 CSS viewport"
+  },
+  {
+    "engine": "chromium",
+    "width": 360,
+    "height": 225,
+    "scale": 1,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "400% of 1440 CSS viewport"
+  },
+  {
+    "engine": "chromium",
+    "width": 360,
+    "height": 225,
+    "scale": 2,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "400% of 1440 CSS viewport"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "height": 200,
+    "scale": 1,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "independent width/text check"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "height": 200,
+    "scale": 2,
+    "input": "fine pointer with hover",
+    "status": "passed",
+    "zoomEquivalent": "independent width/text check"
+  }
+]

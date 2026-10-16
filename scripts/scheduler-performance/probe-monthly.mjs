@@ -23,6 +23,7 @@ try {
       const key = `${engine}-${width}-text${scale * 100}`,
         page = await browser.newPage({
           viewport: { width, height: 900 },
+          hasTouch: width <= 700,
           reducedMotion: "reduce",
         });
       page.setDefaultTimeout(8000);
@@ -40,13 +41,13 @@ try {
       await page.goto("http://127.0.0.1:5190");
       if (width > 700)
         await page.getByRole("button", { name: "Close the round-up" }).click();
-      const entry = page.locator(".sp-calendar-entry");
+      const entry = page.locator(width <= 700 ? '[data-hero-day="2026-10-14"]' : ".sp-calendar-entry");
       if (width <= 700) await page.locator(".sp-calendar-toggle").click();
 
-      assert.match(await entry.getAttribute("aria-label"), /October 2026/);
+      assert.match(await entry.getAttribute("aria-label"), width <= 700 ? /October 14, 2026/ : /October 2026/);
       assert.doesNotMatch(await entry.evaluate(e => [...e.children].filter(n => !n.classList.contains("sp-sr-only")).map(n => n.innerText).join(" ")), /Staffing & sales/);
       assert.equal(await entry.getByText("Schedule", { exact: true }).count(), 0);
-      assert.equal(await page.getByRole("button", { name: /open Schedule for staffing and daily sales/i }).count(), 1);
+      assert.equal(await page.getByRole("button", { name: /open Schedule for staffing and daily sales/i }).count(), width > 700 ? 1 : 0);
       assert.equal(await page.locator(".s2-lampbtn").count(), 0);
       const dateBefore = width > 700 ? await entry.locator("i:not(.blank)").first().evaluate(e => parseFloat(getComputedStyle(e).fontSize)) : null;
       const entryBefore = await entry.evaluate((e) =>
@@ -92,7 +93,7 @@ try {
         "no standalone Sold by Day popover",
       );
       assert.equal(
-        await entry.locator(".sp-mini-grid").count(),
+        await page.locator(".sp-mini-grid").count(),
         1,
         "calendar visual belongs to Schedule entry",
       );
@@ -105,6 +106,7 @@ try {
       const ret = page.getByRole("button", { name: "Return to Performance" }),
         f = page.frames().find((f) => f.url().includes("/planner/"));
       await f.locator("#period-heading").waitFor();
+      if(width <= 700) await f.getByRole("button", {name:"Back to month",exact:true}).click();
       assert.equal(await f.locator("#people").count(), 0);
       await f.getByRole("button", { name: "Make Schedule", exact: true }).click();
       assert.equal(
@@ -234,7 +236,7 @@ try {
           await f
             .locator(".month-days")
             .evaluate((e) =>
-              [...e.children].indexOf(e.querySelector("[data-day]")),
+              [...e.children].filter(child => !child.classList.contains("calendar-swipe-strip")).indexOf(e.querySelector("[data-day]")),
             ),
           10,
           "three leading blanks after seven headings",
@@ -266,6 +268,8 @@ try {
       for (const box of await f.locator("[name=assigned]").all())
         await box.uncheck();
       await f.getByRole("button", { name: "Apply day override" }).click();
+      assert.match(await f.locator("#sheet h2").innerText(), /Oct 14, 2026/);
+      await f.getByRole("button", {name:"Back to month",exact:true}).click();
       await focus("day-2026-10-14");
       assert.match(
         await f.locator("#day-2026-10-14").textContent(),
@@ -303,6 +307,8 @@ try {
         await box.uncheck();
       await f.locator("[name=assigned][value=p1]").check();
       await f.getByRole("button", { name: "Apply day override" }).click();
+      assert.match(await f.locator("#sheet h2").innerText(), /Feb 29, 2028/);
+      await f.getByRole("button", {name:"Back to month",exact:true}).click();
       await focus("day-2028-02-29");
       await f.locator("#rules").click();
       await f.locator("[name=effective]").fill("2028-02-15");
@@ -389,7 +395,6 @@ try {
       await f
         .getByRole("button", { name: "Back to month", exact: true })
         .click();
-      await f.locator("#period-heading").click();
       await f.locator("#today").click();
       assert.equal(await f.locator("#month").inputValue(), "2026-10");
       assert.match(await f.locator("#sheet h2").innerText(), /Oct 14, 2026/);

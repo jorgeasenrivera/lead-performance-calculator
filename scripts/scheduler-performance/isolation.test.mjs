@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { patchManager } from "./build.mjs";
+import { patchManager, patchPhoneLayout } from "./build.mjs";
 test("preview refuses to patch a changed Manager ownership boundary", async () => {
   const source = await readFile(
     new URL("../../src/Manager.jsx", import.meta.url),
@@ -21,4 +21,11 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
     await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8"),
     source,
   );
+});
+
+test("preview input-aware layout transform refuses changed core source", async()=>{
+ const source=await readFile(new URL("../../src/LeadPerformanceCalculator.jsx",import.meta.url),"utf8");
+ assert.throws(()=>patchPhoneLayout(source+"\n"),/Core layout boundary changed/);
+ assert.ok(patchPhoneLayout(source).includes('(max-width: 700px) and (hover: none) and (pointer: coarse)'));
+ assert.equal(await readFile(new URL("../../src/LeadPerformanceCalculator.jsx",import.meta.url),"utf8"),source);
 });

@@ -1,0 +1,33 @@
+
+> lead-performance-calculator@1.0.0 build
+> vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 122 modules transformed.
+node_modules/pdfjs-dist/build/pdf.js (1982:23): Use of eval in "node_modules/pdfjs-dist/build/pdf.js" is strongly discouraged as it poses security risks and may cause issues with minification.
+rendering chunks...
+computing gzip size...
+dist/index.html                                   6.86 kB │ gzip:   2.40 kB
+dist/assets/pdf.worker.min-DKQKFyKK.js        1,087.21 kB
+dist/assets/leaflet-CIGW-MKW.css                 15.61 kB │ gzip:   6.46 kB
+dist/assets/pdf.worker.min-CElaEpGn.js            0.07 kB │ gzip:   0.09 kB
+dist/assets/FenceEditor-Bh4qHqri.js               6.64 kB │ gzip:   2.79 kB
+dist/assets/papaparse.min-9mxOudfL.js            18.89 kB │ gzip:   7.07 kB
+dist/assets/leaderboard-template-BWPwLIt8.js     86.85 kB │ gzip:  27.47 kB
+dist/assets/vendor-B-wuX89F.js                  141.46 kB │ gzip:  45.42 kB
+dist/assets/leaflet-src-CZmcAD00.js             149.98 kB │ gzip:  43.55 kB
+dist/assets/pdf-DBxEzn28.js                     329.13 kB │ gzip:  96.71 kB
+dist/assets/index-CA7Qznbl.js                   772.87 kB │ gzip: 236.10 kB
+dist/assets/Manager-6lRpozij.js               1,233.89 kB │ gzip: 354.37 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 7.30s
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

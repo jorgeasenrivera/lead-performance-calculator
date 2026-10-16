@@ -8,6 +8,12 @@ import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
   "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
+export function patchPhoneLayout(source) {
+  if (createHash("sha256").update(source).digest("hex") !== "c7455aead78b8d4994c95914080aa61d068eb5934b9d279f02672d8520b2676a") throw Error("Core layout boundary changed. Re-review preview transform.");
+  const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
+  if (!source.includes(old)) throw Error("Phone layout hook not found");
+  return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
+}
 export function patchManager(source) {
   if (createHash("sha256").update(source).digest("hex") !== MANAGER_SHA)
     throw Error(
@@ -25,13 +31,13 @@ export function patchManager(source) {
     const heat=previewSalesHeat(previewCalendarStore,month,today),byDay=new Map(heat.map(r=>[r.day,r]));
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
     const bestText=heat.some(r=>r.best)?'Best'+(heat.filter(r=>r.best).length>1?' (tied)':'')+': '+heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(', '):'No recorded best day';
-    const openCalendar=e=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget}}));
-    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={openCalendar}>
+    const openCalendar=(e,day)=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget,day,store:previewCalendarStore.id}}));
+    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={e=>openCalendar(e)}>
       {!mobile && <strong className="sp-entry-month">{title}</strong>}
       <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':''))} title={day?(byDay.get(day).state==='known'?byDay.get(day).units+' recorded sales'+(byDay.get(day).best?' · '+byDay.get(day).bestLabel:''):'Sales: '+byDay.get(day).state):undefined}>{day?Number(day.slice(-2)):''}</i>)}</span>
       <span className="sp-heat-note">{bestText}</span>
     </button>;
-    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-toggle sp-compact-entry" aria-label={title+', calendar'} aria-expanded={expanded} aria-controls="sp-mobile-calendar-panel" onClick={()=>setExpanded(value=>{previewHeroState.expanded=!value;return !value;})}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong></button><div id="sp-mobile-calendar-panel" hidden={!expanded}>{calendar}</div></div>:calendar;
+    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-toggle sp-compact-entry" aria-label={title+', calendar'} aria-expanded={expanded} aria-controls="sp-mobile-calendar-panel" onClick={()=>setExpanded(value=>{previewHeroState.expanded=!value;return !value;})}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong></button><div id="sp-mobile-calendar-panel" hidden={!expanded}><div className="sp-mini-grid sp-date-buttons" aria-label={title}>{cells.map((day,i)=>day?<button type="button" key={day} className={'sp-hero-day sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':'')} data-hero-day={day} aria-label={new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'})+', open day details'} aria-current={day===today?'date':undefined} onClick={e=>openCalendar(e,day)}>{Number(day.slice(-2))}</button>:<span key={'blank'+i} aria-hidden="true"/>)}</div></div></div>:calendar;
   }
   function SignalSchedule({children}) {
     const signal=useSignal();
@@ -109,6 +115,7 @@ export async function buildPreview() {
           if (id.endsWith("/src/main.jsx"))
             return 'import "/scripts/scheduler-performance/entry.jsx";';
           if (id.endsWith("/src/Manager.jsx")) return patchManager(source);
+          if (id.endsWith("/src/LeadPerformanceCalculator.jsx")) return patchPhoneLayout(source);
         },
       },
       react(),
