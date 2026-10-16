@@ -1,3 +1,5 @@
+import { teamsOnDay, membershipAt, teamSnapshot, dayAbsence, absenceKind, absenceLabel } from "./team-model.mjs";
+import { balanceMarkup, teamDayMarkup, openTeamEditor, peopleTeamsMarkup, personTeamLabel } from "./team-ui.mjs";
 import { openScheduleImport } from "./import-ui.mjs";
 import { timeLabel } from "./shift-intervals.mjs";
 import { fixtures, addDays } from "./model.mjs";
@@ -13,7 +15,7 @@ import {
   calendarCells,
 } from "./month-model.mjs";
 import { storeRuleDraft, applyStoreRuleForm, effectiveExceptions } from "./store-editor.mjs";
-import { fixtureAssignments, teamsFor, assignmentSummary } from "./assignment-view.mjs";
+import { fixtureAssignments, assignmentSummary } from "./assignment-view.mjs";
 import { dayDemand, monthDemand } from "./demand-context.mjs";
 import { icon } from "./sage-icons.mjs";
 const stores = fixtures(),
@@ -67,16 +69,16 @@ const markChanged = () => {
   draft().accepted = false;
   draft().reviewFingerprint = null;
 };
-const staffing = row => assignmentSummary(draft().store.people, teamsFor(draft().store.people, mode), row.record, row);
+const staffing = row => assignmentSummary(draft().store.people, teamsOnDay(draft().store,row.record,row.day,mode), row.record, {...row,store:draft().store});
 const staffingMarkup = (s, expandable = false) => {
   if (s.status === "Closed") return `<span class="staff-closed">${icon("clock")}Store closed</span>`;
   const wrap = expandable ? "div" : "span";
-  const memberState = id => s.conflicting.includes(id) ? "Conflict" : s.on.includes(id) ? "On" : s.off.includes(id) ? "Off" : "Unknown";
+  const memberState = id => s.conflicting.includes(id) ? "Conflict" : s.on.includes(id) ? "On" : s.vacation?.includes(id)?"Vacation":s.unavailable?.includes(id)?"Unavailable":s.off.includes(id) ? "Scheduled off" : "Unknown";
   const memberNames = t => `<span class="team-members" role="list" aria-label="${esc(t.name)} members">${[...new Set(t.ids)].map(id=>`<span class="team-member" role="listitem"><span>${esc(draft().store.people.find(p=>p.id===id)?.name || id)}</span><strong>${memberState(id)}</strong></span>`).join("")}</span>`;
   const person = p => `<span class="additional-person" data-person="${esc(p.id)}"><span>${esc(p.name)}</span><strong>${p.state}</strong></span>`;
   const people = s.additionalPeople || [], first = people.slice(0,3).map(person).join(""), rest = people.slice(3);
   const named = `<span class="additional-names">${first || "No additional people"}</span>${rest.length ? expandable ? `<details class="additional-more"><summary aria-expanded="false" aria-controls="additional-remaining">${rest.length} more ${rest.length === 1 ? "person" : "people"}</summary><span id="additional-remaining" class="additional-names">${rest.map(person).join("")}</span></details>` : `<span class="additional-preview-more">${rest.length} more ${rest.length === 1 ? "person" : "people"} in day details</span>` : ""}`;
-  const counts = mode === "team" ? "" : `<${wrap} class="staff-people"><span class="staff-group-title">${icon("users")}${mode === "mixed" ? "Additional people" : "People"}</span><span class="staff-counts">${[["on","On","check"],["off","Off","close"],["unknown","Unknown","question"],...(s.additional.conflicts ? [["conflicts","Conflicting","warn"]] : [])].map(([key,label,glyph])=>`<span class="staff-count" data-count="${key}">${icon(glyph)}<strong>${s.additional[key]}</strong><span>${label}</span></span>`).join("")}</span>${named}</${wrap}>`;
+  const counts = mode === "team" && !people.length ? "" : `<${wrap} class="staff-people"><span class="staff-group-title">${icon("users")}${mode === "mixed" ? "Additional people" : "People"}</span><span class="staff-counts">${[["on","On","check"],["off","Off","close"],["unknown","Unknown","question"],...(s.additional.vacation ? [["vacation","Vacation","close"]] : []),...(s.additional.unavailable ? [["unavailable","Unavailable","close"]] : []),...(s.additional.conflicts ? [["conflicts","Conflicting","warn"]] : [])].map(([key,label,glyph])=>`<span class="staff-count" data-count="${key}">${icon(glyph)}<strong>${s.additional[key]}</strong><span>${label}</span></span>`).join("")}</span>${named}</${wrap}>`;
   return `<${wrap} class="staffing-groups">${s.teams.length ? `<span class="staff-teams">${s.teams.map(t=>`<span class="staff-team" data-state="${t.state}"><span class="staff-team-name">${icon("users")}${esc(t.name)}</span><span class="staff-team-state">${icon(t.state === "On" ? "check" : t.state === "Off" ? "close" : t.state === "Unknown" ? "question" : "warn")}${t.state}</span>${expandable ? memberNames(t) : ""}</span>`).join("")}</span>` : ""}${counts}</${wrap}>`;
 };
 const statusIcon = status => status === "Scheduled" ? "check" : status === "Closed" ? "close" : status === "Hours unknown" ? "question" : status === "Low staff" ? "users" : "warn";
@@ -136,7 +138,7 @@ function render(focusId, announcement = "") {
  <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button><button id="today">Today</button></div>
  <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button data-dismiss="month-picker">Done</button></div>
  <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Pending means future sales are not yet available. Unknown means no known sales record.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
- ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people at each time, including imported partial shifts.</p></div><div class="editor-tools"><button id="import-schedule">Import schedule</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
+ ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people at each time, including imported partial shifts.</p></div><div class="editor-tools"><button id="import-schedule">Import schedule</button><button id="teams">Teams</button><button id="balance">Team balance</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
  <section id="import-sheet" class="panel" hidden aria-label="Import schedule review"></section>
  <section id="settings-sheet" class="panel" hidden aria-label="Planning settings"></section>
  ${editing ? monthDemandMarkup(d.store) : ""}
@@ -153,10 +155,11 @@ function render(focusId, announcement = "") {
    })
    .join("")}</section></section><section id="sheet" class="panel day-panel" aria-label="Selected day roster"></section></div>
 
- <details class="demo-options"><summary>Demo options</summary><label>Fixture assignment mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label><p>Fictional display only. No live access or publishing.</p></details>
+ ${editing ? balanceMarkup(planner,selected,month) : ""}
+ <details class="demo-options"><summary>Demo options</summary><label>Roster display mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label><p>Fictional display only. No live access or publishing.</p></details>
 
  ${editing ? `<div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button><p id="message" role="status">${announcement ? esc(announcement) : reviewed ? "Manager review recorded for this month in this page only." : ""}</p></div>
- <details class="panel review"><summary>Draft scope and proposed defaults</summary><p>Connected month and roster viewing is separate from deliberate people and coverage editing. This is a fictional preview, not a published staff schedule.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects only the selected store/month.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
+ <details class="panel review"><summary>Draft scope and proposed defaults</summary><p>Connected month and roster viewing is separate from deliberate people and coverage editing. This is a fictional preview, not a published staff schedule.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects assignments and settings only in the selected store/month. Dated team history remains until explicitly edited.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
  <p class="footer">Manual On uses full store hours. Imported CSV shifts keep exact minutes. No overnight shifts, DST-change dates, breaks, appointments, overtime policy, database connection or publishing.</p>` : `<p id="message" role="status">${esc(announcement)}</p>`}`;
   const importButton = document.querySelector("#import-schedule");
   if(importButton) importButton.onclick = () => {
@@ -200,6 +203,12 @@ function render(focusId, announcement = "") {
   document.querySelector("#mode").onchange = e => { mode = e.target.value; render(); document.querySelector(".demo-options").open = true; document.querySelector("#mode").focus(); };
   document.querySelector("#workspace").onclick = () => { quickEdit = false; editing = !editing; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); };
   document.querySelector("#selected-roster").onclick = () => { document.querySelector(".day-heading")?.focus(); };
+  if(editing)document.querySelector('#teams').onclick=()=>{
+    closeImport();
+    if([...pendingAssignments.keys()].some(k=>k.startsWith(selected+':'))||[...pendingSettings.keys()].some(k=>k.startsWith(selected+':'))){document.querySelector('#message').textContent='Apply or cancel pending edits before changing teams.';return;}
+    openTeamEditor({host:document.querySelector('#settings-sheet'),planner,index:selected,month,onDone:()=>render('teams','Dated membership saved. Existing assignment teams remain until reviewed.'),onCancel:()=>{document.querySelector('#settings-sheet').hidden=true;document.querySelector('#teams').focus();}});
+  };
+  if(editing)document.querySelector('#balance').onclick=()=>{const panel=document.querySelector('#team-balance');panel.open=true;panel.querySelector('summary').focus();panel.scrollIntoView({block:'start'});};
   if (editing) document.querySelector("#people").onclick = () => personSheet();
   if (editing) document.querySelector("#rules").onclick = () => storeSheet();
   document
@@ -327,33 +336,42 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   if (changed && document.querySelector("#message")) document.querySelector("#message").textContent = `${dateLabel(day)} roster shown.`;
   const summary = staffing(r);
   if (!editing) {
-    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
+    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
     bindDayActions(sheet,day);
     return;
   }
   const sheet = openSheet(
-    `${dayHeader(day, r)}${dayContext(r, summary)}${importedShifts(r)}${dayDemandMarkup(r)}${
+    `${dayHeader(day, r)}${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${dayDemandMarkup(r)}${
       r.state === "open"
-        ? `<form class="assignment-form"><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset class="people-assignments"><legend>People for ${dateLabel(day)}</legend>${draft().store.people.map(p => `<div class="assignment-person"><div><strong>${esc(p.name)}</strong><small>${r.conflicts[p.id]?.map(esc).join("; ") || (summary.on.includes(p.id) ? "Eligible" : summary.off.includes(p.id) ? "Confirmed off" : "Unknown")}</small></div><label class="check"><input type="checkbox" name="assigned" value="${p.id}" ${r.ids.includes(p.id) ? "checked" : ""} aria-label="${esc(p.name)} on">On</label><label class="check"><input type="checkbox" name="off" value="${p.id}" ${summary.off.includes(p.id)?"checked":""} aria-label="${esc(p.name)} confirmed off">Off</label></div>`).join("")}</fieldset><p>Unchecked people remain unknown. Mark on or confirmed off, not both. Browsing keeps unapplied choices in this page. Cancel discards this date’s choices. Conflicts remain visible after applying.</p><p class="pending-note" id="pending-status" role="status"></p><div class="actions"><button class="primary">Apply day override</button><button type="button" id="suggest">Use suggestion</button><button type="button" id="cancel-day">Cancel edits</button></div></form>`
+        ? `<form class="assignment-form"><fieldset class="team-fields"><legend>Teams</legend>${teamsOnDay(draft().store,r.record,day,mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset class="people-assignments"><legend>People for ${dateLabel(day)}</legend>${draft().store.people.map(p => `<div class="assignment-person"><div><strong>${esc(p.name)}</strong><small>${esc(personTeamLabel(draft().store,p.id,day))}</small><small>${r.conflicts[p.id]?.map(esc).join("; ") || (summary.on.includes(p.id) ? "Eligible" : absenceLabel(dayAbsence(draft().store,r.record,day,p.id)))}</small></div><label class="check"><input type="checkbox" name="assigned" value="${p.id}" ${r.ids.includes(p.id) ? "checked" : ""} aria-label="${esc(p.name)} on">On</label><label class="check"><input type="checkbox" name="off" value="${p.id}" ${summary.off.includes(p.id)?"checked":""} aria-label="${esc(p.name)} confirmed off">Off</label><label class="absence-choice">Off status<select data-absence="${p.id}" aria-label="${esc(p.name)} off status">${['off','vacation','unavailable'].map(kind=>`<option value="${kind}" ${kind===(absenceKind(r.record,p.id)||'off')?'selected':''}>${absenceLabel(kind)}</option>`).join('')}</select></label></div>`).join("")}</fieldset><p>Unchecked people remain unknown. Mark on or confirmed off, not both. Team actions preserve absences. To replace an absence with work, first clear or resolve it explicitly and apply. Browsing keeps unapplied choices in this page. Cancel discards this date’s choices. Conflicts remain visible after applying.</p><p class="pending-note" id="pending-status" role="status"></p><div class="actions"><button class="primary">Apply day override</button><button type="button" id="suggest">Use suggestion</button><button type="button" id="cancel-day">Cancel edits</button></div></form>`
         : `<p>${r.state === "closed" ? "Confirmed closed. No shifts or forecast." : "No staffing suggestion until the store status is confirmed."}</p>`
     }<details class="applied-roster"><summary>Applied roster &amp; sales</summary><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p></details>${r.issues.length ? `<ul class="issues">${r.issues.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}`,
     openerId, true, focus,
   );
   bindDayActions(sheet,day);
+  for(const button of sheet.querySelectorAll('[data-review-membership]'))button.onclick=()=>{
+    if(pendingAssignments.has(pendingKey(day))){document.querySelector('#message').textContent='Apply or cancel day edits before reviewing membership.';return;}
+    const id=button.dataset.reviewMembership,record=planner.record(selected,day);
+    planner.setAssignment(selected,day,{...record,teamSnapshot:{...record?.teamSnapshot,...teamSnapshot(draft().store,day,[id])}});
+    render(undefined,'Assignment team membership explicitly reviewed. Hours and absences unchanged.');daySheet(day);
+  };
   if (r.state === "open") {
     const pending = pendingAssignments.get(pendingKey(day));
     if (pending) for (const box of sheet.querySelectorAll('input[type="checkbox"]')) box.checked = pending[box.name === "assigned" ? "on" : "off"].includes(box.value);
+    if(pending?.absences)for(const select of sheet.querySelectorAll('[data-absence]'))select.value=pending.absences[select.dataset.absence]||'off';
     const saveChoices = () => {
       closeImport();
       const form = new FormData(sheet.querySelector("form"));
-      pendingAssignments.set(pendingKey(day), {on:form.getAll("assigned"),off:form.getAll("off")});
+      pendingAssignments.set(pendingKey(day), {on:form.getAll("assigned"),off:form.getAll("off"),absences:Object.fromEntries([...sheet.querySelectorAll("[data-absence]")].map(el=>[el.dataset.absence,el.value]))});
       sheet.querySelector("#pending-status").textContent = "Unapplied choices · Kept while browsing · Lost on refresh";
     };
     sheet.querySelector("form").addEventListener("change", saveChoices);
     if (pending) sheet.querySelector("#pending-status").textContent = "Unapplied choices restored for this date.";
+    for(const select of sheet.querySelectorAll('[data-absence]'))select.onchange=()=>{sheet.querySelector(`[name=off][value="${select.dataset.absence}"]`).checked=true;saveChoices();};
     sheet.querySelectorAll("[data-team]").forEach(select => select.onchange = () => {
-      const team = teamsFor(draft().store.people, mode)[Number(select.dataset.team)];
+      const team = teamsOnDay(draft().store,r.record,day,mode)[Number(select.dataset.team)];
       for (const id of team.ids) {
+        if(sheet.querySelector(`[name=off][value="${id}"]`).checked||['vacation','unavailable'].includes(dayAbsence(draft().store,r.record,day,id)))continue;
         sheet.querySelector(`[name="assigned"][value="${id}"]`).checked = select.value === "On";
         sheet.querySelector(`[name="off"][value="${id}"]`).checked = select.value === "Off";
       }
@@ -362,8 +380,11 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       e.preventDefault();
       const values = new FormData(e.target), on = values.getAll("assigned"), off = values.getAll("off");
       if (on.some(id => off.includes(id))) { e.target.querySelector("[name=assigned]").setCustomValidity("A person cannot be both on and off."); e.target.reportValidity(); e.target.onchange = () => e.target.querySelector("[name=assigned]").setCustomValidity(""); return; }
+      const protectedOn=on.find(id=>!r.ids.includes(id)&&((r.record?.off||[]).includes(id)||['vacation','unavailable'].includes(dayAbsence(draft().store,r.record,day,id))));
+      if(protectedOn){const input=e.target.querySelector(`[name=assigned][value="${protectedOn}"]`);input.setCustomValidity('This person has a recorded absence or is unavailable. Clear or resolve it explicitly and apply before assigning work.');input.reportValidity();e.target.onchange=()=>input.setCustomValidity('');return;}
+      const absences=Object.fromEntries(off.map(id=>{const kind=sheet.querySelector(`[data-absence="${id}"]`).value;return [id,r.record?.absences?.[id]?.kind===kind?r.record.absences[id]:{kind,source:{kind:'manager day edit'}}];}));
       pendingAssignments.delete(pendingKey(day));
-      planner.setAssignment(selected, day, { on, off, ...(r.record?.shifts ? {shifts:r.record.shifts.filter(shift=>on.includes(shift.personId))} : {}) });
+      planner.setAssignment(selected, day, { on, off, absences, teamSnapshot:r.record?.teamSnapshot, unknownNotes:Object.fromEntries(Object.entries(r.record?.unknownNotes||{}).filter(([id])=>!on.includes(id)&&!off.includes(id))), ...(r.record?.shifts ? {shifts:r.record.shifts.filter(shift=>on.includes(shift.personId))} : {}) });
       markChanged();
       if (quickEdit) editing=false;
       quickEdit=false;
@@ -385,9 +406,10 @@ function personSheet(id = "p0") {
   const store = draft().store,
     p = store.people.find((p) => p.id === id);
   const sheet = openSheet(
-    `<h2>Person sheet</h2><p>Availability and Monday–Sunday weekly limit for this store and month only. Other monthly drafts retain their own settings. Unapplied settings stay in this page while browsing. Cancel settings discards them.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${p.name}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Maximum weekly hours<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><fieldset><legend>Days off</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${p.off.includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply to local proposal</button><button type="button" data-close>Cancel settings</button></div></form>`,
+    `<h2>People</h2>${peopleTeamsMarkup(store,selectedDay||month+"-01")}<p class="people-team-label">${esc(personTeamLabel(store,p.id,selectedDay||month+"-01"))}</p><p>Availability and Monday–Sunday weekly limit for this store and month only. Other monthly drafts retain their own settings. Unapplied settings stay in this page while browsing. Cancel settings discards them.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${p.name}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Maximum weekly hours<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><fieldset><legend>Recurring unavailable weekdays</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${p.off.includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply to local proposal</button><button type="button" data-close>Cancel settings</button></div></form>`,
     "people", false, true, id,
   );
+  for(const button of sheet.querySelectorAll("[data-person-open]"))button.onclick=()=>personSheet(button.dataset.personOpen);
   sheet.querySelector("#person").onchange = (e) => personSheet(e.target.value);
   sheet.querySelector("form").onsubmit = (e) => {
     e.preventDefault();

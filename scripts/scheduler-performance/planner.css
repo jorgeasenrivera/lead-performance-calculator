@@ -1032,3 +1032,16 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 #import-sheet .actions { flex-wrap:wrap; }
 .imported-shifts small { display:block; overflow-wrap:anywhere; }
 .coverage-gaps { padding-left:1.25em; }
+.balance-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr)); gap:16px; }
+.balance-grid > section { border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; overflow-wrap:anywhere; }
+.balance-grid dl > div { margin:12px 0; }
+.balance-grid dd { margin:4px 0; font-weight:600; }
+.team-balance { scroll-margin-top:6rem; }
+.team-day-details { margin:16px 0; }
+.team-day-details li { margin:12px 0; overflow-wrap:anywhere; }
+.team-day-details small,.people-team-groups small { display:block; }
+.team-day-details button { max-width:100%; white-space:normal; }
+.assignment-person .absence-choice { grid-column:1 / -1; width:100%; }
+.absence-choice select { width:100%; min-width:0; }
+.people-team-groups ul { padding-left:1.25em; }
+#add-team-form { border-top:1px solid var(--line); padding-top:16px; margin-top:16px; }

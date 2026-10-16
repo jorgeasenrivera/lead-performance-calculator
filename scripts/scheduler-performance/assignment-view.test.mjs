@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assignmentSummary, fixtureAssignments, teamsFor } from './assignment-view.mjs';
-const people = Array.from({length:6},(_,i)=>({id:`p${i}`,start:9,end:17}));
+const people = Array.from({length:6},(_,i)=>({id:`p${i}`,teamIds:({p0:['oak'],p1:['oak'],p2:['pine'],p3:['pine']})[`p${i}`]||[],start:9,end:17}));
 const row = { state:'open',eligibleIds:people.map(p=>p.id),rule:{open:9,close:17,minimum:2} };
 test('mixed counts deduplicate members and retain unknown people',()=>{
  const s=assignmentSummary(people,teamsFor(people,'mixed'),{on:['p0','p0','p1','p4'],off:['p2','p3']},row);
@@ -35,7 +35,7 @@ test('missing evaluated eligibility cannot claim safe coverage',()=>{
  assert.equal(s.covering,0);assert.equal(s.status,'Low staff');assert.equal(s.conflicting.length,2);
 });
 test('an incomplete team is not a made-up store coverage minimum',()=>{
- const s=assignmentSummary(people,teamsFor(people,'team'),{on:['p0','p1'],off:[]},{...row,issues:[]});
+ const s=assignmentSummary(people,[{name:'Explicit three-person team',ids:['p0','p1','p2']}],{on:['p0','p1'],off:[]},{...row,issues:[]});
  assert.equal(s.teams[0].state,'Partly on');assert.equal(s.covering,2);assert.equal(s.status,'Scheduled');
 });
 for (const count of [0,1,3,4]) test(`additional names preserve unique states and exclude teams (${count} people)`,()=>{

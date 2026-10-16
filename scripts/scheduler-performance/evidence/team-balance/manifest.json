@@ -1,0 +1,359 @@
+{
+  "startingHead": "133f5f2eac9a0ac382cd000e661e805466171b03",
+  "originalVerifiedHead": "8a5b27652d84c3c43da4e6ed29649f9782b7101c",
+  "date": "2026-10-16",
+  "unitTests": 1012,
+  "previewModelTests": 76,
+  "builds": [
+    "production passed",
+    "isolated passed"
+  ],
+  "browserCases": {
+    "teams-chromium": 6,
+    "teams-webkit": 6,
+    "import-chromium": 6,
+    "import-webkit": 6,
+    "delivered-chromium": 12,
+    "delivered-webkit": 12,
+    "import-cap-chromium": 1,
+    "import-cap-webkit": 1,
+    "coherent-flow-chromium": 6,
+    "coherent-flow-webkit": 6
+  },
+  "totalBrowserCases": 62,
+  "scopedAxeScans": 108,
+  "artifactFiles": [
+    {
+      "file": "app-icon-dark.svg",
+      "sha": "f94b68c8593750c4cf9c7a01d6be0f7026931a8a",
+      "size": 1661
+    },
+    {
+      "file": "app-icon-light.svg",
+      "sha": "c5bcad468aa5c0783309777eb70a03509521bb9b",
+      "size": 1661
+    },
+    {
+      "file": "apple-touch-icon.png",
+      "sha": "a105377985e809268f05e51c085392ac69ab5c93",
+      "size": 6794
+    },
+    {
+      "file": "assets/FenceEditor-bcFDMN4v.js",
+      "sha": "1c06b2d405e16fd90e50b03af88564355ef60ec7",
+      "size": 7763
+    },
+    {
+      "file": "assets/index-B1WmSE62.css",
+      "sha": "ae1316173bc58a6d740eed1dc6c143f32746d694",
+      "size": 10563
+    },
+    {
+      "file": "assets/index-BtGDv7IB.js",
+      "sha": "9af29e90549d8944d9f6b2a4270160ed87394cfa",
+      "size": 2032524
+    },
+    {
+      "file": "assets/leaderboard-template-BWPwLIt8.js",
+      "sha": "f6ee020ebb0a93e0b21445851802f59e869e5b26",
+      "size": 86914
+    },
+    {
+      "file": "assets/leaflet-CIGW-MKW.css",
+      "sha": "1927d806eaea2db99c54ce4f9d43acb40802dab9",
+      "size": 15607
+    },
+    {
+      "file": "assets/leaflet-src-D5zg4ys_.js",
+      "sha": "5e7440b2fffb982d5ba0ec48523088e5c35f3e64",
+      "size": 149983
+    },
+    {
+      "file": "assets/papaparse.min-COajVSu7.js",
+      "sha": "09603d23477cd4af7a8f51c47693feb70fc99864",
+      "size": 18888
+    },
+    {
+      "file": "assets/pdf-Bv0feWR6.js",
+      "sha": "59a098096d84c8b0efd264e6c97e04e749b43f45",
+      "size": 329143
+    },
+    {
+      "file": "assets/pdf.worker.min-CElaEpGn.js",
+      "sha": "d4c62537a775dd90dae2559ba1ebe750ddf645f6",
+      "size": 67
+    },
+    {
+      "file": "assets/pdf.worker.min-DKQKFyKK.js",
+      "sha": "49162d546a1a5a11bd2c932b2d1b2520daef1ec3",
+      "size": 1087212
+    },
+    {
+      "file": "favicon-16.png",
+      "sha": "dd3eb6ccd3edad79e339ebef731a6f053597f358",
+      "size": 520
+    },
+    {
+      "file": "favicon-32.png",
+      "sha": "a25d5c8bf5cacb06e80d2a311cdf027f9635bd87",
+      "size": 1131
+    },
+    {
+      "file": "favicon.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "fonts/README.md",
+      "sha": "8bbde3da436c65059125f00ee02f937d9a824e43",
+      "size": 920
+    },
+    {
+      "file": "fonts/geist-latin-ext.woff2",
+      "sha": "66a33f6a78ae71cd10e9cce31bd3c987af14297e",
+      "size": 16540
+    },
+    {
+      "file": "fonts/geist-latin.woff2",
+      "sha": "9d846db84c501327431670fe23b1a8ea1d2a5349",
+      "size": 29288
+    },
+    {
+      "file": "fonts/geist-mono-latin-ext.woff2",
+      "sha": "fbd56f5f92011dd1c11b39396cef32d44d8be3ab",
+      "size": 14712
+    },
+    {
+      "file": "fonts/geist-mono-latin.woff2",
+      "sha": "0e04bb6e7b54057d64c421b959c8c22774ae632d",
+      "size": 23108
+    },
+    {
+      "file": "fonts/space-grotesk-latin-ext.woff2",
+      "sha": "1efa87763419826a7a5376a1616fa19d4e9bc2e4",
+      "size": 18924
+    },
+    {
+      "file": "fonts/space-grotesk-latin.woff2",
+      "sha": "cbee7234c1d753e7c63f8ea9bdb19c87f5378bfb",
+      "size": 22320
+    },
+    {
+      "file": "icon-512.png",
+      "sha": "12cdf94012dd65f272296448503f4bedffdfaa36",
+      "size": 21112
+    },
+    {
+      "file": "index.html",
+      "sha": "17664b91a3d68d8c07a4bc078a17bdc8faadc903",
+      "size": 6144
+    },
+    {
+      "file": "planner/app.mjs",
+      "sha": "9e41194591d1f00d19c1c85f215d0b4119e99131",
+      "size": 50221
+    },
+    {
+      "file": "planner/assignment-view.mjs",
+      "sha": "dce558d38f4fe4b01d79b2095464c6e6c95e8a86",
+      "size": 3329
+    },
+    {
+      "file": "planner/demand-context.mjs",
+      "sha": "48c9dc7bcb669084c52c43e7a41eeeff11a9fb16",
+      "size": 1784
+    },
+    {
+      "file": "planner/import-ui.mjs",
+      "sha": "0df1862a576250318df8c0fab7daf06fb46238e5",
+      "size": 6746
+    },
+    {
+      "file": "planner/index.html",
+      "sha": "90b6f66d347f2a621ac96f885c14bced33a65a23",
+      "size": 459
+    },
+    {
+      "file": "planner/model.mjs",
+      "sha": "e6be66633b06fe17cbfd541297be546ba69893f9",
+      "size": 5180
+    },
+    {
+      "file": "planner/month-model.mjs",
+      "sha": "a61811d43818ec1f751ff2bc8126d4507495dd41",
+      "size": 12562
+    },
+    {
+      "file": "planner/sage-icons.mjs",
+      "sha": "9ba07d4c4473fdc6c6ff09e2f38ec4e0d0e25d15",
+      "size": 1951
+    },
+    {
+      "file": "planner/schedule-import.mjs",
+      "sha": "011c63c855e911e04d8af3288813804405a25da3",
+      "size": 12268
+    },
+    {
+      "file": "planner/shift-intervals.mjs",
+      "sha": "c0ce03fae595faa03230c30d4f9573d81b2b181a",
+      "size": 3053
+    },
+    {
+      "file": "planner/store-editor.mjs",
+      "sha": "284f583922624dddd948f88df64b1424984fc2d7",
+      "size": 2271
+    },
+    {
+      "file": "planner/style.css",
+      "sha": "06e035e07496fd397f4c1291f77137cba1d3f414",
+      "size": 36607
+    },
+    {
+      "file": "planner/team-balance.mjs",
+      "sha": "012b864e58df9b7340c00ab78ff242357b8c671a",
+      "size": 5880
+    },
+    {
+      "file": "planner/team-model.mjs",
+      "sha": "dec92eb7e5f1c881acd2c574679c37d3df2dd645",
+      "size": 3119
+    },
+    {
+      "file": "planner/team-ui.mjs",
+      "sha": "b645386bf1b5ccc83c39a65650b3ad58b54ee122",
+      "size": 10159
+    },
+    {
+      "file": "privacy.html",
+      "sha": "da0980e6bea256ff5fef5d403d600e774c6152ad",
+      "size": 10901
+    },
+    {
+      "file": "sage-lockup-on-ink.svg",
+      "sha": "250d0fcff16b7b6dcfc9196b30d5ca1a42a6c672",
+      "size": 5468
+    },
+    {
+      "file": "sage-lockup-print.svg",
+      "sha": "18d74801980cb78f689f6eb724b2a6bc98638a87",
+      "size": 5434
+    },
+    {
+      "file": "sage-lockup.svg",
+      "sha": "a65b000931acef7aa1f1742231cb1bb14fcd5b9b",
+      "size": 5434
+    },
+    {
+      "file": "sage-mark.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "support.html",
+      "sha": "aa4dc253e75addc4717b5f5381e38f799cb74db8",
+      "size": 5669
+    }
+  ],
+  "sourceHashes": {
+    "team-balance.mjs": "f03987110ea016c52cd324e8e28051710f74d03a83199b3b228ed0ba2ee48ee8",
+    "month-model.test.mjs": "269e54858f1a65c15952d0f50cba67fa7fd396be33d8ba0df07213e17668d413",
+    "probe-connected-workspace.mjs": "bbc0ba63fa75b335d13fab284dc6ea3eb6567b337f700f5c2bbc4e127147e22f",
+    "capture-connected.mjs": "73c3f6ad66ac344aeb82e8b3dfcabe2f2c46b547ac4612ceae2aabf580e48889",
+    "probe-native-touch.mjs": "ec939990eda3a7472dce5d632fe881e5367550cdb133e5418cd0e4f829bf1bb7",
+    "probe-card-layout.mjs": "0206d126d9d5b0ec5c865be45730a11f71729ff52aed40bd58d3949792b25fcf",
+    "probe-import-cap.mjs": "a7e5f912299d68673ea7d9370825fac1593be9985b9de130b4907b3efafd6ca0",
+    "team-ui.mjs": "612db08ea9dd95339ad2c2ae4f946d9099858edea51c187464477a1e03073c64",
+    "shift-intervals.mjs": "b56d8530bd0f49bebf014d1afc0df51357ad3871ec8d71692010b5d16ad0950f",
+    "vercel.json": "efa70abf3dca75580108768de7f1926580ca0d61c64c2cb00b62fb7398e6a388",
+    "probe-calendar-first.mjs": "7eca9a0cb9ddab6fab7674274846c4aa5263396e052488445a2ab165ab427610",
+    "probe-timezone.mjs": "c7dff4ffef6bb42b656c5ed6edbe879c6f8ec180c9b3019239fc3fab34a4e241",
+    "probe-polish.mjs": "d0d501031ef53795acf58d14eb655f53892a206cdf1b4b98d6eae77efa1cc505",
+    "probe-delivered.mjs": "2ea87886a827758063ba98afe6c24b6cf1d02613758cc96640cbd0f65e2dc69e",
+    "probe-demand.mjs": "6baf2db26ef6b1750c06248334da6539a9c86c812c97bcae6c9c5406de694314",
+    "assignment-view.test.mjs": "2a6af9321787d2450670154d0de2cd075512002da5ffec85ca2d72a8657ba87d",
+    "month-model.mjs": "73d4094157ab36cb62dbed1bdd3b208e25257b66afa32bac7734207cb49f3cec",
+    "sage-icons.test.mjs": "4de184c236f5023393f1f403343ca7b3831bef03c1ce80fcb171df0cb8d8a704",
+    "README.md": "d224f022d6b6da15749c3c6b4c4fc13b0c502ad657c27ae4d9c7e777650b1c88",
+    "sales-heat.test.mjs": "af9d25cc1e711ea338e03d0cbde3f0775b6e72c985c33d8c169fb646234538e4",
+    "probe-manager.mjs": "d389789f175f73f734a1c42b521e84d6251c08edc68c5836d4d6f776cdacc155",
+    "store-editor.mjs": "6eca994824794f37e5b0bec7a37d430c8393630f9a1b9ef573f6aaadeb05788d",
+    "probe-mobile-toggle.mjs": "583fc9e5414c506903d39804404ad24c3d6525ad830de06d0b3b2d4073dc63c3",
+    "probe.mjs": "e955efb13572c80c64945c951b8d734d6884bad44d2b95b0224f8d1f5f6399a6",
+    "store-editor.test.mjs": "d7f2ca5b233c545ab6a169066400a349864996c2b0189b415e174ee89ac674b2",
+    ".gitignore": "c796fd3c0852ef00c0aad692206f3de7d22da0b11e80c27fcbd1dec2b7bbd6ef",
+    "assignment-view.mjs": "94e559fe66b87aed0ff2e440535109662917cf48f322810a8bf44774d8d5e087",
+    "month-app.mjs": "7bccc4aecf339dc1ee18e902bc133907b035c6d78e27ea293d0fd453e6ca60ba",
+    "html-finalize.test.mjs": "9abf2dcc97dc7c6975eace6e00032ac0013d35a84bee420c1f82ca7bc93fc425",
+    "demand-context.test.mjs": "cf91e859e1ab52224d6d16eb8e2becbc65d0b4b1618a9d91141a2e0fdf6fd48a",
+    "html-finalize.mjs": "b49915fde7e30e0a1cce66d90cf0bb03822d85ef249e54296837872a744d98bc",
+    "probe-hero-bottom.mjs": "314660c8a02a4a1bb4951521fc8264f1e93efdc125f81a4859d472b4c7c49394",
+    "entry.css": "fe50c514f0ad79fc65a4304f5d6ac6742c80f8e3271017a4de772dabf955c13a",
+    "planner.css": "f6a3f3a10ea5e4c9be53848a9b8d6aa5484695979316ce3e6d4dd0a162c9ea71",
+    "probe-date-readability.mjs": "2a92e3e58bc211536c87b70d017763063069719cf3c2e62b1c029c4be8ebec4e",
+    "sage-icons.mjs": "87decee596b424898bb47f821d32e9879449e684f2c1904245ced01cbab8f641",
+    "probe-teams.mjs": "1b60192cf08ef6e8da83b263b3aeb9194e3cc38af2d4a60269f99613b9393451",
+    "schedule-import.mjs": "fe9a063f84a8c47ce91fdc59aeaadd3319fb4c12ec692682d740ff4bbccdf150",
+    "date-readability.mjs": "a3dc3dc8ba51438a47c8b4a71e1c11dc6f9216679c18d3f06ee65f33d07529cf",
+    "team-model.mjs": "7c25f9bc67b18f6b033f35657cf0abedc5999bea5a763378246d928a61c10ea5",
+    "build.mjs": "6afd6fdd984abc9709408b5c96a9c5a33f04cb8e2eca658050b43c4bf6e90f63",
+    "probe-coherent-flow.mjs": "1b084c3320e264378c9dc9951f0b5aa620fb5648f804a55bc0e0f8e587a54391",
+    "import-ui.mjs": "45b4c277dfa5bb239f9211bddf1edadbb2330098ba0a3b3e183990f5113f5bf0",
+    "probe-import.mjs": "c6f1607260d865ceb53b5cb469793d82a9c08c3f07092f1569a4ab8111412665",
+    "probe-review-corrections.mjs": "91f732165b76550596f03a8f595c6583802a9507b03cb2b11c3f9dda0c520be3",
+    "probe-simplification.mjs": "839c03165b2881c12d3060bff801be540a2b7a46c88314a98da400256b84794b",
+    "fixture.json": "71ea2760cfd1c28b8dcba26efb06e36b8d8e0fe5b9f643c63104ed8ba571f9a4",
+    "probe-monthly.mjs": "cb9ca6517ddc018d2c7615070778d35fbff140600945fc81b81c814c5fd82426",
+    "isolation.test.mjs": "6ecf063c3f9bed4091ee0be8ee3806e40f4691b5f5d223bfdb490997928c5db6",
+    "schedule-import.test.mjs": "90f039db44a6eeaa47c9023f11255a2d4745f7e9a98bd380bf9b1167b026cf3b",
+    "probe-input-reflow.mjs": "b42bec67d18993a47a3d2a52bafe4b1e8f6fdef46303e375421714979e721186",
+    "demand-context.mjs": "3c82e4476127c9abeef92ac32b486b482162af1a78d1d94c0c8f3ea030cace8f",
+    "probe-compact-scaling.mjs": "49336b128efbd7297df23622bab15c040f8038b85a23d8e69cade7faa730ac07",
+    "probe-additional-people.mjs": "59b099c6cde8605427490e0b47b215b29a2b60839e2d15aaa1d4332ec719062b",
+    "team-model.test.mjs": "8d603a794062020fadec485f0967e138a283096452d31b459dbdfa83815678a7",
+    "entry.jsx": "553b616e0a44a1b3cea6612fff2ad97ae5990e9243af16f86cdcd66a3a894b62"
+  },
+  "evidenceHashes": {
+    "coherent-flow-chromium.log": "735ce28dc81a8be6c2319f7d3b6a21c141629a7b4780709909346a2a52c586d8",
+    "delivered-chromium.log": "c0816f39a72d24ab900d3e6faa30bc8b1abede69e8e2dbf05891d442f49658e6",
+    "webkit-390-text100-people.png": "af952ce92485bb29e401aba27c3e568946c9194e465c6139235f84229432c375",
+    "teams-webkit-results.json": "0c4e1665a59e7248e96e32dd2daf64cf5d60ec9841d3255f1628a0a98fea2001",
+    "import-cap-webkit-results.json": "9ca49f601afd1b1d763e7ef707fc23b35f66a3bf64ada737e5016937fd89dd41",
+    "import-webkit-results.json": "3aab39e52e6724e51fe6f327b7c2dbcc649ada269780406ee94ba60a40c4768a",
+    "delivered-webkit.log": "33acc54153b1a599c3e1e3327f05d04d47581cb1c8f569abc1f7504860c5e450",
+    "webkit-320-text200-people.png": "0d0b2f28c84b337aa3a69cde0675a5944b12f883a908174663f082f29316222a",
+    "delivered-chromium-results.json": "92ec755b553acd5bb4396211837fc4f33399e2146010fb6c8c537af4109e7ac2",
+    "webkit-320-text200-calendar.png": "c93eb043142562bb3f38dd2e992c7cf829dbb57ec9338b5210e858b188f00c26",
+    "coherent-flow-webkit-results.json": "2eb5881f8b18e0033c2b467e56aefc0f47017763795518a8c5e66c439dedd85f",
+    "import-cap-chromium-results.json": "5fd77cb8f0bce42d68c1bb470e4f17d4464ba58827b2021b309dd686ea780c4c",
+    "chromium-390-text100-calendar.png": "605c5a2099609e3180178e79dd79f0b7dcabfd72e27d771babfd32ab44d77db0",
+    "chromium-390-text100-people.png": "294dcf6ae3e63b2ebadc6325723a62f11f1336c755afe2eff318136a2e4ca883",
+    "import-chromium-results.json": "595150ab9f1b656d1a57ed608cca58e68f88634945b3e033f9067e02c4a62a32",
+    "webkit-390-text100-balance.png": "cefa88fb54fb23d4d3b497f01c7368ef047b2a3b504a7e60d5b921bef2e1e39e",
+    "verification-notes.md": "01a51aad97865f4d1aa1eb098396a7a79243c97b4092fa958cfee228c095016a",
+    "webkit-1440-text100-calendar.png": "f76582d6bf50f05f2d51798dfe7078f44a1759ba71874aaff7f58347e9e412e4",
+    "teams-chromium.log": "08b01b4329b549209e7624dfbd821020c73c25f7cbe04b83f7e6f0ec2fdfbbb6",
+    "teams-webkit.log": "82f9fd295ab5ed0ff6dc0343fd59c3ef8fc08ca30b8a6c1c34d7fa784b64e466",
+    "import-chromium.log": "08b01b4329b549209e7624dfbd821020c73c25f7cbe04b83f7e6f0ec2fdfbbb6",
+    "chromium-320-text200-balance.png": "793a9578978fbf14621c4405ca974d2f434daa70ffdbc2fb0f0e74ef88a91143",
+    "tests.log": "f6af46b8f4816011e386a68548d512da6257a6f2de216077bc2b3923d8fc0320",
+    "import-cap-webkit.log": "89fb49c1674824b21177c9787682683e6154cc8144dfeb6cc5efe258582e7e1b",
+    "coherent-flow-chromium-results.json": "408748ade4dfba913dd82ddbfd3fa8f583814fa059914640af16205a440737a2",
+    "teams-chromium-results.json": "49efa13c3db34d28934e6d8e0e9c922e26a94a2f82b2b7abb10b495167593704",
+    "chromium-390-text100-balance.png": "ae078f9d160c3ce4850efc1cc12fac09de3b50736db4aaa5bfe0bd8ebf3725bb",
+    "chromium-320-text200-people.png": "54c454323dfdb43eda0026f750102e86f8dc0706bdb0378f400fad001af31d0c",
+    "delivered-webkit-results.json": "72e30379a0975ae36404312a7444b9f9156072c6a79aaa8144d390e871520f34",
+    "webkit-320-text200-balance.png": "ce13f0ff2588aeff41df0be4a2b9cdecf12a8fbb2c4847ae672ea710cb63ff0c",
+    "webkit-1440-text100-balance.png": "ee9171621fab0a979c62100670cdda1867dfa46923b2e39a7a0bb64762d92055",
+    "import-webkit.log": "82f9fd295ab5ed0ff6dc0343fd59c3ef8fc08ca30b8a6c1c34d7fa784b64e466",
+    "import-cap-chromium.log": "4498fccd81208d3154acc22bb7e27059251cf1b9d86fa4425e1d5bbd08d06309",
+    "webkit-1440-text100-people.png": "1c9752fe4dc7d71c3338300b39194679932c093eb12d3f4682f205e2fb757ba0",
+    "chromium-1440-text100-calendar.png": "8cf52ce87c5d9e87d17ea6689b6b9e86a211ce806379bc805e06669a4847e505",
+    "chromium-1440-text100-balance.png": "af289404e3665cbe01193944bbe627d8803a90ffe219c28fcec001b14a7e9afb",
+    "build.log": "d32d9dd8047cce140c4e4091484638e8f342673fc734007fe97c6c95c44f883c",
+    "webkit-390-text100-calendar.png": "76f34ce6301a64418d43ac373c06e2f485b014b0502d8018ff119700ba7ca0ea",
+    "coherent-flow-webkit.log": "f60c78aff80d0828caf475608cdba3ccd8ea12813b077a6c60abe109b0e9916c",
+    "chromium-1440-text100-people.png": "dbaad5f08fc34fbb498aca2e54f32127d2bd4e37a189d9ffef9fafb8b5d61b38",
+    "production.log": "49a4dc9ea5110b57a3fca986f7b0f4643bff68c7c6c3eb8c3d5b62dba9eac1bf",
+    "chromium-320-text200-calendar.png": "590b475ec25ad6be99e4bbc19c500bf92b8724660e5958fe235efee4f4e6398a"
+  }
+}

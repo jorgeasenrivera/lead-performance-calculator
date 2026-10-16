@@ -1,0 +1,9 @@
+{
+  "engine": "webkit",
+  "status": "passed",
+  "existingMonthCap": 8,
+  "importMonthCap": 40,
+  "blocked": true,
+  "cancelUnchanged": true,
+  "explicitSkipRecovery": true
+}

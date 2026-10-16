@@ -1,3 +1,4 @@
+import { membershipAt, sameTeams, absenceKind, validateMembership } from "./team-model.mjs";
 import { validDate, minute, shiftProblem, storeTimezone } from './shift-intervals.mjs';
 import { enteredMonth, validMonth } from './month-model.mjs';
 const normalize = text => String(text).trim().normalize('NFKC').toLowerCase().replace(/\s+/g,' ');
@@ -20,18 +21,18 @@ export function csvRows(text) {
 }
 export function parseSchedule(text, file='schedule.csv') {
   const rows=csvRows(text);if(rows.length<2)throw Error('Add a header and at least one schedule row.');
-  const headers=rows.shift().cells.map(normalize),allowed=['name','person id','date','end date','start','end','status','timezone'];
-  if(new Set(headers).size!==headers.length || headers.some(h=>!allowed.includes(h)))throw Error('Use only Name, Person ID, Date, End Date, Start, End, Status and Timezone columns. Breaks and grids are unsupported.');
+  const headers=rows.shift().cells.map(normalize),allowed=['name','person id','date','end date','start','end','status','timezone','team'];
+  if(new Set(headers).size!==headers.length || headers.some(h=>!allowed.includes(h)))throw Error('Use only Name, Person ID, Date, End Date, Start, End, Status, Timezone and Team columns. Breaks and grids are unsupported.');
   if(!headers.includes('date')||!headers.includes('start')||!headers.includes('end')||(!headers.includes('name')&&!headers.includes('person id')))throw Error('Required columns: Name (or Person ID), Date, Start, End.');
   return rows.map(({line,cells},index)=>({index,source:{file,line},raw:Object.fromEntries(headers.map((h,i)=>[h,(cells[i]||'').trim()])),problem:cells.length!==headers.length?'Column count does not match the header.':null}));
 }
 export function importSnapshot(planner,index) {
   const store=planner.context(index,'2014-01-01').store;
-  return JSON.stringify({revision:planner.revision,index,id:store.id,people:store.people,rules:store.rules,drafts:[...planner.drafts].filter(([key])=>key.startsWith(index+':'))});
+  return JSON.stringify({revision:planner.revision,index,id:store.id,people:store.people,rules:store.rules,teams:store.teams,memberships:store.memberships,drafts:[...planner.drafts].filter(([key])=>key.startsWith(index+':'))});
 }
 const sameShift=(a,b)=>['storeId','personId','date','endDate','startMinute','endMinute','timezone'].every(k=>a[k]===b[k]);
 export function reviewImport(planner,index,rows,choices={}) {
-  const snapshot=importSnapshot(planner,index),candidates=new Map(),items=[];
+  const snapshot=importSnapshot(planner,index),candidates=new Map(),items=[],membershipChanges=new Map();
   for(const row of rows){
     const raw=row.raw,context=planner.context(index,raw.date),store=context.store;
     const item={...row,storeId:store.id,personId:null,state:'blocked',messages:[]};items.push(item);
@@ -44,24 +45,46 @@ export function reviewImport(planner,index,rows,choices={}) {
     if(choices[row.index]?.skip){item.state='skipped';item.messages=[];continue;}
     if(!validDate(raw.date))item.messages.push('Use a real Date in YYYY-MM-DD, including the year.');
     const status=normalize(raw.status||'work');
-    if(!['work','off'].includes(status))item.messages.push('Status must be work or off.');
+    if(!['work','off','vacation','unavailable','unknown'].includes(status))item.messages.push('Status must be work, off, vacation, unavailable or unknown.');
     const zone=raw.timezone||storeTimezone(store);
     const endDate=raw['end date']||raw.date;
     if(zone!==storeTimezone(store))item.messages.push('Timezone does not match this store.');
-    if(status==='off' && (raw.start||raw.end||endDate!==raw.date))item.messages.push('An off row must have blank times and the same end date.');
+    if(status!=='work' && (raw.start||raw.end||endDate!==raw.date))item.messages.push('A non-work row must have blank times and the same end date.');
     const shift={storeId:store.id,personId:person?.id,date:raw.date,endDate,timezone:zone,startMinute:minute(raw.start||''),endMinute:minute(raw.end||''),source:row.source};
     if(status==='work'){const problem=shiftProblem(shift,store,raw.date);if(problem)item.messages.push(problem);}
     item.shift=status==='work'?shift:null;item.status=status;
+    let acceptedTeam=null,teamChange=null;
+    if(person&&validDate(raw.date)) {
+      const current=membershipChanges.get(person.id+':'+raw.date)||membershipAt(store,person.id,raw.date);
+      const names=raw.team?raw.team.split('|').map(normalize).filter(Boolean):null;
+      if(raw.team&&names.length===0)item.messages.push('Use named teams separated by |, or none.');
+      const declared=names?.every(n=>n==='none')?[]:names?.map(n=>store.teams.find(t=>normalize(t.name)===n)?.id);
+      item.currentTeams=current.teamIds;item.currentTeamUnknown=Boolean(current.unknown);item.declaredTeam=raw.team||'';
+      item.teamMismatch=Boolean(names&&(declared.some(id=>!id)||current.unknown||!sameTeams(declared,current.teamIds)));
+      item.knownTeams=!declared?.some(id=>!id);item.teamDecision=choices[row.index]?.teamDecision||'';
+      if(item.teamMismatch&&!['keep','confirm'].includes(item.teamDecision))item.messages.push('Team membership differs. Explicitly keep current teams or confirm the declared teams for this date.');
+      if(item.teamMismatch&&item.teamDecision==='confirm'&&!item.knownTeams)item.messages.push('Unknown team name. Add it in Teams first, keep current teams, or skip.');
+      const useDeclared=item.teamMismatch&&item.teamDecision==='confirm'&&item.knownTeams;
+      acceptedTeam={...current,date:raw.date,from:raw.date,to:raw.date,membershipBasis:{from:current.from,to:current.to,source:current.source},unknown:useDeclared?false:current.unknown,teamIds:useDeclared?declared:current.teamIds,source:{kind:useDeclared?'CSV confirmed team change':raw.team?'CSV reviewed membership':'CSV retained membership',...row.source,declaredTeam:raw.team||null}};
+      if(useDeclared)teamChange={...acceptedTeam,from:raw.date,to:raw.date};
+    }
     if(item.messages.length)continue;
     const record=structuredClone(candidates.get(raw.date)||context.record||{on:[],off:[]});record.on||=[];record.off||=[];record.shifts||=[];
     const existing=record.shifts.filter(s=>s.personId===person.id);
-    if(status==='work' && existing.some(s=>sameShift(s,shift)) || status==='off' && record.off.includes(person.id)){item.state='duplicate';continue;}
-    if(status==='off' && (record.on.includes(person.id)||existing.length))item.messages.push('Existing work conflicts with off. Keep it, or edit the day before importing.');
+    if(record.teamSnapshot?.[person.id]&&(!sameTeams(record.teamSnapshot[person.id].teamIds,acceptedTeam.teamIds)||Boolean(record.teamSnapshot[person.id].unknown)!==Boolean(acceptedTeam.unknown)))item.messages.push('This date already has a different assignment team snapshot. Review its teams in day details first.');
+    if(item.messages.length)continue;
+    if(status==='work' && existing.some(s=>sameShift(s,shift)) || status!=='work'&&status!=='unknown'&&absenceKind(record,person.id)===status || status==='unknown'&&record.unknownNotes?.[person.id]){item.state='duplicate';continue;}
+    if(status!=='work'&&record.off.includes(person.id))item.messages.push('An existing absence has a different status. Review the day first; it will not be replaced.');
+    if(status!=='work' && (record.on.includes(person.id)||existing.length))item.messages.push('Existing work conflicts with off. Keep it, or edit the day before importing.');
     if(status==='work' && record.off.includes(person.id))item.messages.push('This person is confirmed off. Edit the day first or skip this row.');
     if(status==='work' && record.on.includes(person.id)&&!existing.length)item.messages.push('A manual or fixture full-day assignment already exists. It will not be replaced.');
     if(status==='work' && existing.some(s=>shift.startMinute<s.endMinute && shift.endMinute>s.startMinute))item.messages.push('This interval overlaps an existing shift or another included row.');
     if(item.messages.length)continue;
-    if(status==='work'){record.shifts.push(shift);record.on=[...new Set([...record.on,person.id])];}else record.off.push(person.id);
+    record.teamSnapshot={...record.teamSnapshot,[person.id]:acceptedTeam};
+    if(status==='work'){record.shifts.push({...shift,teamIds:acceptedTeam.teamIds,teamSource:acceptedTeam.source});record.on=[...new Set([...record.on,person.id])];if(record.unknownNotes)delete record.unknownNotes[person.id];}
+    else if(status==='unknown')record.unknownNotes={...record.unknownNotes,[person.id]:{source:row.source}};
+    else {record.off.push(person.id);record.absences={...record.absences,[person.id]:{kind:status,source:{kind:'CSV',...row.source}}};if(record.unknownNotes)delete record.unknownNotes[person.id];}
+    if(teamChange)membershipChanges.set(person.id+':'+raw.date,teamChange);
     candidates.set(raw.date,record);item.state='ready';
   }
   // A new interval can invalidate an existing shift under another month's cap.
@@ -89,13 +112,15 @@ export function reviewImport(planner,index,rows,choices={}) {
       item.state='blocked';item.messages.push(`Existing assignment on ${day}: ${added.join('; ')}. Skip this row or resolve that assignment first.`);
     }
   }
-  return {index,storeId:planner.context(index,'2014-01-01').store.id,snapshot,items,candidates,blocked:items.some(i=>i.state==='blocked'),applied:false};
+  return {index,storeId:planner.context(index,'2014-01-01').store.id,snapshot,items,candidates,membershipChanges:[...membershipChanges.values()],blocked:items.some(i=>i.state==='blocked'),applied:false};
 }
 export function applyImport(planner,review) {
   if(review.applied) return {changed:0,duplicate:true};
   if(importSnapshot(planner,review.index)!==review.snapshot)throw Error('The draft changed. Read and review the file again before applying.');
   if(review.blocked)throw Error('Resolve or skip every blocked row before applying.');
+  for(const entry of review.membershipChanges||[])validateMembership(planner.context(review.index,entry.from).store,entry);
   // All validation precedes this synchronous, in-memory batch. No network or persistence.
   for(const [day,record] of review.candidates)planner.setAssignment(review.index,day,record);
+  for(const entry of review.membershipChanges||[])planner.setMembership(review.index,entry);
   review.applied=true;return {changed:review.candidates.size,duplicate:review.candidates.size===0,firstDay:[...review.candidates.keys()].sort()[0]};
 }

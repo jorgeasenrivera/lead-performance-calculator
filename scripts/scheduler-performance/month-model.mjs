@@ -1,3 +1,4 @@
+import { seedTeams, teamSnapshot, validateMembership } from "./team-model.mjs";
 import { personIntervals, unionMinutes, coverageSegments, shiftProblem, storeTimezone } from "./shift-intervals.mjs";
 import {
   addDays,
@@ -34,6 +35,7 @@ export function shiftMonth(month, delta) {
 // A draft owns its settings and overrides. Viewing another month never mutates it.
 export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
   const drafts = new Map();
+  const teamState = stores.map(seedTeams), initialTeams = structuredClone(teamState);
   let revision = 0;
   const key = (index, month) => `${index}:${month}`;
   const get = (index, month) => {
@@ -44,6 +46,7 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
       drafts.set(k, {
         store: {
           ...stores[index],
+          ...teamState[index],
           timezone: storeTimezone(stores[index]),
           people: structuredClone(stores[index].people),
           rules: structuredClone(stores[index].rules),
@@ -54,7 +57,7 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
       });
     return drafts.get(k);
   };
-  const resolve = (index, day) => drafts.get(key(index, day.slice(0, 7))) || { store: stores[index], overrides: {} };
+  const resolve = (index, day) => drafts.get(key(index, day.slice(0, 7))) || { store: {...stores[index],...teamState[index]}, overrides: {} };
   const record = (index, day) => {
     const d = resolve(index, day);
     if (Object.hasOwn(d.overrides, day)) {
@@ -63,7 +66,8 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     }
     const rule = ruleFor(d.store.rules, day);
     const state = rule && (rule.holidays[day] || (rule.closedDays.includes(weekday(day)) ? "closed" : "open"));
-    return state === "open" ? assignmentForDay(day, index) : null;
+    const value=state === "open" ? assignmentForDay(day, index) : null;
+    return value ? {...structuredClone(value),teamSnapshot:teamSnapshot({...stores[index],...initialTeams[index]},day,[...(value.on||[]),...(value.off||[])])} : null;
   };
   const rows = (index, month) => {
     get(index, month);
@@ -71,7 +75,15 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
   };
   const setAssignment = (index, day, value) => {
     const d = get(index, day.slice(0, 7));
-    d.overrides[day] = structuredClone(value);
+    const prior=record(index,day);
+    const copy=structuredClone(value);
+    if(!Array.isArray(copy)) {
+      if(prior?.unknownNotes&&!copy.unknownNotes)copy.unknownNotes=Object.fromEntries(Object.entries(prior.unknownNotes).filter(([id])=>!(copy.on||[]).includes(id)&&!(copy.off||[]).includes(id)));
+      if(prior?.absences||copy.absences)copy.absences=Object.fromEntries((copy.off||[]).map(id=>[id,copy.absences?.[id]||prior?.absences?.[id]||{kind:'off',source:{kind:'manager day edit'}}]));
+      const ids=[...new Set([...(copy.on||[]),...(copy.off||[]),...Object.keys(copy.unknownNotes||{})])];
+      copy.teamSnapshot=Object.fromEntries(ids.map(id=>[id,copy.teamSnapshot?.[id]||prior?.teamSnapshot?.[id]||teamSnapshot(d.store,day,[id])[id]]));
+    }
+    d.overrides[day] = copy;
     revision++;
     d.accepted = false;
     d.reviewFingerprint = null;
@@ -81,7 +93,16 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     revision++;
     return get(index, month);
   };
-  return { get, rows, record, setAssignment, reset, drafts, get revision() { return revision; }, context: (index,day) => ({...resolve(index,day),record:record(index,day)}) };
+  const setMembership = (index,entry) => {
+    const store={...stores[index],...teamState[index]};
+    const next=validateMembership(store,entry);teamState[index].memberships.push(next);revision++;
+    for(const [k,d] of drafts)if(k.startsWith(index+':')){d.accepted=false;d.reviewFingerprint=null;}
+  };
+  const addTeam = (index,name) => {
+    name=String(name).trim();if(!name||name.length>60||teamState[index].teams.some(t=>t.name.toLowerCase()===name.toLowerCase()))throw Error('Use a unique team name, up to 60 characters.');
+    let n=teamState[index].teams.length+1;while(teamState[index].teams.some(t=>t.id==='team-'+n))n++;const id='team-'+n;teamState[index].teams.push({id,name});revision++;return id;
+  };
+  return { get, rows, record, setAssignment, reset, drafts, setMembership, addTeam, teamState, get revision() { return revision; }, context: (index,day) => ({...resolve(index,day),record:record(index,day)}) };
 }
 // Evaluate legacy full-day and explicit minute shifts across complete Monday–Sunday weeks.
 // Suggestions never contribute hours and never become assignments implicitly.

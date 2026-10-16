@@ -280,3 +280,18 @@ Final CSV-import validation: 995 tests (22 new import/model cases), production a
 At 1440px/100% text the selected month and persistent roster are side by side again. The calendar has a larger width share so Delivered stays single-line; mobile and enlarged-text reflow remain intact. Import review now compares before/after conflicts across complete affected weeks in every monthly context. A January import cannot invalidate a December manual shift under December's lower weekly cap. The offending imported row must be resolved or explicitly skipped before the atomic batch can apply. See `evidence/review-fixes/` for the exact Cedar reproduction, regression matrices and screenshots.
 
 Final review-fix checks: 998 unit tests, production and isolated builds, 38 fresh browser cases and 48 scoped axe scans passed. Both engines require the side-by-side sticky desktop roster and verify the exact Cedar conflict/skip flow. Final remote SHA, CI and protected deployment identity are recorded on PR #478.
+
+## Dated teams and absence review
+
+Make schedule now includes Teams, Team balance and a grouped People panel. Team
+membership uses store/person identities and inclusive effective dates. Display
+mode changes only presentation. Imports retain exact shifts and source metadata,
+require explicit review of mismatched Team values, and distinguish vacation,
+unavailable, scheduled off and unknown assignments. Team balance compares applied
+eligible time with available windows over the visible month; strength remains
+unavailable without reliable inputs. Everything stays in memory.
+
+See [verification notes](evidence/team-balance/verification-notes.md) for the
+comparison method, provenance contract, production People integration boundary
+and verification limits. Real workbook mapping awaits a sample; CSV is the only
+supported schedule input.

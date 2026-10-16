@@ -87,13 +87,13 @@ test('import validates existing assignments under both monthly caps, atomically,
  ]){
   const p=setup();p.get(0,existingDay.slice(0,7)).store.people[0].maxHours=existingCap;
   p.get(0,importDay.slice(0,7)).store.people[0].maxHours=importCap;
-  p.setAssignment(0,existingDay,{on:['a'],off:[]});
+  p.setAssignment(0,existingDay,{on:['a'],off:[]});const existingRecord=structuredClone(p.record(0,existingDay));
   const rows=csv(`Alex One,${importDay},09:00,09:01,work\nBlair Two,${importDay},09:00,09:01,work`),before=importSnapshot(p,0),r=reviewImport(p,0,rows);
   assert.equal(r.blocked,true);assert.ok(r.items[0].messages.some(m=>m.includes('weekly hours exceeded')));
   if(existingCap===8)assert.ok(r.items[0].messages.some(m=>m.includes(`Existing assignment on ${existingDay}`)));
   assert.throws(()=>applyImport(p,r));assert.equal(importSnapshot(p,0),before);
   const skipped=reviewImport(p,0,rows,{0:{skip:true}});assert.equal(skipped.blocked,false);assert.equal(applyImport(p,skipped).changed,1);
-  assert.deepEqual(p.record(0,existingDay),{on:['a'],off:[]});assert.deepEqual(p.record(0,importDay).on,['b']);
+  assert.deepEqual(p.record(0,existingDay),existingRecord);assert.deepEqual(p.record(0,importDay).on,['b']);
  }
 });
 test('an unrelated pre-existing conflict does not block a different person import',()=>{
