@@ -1,3 +1,5 @@
+import { openScheduleImport } from "./import-ui.mjs";
+import { timeLabel } from "./shift-intervals.mjs";
 import { fixtures, addDays } from "./model.mjs";
 import {
   createPlanner,
@@ -18,6 +20,7 @@ const stores = fixtures(),
   planner = createPlanner(stores, { assignmentForDay: fixtureAssignments }),
   app = document.querySelector("#app");
 let quickEdit = false;
+let closeImport = () => {};
 // Unapplied choices are local to a store/date and never enter coverage calculations.
 const pendingAssignments = new Map();
 const pendingSettings = new Map();
@@ -118,6 +121,7 @@ new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
   attributeFilter: ["style"],
 });
 function render(focusId, announcement = "") {
+  closeImport();
   if (!selectedDay?.startsWith(month)) selectedDay = initialDay();
   app.classList.toggle("planning-workspace", editing);
   const dates = monthDays(month),
@@ -132,7 +136,8 @@ function render(focusId, announcement = "") {
  <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button><button id="today">Today</button></div>
  <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button data-dismiss="month-picker">Done</button></div>
  <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Pending means future sales are not yet available. Unknown means no known sales record.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
- ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people across full store hours.</p></div><div class="editor-tools"><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
+ ${editing ? `<div class="workspace-intro"><h2>People &amp; coverage</h2><p>Choose a date, set who is on or off, then apply that day. Coverage counts unique eligible people at each time, including imported partial shifts.</p></div><div class="editor-tools"><button id="import-schedule">Import schedule</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button><span>${issues ? `${issues} to resolve` : reviewed ? "Reviewed locally" : "Ready for manager"}</span></div>` : ""}
+ <section id="import-sheet" class="panel" hidden aria-label="Import schedule review"></section>
  <section id="settings-sheet" class="panel" hidden aria-label="Planning settings"></section>
  ${editing ? monthDemandMarkup(d.store) : ""}
  <div class="schedule-layout"><section class="calendar-pane" aria-label="Month calendar"><div class="calendar-context"><span>${icon("calendar")}${editing ? "Plan by date" : "Month"}</span><button id="selected-roster">${icon("users")}Selected day</button></div>
@@ -152,7 +157,13 @@ function render(focusId, announcement = "") {
 
  ${editing ? `<div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button><p id="message" role="status">${announcement ? esc(announcement) : reviewed ? "Manager review recorded for this month in this page only." : ""}</p></div>
  <details class="panel review"><summary>Draft scope and proposed defaults</summary><p>Connected month and roster viewing is separate from deliberate people and coverage editing. This is a fictional preview, not a published staff schedule.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects only the selected store/month.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
- <p class="footer">Full store-hour shifts only. No appointments, inferred historical staffing, partial shifts, breaks, overtime policy, database connection or publishing.</p>` : `<p id="message" role="status">${esc(announcement)}</p>`}`;
+ <p class="footer">Manual On uses full store hours. Imported CSV shifts keep exact minutes. No overnight shifts, DST-change dates, breaks, appointments, overtime policy, database connection or publishing.</p>` : `<p id="message" role="status">${esc(announcement)}</p>`}`;
+  const importButton = document.querySelector("#import-schedule");
+  if(importButton) importButton.onclick = () => {
+    if([...pendingAssignments.keys()].some(key=>key.startsWith(selected+':')) || [...pendingSettings.keys()].some(key=>key.startsWith(selected+':'))) { document.querySelector('#message').textContent='Apply or cancel your pending day and settings edits before importing.'; return; }
+    closeImport();
+    closeImport = openScheduleImport({host:document.querySelector('#import-sheet'),planner,index:selected,onApply:result=>{if(result.changed){selectedDay=result.firstDay;month=selectedDay.slice(0,7);}render('import-schedule',result.changed?`Imported shifts into ${result.changed} date drafts in this page.`:'No changes: rows were already present or skipped.');},onClose:()=>importButton.focus()});
+  }
   for (const pop of document.querySelectorAll("[popover]")) {
     const trigger = document.querySelector(`[popovertarget="${pop.id}"]`);
     pop.addEventListener("toggle", e => { trigger.setAttribute("aria-expanded", String(e.newState === "open")); if (e.newState === "open") pop.querySelector("input,button")?.focus(); });
@@ -231,6 +242,7 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   sheet.hidden = false;
   sheet.innerHTML = html;
   if (!isDay) {
+    closeImport();
     const key = `${selected}:${month}:${openerId}:${settingsId}`;
     sheet.dataset.pendingKey = key;
     const form = sheet.querySelector("form"), saved = pendingSettings.get(key);
@@ -280,13 +292,17 @@ function dayDemandMarkup(row) {
   if (row.state !== "open") return "";
   const context=dayDemand(draft().store.history,row.day), estimate=context.estimate;
   const demandLinked=Boolean(estimate && row.rule.useCapacity && row.rule.capacity>0);
-  return `<section class="day-demand" aria-label="Illustrative demand and staffing suggestion"><h3>Busyness estimate</h3><p class="demand-range">${estimate ? `${estimate.low} to ${estimate.high} delivered cars` : "Unavailable: fewer than four comparable days"}</p><p>Fictional estimate, not actual sales.</p><dl class="suggested-coverage"><div><dt>Suggested staffing</dt><dd>${row.recommendationTarget}</dd></div><div><dt>Applied eligible</dt><dd>${row.eligibleIds.length}</dd></div><div><dt>Gap to suggestion</dt><dd>${Math.max(0,row.recommendationTarget-row.eligibleIds.length)}</dd></div></dl><p>${demandLinked ? `Uses the upper estimate and your entered capacity of ${row.rule.capacity} cars per person per full shift, never below the configured minimum of ${row.required}.` : `Minimum-only suggestion (${row.required}). ${!estimate ? "History is insufficient." : "Capacity adjustment is off."} History-based staffing is unavailable until comparable history and an enabled capacity input are present.`}</p><details><summary>Estimate basis &amp; candidate people</summary><p>${context.count} prior known same-weekday samples${context.first ? `, ${context.first} through ${context.last}; latest comparable is ${context.daysSinceComparable} days before this date` : ""}. ${context.historyThrough ? `Latest prior fixture observation: ${context.historyThrough}.` : "No prior fixture observations."}</p><p>Minimum and maximum of up to eight prior known same weekdays; at least four are required. This is an illustrative range, not a calibrated forecast or confidence interval. Missing and closed observations are excluded; recorded zero remains zero. Older history is not made current by planning a future month.</p><p>${row.suggestions.length} eligible candidate${row.suggestions.length===1?"":"s"}: ${row.suggestions.map(id=>esc(draft().store.people.find(p=>p.id===id)?.name || id)).join(", ") || "None available"}. Availability and complete-week limits can leave the suggestion unfilled. Use suggestion adds candidates to unapplied choices; it does not remove manual choices or publish a schedule.</p><p>No hourly or role demand is inferred from daily deliveries. Configured minimum coverage remains the hard rule.</p></details></section>`;
+  return `<section class="day-demand" aria-label="Illustrative demand and staffing suggestion"><h3>Busyness estimate</h3><p class="demand-range">${estimate ? `${estimate.low} to ${estimate.high} delivered cars` : "Unavailable: fewer than four comparable days"}</p><p>Fictional estimate, not actual sales.</p><dl class="suggested-coverage"><div><dt>Suggested staffing</dt><dd>${row.recommendationTarget}</dd></div><div><dt>Applied eligible</dt><dd>${row.minimumCoverage}</dd></div><div><dt>Gap to suggestion</dt><dd>${Math.max(0,row.recommendationTarget-row.minimumCoverage)}</dd></div></dl><p>${demandLinked ? `Uses the upper estimate and your entered capacity of ${row.rule.capacity} cars per person per full shift, never below the configured minimum of ${row.required}.` : `Minimum-only suggestion (${row.required}). ${!estimate ? "History is insufficient." : "Capacity adjustment is off."} History-based staffing is unavailable until comparable history and an enabled capacity input are present.`}</p><details><summary>Estimate basis &amp; candidate people</summary><p>${context.count} prior known same-weekday samples${context.first ? `, ${context.first} through ${context.last}; latest comparable is ${context.daysSinceComparable} days before this date` : ""}. ${context.historyThrough ? `Latest prior fixture observation: ${context.historyThrough}.` : "No prior fixture observations."}</p><p>Minimum and maximum of up to eight prior known same weekdays; at least four are required. This is an illustrative range, not a calibrated forecast or confidence interval. Missing and closed observations are excluded; recorded zero remains zero. Older history is not made current by planning a future month.</p><p>${row.suggestions.length} eligible candidate${row.suggestions.length===1?"":"s"}: ${row.suggestions.map(id=>esc(draft().store.people.find(p=>p.id===id)?.name || id)).join(", ") || "None available"}. Availability and complete-week limits can leave the suggestion unfilled. Use suggestion adds candidates to unapplied choices; it does not remove manual choices or publish a schedule.</p><p>No hourly or role demand is inferred from daily deliveries. Configured minimum coverage remains the hard rule.</p></details></section>`;
 }
 function dayContext(row, summary) {
   if (row.state !== "open") return `<p class="day-coverage">${row.state === "closed" ? "Store closed" : "Confirm store hours before planning coverage"}</p>`;
-  return `<section class="coverage-summary" aria-label="Applied effective coverage"><h3>${editing ? "Applied coverage" : "Effective coverage"}</h3><dl><div><dt>Required</dt><dd>${row.required}</dd></div><div><dt>Eligible</dt><dd>${summary.covering}</dd></div><div><dt>Still needed</dt><dd>${Math.max(0,row.required-summary.covering)}</dd></div></dl><p>${row.rule.open}:00 to ${row.rule.close}:00 · ${summary.conflicting.length} conflicting · ${summary.unknown.length} unknown</p>${editing ? '<small>Coverage reflects applied assignments. Unapplied choices below do not count yet.</small>' : ''}</section>`;
+  return `<section class="coverage-summary" aria-label="Applied effective coverage"><h3>${editing ? "Applied coverage" : "Effective coverage"}</h3><dl><div><dt>Required</dt><dd>${row.required}</dd></div><div><dt>Eligible</dt><dd>${summary.covering}</dd></div><div><dt>Still needed</dt><dd>${Math.max(0,row.required-summary.covering)}</dd></div></dl><p>${row.rule.open}:00 to ${row.rule.close}:00 · ${summary.conflicting.length} conflicting · ${summary.unknown.length} unknown</p>${row.coverage?.some(s=>s.count<row.required) ? `<ul class="coverage-gaps">${row.coverage.filter(s=>s.count<row.required).map(s=>`<li>${timeLabel(s.start)} to ${timeLabel(s.end)}: ${s.count}/${row.required} covered</li>`).join("")}</ul>` : ""}${editing ? '<small>Coverage reflects applied assignments. Unapplied choices below do not count yet.</small>' : ''}</section>`;
 }
 
+function importedShifts(row) {
+  const shifts=row.record?.shifts||[];
+  return shifts.length ? `<section class="imported-shifts"><h3>Applied shift times</h3><ul>${shifts.map(s=>`<li>${esc(draft().store.people.find(p=>p.id===s.personId)?.name||s.personId)}: ${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)} · ${esc(s.date)} · ${esc(s.timezone)}<small>Source: ${esc(s.source?.file||'CSV')}, line ${esc(s.source?.line)}</small></li>`).join('')}</ul><p>On keeps these exact times. Unchecking On and applying removes that person’s imported shifts.</p></section>` : '';
+}
 function dayHeader(day, row) {
   return `<h2 class="day-heading" tabindex="-1">${dateLabel(day)}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close>Month calendar</button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary">${icon("calendar")}Edit day</button>` : ""}`}</nav>`;
 }
@@ -302,6 +318,7 @@ function bindDayActions(sheet, day) {
 }
 
 function daySheet(day, openerId = `day-${day}`, focus = true) {
+  closeImport();
   let r = rows().find((r) => r.day === day);
   if (!r) return;
   const changed = selectedDay !== day;
@@ -310,12 +327,12 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   if (changed && document.querySelector("#message")) document.querySelector("#message").textContent = `${dateLabel(day)} roster shown.`;
   const summary = staffing(r);
   if (!editing) {
-    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
+    const sheet = openSheet(`${dayHeader(day, r)}<div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
     bindDayActions(sheet,day);
     return;
   }
   const sheet = openSheet(
-    `${dayHeader(day, r)}${dayContext(r, summary)}${dayDemandMarkup(r)}${
+    `${dayHeader(day, r)}${dayContext(r, summary)}${importedShifts(r)}${dayDemandMarkup(r)}${
       r.state === "open"
         ? `<form class="assignment-form"><fieldset class="team-fields"><legend>Teams</legend>${teamsFor(draft().store.people, mode).map((t,i)=>`<label>${t.name}<select data-team="${i}"><option value="">Set status</option><option>On</option><option>Off</option><option>Unknown</option></select></label>`).join("")}</fieldset><fieldset class="people-assignments"><legend>People for ${dateLabel(day)}</legend>${draft().store.people.map(p => `<div class="assignment-person"><div><strong>${esc(p.name)}</strong><small>${r.conflicts[p.id]?.map(esc).join("; ") || (summary.on.includes(p.id) ? "Eligible" : summary.off.includes(p.id) ? "Confirmed off" : "Unknown")}</small></div><label class="check"><input type="checkbox" name="assigned" value="${p.id}" ${r.ids.includes(p.id) ? "checked" : ""} aria-label="${esc(p.name)} on">On</label><label class="check"><input type="checkbox" name="off" value="${p.id}" ${summary.off.includes(p.id)?"checked":""} aria-label="${esc(p.name)} confirmed off">Off</label></div>`).join("")}</fieldset><p>Unchecked people remain unknown. Mark on or confirmed off, not both. Browsing keeps unapplied choices in this page. Cancel discards this date’s choices. Conflicts remain visible after applying.</p><p class="pending-note" id="pending-status" role="status"></p><div class="actions"><button class="primary">Apply day override</button><button type="button" id="suggest">Use suggestion</button><button type="button" id="cancel-day">Cancel edits</button></div></form>`
         : `<p>${r.state === "closed" ? "Confirmed closed. No shifts or forecast." : "No staffing suggestion until the store status is confirmed."}</p>`
@@ -327,6 +344,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
     const pending = pendingAssignments.get(pendingKey(day));
     if (pending) for (const box of sheet.querySelectorAll('input[type="checkbox"]')) box.checked = pending[box.name === "assigned" ? "on" : "off"].includes(box.value);
     const saveChoices = () => {
+      closeImport();
       const form = new FormData(sheet.querySelector("form"));
       pendingAssignments.set(pendingKey(day), {on:form.getAll("assigned"),off:form.getAll("off")});
       sheet.querySelector("#pending-status").textContent = "Unapplied choices · Kept while browsing · Lost on refresh";
@@ -345,7 +363,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       const values = new FormData(e.target), on = values.getAll("assigned"), off = values.getAll("off");
       if (on.some(id => off.includes(id))) { e.target.querySelector("[name=assigned]").setCustomValidity("A person cannot be both on and off."); e.target.reportValidity(); e.target.onchange = () => e.target.querySelector("[name=assigned]").setCustomValidity(""); return; }
       pendingAssignments.delete(pendingKey(day));
-      planner.setAssignment(selected, day, { on, off });
+      planner.setAssignment(selected, day, { on, off, ...(r.record?.shifts ? {shifts:r.record.shifts.filter(shift=>on.includes(shift.personId))} : {}) });
       markChanged();
       if (quickEdit) editing=false;
       quickEdit=false;

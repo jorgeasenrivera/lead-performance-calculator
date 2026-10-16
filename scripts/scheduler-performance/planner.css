@@ -1023,3 +1023,12 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 .delivered-grid-reflow .schedule-layout .month-day .day-weekday { display:inline; }
 /* Today's accent must not shrink its sales strip relative to adjacent dates. */
 .schedule-layout .month-day.is-today { border-width:1px; }
+/* Import review reuses the planner's paper panels and controls. */
+#import-sheet { scroll-margin-top:6rem; }
+#import-sheet input[type=file], .import-row select { width:100%; max-width:100%; min-width:0; }
+#import-sheet pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.8125rem; }
+.import-row { border-top:1px solid var(--line); padding:12px 0; overflow-wrap:anywhere; }
+.import-row h4 { margin:8px 0; }
+#import-sheet .actions { flex-wrap:wrap; }
+.imported-shifts small { display:block; overflow-wrap:anywhere; }
+.coverage-gaps { padding-left:1.25em; }

@@ -1,0 +1,283 @@
+{
+  "startingHead": "80040e28c8e38cb23e2e3983d81ef722990865bf",
+  "date": "2026-10-16",
+  "unitTests": 995,
+  "newImportModelTests": 22,
+  "builds": [
+    "production passed",
+    "isolated passed"
+  ],
+  "browserCases": {
+    "import-chromium": 6,
+    "import-webkit": 6,
+    "coherent-flow-chromium": 6,
+    "coherent-flow-webkit": 6
+  },
+  "totalBrowserCases": 24,
+  "scopedAxeScans": 36,
+  "importNetworkRequests": 0,
+  "importStorageDatabaseBeaconCalls": 0,
+  "artifactFiles": [
+    {
+      "file": "app-icon-dark.svg",
+      "sha": "f94b68c8593750c4cf9c7a01d6be0f7026931a8a",
+      "size": 1661
+    },
+    {
+      "file": "app-icon-light.svg",
+      "sha": "c5bcad468aa5c0783309777eb70a03509521bb9b",
+      "size": 1661
+    },
+    {
+      "file": "apple-touch-icon.png",
+      "sha": "a105377985e809268f05e51c085392ac69ab5c93",
+      "size": 6794
+    },
+    {
+      "file": "assets/FenceEditor-wshWS2R5.js",
+      "sha": "bae88b18042d5d97d3f46a9aca2b4711b287eabf",
+      "size": 7763
+    },
+    {
+      "file": "assets/index-B1WmSE62.css",
+      "sha": "ae1316173bc58a6d740eed1dc6c143f32746d694",
+      "size": 10563
+    },
+    {
+      "file": "assets/index-CufAP_Qo.js",
+      "sha": "3852911786a5900418559c091748f1c0fe1009f4",
+      "size": 2022811
+    },
+    {
+      "file": "assets/leaderboard-template-BWPwLIt8.js",
+      "sha": "f6ee020ebb0a93e0b21445851802f59e869e5b26",
+      "size": 86914
+    },
+    {
+      "file": "assets/leaflet-CIGW-MKW.css",
+      "sha": "1927d806eaea2db99c54ce4f9d43acb40802dab9",
+      "size": 15607
+    },
+    {
+      "file": "assets/leaflet-src-B9TSslTK.js",
+      "sha": "a65d496e1e0587be63f6cf31eeb1535c046b87b5",
+      "size": 149983
+    },
+    {
+      "file": "assets/papaparse.min-Dp7zOMx9.js",
+      "sha": "f2f8d3a5c0f4d406dd70a365def2f009ed3dd82c",
+      "size": 18888
+    },
+    {
+      "file": "assets/pdf-BKUQqxE7.js",
+      "sha": "a5ab0d840cb58f1e7c267c39c687b1d4e90664eb",
+      "size": 329143
+    },
+    {
+      "file": "assets/pdf.worker.min-CElaEpGn.js",
+      "sha": "d4c62537a775dd90dae2559ba1ebe750ddf645f6",
+      "size": 67
+    },
+    {
+      "file": "assets/pdf.worker.min-DKQKFyKK.js",
+      "sha": "49162d546a1a5a11bd2c932b2d1b2520daef1ec3",
+      "size": 1087212
+    },
+    {
+      "file": "favicon-16.png",
+      "sha": "dd3eb6ccd3edad79e339ebef731a6f053597f358",
+      "size": 520
+    },
+    {
+      "file": "favicon-32.png",
+      "sha": "a25d5c8bf5cacb06e80d2a311cdf027f9635bd87",
+      "size": 1131
+    },
+    {
+      "file": "favicon.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "fonts/README.md",
+      "sha": "8bbde3da436c65059125f00ee02f937d9a824e43",
+      "size": 920
+    },
+    {
+      "file": "fonts/geist-latin-ext.woff2",
+      "sha": "66a33f6a78ae71cd10e9cce31bd3c987af14297e",
+      "size": 16540
+    },
+    {
+      "file": "fonts/geist-latin.woff2",
+      "sha": "9d846db84c501327431670fe23b1a8ea1d2a5349",
+      "size": 29288
+    },
+    {
+      "file": "fonts/geist-mono-latin-ext.woff2",
+      "sha": "fbd56f5f92011dd1c11b39396cef32d44d8be3ab",
+      "size": 14712
+    },
+    {
+      "file": "fonts/geist-mono-latin.woff2",
+      "sha": "0e04bb6e7b54057d64c421b959c8c22774ae632d",
+      "size": 23108
+    },
+    {
+      "file": "fonts/space-grotesk-latin-ext.woff2",
+      "sha": "1efa87763419826a7a5376a1616fa19d4e9bc2e4",
+      "size": 18924
+    },
+    {
+      "file": "fonts/space-grotesk-latin.woff2",
+      "sha": "cbee7234c1d753e7c63f8ea9bdb19c87f5378bfb",
+      "size": 22320
+    },
+    {
+      "file": "icon-512.png",
+      "sha": "12cdf94012dd65f272296448503f4bedffdfaa36",
+      "size": 21112
+    },
+    {
+      "file": "index.html",
+      "sha": "457c4933993bbb0e6a77d7e433845ce62ab855b2",
+      "size": 6144
+    },
+    {
+      "file": "planner/app.mjs",
+      "sha": "af8e848cb473fa2cefcaaceb1956bd0872489835",
+      "size": 45664
+    },
+    {
+      "file": "planner/assignment-view.mjs",
+      "sha": "1154e2c10ca80b46586fead9a2a53b7c242edf93",
+      "size": 2554
+    },
+    {
+      "file": "planner/demand-context.mjs",
+      "sha": "48c9dc7bcb669084c52c43e7a41eeeff11a9fb16",
+      "size": 1784
+    },
+    {
+      "file": "planner/import-ui.mjs",
+      "sha": "ffebdd905a494e4a526bd0b402f3decfb71e94cb",
+      "size": 5626
+    },
+    {
+      "file": "planner/index.html",
+      "sha": "90b6f66d347f2a621ac96f885c14bced33a65a23",
+      "size": 459
+    },
+    {
+      "file": "planner/model.mjs",
+      "sha": "e6be66633b06fe17cbfd541297be546ba69893f9",
+      "size": 5180
+    },
+    {
+      "file": "planner/month-model.mjs",
+      "sha": "9cebf57ee498556c542d386b3af3439642a514c6",
+      "size": 10676
+    },
+    {
+      "file": "planner/sage-icons.mjs",
+      "sha": "9ba07d4c4473fdc6c6ff09e2f38ec4e0d0e25d15",
+      "size": 1951
+    },
+    {
+      "file": "planner/schedule-import.mjs",
+      "sha": "77cdf72ff9a40218c77828e6304acf548f21c74d",
+      "size": 7553
+    },
+    {
+      "file": "planner/shift-intervals.mjs",
+      "sha": "c0ce03fae595faa03230c30d4f9573d81b2b181a",
+      "size": 3053
+    },
+    {
+      "file": "planner/store-editor.mjs",
+      "sha": "284f583922624dddd948f88df64b1424984fc2d7",
+      "size": 2271
+    },
+    {
+      "file": "planner/style.css",
+      "sha": "0f12b4d728e21bc97aaa2fb598a311a36faab715",
+      "size": 35740
+    },
+    {
+      "file": "privacy.html",
+      "sha": "da0980e6bea256ff5fef5d403d600e774c6152ad",
+      "size": 10901
+    },
+    {
+      "file": "sage-lockup-on-ink.svg",
+      "sha": "250d0fcff16b7b6dcfc9196b30d5ca1a42a6c672",
+      "size": 5468
+    },
+    {
+      "file": "sage-lockup-print.svg",
+      "sha": "18d74801980cb78f689f6eb724b2a6bc98638a87",
+      "size": 5434
+    },
+    {
+      "file": "sage-lockup.svg",
+      "sha": "a65b000931acef7aa1f1742231cb1bb14fcd5b9b",
+      "size": 5434
+    },
+    {
+      "file": "sage-mark.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "support.html",
+      "sha": "aa4dc253e75addc4717b5f5381e38f799cb74db8",
+      "size": 5669
+    }
+  ],
+  "sourceHashes": {
+    "assignment-view.mjs": "d18d50ac7919a95df1cb90e3bea65fc0bfe2f0069470e137ee53d1a2129879d6",
+    "build.mjs": "c3c76860c2ce3920b86ec35ca25c74c7360abdf9169be4db00f6ba47b45ce0da",
+    "month-app.mjs": "fb9a8e32b190650a002c68a4232856d246b8f9c3202a97a3e58f88d161584ebe",
+    "month-model.mjs": "edfac6dd52c7baf575cb5298c0949f9482bb6cd8c907d0c0a83287aedcdebf1f",
+    "planner.css": "c7b9855d66bc6e7540f162d4ab62b7c07915b28ff9924910e5738e2d8de7ccd3",
+    "import-ui.mjs": "3ff17ef652bb0e49284371cc2dc2e300ce1bcd7cdd12085090f460c7248aaa4c",
+    "probe-import.mjs": "c6f1607260d865ceb53b5cb469793d82a9c08c3f07092f1569a4ab8111412665",
+    "schedule-import.mjs": "044e1095e5b42cb1f44f8275f139e79ae7ec8257d05266007d79dfd0f468f1c8",
+    "schedule-import.test.mjs": "562aeaa76195deef0236a4ac31d8f9e5208933627d3cd817ca750c32f3107def",
+    "shift-intervals.mjs": "b56d8530bd0f49bebf014d1afc0df51357ad3871ec8d71692010b5d16ad0950f",
+    "probe-coherent-flow.mjs": "1b084c3320e264378c9dc9951f0b5aa620fb5648f804a55bc0e0f8e587a54391"
+  },
+  "evidenceHashes": {
+    "chromium-1440-text100-applied.png": "0b7b77930a5fd246e0636db43266fc60f58bfeae0fce6b8010ac53be05183924",
+    "chromium-1440-text100-review.png": "ba5d4b55b201ffe6ccf30dafb2e1f24d5a2fcfbceff65100b216f80829177020",
+    "chromium-320-text200-applied.png": "861529e6f5512b7ffcaad54ed9f6e23c251315a83f53990286bf17bccf797fa7",
+    "chromium-320-text200-review.png": "3a1d8f39d59d8784fd638bb57cb82cadaab69df322b0986599afb3d0bbffc00b",
+    "chromium-390-text100-applied.png": "255df41b69417aab3fd66b2564a20287852d758300abfb037c65d105c6e05523",
+    "chromium-390-text100-review.png": "d036a2b10925b515c37419cd3a13b434ee741177f09859d14457e5ea074f79a4",
+    "chromium-flow-results.json": "408748ade4dfba913dd82ddbfd3fa8f583814fa059914640af16205a440737a2",
+    "chromium-flow.log": "735ce28dc81a8be6c2319f7d3b6a21c141629a7b4780709909346a2a52c586d8",
+    "chromium-results.json": "595150ab9f1b656d1a57ed608cca58e68f88634945b3e033f9067e02c4a62a32",
+    "chromium.log": "08b01b4329b549209e7624dfbd821020c73c25f7cbe04b83f7e6f0ec2fdfbbb6",
+    "import-build.log": "ccae9d68a45ed8eecaf70b605e41c34ecf46c9b59795f14ab267880e4cacc4dc",
+    "import-production.log": "b217ab99732f89c05fde53525e5bc5c47030b51d8a566ea2729f71c057e6c947",
+    "import-tests.log": "1d25803690ef3ff22637831a92b9f2f28bbbf1c18f3a918be6633a7518fb920a",
+    "verification-notes.md": "a4cb533460f5efcae890f9c3dc01988958f4b66c4651a4748545a094a2a730b6",
+    "webkit-1440-text100-applied.png": "d1a526b41c896f36b9293ca4f14c8db20456ef4399929c7ce6319ee811ba86bc",
+    "webkit-1440-text100-review.png": "bc3ed51ae59ce771310246ca1ad92071cee0b6779edefc5d784c7a21363ddbda",
+    "webkit-320-text200-applied.png": "5052d67f01ddd2682e8160a97008fc322d9f9da33110b076f06e4fc094dd01b6",
+    "webkit-320-text200-review.png": "37e61326f9b601726027cd10a9ca89bbe68862b5d09232133eefb06fbf216a83",
+    "webkit-390-text100-applied.png": "d99c88194918f762bc65ff192bf6394b8564a27206fb6321f7d552636b74f1de",
+    "webkit-390-text100-review.png": "f696c8d013e1a62b0cfc8c3a65496b4adf861971ea0c8445788c2a57cbef7ed1",
+    "webkit-flow-results.json": "e7a0a825b7a36983644f1960152ac827efc6bb5d1a1368286fe7d19258710eee",
+    "webkit-flow.log": "f60c78aff80d0828caf475608cdba3ccd8ea12813b077a6c60abe109b0e9916c",
+    "webkit-results.json": "3aab39e52e6724e51fe6f327b7c2dbcc649ada269780406ee94ba60a40c4768a",
+    "webkit.log": "82f9fd295ab5ed0ff6dc0343fd59c3ef8fc08ca30b8a6c1c34d7fa784b64e466"
+  },
+  "limits": [
+    "CSV only; no workbooks, grids or PDFs",
+    "Same-day America/New_York intervals; no DST-change dates, overnight, breaks, seconds or 24:00",
+    "No physical-device, screen-reader or actual menu-zoom verification",
+    "No production authorization, persistence or publication integration",
+    "No authenticated hosted rendering verification"
+  ]
+}

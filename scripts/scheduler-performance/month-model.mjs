@@ -1,3 +1,4 @@
+import { personIntervals, unionMinutes, coverageSegments, shiftProblem, storeTimezone } from "./shift-intervals.mjs";
 import {
   addDays,
   weekday,
@@ -33,6 +34,7 @@ export function shiftMonth(month, delta) {
 // A draft owns its settings and overrides. Viewing another month never mutates it.
 export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
   const drafts = new Map();
+  let revision = 0;
   const key = (index, month) => `${index}:${month}`;
   const get = (index, month) => {
     monthDays(month);
@@ -42,6 +44,7 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
       drafts.set(k, {
         store: {
           ...stores[index],
+          timezone: storeTimezone(stores[index]),
           people: structuredClone(stores[index].people),
           rules: structuredClone(stores[index].rules),
         },
@@ -69,16 +72,18 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
   const setAssignment = (index, day, value) => {
     const d = get(index, day.slice(0, 7));
     d.overrides[day] = structuredClone(value);
+    revision++;
     d.accepted = false;
     d.reviewFingerprint = null;
   };
   const reset = (index, month) => {
     drafts.delete(key(index, month));
+    revision++;
     return get(index, month);
   };
-  return { get, rows, record, setAssignment, reset, drafts };
+  return { get, rows, record, setAssignment, reset, drafts, get revision() { return revision; }, context: (index,day) => ({...resolve(index,day),record:record(index,day)}) };
 }
-// Evaluate entered full-day shifts across complete Monday–Sunday weeks.
+// Evaluate legacy full-day and explicit minute shifts across complete Monday–Sunday weeks.
 // Suggestions never contribute hours and never become assignments implicitly.
 export function enteredMonth(month, resolveDay) {
   const dates = monthDays(month);
@@ -88,15 +93,15 @@ export function enteredMonth(month, resolveDay) {
   for (let day = start; day <= end; day = addDays(day, 1)) {
     const { store, record, overrides } = resolveDay(day), rule = ruleFor(store.rules, day);
     const state = !rule ? "unknown" : rule.holidays[day] || (rule.closedDays.includes(weekday(day)) ? "closed" : "open");
-    const ids = [...new Set(record?.on || [])];
+    const ids = [...new Set([...(record?.on || []), ...(record?.shifts || []).map(s=>s.personId)])];
     const validRule = rule && rule.close > rule.open && Number.isInteger(rule.minimum) && rule.minimum >= 1;
     all.push({ day, store, rule, record, ids, state: validRule ? state : "unknown", hours: validRule ? rule.close - rule.open : 0, week: addDays(day, -((weekday(day) + 6) % 7)), override: Object.hasOwn(overrides || {}, day) });
   }
   const totals = new Map(), unknownWeeks = new Set();
   for (const r of all) for (const id of r.ids) {
     const key = r.week + ':' + id;
-    totals.set(key, (totals.get(key) || 0) + r.hours);
-    if (!r.hours) unknownWeeks.add(key);
+    totals.set(key, (totals.get(key) || 0) + unionMinutes(personIntervals(r.record,id,r.rule)));
+    if (!r.hours || (r.record?.shifts || []).filter(s=>s.personId===id).some(s=>shiftProblem(s,r.store,r.day))) unknownWeeks.add(key);
   }
   return all.filter(r => r.day.startsWith(month + '-')).map(r => {
     const issues = [], conflicts = {}, eligibleIds = [];
@@ -107,10 +112,15 @@ export function enteredMonth(month, resolveDay) {
         if (!Array.isArray(p.off) || !Number.isFinite(p.start) || !Number.isFinite(p.end) || !Number.isFinite(p.maxHours)) reasons.push("Availability or weekly limit unknown");
         else {
           if (p.off.includes(weekday(r.day))) reasons.push("day off");
-          if (p.start > r.rule?.open || p.end < r.rule?.close) reasons.push("does not cover store hours");
+          const intervals = personIntervals(r.record,id,r.rule);
+          if (intervals.some(([a,b])=>a<p.start*60 || b>p.end*60)) reasons.push("outside availability");
+          const shifts = (r.record?.shifts || []).filter(s=>s.personId===id);
+          for(const shift of shifts) { const problem=shiftProblem(shift,r.store,r.day); if(problem)reasons.push(problem); }
+          if (unionMinutes(intervals) < intervals.reduce((sum,[a,b])=>sum+b-a,0)) reasons.push("overlapping shifts");
+          if (shifts.length && intervals.some(([a,b])=>a<r.rule?.open*60 || b>r.rule?.close*60)) reasons.push("outside store hours");
           if (unknownWeeks.has(r.week + ":" + id)) reasons.push("weekly hours unknown because another entered shift has unknown hours");
           const total = totals.get(r.week + ':' + id) || 0;
-          if (total > p.maxHours) reasons.push(`weekly hours exceeded (${total}/${p.maxHours})`);
+          if (total > p.maxHours*60) reasons.push(`weekly hours exceeded (${total/60}/${p.maxHours})`);
         }
         if ((r.record?.off || []).includes(id)) reasons.push("also marked off");
       }
@@ -120,11 +130,13 @@ export function enteredMonth(month, resolveDay) {
     }
     if (r.state === 'unknown') issues.push('Store hours or holiday status unknown. Manager input needed.');
     if (r.state === 'open' && !r.record) issues.push('Needs schedule: no entered assignments.');
-    if (r.state === 'open' && r.record && eligibleIds.length < r.rule.minimum) issues.push(`${r.rule.minimum - eligibleIds.length} more eligible people needed for entered minimum coverage.`);
+    const coverage = r.state === 'open' ? coverageSegments(r.rule,r.record,eligibleIds) : [];
+    const minimumCoverage = coverage.length ? Math.min(...coverage.map(s=>s.count)) : 0;
+    if (r.state === 'open' && r.record && minimumCoverage < r.rule.minimum) issues.push(`${r.rule.minimum - minimumCoverage} more eligible people needed for entered minimum coverage.`);
     const estimate = r.state === 'open' ? forecast(r.store.history, r.day) : null;
     const target = r.state === 'open' ? Math.max(r.rule.minimum, r.rule.useCapacity && estimate && r.rule.capacity > 0 ? Math.ceil(estimate.high / r.rule.capacity) : 0) : null;
-    const suggestions = r.state !== 'open' ? [] : r.store.people.filter(p => !unknownWeeks.has(r.week + ':' + p.id) && !(r.record?.off || []).includes(p.id) && Array.isArray(p.off) && !p.off.includes(weekday(r.day)) && p.start <= r.rule.open && p.end >= r.rule.close && Number.isFinite(p.maxHours) && (totals.get(r.week + ':' + p.id) || 0) - (r.ids.includes(p.id) ? r.hours : 0) + r.hours <= p.maxHours).slice(0, target).map(p => p.id);
-    return { day:r.day, state:r.state, rule:r.rule, record:r.record, ids:r.ids, eligibleIds, conflicts, issues, required:r.state === 'open' ? r.rule.minimum : null, recommendationTarget:target, suggestions, estimate, hours:r.hours, override:r.override, weeklyHours:Object.fromEntries(r.store.people.map(p => [p.id, totals.get(r.week + ':' + p.id) || 0])) };
+    const suggestions = r.state !== 'open' ? [] : r.store.people.filter(p => !(r.record?.shifts || []).some(s=>s.personId===p.id) && !unknownWeeks.has(r.week + ':' + p.id) && !(r.record?.off || []).includes(p.id) && Array.isArray(p.off) && !p.off.includes(weekday(r.day)) && p.start <= r.rule.open && p.end >= r.rule.close && Number.isFinite(p.maxHours) && (totals.get(r.week + ':' + p.id) || 0) - (r.ids.includes(p.id) ? unionMinutes(personIntervals(r.record,p.id,r.rule)) : 0) + r.hours*60 <= p.maxHours*60).slice(0, target).map(p => p.id);
+    return { coverage, minimumCoverage, day:r.day, state:r.state, rule:r.rule, record:r.record, ids:r.ids, eligibleIds, conflicts, issues, required:r.state === 'open' ? r.rule.minimum : null, recommendationTarget:target, suggestions, estimate, hours:r.hours, override:r.override, weeklyHours:Object.fromEntries(r.store.people.map(p => [p.id, (totals.get(r.week + ':' + p.id) || 0)/60])) };
   });
 }
 
