@@ -5,8 +5,7 @@
     "scale": 1,
     "touch": false,
     "state": "roster",
-    "file": "chromium-1440x1000-text100-roster.png",
-    "viewport": "chromium-1440x1000-text100-roster-viewport.png"
+    "file": "chromium-1440x1000-text100-roster.png"
   },
   {
     "width": 1440,
@@ -14,8 +13,7 @@
     "scale": 1,
     "touch": false,
     "state": "planning",
-    "file": "chromium-1440x1000-text100-planning.png",
-    "viewport": "chromium-1440x1000-text100-planning-viewport.png"
+    "file": "chromium-1440x1000-text100-planning.png"
   },
   {
     "width": 390,
@@ -23,17 +21,7 @@
     "scale": 1,
     "touch": true,
     "state": "roster",
-    "file": "chromium-390x844-text100-roster.png",
-    "viewport": "chromium-390x844-text100-roster-viewport.png"
-  },
-  {
-    "width": 390,
-    "height": 844,
-    "scale": 1,
-    "touch": true,
-    "state": "planning",
-    "file": "chromium-390x844-text100-planning.png",
-    "viewport": "chromium-390x844-text100-planning-viewport.png"
+    "file": "chromium-390x844-text100-roster.png"
   },
   {
     "width": 320,
@@ -41,17 +29,7 @@
     "scale": 1,
     "touch": true,
     "state": "roster",
-    "file": "chromium-320x640-text100-roster.png",
-    "viewport": "chromium-320x640-text100-roster-viewport.png"
-  },
-  {
-    "width": 320,
-    "height": 640,
-    "scale": 1,
-    "touch": true,
-    "state": "planning",
-    "file": "chromium-320x640-text100-planning.png",
-    "viewport": "chromium-320x640-text100-planning-viewport.png"
+    "file": "chromium-320x640-text100-roster.png"
   },
   {
     "width": 320,
@@ -59,8 +37,7 @@
     "scale": 2,
     "touch": true,
     "state": "roster",
-    "file": "chromium-320x640-text200-roster.png",
-    "viewport": "chromium-320x640-text200-roster-viewport.png"
+    "file": "chromium-320x640-text200-roster.png"
   },
   {
     "width": 320,
@@ -68,8 +45,7 @@
     "scale": 2,
     "touch": true,
     "state": "planning",
-    "file": "chromium-320x640-text200-planning.png",
-    "viewport": "chromium-320x640-text200-planning-viewport.png"
+    "file": "chromium-320x640-text200-planning.png"
   },
   {
     "width": 360,
@@ -77,16 +53,6 @@
     "scale": 2,
     "touch": false,
     "state": "roster",
-    "file": "chromium-360x225-text200-roster.png",
     "viewport": "chromium-360x225-text200-roster-viewport.png"
-  },
-  {
-    "width": 360,
-    "height": 225,
-    "scale": 2,
-    "touch": false,
-    "state": "planning",
-    "file": "chromium-360x225-text200-planning.png",
-    "viewport": "chromium-360x225-text200-planning-viewport.png"
   }
 ]
