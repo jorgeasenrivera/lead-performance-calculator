@@ -883,7 +883,7 @@ main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; 
 
 .day-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0 16px; }
 .day-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
-.day-actions #edit-day { margin-left:auto; }
+.day-actions .day-edit { margin-left:auto; }
 .icon-key { list-style:none; padding:0; display:grid; gap:10px; }
 .icon-key li { display:flex; align-items:center; gap:10px; }
 #sales-help h3 { margin-top:16px; }
@@ -1106,3 +1106,21 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 /* Embedded Schedule already owns the modal. Its day sheet is a detail page,
    so only one dialog is exposed and the calendar keeps its geometry behind it. */
 #mobile-day-dialog.embedded-day-page:not([hidden]) { display:block; position:fixed; inset:0; z-index:20; margin:0; width:100%; height:100dvh; max-width:none; max-height:none; overflow:auto; border:0; border-radius:0; }
+
+/* Day identity uses existing Sage ink, leaf, warm-paper and neutral tokens.
+   Warning and recorded-sales colors retain their separate meanings. */
+.compact-month:not(.planning-workspace) .roster-group { padding:var(--schedule-space-3); border:1px solid var(--line); border-radius:8px; background:#edeada; }
+.compact-month:not(.planning-workspace) .roster-group[data-roster-state=on] { background:#e4eedc; border-color:#aab9a5; }
+.compact-month:not(.planning-workspace) .roster-group[data-roster-state=unconfirmed] { background:#e9e9e1; border-style:dashed; }
+.compact-month:not(.planning-workspace) .roster-group h3 { display:flex; flex-wrap:wrap; align-items:center; gap:var(--schedule-space-2); margin-bottom:var(--schedule-space-2); }
+.compact-month:not(.planning-workspace) .roster-count { margin-left:auto; display:inline-grid; place-items:center; min-width:1.75em; min-height:1.75em; padding:0 var(--schedule-space-1); border-radius:4px; background:var(--paper); color:#234939; font-variant-numeric:tabular-nums; }
+.roster-team { display:inline-flex; max-width:100%; overflow-wrap:anywhere; align-items:center; gap:var(--schedule-space-1); }
+.roster-team .sage-icon { width:.875em; height:.875em; flex:none; }
+.compact-month:not(.planning-workspace) .day-heading { border-left:4px solid #e4c98d; padding-left:var(--schedule-space-2); }
+.compact-month:not(.planning-workspace) .day-actions button { border-radius:8px; }
+.compact-month:not(.planning-workspace) .day-actions .day-edit { background:transparent; color:#234939; border-color:var(--line); }
+.compact-month:not(.planning-workspace) .day-actions .day-edit .sage-icon { display:none; }
+#mobile-day-dialog { overflow-x:hidden; height:calc(100dvh - 2 * var(--schedule-space-2)); }
+.day-motion-preview { position:absolute; left:0; box-sizing:border-box; min-height:100%; margin:0; padding:max(var(--schedule-space-4),env(safe-area-inset-top)) max(var(--schedule-space-4),env(safe-area-inset-right)) max(var(--schedule-space-4),env(safe-area-inset-bottom)) max(var(--schedule-space-4),env(safe-area-inset-left)); border:0; border-radius:0; background:var(--paper); color:#234939; pointer-events:none; }
+.day-motion-preview .recorded-day { margin:var(--schedule-space-4) 0 0; }
+.day-motion-status { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }

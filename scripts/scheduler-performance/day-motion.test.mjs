@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {swipeIntent,swipeDirection} from './day-motion.mjs';
+test('horizontal intent is distinct from vertical scrolling and ambiguous diagonal movement',()=>{assert.equal(swipeIntent(9,1),'pending');assert.equal(swipeIntent(30,12),'horizontal');assert.equal(swipeIntent(15,20),'vertical');assert.equal(swipeIntent(20,20),'pending');});
+test('release direction follows final displacement, with no velocity or overshoot shortcut',()=>{assert.equal(swipeDirection(-80,5,250),1);assert.equal(swipeDirection(80,5,250),-1);assert.equal(swipeDirection(-59,0,20),0);assert.equal(swipeDirection(-80,60,250),0);assert.equal(swipeDirection(-80,0,1300),0);assert.equal(swipeDirection(0,0,250),0);});

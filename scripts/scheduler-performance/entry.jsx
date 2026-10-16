@@ -35,7 +35,8 @@ function Preview() {
     dialog = useRef(),
     frame = useRef(),
     opener = useRef(),
-    scroll = useRef(0);
+    scroll = useRef(0),
+    input = useRef("keyboard");
   const props = {
     config,
     store: seed.store,
@@ -53,6 +54,7 @@ function Preview() {
   };
   const close = () => {
     if (!dialog.current.open) return;
+    frame.current?.contentWindow?.dispatchEvent(new CustomEvent("scheduler-hide"));
     const sheet = frame.current?.contentDocument?.querySelector(
       "#sheet:not([hidden])",
     );
@@ -64,11 +66,15 @@ function Preview() {
     target?.focus({ preventScroll: true });
   };
   useEffect(() => {
+    const rememberPointer=e=>{input.current=e.pointerType||"mouse";};
+    const rememberKeyboard=()=>{input.current="keyboard";};
+    document.addEventListener("pointerdown",rememberPointer,true);
+    document.addEventListener("keydown",rememberKeyboard,true);
     const open = (e) => {
       opener.current = e.detail.opener;
       scroll.current = window.scrollY;
       dialog.current.showModal();
-      frame.current.contentWindow?.dispatchEvent(new CustomEvent("scheduler-view", {detail:{day:e.detail.day,store:e.detail.store}}));
+      frame.current.contentWindow?.dispatchEvent(new CustomEvent("scheduler-view", {detail:{day:e.detail.day,store:e.detail.store,input:e.detail.input==="keyboard"?"keyboard":input.current}}));
       document.body.style.overflow = "hidden";
       (e.detail.day ? frame.current.contentDocument?.querySelector(".day-heading") : dialog.current.querySelector("button"))?.focus();
     };
@@ -109,6 +115,8 @@ function Preview() {
     window.addEventListener("scheduler-open", open);
     window.addEventListener("scheduler-close", close);
     return () => {
+      document.removeEventListener("pointerdown",rememberPointer,true);
+      document.removeEventListener("keydown",rememberKeyboard,true);
       childDocument?.removeEventListener("keydown", trapTab);
       frame.current?.removeEventListener("load", attach);
       document.removeEventListener("keydown", trapTab);

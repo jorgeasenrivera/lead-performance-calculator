@@ -31,7 +31,7 @@ export function patchManager(source) {
     const heat=previewSalesHeat(previewCalendarStore,month,today),byDay=new Map(heat.map(r=>[r.day,r]));
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
     const bestText=heat.some(r=>r.best)?'Best'+(heat.filter(r=>r.best).length>1?' (tied)':'')+': '+heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(', '):'No recorded best day';
-    const openCalendar=(e,day)=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget,day,store:previewCalendarStore.id}}));
+    const openCalendar=(e,day)=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget,day,input:e.nativeEvent?.pointerType||(e.nativeEvent?.sourceCapabilities?.firesTouchEvents?'touch':e.detail===0?'keyboard':'mouse'),store:previewCalendarStore.id}}));
     const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule for staffing and daily sales. Recorded sales only; lighter days have more sales. Best recorded dates: "+(heat.filter(r=>r.best).map(r=>Number(r.day.slice(-2))).join(", ")||"none") } onClick={e=>openCalendar(e)}>
       {!mobile && <strong className="sp-entry-month">{title}</strong>}
       <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('sales-'+byDay.get(day).state+' '+(byDay.get(day).level===null?'':'heat-'+byDay.get(day).level)+(day===today?' today':'')+(byDay.get(day).best?' best':''))} title={day?(byDay.get(day).state==='known'?byDay.get(day).units+' recorded sales'+(byDay.get(day).best?' · '+byDay.get(day).bestLabel:''):'Sales: '+byDay.get(day).state):undefined}>{day?Number(day.slice(-2)):''}</i>)}</span>
@@ -135,7 +135,7 @@ export async function buildPreview() {
   const editor = (await readFile("scripts/scheduler-performance/store-editor.mjs", "utf8"))
     .replace("../scheduler-proposal/model.mjs", "./model.mjs");
   await writeFile(planner + "/store-editor.mjs", editor);
-  for (const name of ["mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
+  for (const name of ["day-motion.mjs", "mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
   await writeFile(planner+"/generation.mjs",(await readFile("scripts/scheduler-performance/generation.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
   await cp("scripts/scheduler-performance/sage-icons.mjs", planner + "/sage-icons.mjs");

@@ -1,0 +1,217 @@
+{
+  "engine": "chromium",
+  "input": "CDP native touch dispatch, not a physical device",
+  "alignment": {
+    "live": 25,
+    "panes": [
+      25,
+      25
+    ]
+  },
+  "samples": [
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -20,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -20,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -40,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -40,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -40,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -70,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -70,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -70,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -100,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -100,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -100,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -130,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -190.926,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -244.127,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -290.36,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -328.778,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -357.018,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": -371.337,
+      "y": 0,
+      "opacity": "1",
+      "day": "Mon, Dec 7, 2026"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Tue, Dec 8, 2026"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Tue, Dec 8, 2026"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Tue, Dec 8, 2026"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Tue, Dec 8, 2026"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "opacity": "1",
+      "day": "Tue, Dec 8, 2026"
+    }
+  ]
+}

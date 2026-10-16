@@ -1,3 +1,4 @@
+import {createDayMotion,swipeIntent,swipeDirection} from "./day-motion.mjs";
 import { quickRosterGroups, verifiedLow } from "./mobile-roster.mjs";
 import { openGeneration } from "./generation-ui.mjs";
 import { teamsOnDay, membershipAt, teamSnapshot, dayAbsence, absenceKind, absenceLabel } from "./team-model.mjs";
@@ -24,7 +25,9 @@ const stores = fixtures(),
   planner = createPlanner(stores, { assignmentForDay: fixtureAssignments }),
   app = document.querySelector("#app");
 let quickEdit = false;
-let mobileDaySession = null, restoringDayFocus = false;
+let mobileDaySession = null, restoringDayFocus = false,lastDayInput='keyboard';
+app.addEventListener('pointerdown',e=>{lastDayInput=e.pointerType||'mouse';},{capture:true});
+app.addEventListener('keydown',()=>{lastDayInput='keyboard';},{capture:true});
 const embeddedPlanner = window.parent !== window;
 let closeImport = () => {};
 let closeGeneration = () => {};
@@ -40,6 +43,7 @@ function updateSelection() {
   }
 }
 let editing = false, mode = "mixed", selectedDay = null;
+let motionRows = [];
 let selected = 0,
   month = storeToday().slice(0, 7);
 const today = () => storeToday();
@@ -260,8 +264,13 @@ function startGeneration() {
   closeGeneration();closeImport();
   closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,onMonth:value=>{month=value;selectedDay=null;render();startGeneration();},onApply:result=>{mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Generated draft applied in this page. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>document.querySelector("#generate-month")?.focus(),onPeople:()=>personSheet(),onRules:()=>storeSheet()});
 }
+const reduceDayMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const dayMotion=createDayMotion({getLive:()=>document.querySelector('#sheet'),getHost:()=>document.querySelector('#mobile-day-dialog'),getDay:()=>selectedDay,neighbor:(day,delta)=>{const next=addDays(day,delta);return next.startsWith(month)?next:null;},markup:day=>{const row=motionRows.find(r=>r.day===day);return dayViewMarkup(row,staffing(row));},commit:(day,focusId)=>{daySheet(day);const control=focusId&&document.getElementById(focusId);if(control&&!control.disabled)control.focus({preventScroll:true});},reduced:()=>reduceDayMotion.matches});
+reduceDayMotion.addEventListener('change',()=>{if(reduceDayMotion.matches){if(mobileDaySession?.closing)closeMobileDay();else dayMotion.finish();}});
+async function requestCloseMobileDay(){const session=mobileDaySession;if(!session||session.closing)return;session.closing=true;if(await dayMotion.leave(lastDayInput==='touch')&&mobileDaySession===session)closeMobileDay();}
 function closeMobileDay(restore = true) {
   if(!mobileDaySession)return;
+  dayMotion.cancel();
   const session=mobileDaySession;mobileDaySession=null;
   const dialog=document.querySelector('#mobile-day-dialog'),sheet=document.querySelector('#sheet');
   restoringDayFocus=true;if(embeddedPlanner){dialog.hidden=true;for(const element of session.inert||[])element.inert=false;}else dialog?.close();document.documentElement.classList.remove('day-modal-open');
@@ -271,15 +280,16 @@ function closeMobileDay(restore = true) {
 }
 function showMobileDay(sheet) {
   const dialog=document.querySelector('#mobile-day-dialog');
-  if(!mobileDaySession){mobileDaySession={scrollY:window.scrollY};dialog.append(sheet);document.documentElement.classList.add('day-modal-open');if(embeddedPlanner){mobileDaySession.inert=[...app.children].filter(e=>e!==dialog&&!e.inert);for(const element of mobileDaySession.inert)element.inert=true;dialog.hidden=false;}else dialog.showModal();}
-  dialog.oncancel=e=>{e.preventDefault();closeMobileDay();};
-  dialog.onclick=e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeMobileDay();}};
+  if(!mobileDaySession){mobileDaySession={scrollY:window.scrollY};dialog.append(sheet);document.documentElement.classList.add('day-modal-open');if(embeddedPlanner){mobileDaySession.inert=[...app.children].filter(e=>e!==dialog&&!e.inert);for(const element of mobileDaySession.inert)element.inert=true;dialog.hidden=false;}else dialog.showModal();dayMotion.enter(lastDayInput==='touch');}
+  dialog.oncancel=e=>{e.preventDefault();requestCloseMobileDay();};
+  dialog.onclick=e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)requestCloseMobileDay();}};
   dialog.scrollTop=0;
 }
 function openSheet(html, openerId, isDay = false, focus = true, settingsId = "") {
   closeGeneration();
   const sheet = document.querySelector(isDay ? "#sheet" : "#settings-sheet");
   sheet.hidden = false;
+  dayMotion.cancel();if(mobileDaySession)mobileDaySession.closing=false;
   sheet.innerHTML = html;
   if(isDay&&!editing&&innerWidth<=700&&(focus||mobileDaySession))showMobileDay(sheet);
   if (!isDay) {
@@ -310,7 +320,7 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   const more = sheet.querySelector(".additional-more");
   if (more) more.addEventListener("toggle", () => more.querySelector("summary").setAttribute("aria-expanded", String(more.open)));
   sheet.querySelector("[data-close]").onclick = () => {
-    if(isDay&&mobileDaySession){closeMobileDay();return;}
+    if(isDay&&mobileDaySession){requestCloseMobileDay();return;}
     if (!isDay) { pendingSettings.delete(sheet.dataset.pendingKey); sheet.hidden = true; }
     document.getElementById(openerId || `day-${selectedDay}`)?.focus();
   };
@@ -343,8 +353,8 @@ function dayDemandMarkup(row) {
 }
 function mobileRosterMarkup(row,summary) {
   const groups=quickRosterGroups(draft().store.people,summary,row.record);
-  const groupNames=items=>{const chunks=[];for(const item of items){const prior=chunks.at(-1);if(prior&&prior.team===item.team)prior.items.push(item);else chunks.push({team:item.team,items:[item]});}return chunks.map(g=>`<p>${g.team?`<strong>${esc(g.team)}</strong> `:''}${g.items.map(p=>`${esc(p.name)}${p.note?` <small>(${esc(p.note)})</small>`:''}`).join(', ')}</p>`).join('');};
-  return `<div class="mobile-quick-roster">${row.state==='closed'?'<p>Store closed</p>':row.state==='unknown'?'<p>Store hours unconfirmed</p>':''}${groups.filter(g=>g.label!=='Unconfirmed'||g.items.length).map(g=>`<section aria-label="${g.label}"><h3>${g.label} <small>${g.items.length}</small></h3>${groupNames(g.items.slice(0,3))||'<p>None confirmed</p>'}${g.items.length>3?`<details><summary>${g.items.length-3} more ${g.label.toLowerCase()}</summary>${groupNames(g.items.slice(3))}</details>`:''}</section>`).join('')}</div>`;
+  const groupNames=items=>{const chunks=[];for(const item of items){const prior=chunks.at(-1);if(prior&&prior.team===item.team)prior.items.push(item);else chunks.push({team:item.team,items:[item]});}return chunks.map(g=>`<p>${g.team?`<strong class="roster-team">${icon("users")}${esc(g.team)}</strong> `:''}${g.items.map(p=>`${esc(p.name)}${p.note?` <small>(${esc(p.note)})</small>`:''}`).join(', ')}</p>`).join('');};
+  return `<div class="mobile-quick-roster">${row.state==='closed'?'<p>Store closed</p>':row.state==='unknown'?'<p>Store hours unconfirmed</p>':''}${groups.filter(g=>g.label!=='Unconfirmed'||g.items.length).map(g=>`<section class="roster-group" data-roster-state="${g.label.toLowerCase()}" aria-label="${g.label}"><h3>${icon(g.label==='On'?'check':g.label==='Off'?'close':'question')}<span>${g.label}</span> <small class="roster-count">${g.items.length}</small></h3>${groupNames(g.items.slice(0,3))||'<p>None confirmed</p>'}${g.items.length>3?`<details><summary>${g.items.length-3} more ${g.label.toLowerCase()}</summary>${groupNames(g.items.slice(3))}</details>`:''}</section>`).join('')}</div>`;
 }
 function dayContext(row, summary) {
   if (row.state !== "open") return `<p class="day-coverage">${row.state === "closed" ? "Store closed" : "Confirm store hours before planning coverage"}</p>`;
@@ -357,12 +367,12 @@ function importedShifts(row) {
 }
 function dayHeader(day, row) {
   const smallWarning=!editing&&verifiedLow(row,staffing(row));
-  return `<h2 id="selected-day-heading" class="day-heading" tabindex="-1">${dateLabel(day)}${smallWarning?` <span class="mobile-critical-warning">${icon("warn")}Below minimum: ${row.minimumCoverage}/${row.required}</span>`:""}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close aria-label="Month calendar"><span class="desktop-nav-label">Month calendar</span><span class="mobile-nav-label">Calendar</span></button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary" aria-label="Edit day">${icon("calendar")}<span class="desktop-nav-label">Edit day</span><span class="mobile-nav-label">Edit</span></button>` : ""}`}</nav>`;
+  return `<h2 id="selected-day-heading" class="day-heading" tabindex="-1">${dateLabel(day)}${smallWarning?` <span class="mobile-critical-warning">${icon("warn")}Below minimum: ${row.minimumCoverage}/${row.required}</span>`:""}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close aria-label="Month calendar"><span class="desktop-nav-label">Month calendar</span><span class="mobile-nav-label">Calendar</span></button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary day-edit" aria-label="Edit day">${icon("calendar")}<span class="desktop-nav-label">Edit day</span><span class="mobile-nav-label">Edit</span></button>` : ""}`}</nav>`;
 }
 function bindDayActions(sheet, day) {
   for (const [id,delta] of [["day-previous",-1],["day-next",1]]) {
     const button=sheet.querySelector("#"+id);
-    if(button)button.onclick=()=>{daySheet(addDays(day,delta)); const next=sheet.querySelector("#"+id); (next?.disabled ? sheet.querySelector(".day-heading") : next)?.focus();};
+    if(button)button.onclick=()=>{if(mobileDaySession&&!editing){dayMotion.navigate(delta,id,lastDayInput==='touch');return;}daySheet(addDays(day,delta)); const next=sheet.querySelector("#"+id); (next?.disabled ? sheet.querySelector(".day-heading") : next)?.focus();};
   }
   const edit=sheet.querySelector("#edit-day");
   if(edit)edit.onclick=()=>{quickEdit=true;editing=true;render();daySheet(day);};
@@ -370,9 +380,11 @@ function bindDayActions(sheet, day) {
   if(cancel)cancel.onclick=()=>{pendingAssignments.delete(pendingKey(day));quickEdit=false;editing=false;render();daySheet(day);document.querySelector("#edit-day")?.focus();};
 }
 
+function dayViewMarkup(r,summary){const day=r.day;return `${dayHeader(day, r)}${mobileRosterMarkup(r,summary)}<div class="desktop-roster day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><div class="desktop-planning-detail"><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`;}
 function daySheet(day, openerId = `day-${day}`, focus = true) {
   closeImport();
-  let r = rows().find((r) => r.day === day);
+  motionRows = rows();
+  let r = motionRows.find((r) => r.day === day);
   if (!r) return;
   const changed = selectedDay !== day;
   selectedDay = day;
@@ -380,8 +392,9 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   if (changed && document.querySelector("#message")) document.querySelector("#message").textContent = `${dateLabel(day)} roster shown.`;
   const summary = staffing(r);
   if (!editing) {
-    const sheet = openSheet(`${dayHeader(day, r)}${mobileRosterMarkup(r,summary)}<div class="desktop-roster day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><div class="desktop-planning-detail"><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`, openerId, true, focus);
+    const sheet = openSheet(dayViewMarkup(r,summary), openerId, true, focus);
     bindDayActions(sheet,day);
+    if(mobileDaySession){const host=document.querySelector('#mobile-day-dialog');let status=host.querySelector('.day-motion-status');if(!status){status=document.createElement('p');status.className='day-motion-status';status.setAttribute('role','status');host.append(status);}if(mobileDaySession.day&&mobileDaySession.day!==day)status.textContent=`${dateLabel(day)}. ${quickRosterGroups(draft().store.people,summary,r.record).map(g=>`${g.items.length} ${g.label.toLowerCase()}`).join(', ')}.`;mobileDaySession.day=day;}
     return;
   }
   const sheet = openSheet(
@@ -538,7 +551,8 @@ function storeSheet(effective = month + "-01") {
   };
 }
 render();
-window.addEventListener("scheduler-view", event => { quickEdit=false; editing = false; const day=event.detail?.day; if(day && /^\d{4}-\d{2}-\d{2}$/.test(day) && validMonth(day.slice(0,7)) && monthDays(day.slice(0,7)).includes(day)){ month=day.slice(0,7); selectedDay=day; const storeIndex=stores.findIndex(s=>s.id===event.detail.store); if(storeIndex>=0)selected=storeIndex; } render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); });
+window.addEventListener("scheduler-hide",()=>{dayMotion.cancel();closeMobileDay(false);});
+window.addEventListener("scheduler-view", event => { lastDayInput=event.detail?.input||'keyboard';quickEdit=false; editing = false; const day=event.detail?.day; if(day && /^\d{4}-\d{2}-\d{2}$/.test(day) && validMonth(day.slice(0,7)) && monthDays(day.slice(0,7)).includes(day)){ month=day.slice(0,7); selectedDay=day; const storeIndex=stores.findIndex(s=>s.id===event.detail.store); if(storeIndex>=0)selected=storeIndex; } render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); });
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !e.defaultPrevented) {
     const pop = document.querySelector(":popover-open");
@@ -552,25 +566,26 @@ window.addEventListener("keydown", (e) => {
 let swipe = null;
 const swipeSurface = target => target.closest(".month-days,#sheet");
 app.addEventListener("touchstart", event => {
-  swipe=null;
+  lastDayInput='touch';swipe=null;if(event.touches.length!==1){dayMotion.release(false);return;}
   const target=event.target, touch=event.touches[0];
   if (editing || innerWidth>700 || event.touches.length!==1 || !swipeSurface(target) || target.closest("button,input,select,textarea,summary,a,[contenteditable]") || String(getSelection()).trim() || touch.clientX<24 || touch.clientX>innerWidth-24) return;
-  swipe={x:touch.clientX,y:touch.clientY,at:Date.now(),surface:swipeSurface(target),month,day:selectedDay,horizontal:false};
+  const startOffset=swipeSurface(target).id==='sheet'&&mobileDaySession?dayMotion.begin():0;if(mobileDaySession)mobileDaySession.closing=false;
+  swipe={startOffset,x:touch.clientX,y:touch.clientY,at:Date.now(),surface:swipeSurface(target),month,day:selectedDay,horizontal:false};
 }, {passive:true});
 app.addEventListener("touchmove", event => {
   if(!swipe)return;
-  if(event.touches.length!==1 || String(getSelection()).trim()){swipe=null;return;}
+  if(event.touches.length!==1 || String(getSelection()).trim()){dayMotion.release(false);swipe=null;return;}
   const dx=event.touches[0].clientX-swipe.x,dy=event.touches[0].clientY-swipe.y;
-  if(Math.abs(dy)>12 && Math.abs(dy)>Math.abs(dx)){swipe=null;return;}
-  if(Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*2){swipe.horizontal=true;event.preventDefault();}
+  if(!swipe.horizontal&&swipeIntent(dx,dy)==='vertical'){dayMotion.release(false);swipe=null;return;}
+  if(swipe.horizontal||swipeIntent(dx,dy)==='horizontal'){swipe.horizontal=true;if(event.cancelable)event.preventDefault();if(swipe.surface.id==='sheet'&&mobileDaySession)dayMotion.drag(swipe.startOffset+dx);}
 }, {passive:false});
-app.addEventListener("touchcancel",()=>swipe=null,{passive:true});
+app.addEventListener("touchcancel",()=>{swipe=null;dayMotion.release(false);},{passive:true});
 app.addEventListener("touchend",event=>{
   const gesture=swipe;swipe=null;
-  if(!gesture || !gesture.surface.isConnected || gesture.month!==month || gesture.day!==selectedDay || editing || !gesture.horizontal || String(getSelection()).trim() || Date.now()-gesture.at>1200)return;
+  if(!gesture || !gesture.surface.isConnected || gesture.month!==month || gesture.day!==selectedDay || editing || !gesture.horizontal || String(getSelection()).trim() || Date.now()-gesture.at>1200){dayMotion.release(false);return;}
   const touch=event.changedTouches[0],dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
-  if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*2)return;
-  const delta=dx<0?1:-1;
-  if(gesture.surface.id==="sheet" && selectedDay){const day=addDays(selectedDay,delta);if(day.startsWith(month))daySheet(day);}
+  const delta=swipeDirection(dx,dy,Date.now()-gesture.at);
+  if(gesture.surface.id==="sheet" && selectedDay){dayMotion.release(Boolean(delta));}
+  else if(!delta)return;
   else {const next=shiftMonth(month,delta);if(validMonth(next)){selectedDay=null;month=next;render(delta>0?"next":"previous");}}
 },{passive:true});
