@@ -1,0 +1,114 @@
+{
+  "engine": "chromium",
+  "version": "151.0.7922.173",
+  "results": [
+    {
+      "width": 1440,
+      "scale": 1,
+      "fonts": {
+        "before": [
+          18,
+          16,
+          15
+        ],
+        "after": [
+          18,
+          16,
+          15
+        ]
+      },
+      "fullFocusCycles": true,
+      "status": "passed"
+    },
+    {
+      "width": 1440,
+      "scale": 2,
+      "fonts": {
+        "before": [
+          18,
+          16,
+          15
+        ],
+        "after": [
+          36,
+          32,
+          30
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "fonts": {
+        "before": [
+          18,
+          16,
+          15
+        ],
+        "after": [
+          18,
+          16,
+          15
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "scale": 2,
+      "fonts": {
+        "before": [
+          18,
+          16,
+          15
+        ],
+        "after": [
+          36,
+          32,
+          30
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "fonts": {
+        "before": [
+          18,
+          16,
+          15
+        ],
+        "after": [
+          18,
+          16,
+          15
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "scale": 2,
+      "fonts": {
+        "before": [
+          18,
+          16,
+          15
+        ],
+        "after": [
+          36,
+          32,
+          30
+        ]
+      },
+      "fullFocusCycles": true,
+      "status": "passed"
+    }
+  ]
+}

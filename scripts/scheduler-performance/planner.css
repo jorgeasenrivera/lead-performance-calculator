@@ -638,10 +638,7 @@ main {
 .footer {
   font-size: 0.8125rem;
 }
-main:has(#sheet:not([hidden])) .month-days,
-main:has(#sheet:not([hidden])) .month-glance {
-  display: none;
-}
+
 @media (max-width: 600px) {
   main {
     padding: 14px;
@@ -914,3 +911,96 @@ main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; 
  .compact-month .month-navigation { position:static; }
  :root:has(main.compact-month) { scroll-padding-top:0; }
 }
+
+/* Connected month and selected-day workspace, using the existing Sage tokens. */
+main { max-width:1440px; }
+.schedule-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(22rem,1fr); gap:24px; align-items:start; margin:16px 0; }
+.calendar-pane { min-width:0; }
+.calendar-context { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.calendar-context > span { display:flex; align-items:center; gap:8px; font-weight:600; }
+.calendar-context button { font-size:.8125rem; }
+.schedule-layout #sheet { min-width:0; margin:0; position:sticky; top:12px; animation:none; }
+.schedule-layout .month-days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; margin:0; }
+.schedule-layout .weekday-heading { display:block; text-align:center; padding:4px 0; }
+.schedule-layout .calendar-blank { display:block; }
+.schedule-layout .month-day { min-height:88px; padding:8px 4px; gap:6px; align-items:center; justify-content:center; }
+.schedule-layout .month-day .day-date { padding:0; border:0; width:auto; gap:4px; font-size:1.125rem; }
+.schedule-layout .month-day :is(.day-staffing,.day-issue,.day-coverage,.best-day,.day-date small,.day-weekday) { display:none; }
+.schedule-layout .month-day .staff-status { align-self:center; }
+.schedule-layout .month-day .status-label { display:none; }
+.schedule-layout .month-day .sage-icon { width:1rem; height:1rem; margin:0; }
+.schedule-layout .month-day .day-sales { font-size:.6875rem; padding:2px; border-radius:3px; align-self:stretch; text-align:center; }
+.schedule-layout .month-day[aria-pressed="true"] { outline:3px solid #234939; outline-offset:1px; box-shadow:inset 0 0 0 2px var(--paper); }
+.schedule-layout .month-day:focus-visible { outline:3px solid #846812; outline-offset:2px; }
+.coverage-summary { padding:12px; background:#e8eedf; border:1px solid var(--line); border-radius:8px; margin:12px 0; }
+.coverage-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.coverage-summary dt { font-size:.8125rem; overflow-wrap:anywhere; }
+.coverage-summary dd { font:600 1.5rem/1.2 "Space Grotesk",sans-serif; margin:4px 0; }
+.coverage-summary p,.coverage-summary small { font-size:.8125rem; }
+.workspace-intro h2 { margin:12px 0 4px; }
+.workspace-intro p { max-width:60rem; }
+.planning-basis,.applied-roster { border-block:1px solid var(--line); padding:12px 0; margin:12px 0; }
+.people-assignments { padding:0; border:0; }
+.assignment-person { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; padding:12px 0; border-top:1px solid var(--line); align-items:center; }
+.assignment-person > div { min-width:0; overflow-wrap:anywhere; }
+.assignment-person small { display:block; font-size:.8125rem; margin-top:4px; }
+.assignment-person .check { flex-direction:row; align-items:center; gap:4px; min-height:44px; }
+.assignment-person input { width:20px; height:20px; min-height:20px; flex-shrink:0; }
+.pending-note { font-size:.8125rem; color:#234939; background:#efe5c7; border-radius:4px; }
+.pending-note:not(:empty) { padding:8px; }
+#settings-sheet:not([hidden]) { margin:16px 0; border:2px solid #234939; }
+.day-heading { scroll-margin-top:12px; }
+@media(max-width:1000px) {
+ .schedule-layout { grid-template-columns:minmax(0,1fr); gap:16px; }
+ .schedule-layout #sheet { position:static; }
+ .schedule-layout .month-day { min-height:64px; }
+}
+main.compact-month .schedule-layout { order:2; margin-top:4px; }
+.compact-month .workspace-intro { order:1; }
+.compact-month #settings-sheet { order:2; }
+.compact-month .schedule-layout .month-days { gap:2px; }
+.compact-month .schedule-layout .month-day { min-height:48px; padding:4px 1px; gap:2px; }
+.compact-month .schedule-layout .day-sales { display:none; }
+.compact-month .schedule-layout .day-date { font-size:1rem; }
+.compact-month .schedule-layout .month-day .staff-status .sage-icon { display:inline-block; }
+.compact-month .month-navigation { position:static; }
+:root:has(main.compact-month) { scroll-padding-top:8px; }
+.compact-reflow .schedule-layout .month-days { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.compact-reflow .schedule-layout :is(.weekday-heading,.calendar-blank) { display:none; }
+.compact-reflow .schedule-layout .day-weekday { display:inline; }
+.compact-reflow .schedule-layout .month-day { min-height:80px; }
+.compact-reflow .assignment-person { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.compact-reflow .assignment-person > div { grid-column:1/-1; }
+
+.people-assignments { display:block; }
+@media(min-width:1001px) {
+ .calendar-pane { position:sticky; top:12px; }
+}
+.stacked-workspace .schedule-layout { grid-template-columns:minmax(0,1fr); }
+.stacked-workspace .calendar-pane,.stacked-workspace .schedule-layout #sheet { position:static; }
+.compact-month .notice { order:1; }
+.planning-workspace .schedule-layout .month-day .day-coverage { display:block; font-size:.75rem; line-height:1.4; }
+.planning-workspace .schedule-layout .month-day .day-sales { display:none; }
+.compact-month.planning-workspace .schedule-layout .month-day .day-coverage { display:none; }
+.compact-month #message { flex:none; min-height:0; }
+@media(max-height:500px) {
+ .calendar-pane,.schedule-layout #sheet { position:static; }
+}
+#settings-sheet { min-width:0; }
+#settings-sheet fieldset { min-inline-size:0; }
+#settings-sheet :is(p,label,legend) { overflow-wrap:anywhere; }
+.month-demand,.day-demand { padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--paper); margin:12px 0; min-width:0; }
+.month-demand h3 { display:flex; align-items:center; gap:8px; }
+.month-demand details,.day-demand details { margin-top:12px; }
+.month-demand p,.day-demand p { font-size:.875rem; }
+.month-demand li,.day-demand p { overflow-wrap:anywhere; }
+.day-demand .demand-range { font-size:1.125rem; font-weight:600; margin:8px 0; }
+.suggested-coverage { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.suggested-coverage dt { font-size:.8125rem; overflow-wrap:anywhere; }
+.suggested-coverage dd { margin:4px 0; font-size:1.25rem; font-weight:600; }
+.compact-month .month-demand { order:1; }
+.compact-month #message { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+/* Enlarged text needs complete metric labels, not three squeezed columns. */
+.compact-reflow :is(.coverage-summary dl,.suggested-coverage) { grid-template-columns:minmax(0,1fr); }
+.compact-reflow :is(.coverage-summary dl,.suggested-coverage) > div { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.compact-reflow :is(.coverage-summary dt,.suggested-coverage dt) { overflow-wrap:normal; }

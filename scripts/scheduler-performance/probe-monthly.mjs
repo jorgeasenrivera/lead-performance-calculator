@@ -18,8 +18,8 @@ const out =
 mkdirSync(out, { recursive: true });
 const results = [];
 try {
-  for (const width of [1440, 390, 320])
-    for (const scale of [1, 2]) {
+  for (const width of (process.env.WIDTHS || "1440,390,320").split(",").map(Number))
+    for (const scale of (process.env.TEXT_SCALES || "1,2").split(",").map(Number)) {
       const key = `${engine}-${width}-text${scale * 100}`,
         page = await browser.newPage({
           viewport: { width, height: 900 },
@@ -39,6 +39,7 @@ try {
       });
       await page.clock.install({ time: new Date("2026-10-14T16:00:00Z") });
       await page.goto("http://127.0.0.1:5190");
+      await page.evaluate(() => document.fonts.ready);
       if (width > 700)
         await page.getByRole("button", { name: "Close the round-up" }).click();
       const entry = page.locator(width <= 700 ? '[data-hero-day="2026-10-14"]' : ".sp-calendar-entry");
@@ -106,7 +107,7 @@ try {
       const ret = page.getByRole("button", { name: "Return to Performance" }),
         f = page.frames().find((f) => f.url().includes("/planner/"));
       await f.locator("#period-heading").waitFor();
-      if(width <= 700) await f.getByRole("button", {name:"Back to month",exact:true}).click();
+      if(width <= 700) await f.getByRole("button", {name:"Month calendar",exact:true}).click();
       assert.equal(await f.locator("#people").count(), 0);
       await f.getByRole("button", { name: "Make Schedule", exact: true }).click();
       assert.equal(
@@ -131,6 +132,8 @@ try {
       const after = await fonts();
       before.forEach((v, i) => assert.equal(after[i], v * scale));
       const fit = async () => {
+        const overflow = await f.evaluate(() => ({width:innerWidth,scroll:document.documentElement.scrollWidth,nodes:[...document.querySelectorAll("body *")].filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>({tag:e.tagName,id:e.id,cls:e.className,right:e.getBoundingClientRect().right,text:e.textContent.slice(0,80)}))}));
+        if(overflow.scroll>overflow.width) console.log("Overflow evidence", JSON.stringify(overflow));
         assert.ok(
           await f.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth,
@@ -269,7 +272,7 @@ try {
         await box.uncheck();
       await f.getByRole("button", { name: "Apply day override" }).click();
       assert.match(await f.locator("#sheet h2").innerText(), /Oct 14, 2026/);
-      await f.getByRole("button", {name:"Back to month",exact:true}).click();
+      await f.getByRole("button", {name:"Month calendar",exact:true}).click();
       await focus("day-2026-10-14");
       assert.match(
         await f.locator("#day-2026-10-14").textContent(),
@@ -299,16 +302,16 @@ try {
         .click();
       await f.locator("#day-2028-02-29").click();
       assert.match(
-        await f.locator(".recorded-day").innerText(),
+        await f.locator(".recorded-day").textContent(),
         /Sales not yet available/,
       );
-      assert.match(await f.locator("#sheet").innerText(), /Planning range/);
+      assert.match(await f.locator("#sheet").textContent(), /Busyness estimate/);
       for (const box of await f.locator("[name=assigned]").all())
         await box.uncheck();
       await f.locator("[name=assigned][value=p1]").check();
       await f.getByRole("button", { name: "Apply day override" }).click();
       assert.match(await f.locator("#sheet h2").innerText(), /Feb 29, 2028/);
-      await f.getByRole("button", {name:"Back to month",exact:true}).click();
+      await f.getByRole("button", {name:"Month calendar",exact:true}).click();
       await focus("day-2028-02-29");
       await f.locator("#rules").click();
       await f.locator("[name=effective]").fill("2028-02-15");
@@ -357,7 +360,10 @@ try {
       await entry.click();
       await f.getByRole("button", { name: "Make Schedule", exact: true }).click();
       await f.locator("#people").click();
-      assert.equal(await f.locator("[name=maxHours]").inputValue(), "32");
+      assert.equal(await f.locator("[name=maxHours]").inputValue(), "1", "unapplied settings survive returning to Performance");
+      await f.getByRole("button", {name:"Cancel settings",exact:true}).click();
+      await f.locator("#people").click();
+      assert.equal(await f.locator("[name=maxHours]").inputValue(), "32", "cancel restores applied availability");
       await fit();
       await page.screenshot({ path: `${out}/${key}-person.png` });
       if (width === 320 && scale === 2) await cycle();
@@ -367,7 +373,7 @@ try {
       assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       await f.locator("#people").click();
       assert.equal(await f.locator("[name=maxHours]").inputValue(), "24");
-      await f.getByRole("button", { name: "Close sheet", exact: true }).click();
+      await f.getByRole("button", { name: "Cancel settings", exact: true }).click();
       await f.locator("#store").selectOption("1");
       await focus("store");
       await f.locator("#store").selectOption("0");
@@ -390,16 +396,16 @@ try {
       await selectMonth("2028-02");
       assert.match(await f.locator("#day-2028-02-29").textContent(), /Closed/);
       await f.locator("#day-2028-02-15").click();
-      assert.match(await f.locator("#sheet").innerText(), /3 people needed/);
+      assert.equal(await f.locator(".coverage-summary dd").first().textContent(), "3");
       await page.screenshot({ path: `${out}/${key}-day.png` });
       await f
-        .getByRole("button", { name: "Back to month", exact: true })
+        .getByRole("button", { name: "Month calendar", exact: true })
         .click();
       await f.locator("#today").click();
       assert.equal(await f.locator("#month").inputValue(), "2026-10");
       assert.match(await f.locator("#sheet h2").innerText(), /Oct 14, 2026/);
       await f
-        .getByRole("button", { name: "Back to month", exact: true })
+        .getByRole("button", { name: "Month calendar", exact: true })
         .click();
       await focus("period-heading");
       await selectMonth("2028-02");
@@ -417,6 +423,8 @@ try {
         /0 assigned/,
       );
       await f.locator("#period-heading").press("Escape");
+      assert.equal(await page.locator(".sp-dialog").evaluate(e => e.open), true, "Escape stays in connected scheduler");
+      await ret.click();
       assert.equal(
         await page.locator(".sp-dialog").evaluate((e) => e.open),
         false,
@@ -436,7 +444,7 @@ try {
         assert.equal(await fresh.locator("#month").inputValue(), "2026-10");
         await fresh.getByRole("button", { name: "Make Schedule", exact: true }).click();
         assert.match(
-          await fresh.locator("#day-2026-10-14").innerText(),
+          await fresh.locator("#day-2026-10-14").textContent(),
           /3 assigned/,
         );
         await fresh.locator("#people").click();

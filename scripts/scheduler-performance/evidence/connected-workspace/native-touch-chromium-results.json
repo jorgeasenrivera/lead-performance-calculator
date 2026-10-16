@@ -1,0 +1,42 @@
+[
+  {
+    "width": 320,
+    "scale": 1,
+    "nativeTouch": "CDP trusted touch events",
+    "verticalScroll": {
+      "before": 0,
+      "after": 160
+    },
+    "status": "passed"
+  },
+  {
+    "width": 320,
+    "scale": 2,
+    "nativeTouch": "CDP trusted touch events",
+    "verticalScroll": {
+      "before": 0,
+      "after": 160
+    },
+    "status": "passed"
+  },
+  {
+    "width": 390,
+    "scale": 1,
+    "nativeTouch": "CDP trusted touch events",
+    "verticalScroll": {
+      "before": 0,
+      "after": 175
+    },
+    "status": "passed"
+  },
+  {
+    "width": 390,
+    "scale": 2,
+    "nativeTouch": "CDP trusted touch events",
+    "verticalScroll": {
+      "before": 0,
+      "after": 161
+    },
+    "status": "passed"
+  }
+]

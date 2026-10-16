@@ -138,6 +138,7 @@ export async function buildPreview() {
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
   await cp("scripts/scheduler-performance/sage-icons.mjs", planner + "/sage-icons.mjs");
   await cp("scripts/scheduler-performance/assignment-view.mjs", planner + "/assignment-view.mjs");
+  await writeFile(planner + "/demand-context.mjs", (await readFile("scripts/scheduler-performance/demand-context.mjs", "utf8")).replace("../scheduler-proposal/model.mjs", "./model.mjs"));
   let monthlyModel = await readFile(
     "scripts/scheduler-performance/month-model.mjs",
     "utf8",

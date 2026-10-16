@@ -1,0 +1,58 @@
+[
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "history": "fictional",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "history": "empty",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 2,
+    "history": "fictional",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 2,
+    "history": "empty",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "history": "fictional",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "history": "empty",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "history": "fictional",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "history": "empty",
+    "status": "passed"
+  }
+]

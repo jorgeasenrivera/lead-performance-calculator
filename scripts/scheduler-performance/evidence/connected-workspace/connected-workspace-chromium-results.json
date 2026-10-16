@@ -1,0 +1,254 @@
+[
+  {
+    "width": 1440,
+    "height": 1000,
+    "touch": false,
+    "engine": "chromium",
+    "scale": 1,
+    "geometry": {
+      "calendar": {
+        "left": 24,
+        "right": 809.859375,
+        "top": 236,
+        "bottom": 877.640625
+      },
+      "day": {
+        "left": 833.859375,
+        "top": 236
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 1440,
+    "height": 1000,
+    "touch": false,
+    "engine": "chromium",
+    "scale": 2,
+    "geometry": {
+      "calendar": {
+        "left": 24,
+        "right": 1416,
+        "top": 317.390625,
+        "bottom": 1350.296875
+      },
+      "day": {
+        "left": 24,
+        "top": 1374.296875
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 1024,
+    "height": 768,
+    "touch": true,
+    "engine": "chromium",
+    "scale": 1,
+    "geometry": {
+      "calendar": {
+        "left": 24,
+        "right": 570.890625,
+        "top": 236,
+        "bottom": 954.59375
+      },
+      "day": {
+        "left": 594.890625,
+        "top": 236
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 1024,
+    "height": 768,
+    "touch": true,
+    "engine": "chromium",
+    "scale": 2,
+    "geometry": {
+      "calendar": {
+        "left": 24,
+        "right": 1000,
+        "top": -266.609375,
+        "bottom": 920.28125
+      },
+      "day": {
+        "left": 24,
+        "top": 944.28125
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 720,
+    "height": 450,
+    "touch": false,
+    "engine": "chromium",
+    "scale": 1,
+    "geometry": {
+      "calendar": {
+        "left": 24,
+        "right": 696,
+        "top": -138,
+        "bottom": 505.640625
+      },
+      "day": {
+        "left": 24,
+        "top": 521.640625
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 720,
+    "height": 450,
+    "touch": false,
+    "engine": "chromium",
+    "scale": 2,
+    "geometry": {
+      "calendar": {
+        "left": 24,
+        "right": 696,
+        "top": -440.609375,
+        "bottom": 838.671875
+      },
+      "day": {
+        "left": 24,
+        "top": 854.671875
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "touch": true,
+    "engine": "chromium",
+    "scale": 1,
+    "geometry": {
+      "calendar": {
+        "left": 4,
+        "right": 386,
+        "top": 172,
+        "bottom": 504.78125
+      },
+      "day": {
+        "left": 4,
+        "top": 520.78125
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "touch": true,
+    "engine": "chromium",
+    "scale": 2,
+    "geometry": {
+      "calendar": {
+        "left": 4,
+        "right": 386,
+        "top": -191.21875,
+        "bottom": 1386.671875
+      },
+      "day": {
+        "left": 4,
+        "top": 1402.671875
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 320,
+    "height": 640,
+    "touch": true,
+    "engine": "chromium",
+    "scale": 1,
+    "geometry": {
+      "calendar": {
+        "left": 4,
+        "right": 316,
+        "top": 172,
+        "bottom": 504.78125
+      },
+      "day": {
+        "left": 4,
+        "top": 520.78125
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 320,
+    "height": 640,
+    "touch": true,
+    "engine": "chromium",
+    "scale": 2,
+    "geometry": {
+      "calendar": {
+        "left": 4,
+        "right": 316,
+        "top": -365.828125,
+        "bottom": 1284.84375
+      },
+      "day": {
+        "left": 4,
+        "top": 1300.84375
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 360,
+    "height": 225,
+    "touch": false,
+    "engine": "chromium",
+    "scale": 1,
+    "geometry": {
+      "calendar": {
+        "left": 4,
+        "right": 356,
+        "top": -89,
+        "bottom": 243.78125
+      },
+      "day": {
+        "left": 4,
+        "top": 259.78125
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  },
+  {
+    "width": 360,
+    "height": 225,
+    "touch": false,
+    "engine": "chromium",
+    "scale": 2,
+    "geometry": {
+      "calendar": {
+        "left": 4,
+        "right": 356,
+        "top": -486.828125,
+        "bottom": 1077.453125
+      },
+      "day": {
+        "left": 4,
+        "top": 1093.453125
+      }
+    },
+    "axeScans": 2,
+    "status": "passed"
+  }
+]
