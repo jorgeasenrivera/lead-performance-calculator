@@ -22,7 +22,7 @@ The separate Sold by Day popover beneath the desktop new/used spread is removed 
 
 Production source is main `15ea1a80db1c17e7f5d9b99db026f7fc09b30697`. Standalone draft #476 remains at `d3a07b2620868601c919de5cf76d1a6b84eb6462`. The preceding weekly integration is preserved at `f5b7a6566ef779ea156b06849c14c79e845e5097`, with its original screenshots/results still in `evidence/`. The previous monthly candidate is `0c0798470e65ae567c70ef4b4f4275a0eaffe3bd`, with its evidence preserved in `evidence/monthly/`. Calendar refinement evidence is retained in `evidence/calendar-refinement/`. The larger hero calendar evidence is in `evidence/hero-calendar/`.
 
-Only `scripts/scheduler-performance/` changes. The real AppShell, StoreHero, Board and BoardRoomPhone mount against fictional demo data through a SHA-256-pinned build-only transform. This refuses changed Manager source rather than silently patching another owner's work. Manager, core, shared styles, C111/#464, claims and the standalone candidate are unchanged. Other Performance actions use inert fixture callbacks. This is not a full application demonstration or a proposed production architecture.
+Preview UI/model changes are confined to `scripts/scheduler-performance/`; the review follow-up also corrects isolated mock-reload test orchestration in `scripts/feel*`, its probe and tests. The real AppShell, StoreHero, Board and BoardRoomPhone mount against fictional demo data through a SHA-256-pinned build-only transform. This refuses changed Manager source rather than silently patching another owner's work. Manager, core, shared styles, C111/#464, claims and the standalone candidate are unchanged. Other Performance actions use inert fixture callbacks. This is not a full application demonstration or a proposed production architecture.
 
 No sign-in flow is mounted. Database build values are blank, and both documents prohibit network connections with `connect-src 'none'`. There is no private workbook, database storage, live SQL, publishing, credential change or protection bypass. The preview supports full store-hour shifts only, not appointments, partial shifts, breaks or overtime policy.
 
@@ -295,3 +295,40 @@ See [verification notes](evidence/team-balance/verification-notes.md) for the
 comparison method, provenance contract, production People integration boundary
 and verification limits. Real workbook mapping awaits a sample; CSV is the only
 supported schedule input.
+
+## Review hold corrections from 2ae0f14
+
+Team creation and CSV matching now share one canonical identity. Ambiguous names,
+reserved syntax and contradictory included declarations require resolution or an
+explicit skip before the atomic import can apply. Names remain literal display
+text. Detailed private input cases are not published with this preview.
+
+The audit retains closed-date and unknown-hour assignments, their known entered
+minutes and their day-detail conflicts. Unknown duration is counted explicitly.
+Excluded time never becomes eligible opportunity. Named-team rates and difference
+prompts require completed assignments and known availability, weekly limits and
+reviewed membership across the visible open dates. Unknown is not confirmed off.
+No team remains context only. Shared membership discloses available denominators,
+even when shared people have no scheduled work. Exact 20-point gaps are included;
+smaller gaps stay below the threshold. Missing historical support and missing
+weekly limits are labeled separately. People and day details expose retained
+assignment/current-membership mismatches for review.
+
+This is an audit, not fair generation. Weekly caps remain separate constraints;
+raw availability is not a weekly-cap budget. History is illustrative daily store
+opportunity, with age and uncertainty disclosed. No roles, individual strength,
+workbook mapping, live People integration or persistence are inferred.
+
+A separate local-mock feel harness correction drains delayed requests before
+changing sign-in state and reloading. Genuine page errors and all timing bars
+remain assertions. A focused browser check verifies completed mock reads and a
+real rejected preflight. The starting CI run's logs were readable, but its binary
+artifact download was blocked by this executor's CONNECT proxy, so its precise
+cause is not claimed established solely by the local cancellation reproduction.
+
+Production source, database, permissions, ownership records and deployment
+settings remain unchanged. The additional harness files are outside the isolated
+preview directory; they change test orchestration only. Final verification,
+remaining limitations, exact remote head and protected deployment identity are
+reported on draft PR #478. Do not interpret earlier evidence folders as this
+revision's final results.

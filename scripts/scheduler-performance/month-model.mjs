@@ -1,3 +1,4 @@
+import { nameKey, reservedTeamName } from './name-key.mjs';
 import { seedTeams, teamSnapshot, validateMembership } from "./team-model.mjs";
 import { personIntervals, unionMinutes, coverageSegments, shiftProblem, storeTimezone } from "./shift-intervals.mjs";
 import {
@@ -99,7 +100,7 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     for(const [k,d] of drafts)if(k.startsWith(index+':')){d.accepted=false;d.reviewFingerprint=null;}
   };
   const addTeam = (index,name) => {
-    name=String(name).trim();if(!name||name.length>60||teamState[index].teams.some(t=>t.name.toLowerCase()===name.toLowerCase()))throw Error('Use a unique team name, up to 60 characters.');
+    name=String(name).trim();if(!nameKey(name)||name.length>60||reservedTeamName(name)||teamState[index].teams.some(t=>nameKey(t.name)===nameKey(name)))throw Error('Use a unique team name, up to 60 characters, without the reserved name none or |.');
     let n=teamState[index].teams.length+1;while(teamState[index].teams.some(t=>t.id==='team-'+n))n++;const id='team-'+n;teamState[index].teams.push({id,name});revision++;return id;
   };
   return { get, rows, record, setAssignment, reset, drafts, setMembership, addTeam, teamState, get revision() { return revision; }, context: (index,day) => ({...resolve(index,day),record:record(index,day)}) };
@@ -115,7 +116,7 @@ export function enteredMonth(month, resolveDay) {
     const { store, record, overrides } = resolveDay(day), rule = ruleFor(store.rules, day);
     const state = !rule ? "unknown" : rule.holidays[day] || (rule.closedDays.includes(weekday(day)) ? "closed" : "open");
     const ids = [...new Set([...(record?.on || []), ...(record?.shifts || []).map(s=>s.personId)])];
-    const validRule = rule && rule.close > rule.open && Number.isInteger(rule.minimum) && rule.minimum >= 1;
+    const validRule = rule && Number.isFinite(rule.open) && Number.isFinite(rule.close) && rule.open >= 0 && rule.close <= 24 && rule.close > rule.open && Number.isInteger(rule.minimum) && rule.minimum >= 1;
     all.push({ day, store, rule, record, ids, state: validRule ? state : "unknown", hours: validRule ? rule.close - rule.open : 0, week: addDays(day, -((weekday(day) + 6) % 7)), override: Object.hasOwn(overrides || {}, day) });
   }
   const totals = new Map(), unknownWeeks = new Set();

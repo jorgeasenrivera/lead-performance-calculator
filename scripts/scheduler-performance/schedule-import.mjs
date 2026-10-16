@@ -1,7 +1,7 @@
 import { membershipAt, sameTeams, absenceKind, validateMembership } from "./team-model.mjs";
 import { validDate, minute, shiftProblem, storeTimezone } from './shift-intervals.mjs';
 import { enteredMonth, validMonth } from './month-model.mjs';
-const normalize = text => String(text).trim().normalize('NFKC').toLowerCase().replace(/\s+/g,' ');
+import { nameKey as normalize, reservedTeamName } from './name-key.mjs';
 // Strict CSV: quoted commas/newlines and escaped quotes, with physical source line numbers.
 export function csvRows(text) {
   if(text.length>100000)throw Error('Choose a CSV smaller than 100 KB.');
@@ -32,7 +32,7 @@ export function importSnapshot(planner,index) {
 }
 const sameShift=(a,b)=>['storeId','personId','date','endDate','startMinute','endMinute','timezone'].every(k=>a[k]===b[k]);
 export function reviewImport(planner,index,rows,choices={}) {
-  const snapshot=importSnapshot(planner,index),candidates=new Map(),items=[],membershipChanges=new Map();
+  const snapshot=importSnapshot(planner,index),candidates=new Map(),items=[],membershipChanges=new Map(),declarations=new Map();
   for(const row of rows){
     const raw=row.raw,context=planner.context(index,raw.date),store=context.store;
     const item={...row,storeId:store.id,personId:null,state:'blocked',messages:[]};items.push(item);
@@ -53,12 +53,23 @@ export function reviewImport(planner,index,rows,choices={}) {
     const shift={storeId:store.id,personId:person?.id,date:raw.date,endDate,timezone:zone,startMinute:minute(raw.start||''),endMinute:minute(raw.end||''),source:row.source};
     if(status==='work'){const problem=shiftProblem(shift,store,raw.date);if(problem)item.messages.push(problem);}
     item.shift=status==='work'?shift:null;item.status=status;
-    let acceptedTeam=null,teamChange=null;
+    let acceptedTeam=null,teamChange=null,declaredTeams=null;
     if(person&&validDate(raw.date)) {
       const current=membershipChanges.get(person.id+':'+raw.date)||membershipAt(store,person.id,raw.date);
-      const names=raw.team?raw.team.split('|').map(normalize).filter(Boolean):null;
-      if(raw.team&&names.length===0)item.messages.push('Use named teams separated by |, or none.');
-      const declared=names?.every(n=>n==='none')?[]:names?.map(n=>store.teams.find(t=>normalize(t.name)===n)?.id);
+      const names=raw.team?String(raw.team).normalize('NFKC').split('|').map(normalize):null;
+      const noTeam=names?.length===1&&names[0]==='none';
+      const malformed=names&&(!names.every(Boolean)||!noTeam&&names.includes('none'));
+      const matches=names?.map(n=>store.teams.filter(t=>normalize(t.name)===n));
+      const ambiguous=names&&(!noTeam&&matches.some(m=>m.length>1)||store.teams.some(t=>reservedTeamName(t.name)&&(names.includes(normalize(t.name))||sameTeams(String(t.name).normalize('NFKC').split('|').map(normalize),names))));
+      if(malformed)item.messages.push('Use named teams separated by |, or none alone. Empty team names are not allowed.');
+      if(ambiguous)item.messages.push('Team names are ambiguous or reserved. Resolve the team names or skip this row.');
+      const declared=noTeam?[]:matches?.map(m=>m.length===1?m[0].id:undefined);
+      const declarationKey=person.id+':'+raw.date;
+      if(names&&!malformed&&!ambiguous&&!declared.some(id=>!id)){
+        declaredTeams=declared;
+        const prior=declarations.get(declarationKey);
+        if(prior&&!sameTeams(prior,declared))item.messages.push('Included rows declare contradictory teams for the same person and date. Resolve or skip the conflicting row.');
+      }
       item.currentTeams=current.teamIds;item.currentTeamUnknown=Boolean(current.unknown);item.declaredTeam=raw.team||'';
       item.teamMismatch=Boolean(names&&(declared.some(id=>!id)||current.unknown||!sameTeams(declared,current.teamIds)));
       item.knownTeams=!declared?.some(id=>!id);item.teamDecision=choices[row.index]?.teamDecision||'';
@@ -73,6 +84,7 @@ export function reviewImport(planner,index,rows,choices={}) {
     const existing=record.shifts.filter(s=>s.personId===person.id);
     if(record.teamSnapshot?.[person.id]&&(!sameTeams(record.teamSnapshot[person.id].teamIds,acceptedTeam.teamIds)||Boolean(record.teamSnapshot[person.id].unknown)!==Boolean(acceptedTeam.unknown)))item.messages.push('This date already has a different assignment team snapshot. Review its teams in day details first.');
     if(item.messages.length)continue;
+    if(declaredTeams!==null)declarations.set(person.id+':'+raw.date,declaredTeams);
     if(status==='work' && existing.some(s=>sameShift(s,shift)) || status!=='work'&&status!=='unknown'&&absenceKind(record,person.id)===status || status==='unknown'&&record.unknownNotes?.[person.id]){item.state='duplicate';continue;}
     if(status!=='work'&&record.off.includes(person.id))item.messages.push('An existing absence has a different status. Review the day first; it will not be replaced.');
     if(status!=='work' && (record.on.includes(person.id)||existing.length))item.messages.push('Existing work conflicts with off. Keep it, or edit the day before importing.');
