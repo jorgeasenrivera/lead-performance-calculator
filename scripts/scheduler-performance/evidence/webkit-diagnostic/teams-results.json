@@ -1,0 +1,11 @@
+[
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  }
+]
