@@ -1,0 +1,60 @@
+{
+  "testedSourceSha": "80611a8f82ed8359ad025cc48e5fe8f1d51b4bbb",
+  "webkitPartialMatrices": [
+    {
+      "matrix": "teams",
+      "passedCases": [
+        "1440/100",
+        "1440/200",
+        "390/100",
+        "390/200"
+      ],
+      "failedCase": "320/100",
+      "error": "15 s timeout performing Apply day override click",
+      "remainingCases": [
+        "320/200"
+      ]
+    },
+    {
+      "matrix": "import",
+      "passedCases": [
+        "1440/100",
+        "1440/200"
+      ],
+      "failedCase": "390/100",
+      "error": "12 s timeout performing workspace click",
+      "remainingCases": [
+        "390/200",
+        "320/100",
+        "320/200"
+      ]
+    },
+    {
+      "matrix": "delivered",
+      "passedCases": [
+        "1440/100",
+        "1440/200",
+        "1280/100",
+        "1280/200",
+        "1024/100",
+        "1024/200"
+      ],
+      "failedCase": "720/100",
+      "error": "12 s timeout performing edit-day click",
+      "remainingCases": [
+        "720/200",
+        "390/100",
+        "390/200",
+        "320/100",
+        "320/200"
+      ]
+    }
+  ],
+  "initialAuditAttempt": "3 cases passed, click timeout; all 6 passed after orphan process cleanup, same assertions and limits",
+  "initialTeamsAttempt": "first desktop case timed out waiting for Cancel settings stability; negative timer warning and executor stall observed; cause unproven",
+  "privateLiteralNameChecks": {
+    "chromium": 3,
+    "webkit": 3,
+    "result": "passed; raw inputs excluded"
+  }
+}
