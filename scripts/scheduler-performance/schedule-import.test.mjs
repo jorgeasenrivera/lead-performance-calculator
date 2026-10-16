@@ -78,3 +78,33 @@ test('earlier-month imports include following-month assignments and year boundar
  const r=run(p,'Alex One,2025-12-31,09:00,09:01,work');assert.equal(r.blocked,true);assert.ok(r.items[0].messages.some(m=>m.includes('weekly hours exceeded')));
 });
 test('a repeated source row within a batch is preserved as a visible no-op',()=>{const p=setup(),line='Alex One,2026-11-02,09:15,16:45,work',r=run(p,line+'\n'+line);assert.deepEqual(r.items.map(i=>i.state),['ready','duplicate']);applyImport(p,r);assert.equal(p.record(0,'2026-11-02').shifts.length,1);});
+test('import validates existing assignments under both monthly caps, atomically, with skip recovery',()=>{
+ for(const [existingDay,importDay,existingCap,importCap] of [
+  ['2026-12-31','2027-01-01',8,40],
+  ['2027-01-01','2026-12-31',8,40],
+  ['2026-12-31','2027-01-01',40,8],
+  ['2027-01-01','2026-12-31',40,8],
+ ]){
+  const p=setup();p.get(0,existingDay.slice(0,7)).store.people[0].maxHours=existingCap;
+  p.get(0,importDay.slice(0,7)).store.people[0].maxHours=importCap;
+  p.setAssignment(0,existingDay,{on:['a'],off:[]});
+  const rows=csv(`Alex One,${importDay},09:00,09:01,work\nBlair Two,${importDay},09:00,09:01,work`),before=importSnapshot(p,0),r=reviewImport(p,0,rows);
+  assert.equal(r.blocked,true);assert.ok(r.items[0].messages.some(m=>m.includes('weekly hours exceeded')));
+  if(existingCap===8)assert.ok(r.items[0].messages.some(m=>m.includes(`Existing assignment on ${existingDay}`)));
+  assert.throws(()=>applyImport(p,r));assert.equal(importSnapshot(p,0),before);
+  const skipped=reviewImport(p,0,rows,{0:{skip:true}});assert.equal(skipped.blocked,false);assert.equal(applyImport(p,skipped).changed,1);
+  assert.deepEqual(p.record(0,existingDay),{on:['a'],off:[]});assert.deepEqual(p.record(0,importDay).on,['b']);
+ }
+});
+test('an unrelated pre-existing conflict does not block a different person import',()=>{
+ const p=setup();p.get(0,'2026-12').store.people[0].maxHours=7;p.setAssignment(0,'2026-12-31',{on:['a'],off:[]});
+ const r=run(p,'Blair Two,2027-01-01,09:00,09:01,work');assert.equal(r.blocked,false);applyImport(p,r);
+});
+test('Cedar December 31 cap eight blocks January 1 minute despite January cap forty',async()=>{
+ const {fixtures}=await import('../scheduler-proposal/model.mjs');const p=createPlanner([fixtures()[0]]);
+ p.get(0,'2026-12').store.people[0].maxHours=8;p.get(0,'2027-01').store.people[0].maxHours=40;
+ p.setAssignment(0,'2026-12-31',{on:['p0'],off:[]});const before=importSnapshot(p,0);
+ const r=run(p,'Alex 1,2027-01-01,09:00,09:01,work');assert.equal(r.blocked,true);
+ assert.ok(r.items[0].messages.some(m=>m.includes('Existing assignment on 2026-12-31')));
+ assert.throws(()=>applyImport(p,r));assert.equal(importSnapshot(p,0),before);
+});

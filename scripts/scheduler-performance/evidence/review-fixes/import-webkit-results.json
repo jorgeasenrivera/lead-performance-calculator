@@ -1,0 +1,62 @@
+[
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "axeScans": 2,
+    "networkRequests": 0,
+    "storageUnchanged": true,
+    "databaseOrStorageCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 2,
+    "axeScans": 2,
+    "networkRequests": 0,
+    "storageUnchanged": true,
+    "databaseOrStorageCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "axeScans": 2,
+    "networkRequests": 0,
+    "storageUnchanged": true,
+    "databaseOrStorageCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "axeScans": 2,
+    "networkRequests": 0,
+    "storageUnchanged": true,
+    "databaseOrStorageCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "axeScans": 2,
+    "networkRequests": 0,
+    "storageUnchanged": true,
+    "databaseOrStorageCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "axeScans": 2,
+    "networkRequests": 0,
+    "storageUnchanged": true,
+    "databaseOrStorageCalls": 0,
+    "status": "passed"
+  }
+]

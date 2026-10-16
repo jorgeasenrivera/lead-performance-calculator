@@ -274,3 +274,9 @@ Review is read-only. A synchronous validated batch applies all included rows onl
 Evidence for this revision is in `evidence/schedule-import/`. Uploaded contents stay in memory; only synthetic CSV data is used in committed screenshots/tests. No real attachment is included. The preview has no production database or server authorization integration, and is not evidence of live role enforcement.
 
 Final CSV-import validation: 995 tests (22 new import/model cases), production and isolated builds, 12 import browser cases and 12 coherent-flow regressions passed. All 36 scoped axe scans passed. Import cases observed zero network requests and zero instrumented Storage/IndexedDB/beacon calls. Final CI and protected deployment identity are recorded on PR #478.
+
+### Desktop and neighboring-month import review fixes
+
+At 1440px/100% text the selected month and persistent roster are side by side again. The calendar has a larger width share so Delivered stays single-line; mobile and enlarged-text reflow remain intact. Import review now compares before/after conflicts across complete affected weeks in every monthly context. A January import cannot invalidate a December manual shift under December's lower weekly cap. The offending imported row must be resolved or explicitly skipped before the atomic batch can apply. See `evidence/review-fixes/` for the exact Cedar reproduction, regression matrices and screenshots.
+
+Final review-fix checks: 998 unit tests, production and isolated builds, 38 fresh browser cases and 48 scoped axe scans passed. Both engines require the side-by-side sticky desktop roster and verify the exact Cedar conflict/skip flow. Final remote SHA, CI and protected deployment identity are recorded on PR #478.

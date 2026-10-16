@@ -1,5 +1,5 @@
 import { validDate, minute, shiftProblem, storeTimezone } from './shift-intervals.mjs';
-import { enteredMonth } from './month-model.mjs';
+import { enteredMonth, validMonth } from './month-model.mjs';
 const normalize = text => String(text).trim().normalize('NFKC').toLowerCase().replace(/\s+/g,' ');
 // Strict CSV: quoted commas/newlines and escaped quotes, with physical source line numbers.
 export function csvRows(text) {
@@ -64,14 +64,30 @@ export function reviewImport(planner,index,rows,choices={}) {
     if(status==='work'){record.shifts.push(shift);record.on=[...new Set([...record.on,person.id])];}else record.off.push(person.id);
     candidates.set(raw.date,record);item.state='ready';
   }
-  // Evaluate all proposed rows together, including adjoining-month weeks, without mutating drafts.
-  const evaluated=new Map();
-  for(const month of new Set([...candidates.keys()].map(d=>d.slice(0,7))))for(const row of enteredMonth(month,day=>{
-    const context=planner.context(index,day);return {...context,record:candidates.get(day)||context.record};
-  }))evaluated.set(row.day,row);
-  for(const item of items.filter(i=>i.state==='ready'&&i.status==='work')){
-    const reasons=evaluated.get(item.raw.date)?.conflicts[item.personId]||[];
+  // A new interval can invalidate an existing shift under another month's cap.
+  // Compare each affected date in its own monthly context, never choosing one cap for the week.
+  const weekStart = day => { const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));return d.toISOString().slice(0,10); };
+  const weeks=new Set([...candidates.keys()].map(weekStart)),affectedDays=new Set();
+  for(const start of weeks)for(let offset=0;offset<7;offset++)affectedDays.add(new Date(new Date(start+'T12:00:00Z').getTime()+offset*86400000).toISOString().slice(0,10));
+  const before=new Map(),after=new Map();
+  for(const month of new Set([...affectedDays].map(d=>d.slice(0,7)).filter(validMonth))){
+    for(const row of enteredMonth(month,day=>planner.context(index,day)))if(affectedDays.has(row.day))before.set(row.day,row);
+    for(const row of enteredMonth(month,day=>{
+      const context=planner.context(index,day);return {...context,record:candidates.get(day)||context.record};
+    }))if(affectedDays.has(row.day))after.set(row.day,row);
+  }
+  const workItems=items.filter(i=>i.state==='ready'&&i.status==='work');
+  for(const item of workItems){
+    const reasons=after.get(item.raw.date)?.conflicts[item.personId]||[];
     if(reasons.length){item.state='blocked';item.messages.push(...reasons);}
+  }
+  for(const [day,row] of after)for(const [personId,reasons] of Object.entries(row.conflicts)){
+    if(!before.get(day)?.ids.includes(personId))continue;
+    const added=reasons.filter(reason=>!(before.get(day).conflicts[personId]||[]).includes(reason));
+    if(!added.length)continue;
+    for(const item of workItems.filter(i=>i.personId===personId&&weekStart(i.raw.date)===weekStart(day))){
+      item.state='blocked';item.messages.push(`Existing assignment on ${day}: ${added.join('; ')}. Skip this row or resolve that assignment first.`);
+    }
   }
   return {index,storeId:planner.context(index,'2014-01-01').store.id,snapshot,items,candidates,blocked:items.some(i=>i.state==='blocked'),applied:false};
 }
