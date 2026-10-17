@@ -1,3 +1,5 @@
+import {captureHapticAction,feedback,cancelHaptics,standaloneHaptics} from "./haptics.mjs";
+standaloneHaptics();
 import {intendedStatus,dayEditRecord} from "./day-edit-state.mjs";
 import {createDayMotion,swipeIntent,swipeDirection} from "./day-motion.mjs";
 import { quickRosterGroups, verifiedLow } from "./mobile-roster.mjs";
@@ -26,6 +28,7 @@ import { icon } from "./sage-icons.mjs";
 const stores = fixtures(),
   planner = createPlanner(stores, { assignmentForDay: fixtureAssignments }),
   app = document.querySelector("#app");
+let dayHapticToken=null;
 let quickEdit = false, localSettingsChanged=false;
 let editorReturnScroll = null;
 let mobileDaySession = null, restoringDayFocus = false,lastDayInput='keyboard';
@@ -141,6 +144,7 @@ function render(focusId, announcement = "") {
   closeGeneration();
   closeImport();
   if (!selectedDay?.startsWith(month)) selectedDay = initialDay();
+  Object.assign(app.dataset,{hapticMonth:month,hapticDate:selectedDay,hapticView:String(editing)+mode});
   app.classList.toggle("planning-workspace", editing);
   const dates = monthDays(month),
     list = rows(),
@@ -254,11 +258,12 @@ function render(focusId, announcement = "") {
     if (issues) {
       document.querySelector("#message").textContent =
         "Resolve coverage, availability and unknown status before marking this month reviewed.";
+      feedback("refused");
       return;
     }
     localSettingsChanged=true;d.accepted = true;
     d.reviewFingerprint = fingerprint(list);
-    render("accept");
+    render("accept","Month marked reviewed in this page.");feedback("taken");
   };
   // A neighboring-month edit can change the current hero's complete-week caps.
   for (const summaryMonth of new Set([month, today().slice(0, 7)])) {
@@ -282,10 +287,11 @@ function startGeneration() {
   closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,onMonth:value=>{month=value;selectedDay=null;render();startGeneration();},onApply:result=>{mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>document.querySelector("#generate-month")?.focus(),onPeople:()=>personSheet(),onRules:()=>storeSheet()});
 }
 const reduceDayMotion=matchMedia('(prefers-reduced-motion: reduce)');
-const dayMotion=createDayMotion({getLive:()=>document.querySelector('#sheet'),getHost:()=>document.querySelector('#mobile-day-dialog'),getDay:()=>selectedDay,neighbor:(day,delta)=>{const next=addDays(day,delta);return next.startsWith(month)?next:null;},markup:day=>{const row=motionRows.find(r=>r.day===day);return dayViewMarkup(row,staffing(row));},commit:(day,focusId)=>{daySheet(day);const control=focusId&&document.getElementById(focusId);if(control&&!control.disabled)control.focus({preventScroll:true});},reduced:()=>reduceDayMotion.matches});
+const dayMotion=createDayMotion({getLive:()=>document.querySelector('#sheet'),getHost:()=>document.querySelector('#mobile-day-dialog'),getDay:()=>selectedDay,neighbor:(day,delta)=>{const next=addDays(day,delta);return next.startsWith(month)?next:null;},markup:day=>{const row=motionRows.find(r=>r.day===day);return dayViewMarkup(row,staffing(row));},commit:(day,focusId)=>{const token=dayHapticToken;dayHapticToken=null;const changed=day!==selectedDay;daySheet(day);if(changed)feedback('tick',token);const control=focusId&&document.getElementById(focusId);if(control&&!control.disabled)control.focus({preventScroll:true});},reduced:()=>reduceDayMotion.matches});
 reduceDayMotion.addEventListener('change',()=>{if(reduceDayMotion.matches){if(mobileDaySession?.closing)closeMobileDay();else dayMotion.finish();}});
-async function requestCloseMobileDay(){if(editing){closeMobileDay();return;}const session=mobileDaySession;if(!session||session.closing)return;session.closing=true;if(await dayMotion.leave(lastDayInput==='touch')&&mobileDaySession===session)closeMobileDay();}
+async function requestCloseMobileDay(){cancelHaptics();if(editing){closeMobileDay();return;}const session=mobileDaySession;if(!session||session.closing)return;session.closing=true;if(await dayMotion.leave(lastDayInput==='touch')&&mobileDaySession===session)closeMobileDay();}
 function closeMobileDay(restore = true) {
+  if(restore)cancelHaptics();dayHapticToken=null;
   if(!mobileDaySession)return;
   dayMotion.cancel();
   const session=mobileDaySession;mobileDaySession=null;
@@ -413,7 +419,7 @@ function dayHeader(day, row) {
 function bindDayActions(sheet, day) {
   for (const [id,delta] of [["day-previous",-1],["day-next",1]]) {
     const button=sheet.querySelector("#"+id);
-    if(button)button.onclick=()=>{if(mobileDaySession&&!editing){dayMotion.navigate(delta,id,lastDayInput==='touch');return;}daySheet(addDays(day,delta)); const next=sheet.querySelector("#"+id); (next?.disabled ? sheet.querySelector(".day-heading") : next)?.focus();};
+    if(button)button.onclick=()=>{if(mobileDaySession&&!editing){dayHapticToken=captureHapticAction();dayMotion.navigate(delta,id,lastDayInput==='touch');return;}daySheet(addDays(day,delta)); const next=sheet.querySelector("#"+id); (next?.disabled ? sheet.querySelector(".day-heading") : next)?.focus();};
   }
   const edit=sheet.querySelector("#edit-day");
   if(edit)edit.onclick=()=>{editorReturnScroll=mobileDaySession?.scrollY??null;quickEdit=true;editing=true;render();daySheet(day);};
@@ -428,7 +434,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   let r = motionRows.find((r) => r.day === day);
   if (!r) return;
   const changed = selectedDay !== day;
-  selectedDay = day;
+  selectedDay = day;app.dataset.hapticDate=day;
   const weekReview=document.querySelector('#selected-week-audit');
   if(changed&&weekReview){const wasOpen=weekReview.querySelector('details')?.open;weekReview.innerHTML=weeklyAuditMarkup(day);weekReview.querySelector('details').open=Boolean(wasOpen);}
   updateSelection();
@@ -481,15 +487,15 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       e.preventDefault();const choices=pendingAssignments.get(pendingKey(day))||{on:statusControls.filter(c=>c.value==='On').map(c=>c.dataset.statusPerson),off:statusControls.filter(c=>c.value==='Off').map(c=>c.dataset.statusPerson)};
       const {on,off}=choices;
       const protectedOn=on.find(id=>!r.ids.includes(id)&&((r.record?.off||[]).includes(id)||['vacation','unavailable'].includes(dayAbsence(draft().store,r.record,day,id))));
-      if(protectedOn){const input=form.querySelector(`[data-status-person="${protectedOn}"]`);input.setCustomValidity('Recorded absence: choose Unknown and apply to clear it explicitly before assigning work. Recurring unavailability must be resolved in People.');input.reportValidity();return;}
+      if(protectedOn){const input=form.querySelector(`[data-status-person="${protectedOn}"]`);input.setCustomValidity('Recorded absence: choose Unknown and apply to clear it explicitly before assigning work. Recurring unavailability must be resolved in People.');input.reportValidity();feedback('refused');return;}
       const removal=[...form.querySelectorAll('.shift-removal')].find(el=>!el.hidden&&!el.querySelector('input').checked);
-      if(removal){sheet.querySelector('#day-error').textContent='Confirm removal of the displayed imported times, or choose On to keep them.';removal.querySelector('input').focus();return;}
+      if(removal){sheet.querySelector('#day-error').textContent='Confirm removal of the displayed imported times, or choose On to keep them.';removal.querySelector('input').focus();feedback('refused');return;}
       const statuses=Object.fromEntries(statusControls.map(c=>[c.dataset.statusPerson,c.value])),reasons=Object.fromEntries([...form.querySelectorAll('[data-absence]')].map(c=>[c.dataset.absence,c.value])),confirmed=[...form.querySelectorAll('[data-confirm-remove]:checked')].map(c=>c.dataset.confirmRemove);
-      let record;try{record=dayEditRecord(r.record,statuses,reasons,confirmed,draft().store.people.map(p=>p.id));}catch(error){sheet.querySelector('#day-error').textContent=error.message;return;}
+      let record;try{record=dayEditRecord(r.record,statuses,reasons,confirmed,draft().store.people.map(p=>p.id));}catch(error){sheet.querySelector('#day-error').textContent=error.message;feedback('refused');return;}
       planner.setAssignment(selected,day,record);pendingAssignments.delete(pendingKey(day));
       markChanged();editorReturnScroll=mobileDaySession?.scrollY??null;
       if(quickEdit)editing=false;quickEdit=false;
-      render(undefined,`Saved ${dateLabel(day)} in this page.`);daySheet(day);sheet.querySelector('.day-heading')?.focus();
+      render(undefined,`Saved ${dateLabel(day)} in this page.`);daySheet(day);feedback("taken");sheet.querySelector('.day-heading')?.focus();
     };
     sheet.querySelector('#suggest').onclick=()=>{
       const suggestion=rows().find(row=>row.day===day).suggestions;
@@ -517,7 +523,7 @@ function personSheet(id = "p0") {
     const f = new FormData(e.target);
     if (+f.get("start") >= +f.get("end")) {
       sheet.querySelector("#error").textContent =
-        "Available until must be after available from.";
+        "Available until must be after available from.";feedback("refused");
       return;
     }
     pendingSettings.delete(sheet.dataset.pendingKey);
@@ -529,7 +535,7 @@ function personSheet(id = "p0") {
       off: f.getAll("off").map(Number),
     });
     markChanged();
-    render("people", "Person availability saved for this month.");
+    render("people", "Person availability saved for this month.");feedback("taken");
   };
 }
 function storeSheet(effective = month + "-01") {
@@ -572,12 +578,12 @@ function storeSheet(effective = month + "-01") {
     const f = new FormData(e.target);
     if (+f.get("open") >= +f.get("close")) {
       sheet.querySelector("#error").textContent =
-        "Store closes must be after store opens.";
+        "Store closes must be after store opens.";feedback("refused");
       return;
     }
     if (f.has("editHoliday") && f.get("holiday") < f.get("effective")) {
       sheet.querySelector("#error").textContent =
-        "Special-day date must be on or after the rule’s effective date.";
+        "Special-day date must be on or after the rule’s effective date.";feedback("refused");
       return;
     }
     if (
@@ -586,11 +592,11 @@ function storeSheet(effective = month + "-01") {
         !String(f.get("holiday")).startsWith(month + "-"))
     ) {
       sheet.querySelector("#error").textContent =
-        "Choose a date inside this month’s draft.";
+        "Choose a date inside this month’s draft.";feedback("refused");
       return;
     }
     pendingSettings.delete(sheet.dataset.pendingKey);
-    store.rules = applyStoreRuleForm(store.rules, f);
+    store.rules = applyStoreRuleForm(store.rules, f);feedback("taken");
     markChanged();
     render("rules", `Store hours saved from ${f.get("effective")}.${f.has("editHoliday") ? ` Special day ${f.get("holiday")}: ${f.get("holidayState")}, applied to the rule governing that date.` : ""}`);
   };
@@ -612,6 +618,7 @@ window.addEventListener("keydown", (e) => {
 let swipe = null;
 const swipeSurface = target => target.closest(".month-days,#sheet");
 app.addEventListener("touchstart", event => {
+  dayHapticToken=captureHapticAction();
   lastDayInput='touch';swipe=null;if(event.touches.length!==1){dayMotion.release(false);return;}
   const target=event.target, touch=event.touches[0];
   if (editing || innerWidth>700 || event.touches.length!==1 || !swipeSurface(target) || target.closest("button,input,select,textarea,summary,a,[contenteditable]") || String(getSelection()).trim() || touch.clientX<24 || touch.clientX>innerWidth-24) return;
@@ -620,18 +627,19 @@ app.addEventListener("touchstart", event => {
 }, {passive:true});
 app.addEventListener("touchmove", event => {
   if(!swipe)return;
-  if(event.touches.length!==1 || String(getSelection()).trim()){dayMotion.release(false);swipe=null;return;}
+  if(event.touches.length!==1 || String(getSelection()).trim()){cancelHaptics();dayMotion.release(false);swipe=null;return;}
   const dx=event.touches[0].clientX-swipe.x,dy=event.touches[0].clientY-swipe.y;
-  if(!swipe.horizontal&&swipeIntent(dx,dy)==='vertical'){dayMotion.release(false);swipe=null;return;}
+  if(!swipe.horizontal&&swipeIntent(dx,dy)==='vertical'){cancelHaptics();dayMotion.release(false);swipe=null;return;}
   if(swipe.horizontal||swipeIntent(dx,dy)==='horizontal'){swipe.horizontal=true;if(event.cancelable)event.preventDefault();if(swipe.surface.id==='sheet'&&mobileDaySession)dayMotion.drag(swipe.startOffset+dx);}
 }, {passive:false});
-app.addEventListener("touchcancel",()=>{swipe=null;dayMotion.release(false);},{passive:true});
+app.addEventListener("touchcancel",()=>{cancelHaptics();swipe=null;dayMotion.release(false);},{passive:true});
 app.addEventListener("touchend",event=>{
   const gesture=swipe;swipe=null;
-  if(!gesture || !gesture.surface.isConnected || gesture.month!==month || gesture.day!==selectedDay || editing || !gesture.horizontal || String(getSelection()).trim() || Date.now()-gesture.at>1200){dayMotion.release(false);return;}
+  if(!gesture)return;
+  if(!gesture.surface.isConnected || gesture.month!==month || gesture.day!==selectedDay || editing || !gesture.horizontal || String(getSelection()).trim() || Date.now()-gesture.at>1200){cancelHaptics();dayMotion.release(false);return;}
   const touch=event.changedTouches[0],dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
   const delta=swipeDirection(dx,dy,Date.now()-gesture.at);
-  if(gesture.surface.id==="sheet" && selectedDay){dayMotion.release(Boolean(delta));}
-  else if(!delta)return;
-  else {const next=shiftMonth(month,delta);if(validMonth(next)){selectedDay=null;month=next;render(delta>0?"next":"previous");}}
+  if(gesture.surface.id==="sheet" && selectedDay){if(!delta)cancelHaptics();dayMotion.release(Boolean(delta));}
+  else if(!delta){cancelHaptics();return;}
+  else {const next=shiftMonth(month,delta);if(validMonth(next)){selectedDay=null;const token=dayHapticToken;month=next;render(delta>0?"next":"previous");feedback("tick",token);}}
 },{passive:true});

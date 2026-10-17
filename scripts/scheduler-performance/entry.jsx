@@ -17,6 +17,7 @@ import seed from "./fixture.json";
 import "./entry.css";
 import "./shared-system.css";
 import {navigatePage} from "./shared-motion.mjs";
+import {createHaptics,ownHaptics,validPlannerFrame} from "./haptics.mjs";
 const noop = () => {};
 const config = {
   stores: [seed.store],
@@ -35,6 +36,9 @@ const config = {
   holidays: [],
 };
 function Preview() {
+  const [haptics]=useState(()=>createHaptics({win:window}));
+  const [touchFeedback,setTouchFeedback]=useState(haptics.preference);
+  useEffect(()=>{const owner=ownHaptics(document,haptics);return()=>owner.dispose();},[haptics]);
   useEffect(()=>{const bar=document.querySelector('.botnav');if(!bar)return;const root=document.documentElement,measure=()=>root.style.setProperty('--sage-bottomnav-height',bar.getBoundingClientRect().height+'px');measure();const observer=new ResizeObserver(measure);observer.observe(bar);return()=>{observer.disconnect();root.style.removeProperty('--sage-bottomnav-height');};},[]);
   const [coachId,setCoachId]=useState(null);
   const [returnLabel,setReturnLabel]=useState(null),returnRoute=useRef(null),routeEpoch=useRef(0);
@@ -63,6 +67,7 @@ function Preview() {
     readOnly: true,
   };
   const close = (restoreDetails = true) => {
+    haptics.cancel();
     if (!dialog.current.open) return;
     frame.current?.contentWindow?.dispatchEvent(new CustomEvent("scheduler-hide"));
     const sheet = frame.current?.contentDocument?.querySelector(
@@ -84,6 +89,7 @@ function Preview() {
     document.addEventListener("pointerdown",rememberPointer,true);
     document.addEventListener("keydown",rememberKeyboard,true);
     const open = (e) => {
+      haptics.cancel();
       if(dialog.current.open)return;
       routeEpoch.current++;returnRoute.current=e.detail.resumeDetails||null;setReturnLabel(e.detail.returnLabel||null);
       opener.current = e.detail.opener;
@@ -118,10 +124,12 @@ function Preview() {
         first?.focus();
       }
     };
-    let childDocument;
+    let childDocument,childHaptics;
     const attach = () => {
+      childHaptics?.dispose();
       childDocument?.removeEventListener("keydown", trapTab);
       childDocument = frame.current.contentDocument;
+      if(childDocument)childHaptics=ownHaptics(childDocument,haptics,()=>validPlannerFrame(frame.current,childDocument,window));
       childDocument?.addEventListener("keydown", trapTab);
     };
     attach();
@@ -132,6 +140,7 @@ function Preview() {
     return () => {
       document.removeEventListener("pointerdown",rememberPointer,true);
       document.removeEventListener("keydown",rememberKeyboard,true);
+      childHaptics?.dispose();
       childDocument?.removeEventListener("keydown", trapTab);
       frame.current?.removeEventListener("load", attach);
       document.removeEventListener("keydown", trapTab);
@@ -168,7 +177,7 @@ function Preview() {
             </>
           )}
         </main>
-        <details className="sp-about"><summary><PixIcon glyph="question" size={16}/>About this preview</summary><p>Performance, Coaching and Schedule use sample records. Changes stay in this page and are lost on refresh. No live data is connected and no schedule is published. Other tools and account actions are unavailable here.</p></details>
+        <details className="sp-about"><summary><PixIcon glyph="question" size={16}/>About this preview</summary><p>Performance, Coaching and Schedule use sample records. Changes stay in this page and are lost on refresh. No live data is connected and no schedule is published. Other tools and account actions are unavailable here.</p><label className="sp-touch-preference">Touch feedback <select aria-describedby="touch-feedback-help" value={touchFeedback} onChange={e=>{haptics.setPreference(e.target.value);setTouchFeedback(e.target.value);}}><option value="full">All feedback</option><option value="quiet">Quiet: selections only</option><option value="0">Off</option></select></label><p id="touch-feedback-help">For this page only. Your saved phone preference is used initially. Touch feedback depends on your device; visible feedback is always shown.</p></details>
       </AppShell>
       <dialog
         ref={dialog}

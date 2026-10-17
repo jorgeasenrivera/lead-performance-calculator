@@ -1,0 +1,209 @@
+{
+  "error": "Error: feel: 4 over the bar, 0 page errors\n    at run (file:///workspace/lead-performance-calculator/scripts/feel.mjs:723:57)\n    at async main (file:///workspace/lead-performance-calculator/scripts/feel.mjs:226:9)",
+  "dropped": 0,
+  "events": [
+    {
+      "at": "2026-10-17T08:16:02.401Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:16:02.402Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:16:02.403Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "Load request cancelled"
+    },
+    {
+      "at": "2026-10-17T08:16:05.943Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:16:05.943Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:16:06.339Z",
+      "type": "requestfailed",
+      "url": "blob:http://127.0.0.1:5178/f8ede058-1ddc-4c26-aa47-2850018ebbf3",
+      "method": "GET",
+      "resource": "xhr",
+      "error": "undefined"
+    },
+    {
+      "at": "2026-10-17T08:16:06.339Z",
+      "type": "console",
+      "error": "Failed to load resource"
+    },
+    {
+      "at": "2026-10-17T08:16:09.838Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:16:11.195Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:16:14.174Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:16:19.457Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:16:29.498Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:16:39.726Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:16:50.092Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:17:00.117Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:17:10.156Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:17:11.765Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:17:11.769Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:17:12.115Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:17:12.115Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:17:12.115Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "Load request cancelled"
+    },
+    {
+      "at": "2026-10-17T08:17:14.969Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:17:14.969Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:17:15.265Z",
+      "type": "requestfailed",
+      "url": "blob:http://127.0.0.1:5178/5fa54e53-ed64-4896-93e1-d36a17670b0d",
+      "method": "GET",
+      "resource": "xhr",
+      "error": "undefined"
+    },
+    {
+      "at": "2026-10-17T08:17:15.265Z",
+      "type": "console",
+      "error": "Failed to load resource"
+    },
+    {
+      "at": "2026-10-17T08:17:17.727Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:17:18.811Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:17:20.850Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    },
+    {
+      "at": "2026-10-17T08:17:24.517Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:17:24.520Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:17:24.748Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:17:24.748Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:17:24.750Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "Load request cancelled"
+    },
+    {
+      "at": "2026-10-17T08:17:27.700Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:17:27.700Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:17:28.294Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: The server did not accept the WebSocket handshake."
+    }
+  ]
+}

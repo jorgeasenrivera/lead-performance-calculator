@@ -1,0 +1,24 @@
+
+> lead-performance-calculator@1.0.0 feel
+> node scripts/feel.mjs
+
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+feel · webkit · 400 ms on every data request · http://127.0.0.1:5178/
+  full sign-in to the floor  17640 ms  (the jump; by design)
+  OVER tap Lunch to shown                                95 ms  bar 60   [95, 46, 299]
+  OVER tap Here to shown                                 83 ms  bar 60   [294, 50, 83]
+  --   swipe: not run in WebKit (no input channel to move a real thumb)
+  --   ground: not measured in WebKit: the runner gave 1 frame(s) in the 700 ms watched (about 13 a second on a tab's travel), too few to read a blend of a few points a frame
+  OVER Floor to Phone tab                               197 ms  bar 140   [990, 197, 154]
+  OVER Phone to Floor tab                               150 ms  bar 140   [291, 150, 102]
+  ok   two taps in one round trip: Here > Lunch > Here, server waiting 
+  ok   FlyBy sent to chip                                60 ms  bar 100
+  ok   Never mind to chip gone                            9 ms  bar 100
+  ok   press: held scale 0.96, released none          
+  ok   press: one tick at touch-down ([6])            
+  repeat full sign-in to the floor  9081 ms  (the jump; by design)
+  ok   reduced-motion return sign-in to floor          1625 ms  bar 2100
+feel: 4 over the bar
+feel: failure evidence: 36 events retained, 0 older events dropped
+feel: the machine: 1.41 GB used at its highest of 16.00 allowed, 15.96 GB free on the box, no process was killed for memory (oom_kill 0)
+manager phone search: 390px visible, type, no-match, clear and print passed

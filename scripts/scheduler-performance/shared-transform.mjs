@@ -5,6 +5,10 @@ function relativeTemplate(source,name){const marker=`const ${name} = \``,start=s
 function once(source,from,to){if(source.split(from).length!==2)throw Error('Shared preview anchor changed: '+from.slice(0,80));return source.replace(from,to);}
 export function sharedCore(source){
  source=relativeTemplate(source,"SAGE_CSS");
+ const buzzStart=source.indexOf('function buzz(pattern, tick) {'),buzzEnd=source.indexOf('// bridge to the native app shell',buzzStart);
+ if(buzzStart<0||buzzEnd<buzzStart)throw Error('Preview haptic ownership boundary changed');
+ source=source.slice(0,buzzStart)+'function buzz() {}\n'+source.slice(buzzEnd);
+
  const start=source.indexOf("const PRESS_SEL ="),marker='  window.addEventListener("pointercancel", pressUp, { capture: true, passive: true });\n}',end=source.indexOf(marker,start)+marker.length;
  if(start<0||end<start)throw Error('Press owner boundary changed');
  source=source.slice(0,start)+`function pressDown(e){previewPressDown(e,buzz);}

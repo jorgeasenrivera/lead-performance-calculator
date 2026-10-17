@@ -1,3 +1,4 @@
+import {captureHapticAction,feedback} from "./haptics.mjs";
 import { weeklyHoursText } from "./weekly-hours.mjs";
 import { absenceLabel } from "./team-model.mjs";
 import { parseSchedule, reviewImport, applyImport, importSnapshot } from './schedule-import.mjs';
@@ -24,6 +25,7 @@ export function openScheduleImport({host,planner,index,onApply,onClose}) {
     for(const input of panel.querySelectorAll('[data-skip]'))input.onchange=()=>{const id=input.dataset.skip;choices[id]={...choices[id],skip:input.checked};draw();panel.querySelector(`[data-skip="${id}"]`)?.focus();};
   };
   host.querySelector('#schedule-file').onchange=async event=>{
+    const haptic=captureHapticAction();
     const token=++generation,file=event.target.files[0];rows=null;review=null;choices={};panel.innerHTML='';apply.disabled=true;
     if(!file){status.textContent='Choose a CSV to review.';return;}
     snapshot=importSnapshot(planner,index);status.textContent='Reading CSV locally…';
@@ -31,12 +33,12 @@ export function openScheduleImport({host,planner,index,onApply,onClose}) {
       if(!/\.csv$/i.test(file.name))throw Error('This preview reads explicit CSV rows only. Export the schedule to the shown CSV format.');
       if(file.size>100000)throw Error('Choose a CSV smaller than 100 KB.');
       const text=await file.text();if(closed||token!==generation)return;
-      rows=parseSchedule(text,file.name);draw();
-    }catch(error){if(!closed&&token===generation)status.textContent=error.message;}
+      rows=parseSchedule(text,file.name);draw();if(review?.blocked)feedback('asked',haptic);
+    }catch(error){if(!closed&&token===generation){status.textContent=error.message;feedback('refused',haptic);}}
   };
   apply.onclick=()=>{
     if(apply.disabled||!review||closed)return;apply.disabled=true;
-    try{const result=applyImport(planner,review);cancel();onApply(result);}catch(error){status.textContent=error.message;}
+    try{const result=applyImport(planner,review);feedback('taken');cancel();onApply(result);}catch(error){status.textContent=error.message;feedback('refused');}
   };
   host.querySelector('#cancel-import').onclick=()=>{cancel();onClose();};
   host.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();cancel();onClose();}};

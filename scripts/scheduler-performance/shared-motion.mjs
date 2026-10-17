@@ -20,7 +20,7 @@ export function pressDown(e,buzz){
  const el=e.target?.closest?.('button,[role="button"],a.btn');
  if(!el||el.disabled||el.getAttribute('aria-disabled')==='true'||el.closest('[inert],[data-nopress],[draggable="true"]'))return;
  pressUp();el.dataset.sagePressed='true';
- const tick=e.pointerType==='touch'&&buzz?setTimeout(()=>{if(contact?.el===el)buzz(6,true);},50):null;
+ const tick=null; // Visual pressure has no generic haptic side effect.
  contact={el,tick,x:e.clientX,y:e.clientY};
 }
 export function pressMove(e){

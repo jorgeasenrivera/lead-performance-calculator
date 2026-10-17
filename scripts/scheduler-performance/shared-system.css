@@ -152,3 +152,5 @@ html.manager-signal .lpc .bm-role{color:#52624d}
 #app #mobile-day-dialog:not(.embedded-day-page){border-radius:var(--sage-sheet);box-shadow:var(--sage-sheet-shadow)}
 
 html.manager-signal .lpc :is(button,a.btn)[data-sage-cancelled=true],html.manager-signal .fr-pop button[data-sage-cancelled=true]{transform:none!important;scale:1!important;translate:none!important;box-shadow:none!important;transition:none!important}
+.sp-touch-preference{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:16px;font-weight:600}
+.sp-touch-preference select{min-height:44px;padding:10px 14px;border:1px solid var(--sage-line);border-radius:var(--sage-control);color:var(--sage-forest);background:var(--sage-paper);font:inherit;max-width:100%}
