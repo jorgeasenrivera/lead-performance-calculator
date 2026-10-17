@@ -30,3 +30,16 @@ test('calendar keeps zero supported and missing or closed-only history neutral',
 test('calendar bins are zero-anchored and do not stretch small range differences',async()=>{
  const {historicalCalendar}=await import('./demand-context.mjs');const history=[];for(const month of ['2026-07','2026-08','2026-09'])for(const day of monthDays(month))history.push(row(day,Number(day.slice(-2))%2?10:11));const c=historicalCalendar(history,'2026-10');assert.equal(c.ceiling,11);assert.ok(c.days.every(d=>d.level===3));assert.deepEqual(c.month,monthDemand(history,'2026-10'));
 });
+
+test('month shading and its shared scale are invariant to records at or after the month cutoff',async()=>{
+ const {historicalCalendar}=await import('./demand-context.mjs');
+ const prior=[row('2026-09-02',0),row('2026-09-09',4),row('2026-09-16',8),row('2026-09-23',6)];
+ const baseline=historicalCalendar(prior,'2026-10');
+ const later=[row('2026-10-01',999),row('2026-10-14',999),row('2026-10-15',999),row('2026-11-01',999)];
+ const augmented=historicalCalendar([...prior,...later],'2026-10');
+ assert.equal(augmented.ceiling,baseline.ceiling);
+ assert.deepEqual(augmented.days,baseline.days);
+ assert.equal(augmented.days.find(d=>d.day==='2026-10-14').level,2);
+ assert.equal(augmented.cutoff,'2026-10-01');
+ assert.ok(augmented.days.every(d=>!d.last||d.last<augmented.cutoff));
+});

@@ -34,7 +34,7 @@ export function patchManager(source) {
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
     const historyText='Recent weekday pattern · quieter to busier';
     const openCalendar=(e,day)=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget,day,input:e.nativeEvent?.pointerType||(e.nativeEvent?.sourceCapabilities?.firesTouchEvents?'touch':e.detail===0?'keyboard':'mouse'),store:previewCalendarStore.id}}));
-    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule. Historical recent weekday averages, darker green is busier. Unknown history is neutral. Open a day for samples."} onClick={e=>openCalendar(e)}>
+    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule. Historical weekday averages from before this month, darker green is busier. Unknown history is neutral. Open a day for samples."} onClick={e=>openCalendar(e)}>
       {!mobile && <strong className="sp-entry-month">{title}</strong>}
       <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('history-'+(byDay.get(day).level??'unknown')+(day===today?' today':''))}>{day?Number(day.slice(-2)):''}</i>)}</span>
       <span className="sp-heat-note">{historyText}</span>

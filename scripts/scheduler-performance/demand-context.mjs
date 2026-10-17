@@ -25,9 +25,12 @@ export function monthDemand(history, month) {
 
 // Descriptive rendering of the existing ranges. This never feeds scheduling or coverage.
 export function historicalCalendar(history, month) {
-  const days=monthDays(month).map(day=>({day,...dayDemand(history,day)}));
+  const dates=monthDays(month),cutoff=dates[0];
+  // Freeze both values and normalization before the month; later observations cannot recolor earlier dates.
+  const cohort=history.filter(row=>row.day<cutoff);
+  const days=dates.map(day=>({day,...dayDemand(cohort,day)}));
   const supported=days.filter(d=>d.estimate),ceiling=supported.length?Math.max(...supported.map(d=>d.estimate.high)):null;
-  return {month:monthDemand(history,month),ceiling,supported:supported.length,days:days.map(d=>{
+  return {month:monthDemand(history,month),cutoff,ceiling,supported:supported.length,days:days.map(d=>{
     const average=d.average;
     // Anchor at real zero and the observed upper range, rather than amplifying tiny differences.
     const level=average===null?null:ceiling===0?0:Math.min(4,Math.floor(average/ceiling*4));
