@@ -15,11 +15,11 @@ Timeout duration was set to 1.
 (Use `node --trace-warnings ...` to show where the warning was created)
   OVER Floor to Phone tab                               362 ms  bar 110   [624, 358, 362]
   OVER Phone to Floor tab                               387 ms  bar 110   [500, 248, 387]
-  ok   two taps in one round trip: Here > Lunch > Here, server waiting 
+  ok   two taps in one round trip: Here > Lunch > Here, server waiting
   OVER FlyBy sent to chip                               203 ms  bar 100
   ok   Never mind to chip gone                            8 ms  bar 100
-  OVER press: held scale 1, released none             
-  ok   press: one tick at touch-down ([6])            
+  OVER press: held scale 1, released none
+  ok   press: one tick at touch-down ([6])
   repeat full sign-in to the floor  8797 ms  (the jump; by design)
   OVER reduced-motion return sign-in to floor          2577 ms  bar 2100
 feel: 5 over the bar
