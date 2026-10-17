@@ -1,0 +1,19 @@
+{
+  "provenance": "Transcribed from the diagnostic tool output before the successful rerun replaced the close-state capture.",
+  "width": 320,
+  "coarse": false,
+  "hoverNone": false,
+  "dialogs": [
+    {
+      "open": false
+    }
+  ],
+  "popups": [],
+  "inert": [
+    {
+      "id": "",
+      "cls": "drawer-root no-print "
+    }
+  ],
+  "pace": []
+}

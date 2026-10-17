@@ -1,3 +1,4 @@
+import {deliveryRoutes} from "./delivery-routing.mjs";
 import {sharedCore,sharedManager,relativeTypography} from "./shared-transform.mjs";
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -84,6 +85,7 @@ export function patchManager(source) {
     throw Error("Phone staffing boundary not found");
   source =
     source.slice(0, onoffBegin) + source.slice(onoffEnd + "</button>".length);
+  source = deliveryRoutes(source);
   return (
     'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells,salesHeat as previewSalesHeat,monthSales as previewMonthSales,createPlanner as previewCreatePlanner} from "/scripts/scheduler-performance/month-model.mjs";\n' +
     'import {fixtureAssignments as previewFixtureAssignments,assignmentSummary as previewAssignmentSummary} from "/scripts/scheduler-performance/assignment-view.mjs";\n' +

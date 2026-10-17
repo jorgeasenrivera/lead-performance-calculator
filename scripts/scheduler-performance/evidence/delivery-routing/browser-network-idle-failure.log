@@ -1,0 +1,16 @@
+chromium-390-text100 passed
+chromium-320-text200 passed
+chromium-1440-text100 passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit-390-text100 passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.waitForLoadState: Timeout 15000ms exceeded.
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:19:11 {
+  log: [],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

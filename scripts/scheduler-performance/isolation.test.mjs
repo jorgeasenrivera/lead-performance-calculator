@@ -9,7 +9,11 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   );
   assert.throws(() => patchManager(source + "\n"), /Re-review entry points/);
   const patched = patchManager(source);
-  assert.equal((patched.match(/scheduler-open/g) || []).length, 1);
+  // The calendar and the monthly-context handoff share the same scheduler.
+  assert.equal((patched.match(/scheduler-open/g) || []).length, 2);
+  assert.equal((patched.match(/data-delivered-route onClick={openDelivered}/g) || []).length, 2);
+  assert.ok(!patched.includes('className="bp-swg"'));
+  assert.ok(!patched.includes('hd("Sold by day"'));
   assert.ok(!patched.includes('onClick={() => setPop({ k: "onoff" })}'));
   assert.ok(!patched.includes('<BloopWin cls="dn s2-salewin">'));
   assert.ok(patched.includes("sp-mini-grid"));

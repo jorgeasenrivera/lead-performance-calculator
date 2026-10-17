@@ -1,0 +1,28 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ [
++   'http://127.0.0.1:5190/fonts/geist-latin.woff2',
++   'http://127.0.0.1:5190/fonts/geist-mono-latin.woff2',
++   'http://127.0.0.1:5190/fonts/space-grotesk-latin.woff2'
++ ]
+- []
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:58:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [
+    'http://127.0.0.1:5190/fonts/geist-latin.woff2',
+    'http://127.0.0.1:5190/fonts/geist-mono-latin.woff2',
+    'http://127.0.0.1:5190/fonts/space-grotesk-latin.woff2'
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

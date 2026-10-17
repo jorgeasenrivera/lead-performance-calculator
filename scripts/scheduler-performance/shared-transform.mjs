@@ -25,6 +25,9 @@ if(typeof window!=="undefined"){
 }
 export function sharedManager(source){
  source=relativeTemplate(source,"MANAGER_CSS");
+ // The isolated preview remembers recap presentation only for this page visit.
+ source=once(source,'try { recapPresented(seenKey, signalRecapSeen, localStorage); } catch { recapPresented(seenKey, signalRecapSeen, null); }','recapPresented(seenKey, signalRecapSeen, null);');
+ source=once(source,'try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it shows again, which is survivable */ }','signalRecapSeen.add(seenKey);');
  source=once(source,'function CoachingPanel({ config, store, data, onChange, userName }) {','function CoachingPanel({ config, store, data, onChange, userName, initialPerson }) {');
  source=once(source,'function CoachingPanel({ config, store, data, onChange, userName, initialPerson }) {\n  const phone = usePhoneLayout();',`function CoachingPanel({ config, store, data, onChange, userName, initialPerson }) {
   const [phone,setPhone]=useState(()=>matchMedia('(max-width:700px)').matches);

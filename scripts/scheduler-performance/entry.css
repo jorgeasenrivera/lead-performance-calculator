@@ -382,3 +382,7 @@ html.manager-signal .sp-date-buttons .sp-hero-day { min-height:44px; padding:0; 
 @media(max-height:400px){
  html.manager-signal .botnav{position:static}
 }
+
+/* Context return stays readable beside Close when text is enlarged. */
+.sp-dialog-bar [data-context-back] { flex-shrink:1; min-width:0; text-align:left; }
+.sp-dialog-bar [data-context-back] span { min-width:0; overflow-wrap:anywhere; }

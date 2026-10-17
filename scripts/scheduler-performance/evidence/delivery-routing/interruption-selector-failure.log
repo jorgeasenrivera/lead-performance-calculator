@@ -1,0 +1,16 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.waitFor: Error: strict mode violation: locator('.day-motion-preview') resolved to 2 elements:
+    1) <section inert="" aria-hidden="true" class="panel day-panel day-motion-preview">…</section> aka getByText('Tue, Oct 13, 2026Month')
+    2) <section inert="" aria-hidden="true" class="panel day-panel day-motion-preview">…</section> aka getByText('Thu, Oct 15, 2026Month')
+
+Call log:
+[2m  - waiting for locator('.day-motion-preview')[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-interruption.mjs:13:174 {
+  log: [ "  - waiting for locator('.day-motion-preview')" ]
+}
+
+Node.js v24.19.0

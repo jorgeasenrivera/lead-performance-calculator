@@ -564,13 +564,14 @@ function storeSheet(effective = month + "-01") {
 }
 render();
 window.addEventListener("scheduler-hide",()=>{dayMotion.cancel();closeMobileDay(false);});
-window.addEventListener("scheduler-view", event => { lastDayInput=event.detail?.input||'keyboard';quickEdit=false; editing = false; const day=event.detail?.day; if(day && /^\d{4}-\d{2}-\d{2}$/.test(day) && validMonth(day.slice(0,7)) && monthDays(day.slice(0,7)).includes(day)){ month=day.slice(0,7); selectedDay=day; const storeIndex=stores.findIndex(s=>s.id===event.detail.store); if(storeIndex>=0)selected=storeIndex; } render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); });
+window.addEventListener("scheduler-view", event => { lastDayInput=event.detail?.input||'keyboard';quickEdit=false; editing = false; const day=event.detail?.day; if(day && /^\d{4}-\d{2}-\d{2}$/.test(day) && validMonth(day.slice(0,7)) && monthDays(day.slice(0,7)).includes(day)){ month=day.slice(0,7); selectedDay=day; } const storeIndex=stores.findIndex(s=>s.id===event.detail.store); if(storeIndex>=0)selected=storeIndex; render("workspace"); if (selectedDay?.startsWith(month)) daySheet(selectedDay); });
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !e.defaultPrevented) {
     const pop = document.querySelector(":popover-open");
     if (pop) { e.preventDefault(); pop.hidePopover(); document.querySelector(`[popovertarget="${pop.id}"]`).focus(); return; }
     e.preventDefault();
     if (editing) { editing=false; quickEdit=false; render("workspace", "Returned to roster. Unapplied choices are kept in this page."); }
+    else if (embeddedPlanner) window.parent.dispatchEvent(new CustomEvent("scheduler-close"));
     else document.getElementById(`day-${selectedDay}`)?.focus();
   }
 });

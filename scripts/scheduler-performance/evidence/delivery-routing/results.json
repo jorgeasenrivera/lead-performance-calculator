@@ -1,0 +1,109 @@
+[
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "motion": "reduce",
+    "textGrowth": [],
+    "status": "passed",
+    "noNestedDialogs": true,
+    "staticFontReads": 0,
+    "networkWrites": 0,
+    "persistenceWrites": 0
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "motion": "no-preference",
+    "textGrowth": [
+      {
+        "selector": ".fr-nm.bp-nm",
+        "before": 20,
+        "after": 40,
+        "ratio": 2
+      },
+      {
+        "selector": ".bp-ask small",
+        "before": 10,
+        "after": 20,
+        "ratio": 2
+      },
+      {
+        "selector": "[data-delivered-route]",
+        "before": 16,
+        "after": 32,
+        "ratio": 2
+      }
+    ],
+    "status": "passed",
+    "noNestedDialogs": true,
+    "staticFontReads": 0,
+    "networkWrites": 0,
+    "persistenceWrites": 0
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "motion": "reduce",
+    "textGrowth": [],
+    "status": "passed",
+    "noNestedDialogs": true,
+    "staticFontReads": 0,
+    "networkWrites": 0,
+    "persistenceWrites": 0
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "motion": "reduce",
+    "textGrowth": [],
+    "status": "passed",
+    "noNestedDialogs": true,
+    "staticFontReads": 1,
+    "networkWrites": 0,
+    "persistenceWrites": 0
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "motion": "no-preference",
+    "textGrowth": [
+      {
+        "selector": ".fr-nm.bp-nm",
+        "before": 20,
+        "after": 40,
+        "ratio": 2
+      },
+      {
+        "selector": ".bp-ask small",
+        "before": 10,
+        "after": 20,
+        "ratio": 2
+      },
+      {
+        "selector": "[data-delivered-route]",
+        "before": 16,
+        "after": 32,
+        "ratio": 2
+      }
+    ],
+    "status": "passed",
+    "noNestedDialogs": true,
+    "staticFontReads": 1,
+    "networkWrites": 0,
+    "persistenceWrites": 0
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "status": "blocked",
+    "stage": "Initial round-up dismissal before scheduler navigation",
+    "error": "Close the round-up did not become stable for an ordinary click within the unchanged 15000 ms timeout.",
+    "evidence": "browser-native-remaining.log"
+  }
+]

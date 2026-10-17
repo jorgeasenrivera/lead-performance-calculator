@@ -106,3 +106,6 @@ html.manager-signal .sp-performance .s2-right .s2-mklbl{white-space:normal;overf
  html.manager-signal .sp-performance :is(.s2-marks,.s2-hbars){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
  html.manager-signal .sp-performance :is(.s2-mark,.s2-hbar){min-width:0}
 }
+/* Retained monthly delivery context uses the same readable inks as Coaching. */
+html.manager-signal .fr-sheet:is(.fr-k-units,.fr-k-pace,.fr-k-month){--frink3:#52624d;--frsand2:#75491e;--frok:#23674f}
+html.manager-signal .fr-sheet:is(.fr-k-units,.fr-k-pace,.fr-k-month) .fr-st{color:#23674f!important}

@@ -37,6 +37,7 @@ const config = {
 function Preview() {
   useEffect(()=>{const bar=document.querySelector('.botnav');if(!bar)return;const root=document.documentElement,measure=()=>root.style.setProperty('--sage-bottomnav-height',bar.getBoundingClientRect().height+'px');measure();const observer=new ResizeObserver(measure);observer.observe(bar);return()=>{observer.disconnect();root.style.removeProperty('--sage-bottomnav-height');};},[]);
   const [coachId,setCoachId]=useState(null);
+  const [returnLabel,setReturnLabel]=useState(null),returnRoute=useRef(null),routeEpoch=useRef(0);
   const [section,setSection]=useState("dashboard"),[data,setData]=useState(seed.data);
   const selectSection=value=>navigatePage(()=>setSection(value));
   useEffect(()=>{const warn=e=>{if(data!==seed.data){e.preventDefault();e.returnValue="";}};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[data]);
@@ -61,18 +62,21 @@ function Preview() {
     onChange: setData,
     readOnly: true,
   };
-  const close = () => {
+  const close = (restoreDetails = true) => {
     if (!dialog.current.open) return;
     frame.current?.contentWindow?.dispatchEvent(new CustomEvent("scheduler-hide"));
     const sheet = frame.current?.contentDocument?.querySelector(
       "#sheet:not([hidden])",
     );
     if (sheet) sheet.hidden = true;
+    const route=returnRoute.current;returnRoute.current=null;setReturnLabel(null);
+    const epoch=++routeEpoch.current;
     dialog.current.close();
     document.body.style.overflow = "";
     window.scrollTo({ top: scroll.current, behavior: "instant" });
     const target = opener.current?.isConnected && opener.current.getClientRects().length ? opener.current : document.querySelector(".sp-calendar-toggle") || document.querySelector(".sp-calendar-entry");
     target?.focus({ preventScroll: true });
+    if(restoreDetails && route)requestAnimationFrame(()=>{if(routeEpoch.current===epoch&&!dialog.current.open)route();});
   };
   useEffect(() => {
     const rememberPointer=e=>{input.current=e.pointerType||"mouse";};
@@ -80,6 +84,8 @@ function Preview() {
     document.addEventListener("pointerdown",rememberPointer,true);
     document.addEventListener("keydown",rememberKeyboard,true);
     const open = (e) => {
+      if(dialog.current.open)return;
+      routeEpoch.current++;returnRoute.current=e.detail.resumeDetails||null;setReturnLabel(e.detail.returnLabel||null);
       opener.current = e.detail.opener;
       scroll.current = window.scrollY;
       dialog.current.showModal();
@@ -172,7 +178,7 @@ function Preview() {
           e.preventDefault();
           const win = frame.current.contentWindow;
           const sheet = win.document.querySelector("#sheet");
-          if (sheet && !sheet.hidden && sheet.getClientRects().length) {
+          if (sheet && win.document.querySelector("#mobile-day-dialog:not([hidden])") && !sheet.hidden && sheet.getClientRects().length) {
             sheet.querySelector("[data-close]").click();
           } else close();
         }}
@@ -180,12 +186,14 @@ function Preview() {
         <header className="sp-dialog-bar">
           <button
             type="button"
-            onClick={close}
-            aria-label="Return to Performance"
+            onClick={()=>close()}
+            data-context-back={returnLabel ? "true" : undefined}
+            aria-label={returnLabel ? "Back to "+returnLabel : "Return to Performance"}
           >
-            <PixIcon glyph="arrowleft" size={16} /> Performance
+            <PixIcon glyph="arrowleft" size={16} /> <span>{returnLabel ? "Back to "+returnLabel : "Performance"}</span>
           </button>
           <h1 id="sp-title">Schedule</h1>
+          {returnLabel && <button type="button" onClick={()=>close(false)} aria-label="Close Schedule and return to Performance"><PixIcon glyph="close" size={16}/></button>}
         </header>
         <iframe
           ref={frame}

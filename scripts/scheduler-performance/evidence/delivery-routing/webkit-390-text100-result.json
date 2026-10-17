@@ -1,0 +1,12 @@
+{
+  "engine": "webkit",
+  "width": 390,
+  "scale": 1,
+  "motion": "reduce",
+  "textGrowth": [],
+  "status": "passed",
+  "noNestedDialogs": true,
+  "staticFontReads": 1,
+  "networkWrites": 0,
+  "persistenceWrites": 0
+}
