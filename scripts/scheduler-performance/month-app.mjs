@@ -66,7 +66,7 @@ const pendingAssignments = new Map();
 const pendingSettings = new Map();
 let leavingPreview=false;
 window.addEventListener('pageshow',()=>{leavingPreview=false;});
-const hasLocalDraft=()=>Boolean(localSettingsChanged||planner.revision||pendingAssignments.size||pendingSettings.size);
+const hasLocalDraft=()=>Boolean(localSettingsChanged||planner.revision||pendingAssignments.size||pendingSettings.size||generationAnswers.size);
 window.addEventListener('beforeunload',event=>{if(!leavingPreview&&hasLocalDraft()){event.preventDefault();event.returnValue='';}});
 const pendingKey = day => `${selected}:${day}`;
 const initialDay = () => month === today().slice(0,7) ? today() : month + "-01";
@@ -328,7 +328,7 @@ function startGeneration() {
   closeGeneration();closeImport();
   const key=generationKey();
   const visit=opener=>answers=>{generationAnswers.set(key,answers);generationDetour=key;opener();};
-  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,initialAnswers:generationAnswers.get(key),onMonth:value=>{generationDetour=null;month=value;selectedDay=null;render();startGeneration();},onApply:result=>{generationAnswers.delete(key);generationDetour=null;mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>{generationAnswers.delete(key);generationDetour=null;render('generate-month');},onPeople:visit(()=>personSheet()),onRules:visit(()=>storeSheet())});
+  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,initialAnswers:generationAnswers.get(key),onAnswers:answers=>generationAnswers.set(key,answers),onMonth:value=>{generationAnswers.delete(key);generationDetour=null;month=value;selectedDay=null;render();startGeneration();},onApply:result=>{generationAnswers.delete(key);generationDetour=null;mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>{generationAnswers.delete(key);generationDetour=null;render('generate-month');},onPeople:visit(()=>personSheet()),onRules:visit(()=>storeSheet())});
 }
 const reduceDayMotion=matchMedia('(prefers-reduced-motion: reduce)');
 const dayMotion=createDayMotion({getLive:()=>document.querySelector('#sheet'),getHost:()=>document.querySelector('#mobile-day-dialog'),getDay:()=>selectedDay,neighbor:(day,delta)=>{const next=addDays(day,delta);return next.startsWith(month)?next:null;},markup:day=>{const row=motionRows.find(r=>r.day===day);return dayViewMarkup(row,staffing(row));},commit:(day,focusId)=>{const token=dayHapticToken;dayHapticToken=null;const changed=day!==selectedDay;daySheet(day);if(changed)feedback('tick',token);const control=focusId&&document.getElementById(focusId);if(control&&!control.disabled)control.focus({preventScroll:true});},reduced:()=>reduceDayMotion.matches});

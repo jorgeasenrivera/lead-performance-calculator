@@ -66,11 +66,11 @@ function Preview() {
     onChange: setData,
     readOnly: true,
   };
-  const historyReturn=useRef(true),lastPlannerEntry=useRef(null);
+  const historyReturn=useRef(true),historyBackPending=useRef(false),lastPlannerEntry=useRef(null);
   const close = (restoreDetails = true, fromHistory = false) => {
     haptics.cancel();
     if (!dialog.current.open) return;
-    if(!fromHistory && history.state?.sageSchedulerPreview){historyReturn.current=restoreDetails!==false;history.back();return;}
+    if(!fromHistory && history.state?.sageSchedulerPreview){if(historyBackPending.current)return;historyBackPending.current=true;historyReturn.current=restoreDetails!==false;history.back();return;}
     frame.current?.contentWindow?.dispatchEvent(new CustomEvent("scheduler-hide"));
     const sheet = frame.current?.contentDocument?.querySelector(
       "#sheet:not([hidden])",
@@ -104,6 +104,7 @@ function Preview() {
       (e.detail.day ? frame.current.contentDocument?.querySelector(".day-heading") : dialog.current.querySelector("button"))?.focus();
     };
     const historyChanged=()=>{
+      historyBackPending.current=false;
       if(history.state?.sageSchedulerPreview){if(!dialog.current.open&&lastPlannerEntry.current)open({detail:{...lastPlannerEntry.current,day:undefined}});}
       else {const restore=historyReturn.current;historyReturn.current=true;close(restore,true);}
     };
