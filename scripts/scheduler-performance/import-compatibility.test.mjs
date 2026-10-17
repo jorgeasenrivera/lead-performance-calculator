@@ -100,3 +100,20 @@ test('mixed review accounting distinguishes duplicate, ready, blocked, skipped a
 test('notes that resemble a team legend never become people or membership',()=>{
  const rows=teamGrid(fixture.replace('Example note','Team A All staff'),'grid.csv',scope);assert.equal(rows.length,9);assert.deepEqual([...new Set(rows.map(r=>r.raw.name))],['Alex One','Blair Two','Casey Three']);assert.equal(rows[0].source.note,'Team A All staff');assert.ok(rows[0].warnings.some(w=>w.includes('Unapplied source note')));
 });
+test('blank import cannot weaken a manual Unknown lock before a later known import',()=>{
+ const p=setup(),known=legacy({off:{a:['2026-11-03']}});applyImport(p,reviewImport(p,0,known));
+ p.setAssignment(0,'2026-11-03',dayEditRecord(p.context(0,'2026-11-03').record,{a:'Unknown'},{},[],['a']));
+ const cleared=importSnapshot(p,0),blank=grid().filter(r=>r.raw.name==='Alex One'&&r.raw.date==='2026-11-03');
+ const reviewed=reviewImport(p,0,blank,{[blank[0].index]:{teamDecision:'keep'}});assert.equal(reviewed.blocked,false);assert.equal(applyImport(p,reviewed).changed,0);assert.equal(importSnapshot(p,0),cleared);
+ const later=reviewImport(p,0,known);assert.equal(later.blocked,true);assert.throws(()=>applyImport(p,later));assert.equal(importSnapshot(p,0),cleared);
+});
+
+test('manual Unknown stays protected with retained notes for both off and work imports',()=>{
+ for(const status of ['OFF','09:15-16:45']){
+  const p=setup();p.setAssignment(0,'2026-11-03',{on:[],off:[],generationLocks:['a'],unknownNotes:{a:{source:{file:'earlier.csv'}}}});
+  const rows=teamGrid(`Date,Team A,Legend\n11/03/2026,${status},Team A Alex One`,'known.csv',scope);
+  const before=importSnapshot(p,0),review=reviewImport(p,0,rows,{0:{teamDecision:'keep'}});
+  assert.equal(review.blocked,true);assert.match(review.items[0].messages.join(' '),/manager explicitly/);assert.throws(()=>applyImport(p,review));assert.equal(importSnapshot(p,0),before);
+  const skipped=reviewImport(p,0,rows,{0:{skip:true}});assert.equal(applyImport(p,skipped).changed,0);assert.equal(importSnapshot(p,0),before);
+ }
+});

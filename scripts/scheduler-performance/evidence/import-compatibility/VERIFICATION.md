@@ -10,7 +10,7 @@ The production application source is unchanged. The preview remains in memory wi
 
 ## Browser evidence and retained failures
 
-The initial new probe omitted Make Schedule and used an obsolete shift-summary selector. Those fixture mistakes were corrected before counting successful cases. A hidden mobile day heading was also replaced with the visible workspace entry as the initial readiness condition. Timers now remain native while Date is fixed for the fictional month.
+The initial new probe omitted Make Schedule and used an obsolete shift-summary selector. Those fixture mistakes were corrected before counting successful cases. A hidden mobile day heading was also replaced with the visible workspace entry as the initial readiness condition. Playwright setFixedTime fixes Date for the fictional month while its installed clock continues advancing timers. The earlier description of those timers as native was inaccurate.
 
 Chromium completed six pointer cases at 1440, 390 and 320 px, each at 100% and 200% root text. WebKit completed the same six layouts through keyboard activation. Each case exercises off-day review/apply, the actual day editor, skipped rows, duplicates, grid review, preserved unknown membership, no network/persistence calls and two scoped axe scans. These retained matrices precede the last notes-parser and applied-day select corrections; final retests are reported separately on the draft PR.
 

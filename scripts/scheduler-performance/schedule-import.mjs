@@ -56,7 +56,7 @@ export function reviewImport(planner,index,rows,choices={}) {
     if(status==='work'){const problem=shiftProblem(shift,store,raw.date);if(problem)item.messages.push(problem);}
     item.shift=status==='work'?shift:null;item.status=status;
     const existingFact=candidates.get(raw.date)||context.record;
-    if(row.noAssertion&&person&&!item.messages.length&&(existingFact?.off?.includes(person.id)||existingFact?.on?.includes(person.id)||existingFact?.shifts?.some(s=>s.personId===person.id)||existingFact?.unknownNotes?.[person.id])){item.state='unchanged';item.messages.push('Blank cell: existing assignment and provenance kept unchanged.');const m=existingFact.teamSnapshot?.[person.id]||membershipAt(store,person.id,raw.date);item.currentTeams=m.teamIds;item.currentTeamUnknown=Boolean(m.unknown);continue;}
+    if(row.noAssertion&&person&&!item.messages.length&&(existingFact?.off?.includes(person.id)||existingFact?.on?.includes(person.id)||existingFact?.shifts?.some(s=>s.personId===person.id)||existingFact?.unknownNotes?.[person.id]||existingFact?.generationLocks?.includes(person.id))){item.state='unchanged';item.messages.push('Blank cell: existing assignment and provenance kept unchanged.');const m=existingFact.teamSnapshot?.[person.id]||membershipAt(store,person.id,raw.date);item.currentTeams=m.teamIds;item.currentTeamUnknown=Boolean(m.unknown);continue;}
     let acceptedTeam=null,teamChange=null,declaredTeams=null;
     if(person&&validDate(raw.date)) {
       const current=row.membershipUnknown?{storeId:store.id,personId:person.id,teamIds:[],unknown:true,from:raw.date,to:raw.date,source:{kind:'Historical membership not supplied'}}:membershipChanges.get(person.id+':'+raw.date)||membershipAt(store,person.id,raw.date);
@@ -86,7 +86,7 @@ export function reviewImport(planner,index,rows,choices={}) {
     if(item.messages.length)continue;
     const record=structuredClone(candidates.get(raw.date)||context.record||{on:[],off:[]});record.on||=[];record.off||=[];record.shifts||=[];
     const existing=record.shifts.filter(s=>s.personId===person.id);
-    if(status!=='unknown'&&record.generationLocks?.includes(person.id)&&!record.on.includes(person.id)&&!record.off.includes(person.id)&&!existing.length&&!record.unknownNotes?.[person.id])item.messages.push('A manager explicitly kept or cleared this person to Unknown. Edit that day deliberately before importing this fact, or skip it. It will not be restored automatically.');
+    if(status!=='unknown'&&record.generationLocks?.includes(person.id)&&!record.on.includes(person.id)&&!record.off.includes(person.id)&&!existing.length)item.messages.push('A manager explicitly kept or cleared this person to Unknown. Edit that day deliberately before importing this fact, or skip it. It will not be restored automatically.');
     if(record.teamSnapshot?.[person.id]&&(!sameTeams(record.teamSnapshot[person.id].teamIds,acceptedTeam.teamIds)||Boolean(record.teamSnapshot[person.id].unknown)!==Boolean(acceptedTeam.unknown)))item.messages.push('This date already has a different assignment team snapshot. Review its teams in day details first.');
     if(item.messages.length)continue;
     if(declaredTeams!==null)declarations.set(person.id+':'+raw.date,declaredTeams);
