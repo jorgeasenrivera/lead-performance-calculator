@@ -1184,3 +1184,6 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 .off-day-targets .is-off-drop { outline:3px solid var(--sage-forest); outline-offset:2px; }
 #off-summary { white-space:pre-line; }
 #off-review-panel { border-top:1px solid var(--line); margin-top:var(--schedule-space-4); padding-top:var(--schedule-space-3); }
+
+/* Recovery instructions stay beside the status they explain. */
+.editor-team .absence-recovery { grid-column:1/-1; font-size:.875rem; margin:0; padding:var(--schedule-space-2); border-left:2px solid var(--line); overflow-wrap:anywhere; }

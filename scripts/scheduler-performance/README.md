@@ -370,3 +370,5 @@ The isolated preview now accepts scoped saved off-days JSON and a bounded date-r
 ## Off-day command preview
 
 The stacked [off-day command contract](OFF-DAY-COMMANDS.md) describes same-person Move/Copy, planner-owned atomic updates, conservative lineage-aware undo and the desktop-only drag adapter. Tap/keyboard review and Apply remain primary. This is isolated preview code; no scheduler activation or live persistence is added.
+
+Generation settings return and persistent absence-recovery guidance are documented in [GUIDED-RECOVERY.md](GUIDED-RECOVERY.md). Run `node scripts/scheduler-performance/probe-guided-recovery.mjs` against the isolated preview to repeat the generation and recovery trials.
