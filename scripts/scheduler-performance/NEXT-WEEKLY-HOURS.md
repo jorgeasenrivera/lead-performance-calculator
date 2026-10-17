@@ -1,6 +1,6 @@
-# Next functional increment: weekly-hours warnings
+# Weekly-hours warning contract
 
-Recorded from Jorge's clarification on 17 October 2026. This is a plan for a subsequent scoped increment. The current visual correction does not implement or change weekly-hours policy.
+Recorded from Jorge's clarification on 17 October 2026. The subsequent weekly-hours checkpoint implements a read-only scheduled-interval audit in import review, selected-week review and People. See evidence/weekly-hours/CHECKPOINT.md for results and limits. Break adjustments remain unavailable; these totals are not paid working hours.
 
 ## Required behavior
 

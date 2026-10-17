@@ -4,6 +4,7 @@ import { openGeneration } from "./generation-ui.mjs";
 import { teamsOnDay, membershipAt, teamSnapshot, dayAbsence, absenceKind, absenceLabel } from "./team-model.mjs";
 import { balanceMarkup, teamDayMarkup, openTeamEditor, peopleTeamsMarkup, personTeamLabel } from "./team-ui.mjs";
 import { openScheduleImport } from "./import-ui.mjs";
+import { weeklyHoursAudit, weeklyHoursText, hoursLabel, mondayOf } from "./weekly-hours.mjs";
 import { timeLabel } from "./shift-intervals.mjs";
 import { fixtures, addDays } from "./model.mjs";
 import {
@@ -172,7 +173,7 @@ function render(focusId, announcement = "") {
  ${editing ? balanceMarkup(planner,selected,month) : ""}
  <details class="demo-options"><summary>Roster display</summary><label>Roster display mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label></details>
 
- ${editing ? `<div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button><p id="message" role="status">${announcement ? esc(announcement) : reviewed ? "Month marked reviewed." : ""}</p></div>
+ ${editing ? `<div id="selected-week-audit">${weeklyAuditMarkup(selectedDay||month+"-01")}</div><div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button><p id="message" role="status">${announcement ? esc(announcement) : reviewed ? "Month marked reviewed." : ""}</p></div>
  <details class="panel review"><summary>About this draft</summary><p>Connected month and roster viewing is separate from deliberate people and coverage editing. This is a fictional preview, not a published staff schedule.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects assignments and settings only in the selected store/month. Dated team history remains until explicitly edited.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
  <details class="footer"><summary>Shift limits</summary><p>Manual On uses full store hours. Imported CSV shifts keep exact minutes. No overnight shifts, DST-change dates, breaks, appointments, overtime policy, database connection or publishing.</p></details>` : `<p id="message" role="status">${esc(announcement)}</p>`}`;
   const importButton = document.querySelector("#import-schedule");
@@ -391,6 +392,8 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
   if (!r) return;
   const changed = selectedDay !== day;
   selectedDay = day;
+  const weekReview=document.querySelector('#selected-week-audit');
+  if(changed&&weekReview){const wasOpen=weekReview.querySelector('details')?.open;weekReview.innerHTML=weeklyAuditMarkup(day);weekReview.querySelector('details').open=Boolean(wasOpen);}
   updateSelection();
   if (changed && document.querySelector("#message")) document.querySelector("#message").textContent = `${dateLabel(day)} roster shown.`;
   const summary = staffing(r);
@@ -462,11 +465,16 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
     };
   }
 }
+function weeklyAuditMarkup(day, personId) {
+  const people=draft().store.people.filter(p=>!personId||p.id===personId);
+  const audits=people.map(p=>({person:p,audit:weeklyHoursAudit(day,p.id,date=>planner.context(selected,date))}));
+  return `<details class="weekly-hours-audit panel"><summary>Weekly hours · ${mondayOf(day)} to ${addDays(mondayOf(day),6)}</summary><p>Monday–Sunday · America/New_York. Usual context is 40–50 hours, not a minimum. Below 40 does not automatically warn. Above 50 is an operational review prompt; it does not change assignments or eligibility.</p><ul>${audits.map(({person,audit})=>`<li><strong>${esc(person.name)}</strong>: ${esc(weeklyHoursText(audit))}${audit.confirmedCapConflicts.length?`<p>Separate confirmed hard-cap conflict: ${[...new Set(audit.confirmedCapConflicts.map(c=>hoursLabel(c.minutes)))].join(', ')}. Existing cap rules still apply.</p>`:''}${!audit.complete?`<p>Incomplete: ${esc([...new Set(audit.days.flatMap(d=>d.reasons))].join('; '))}. No within-range conclusion.</p>`:''}</li>`).join('')}</ul><p>Intervals are deduplicated per person, including split shifts and adjacent months. Break adjustments are unavailable in this CSV preview. These are scheduled interval hours, not paid or legal overtime hours; assigned hours do not establish availability.</p></details>`;
+}
 function personSheet(id = "p0") {
   const store = draft().store,
     p = store.people.find((p) => p.id === id);
   const sheet = openSheet(
-    `<h2>People</h2>${peopleTeamsMarkup(store,selectedDay||month+"-01",planner.record(selected,selectedDay||month+"-01"))}<p class="people-team-label">${esc(personTeamLabel(store,p.id,selectedDay||month+"-01"))}</p><p>Availability and Monday–Sunday weekly limit for this store and month only. Other monthly drafts retain their own settings. Unapplied settings stay in this page while browsing. Cancel settings discards them.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Maximum weekly hours<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><fieldset><legend>Recurring unavailable weekdays</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${(p.off||[]).includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply changes</button><button type="button" data-close>Cancel settings</button></div></form>`,
+    `<h2>People</h2>${weeklyAuditMarkup(selectedDay||month+"-01",id)}${peopleTeamsMarkup(store,selectedDay||month+"-01",planner.record(selected,selectedDay||month+"-01"))}<p class="people-team-label">${esc(personTeamLabel(store,p.id,selectedDay||month+"-01"))}</p><p>Availability and Monday–Sunday weekly limit for this store and month only. Other monthly drafts retain their own settings. Unapplied settings stay in this page while browsing. Cancel settings discards them.</p><label>Person<select id="person">${store.people.map((p) => `<option value="${p.id}" ${p.id === id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label><form><div class="fields"><label>Available from (hour)<input name="start" type="number" min="0" max="23" required value="${p.start}"></label><label>Available until (hour)<input name="end" type="number" min="1" max="24" required value="${p.end}"></label><label>Preview hard weekly limit<input name="maxHours" type="number" min="0" max="168" required value="${p.maxHours}"></label></div><p>${p.maxHoursSource==='manager-confirmed'?'Manager-confirmed hard cap for this monthly draft.':'Unconfirmed preview setting, not established user policy. Existing preview cap enforcement remains active.'}</p><label class="check"><input type="checkbox" name="confirmCap" ${p.maxHoursSource==='manager-confirmed'?'checked':''}>Confirm this individual hard cap for this draft</label><fieldset><legend>Recurring unavailable weekdays</legend>${names.map((n, i) => `<label class="check"><input type="checkbox" name="off" value="${i}" ${(p.off||[]).includes(i) ? "checked" : ""}>${n}</label>`).join("")}</fieldset><p role="alert" id="error"></p><div class="actions"><button class="primary">Apply changes</button><button type="button" data-close>Cancel settings</button></div></form>`,
     "people", false, true, id,
   );
   for(const button of sheet.querySelectorAll("[data-person-open]"))button.onclick=()=>personSheet(button.dataset.personOpen);
@@ -484,6 +492,7 @@ function personSheet(id = "p0") {
       start: +f.get("start"),
       end: +f.get("end"),
       maxHours: +f.get("maxHours"),
+      maxHoursSource: f.has("confirmCap") ? "manager-confirmed" : "preview-setting",
       off: f.getAll("off").map(Number),
     });
     markChanged();

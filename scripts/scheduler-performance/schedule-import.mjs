@@ -1,3 +1,4 @@
+import { weeklyHoursAudit } from "./weekly-hours.mjs";
 import { membershipAt, sameTeams, absenceKind, validateMembership } from "./team-model.mjs";
 import { validDate, minute, shiftProblem, storeTimezone } from './shift-intervals.mjs';
 import { enteredMonth, validMonth } from './month-model.mjs';
@@ -124,7 +125,8 @@ export function reviewImport(planner,index,rows,choices={}) {
       item.state='blocked';item.messages.push(`Existing assignment on ${day}: ${added.join('; ')}. Skip this row or resolve that assignment first.`);
     }
   }
-  return {index,storeId:planner.context(index,'2014-01-01').store.id,snapshot,items,candidates,membershipChanges:[...membershipChanges.values()],blocked:items.some(i=>i.state==='blocked'),applied:false};
+  const weeklyAudits=[...weeks].flatMap(start=>planner.context(index,start).store.people.map(person=>weeklyHoursAudit(start,person.id,day=>{const context=planner.context(index,day);return {...context,record:candidates.get(day)||context.record};})));
+  return {index,storeId:planner.context(index,'2014-01-01').store.id,snapshot,items,candidates,weeklyAudits,membershipChanges:[...membershipChanges.values()],blocked:items.some(i=>i.state==='blocked'),applied:false};
 }
 export function applyImport(planner,review) {
   if(review.applied) return {changed:0,duplicate:true};
