@@ -5593,9 +5593,11 @@ let activeEngineSend = null;   // set by runJump while a jump is flying
 function tellArrivalReady(ready, dest) {
   arrivalReady = !!ready;
   if (dest !== undefined) arrivalDest = dest;
-  if (activeEngineSend) {
-    activeEngineSend({ type: "dest", dest: arrivalDest });
-    activeEngineSend({ type: "ready", ready: arrivalReady });
+  const send = activeEngineSend;
+  if (send) {
+    send({ type: "dest", dest: arrivalDest });
+    // Destination delivery can finish this arrival or replace its receiver.
+    if (activeEngineSend === send) send({ type: "ready", ready: arrivalReady });
   }
 }
 function ArrivalPrepared({ ready, identity }) {
@@ -11972,7 +11974,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
          settled page is reported as the truth first, in case the thumb's
          own reckoning below guessed the other page. */
       r.settle = setTimeout(() => {
-        if (!activeRef.current || !el.clientWidth) return;
+        // A queued settle must not undo a newer bar choice while its ramp drives.
+        if (!activeRef.current || r.driving || !el.clientWidth) return;
         const w = el.clientWidth || 1;
         const idx = Math.round(el.scrollLeft / w);
         if (Math.abs(el.scrollLeft - idx * w) > 2) return;

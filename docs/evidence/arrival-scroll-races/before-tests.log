@@ -1,0 +1,124 @@
+✖ actual short arrival can finish during destination notification without a second cleared call (7.247918ms)
+✔ actual short arrival still waits for its timer when readiness arrives first (6.099506ms)
+✖ a replacement arrival receiver does not inherit the old dispatch sequence (7.910818ms)
+✔ an unchanged arrival receiver receives destination and current readiness (9.037925ms)
+✖ queued Home settle cannot undo a newer Floor ramp before its first frame (5.054543ms)
+✖ queued Floor settle cannot undo a newer Home ramp (4.88836ms)
+✔ idle manual settling selects either page, but not a middle or inactive page (15.418103ms)
+✔ completed programmatic ramp can settle at its destination without reversing it (3.156475ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 4
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 350.782252
+
+✖ failing tests:
+
+test at test/arrival-scroll-races.test.mjs:19:1
+✖ actual short arrival can finish during destination notification without a second cleared call (7.247918ms)
+  AssertionError [ERR_ASSERTION]: Got unwanted exception.
+  Actual message: "activeEngineSend is not a function"
+      at TestContext.<anonymous> (file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:21:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: evalmachine.<anonymous>:11
+        activeEngineSend({ type: "ready", ready: arrivalReady });
+        ^
+
+    TypeError: activeEngineSend is not a function
+        at tellArrivalReady (evalmachine.<anonymous>:11:5)
+        at evalmachine.<anonymous>:1:1
+        at Script.runInContext (node:vm:149:12)
+        at Object.runInContext (node:vm:301:6)
+        at file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:17:23
+        at file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:21:26
+        at getActual (node:assert:611:5)
+        at strict.doesNotThrow (node:assert:779:32)
+        at TestContext.<anonymous> (file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:21:9)
+        at Test.runInAsyncScope (node:async_hooks:227:14),
+    expected: undefined,
+    operator: 'doesNotThrow',
+    diff: 'simple'
+  }
+
+test at test/arrival-scroll-races.test.mjs:29:1
+✖ a replacement arrival receiver does not inherit the old dispatch sequence (7.910818ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+    [
+      'old:dest',
+  +   'new:ready'
+    ]
+
+      at TestContext.<anonymous> (file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:31:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'old:dest', 'new:ready' ],
+    expected: [ 'old:dest' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/arrival-scroll-races.test.mjs:44:1
+✖ queued Home settle cannot undo a newer Floor ramp before its first frame (5.054543ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+  + [
+  +   'corner'
+  + ]
+  - []
+
+      at TestContext.<anonymous> (file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:46:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'corner' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/arrival-scroll-races.test.mjs:48:1
+✖ queued Floor settle cannot undo a newer Home ramp (4.88836ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+  + [
+  +   'floor'
+  + ]
+  - []
+
+      at TestContext.<anonymous> (file:///workspace/sage-race-repairs/test/arrival-scroll-races.test.mjs:49:85)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'floor' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
