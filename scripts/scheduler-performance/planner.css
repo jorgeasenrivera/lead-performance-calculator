@@ -1216,7 +1216,7 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 #app .schedule-layout .month-day.is-today { border-width:1px; }
 #app.compact-month .schedule-layout .month-day { height:3.75rem; grid-template-rows:1.5rem 1.25rem; gap:.1rem; padding:.2rem .1rem; }
 #app.compact-month .schedule-layout .month-day :is(.day-sales,.day-coverage) { display:none; }
-.compact-month .month-history { order:1; font-size:.8125rem; }
+.compact-month .month-history { font-size:.8125rem; }
 .compact-month .history-legend { width:100%; }
 .day-history-context { margin:.5rem 0; }
 .day-history-context > button { font-size:.8125rem; display:inline-flex; gap:.35rem; align-items:center; text-align:left; }
@@ -1240,3 +1240,7 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 #sales-help details,.day-history-context details {margin:.75rem 0;}
 @media(max-width:360px){.schedule-key {grid-template-columns:1fr;}}
 .schedule-flag,.schedule-state {font-size:1rem;line-height:1;}
+
+/* Reference follows primary calendar and day content in DOM and visual order. */
+.calendar-reference {min-width:0;margin-top:1rem;border-top:1px solid var(--line);padding-top:.5rem;}
+.compact-month > .calendar-reference {order:5;}
