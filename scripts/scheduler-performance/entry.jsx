@@ -35,6 +35,7 @@ const config = {
   holidays: [],
 };
 function Preview() {
+  useEffect(()=>{const bar=document.querySelector('.botnav');if(!bar)return;const root=document.documentElement,measure=()=>root.style.setProperty('--sage-bottomnav-height',bar.getBoundingClientRect().height+'px');measure();const observer=new ResizeObserver(measure);observer.observe(bar);return()=>{observer.disconnect();root.style.removeProperty('--sage-bottomnav-height');};},[]);
   const [coachId,setCoachId]=useState(null);
   const [section,setSection]=useState("dashboard"),[data,setData]=useState(seed.data);
   const selectSection=value=>navigatePage(()=>setSection(value));

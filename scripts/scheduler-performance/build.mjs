@@ -1,4 +1,4 @@
-import {sharedCore,sharedManager} from "./shared-transform.mjs";
+import {sharedCore,sharedManager,relativeTypography} from "./shared-transform.mjs";
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { build } from "vite";
@@ -115,7 +115,7 @@ export async function buildPreview() {
         transform(source, id) {
           if (id.endsWith("/src/main.jsx"))
             return 'import "/scripts/scheduler-performance/entry.jsx";';
-          if (id.split('?')[0].endsWith('/src/manager-signal.css')) {if(createHash('sha256').update(source).digest('hex')!=='93fd31a911167c1313e63ae3c630f5d2173549935a730b5eeda307befe5d105d')throw Error('Manager CSS boundary changed. Re-review shared preview.');return source.replace('.manager-signal .page button:active { transform:translateY(1px); }','').replaceAll('transform:translateY(1px)','transform:none').replaceAll('transform:translateY(-1px)','transform:none');}
+          if (id.split('?')[0].endsWith('/src/manager-signal.css')) {if(createHash('sha256').update(source).digest('hex')!=='93fd31a911167c1313e63ae3c630f5d2173549935a730b5eeda307befe5d105d')throw Error('Manager CSS boundary changed. Re-review shared preview.');return relativeTypography(source.replace('.manager-signal .page button:active { transform:translateY(1px); }','').replaceAll('transform:translateY(1px)','transform:none').replaceAll('transform:translateY(-1px)','transform:none'));}
           if (id.endsWith("/src/Manager.jsx")) return sharedManager(patchManager(source));
           if (id.endsWith("/src/LeadPerformanceCalculator.jsx")) return sharedCore(patchPhoneLayout(source));
         },

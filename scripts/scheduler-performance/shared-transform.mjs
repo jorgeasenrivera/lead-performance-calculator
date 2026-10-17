@@ -1,6 +1,10 @@
+// Text uses the browser root size; non-text geometry stays in its original units.
+export function relativeTypography(css){return css.replace(/((?:font-size|line-height|font)\s*:\s*)([^;{}]+)(?=[;}])/g,(_,property,value)=>property+value.replace(/(\d*\.?\d+)px\b/g,(_,n)=>`${Number(n)/16}rem`));}
+function relativeTemplate(source,name){const marker=`const ${name} = \``,start=source.indexOf(marker),end=source.indexOf('\n`;',start);if(start<0||end<start)throw Error('Typography boundary changed: '+name);return source.slice(0,start+marker.length)+relativeTypography(source.slice(start+marker.length,end))+source.slice(end);}
 // These transforms run only after build.mjs verifies the production source pins.
 function once(source,from,to){if(source.split(from).length!==2)throw Error('Shared preview anchor changed: '+from.slice(0,80));return source.replace(from,to);}
 export function sharedCore(source){
+ source=relativeTemplate(source,"SAGE_CSS");
  const start=source.indexOf("const PRESS_SEL ="),marker='  window.addEventListener("pointercancel", pressUp, { capture: true, passive: true });\n}',end=source.indexOf(marker,start)+marker.length;
  if(start<0||end<start)throw Error('Press owner boundary changed');
  source=source.slice(0,start)+`function pressDown(e){previewPressDown(e,buzz);}
@@ -20,6 +24,7 @@ if(typeof window!=="undefined"){
  return 'import {pressDown as previewPressDown,pressMove as previewPressMove,pressUp as previewPressUp,reduced as previewReduced,setToolIntent as previewToolIntent} from "/scripts/scheduler-performance/shared-motion.mjs";\n'+source;
 }
 export function sharedManager(source){
+ source=relativeTemplate(source,"MANAGER_CSS");
  source=once(source,'function CoachingPanel({ config, store, data, onChange, userName }) {','function CoachingPanel({ config, store, data, onChange, userName, initialPerson }) {');
  source=once(source,'function CoachingPanel({ config, store, data, onChange, userName, initialPerson }) {\n  const phone = usePhoneLayout();',`function CoachingPanel({ config, store, data, onChange, userName, initialPerson }) {
   const [phone,setPhone]=useState(()=>matchMedia('(max-width:700px)').matches);

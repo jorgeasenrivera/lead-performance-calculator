@@ -1,0 +1,12 @@
+{
+  "before": {
+    ".sect-chip": "12px",
+    ".co-gh": "13px",
+    ".cx-nm": "14px"
+  },
+  "after": {
+    ".sect-chip": "24px",
+    ".co-gh": "26px",
+    ".cx-nm": "28px"
+  }
+}

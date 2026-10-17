@@ -1,5 +1,7 @@
 # Shared preview controls and motion
 
+**Text-scaling correction:** Independent review found that the root-font setting used here did not enlarge fixed-pixel shared typography. These earlier screenshots do not establish 200% text coverage. The original results are retained; see [measured text scaling](../text-scaling/CHECKPOINT.md) for the correction and computed-size assertions.
+
 This increment is isolated to the protected fictional scheduler preview. Production Manager, core and manager CSS are hash-pinned inputs and remain byte-identical. The build transforms copies, fails closed on changed anchors, and preserves the complete approved arrival driver. No writer claim, database, credentials, permissions, production deployment or merge is changed.
 
 The proposed shared geometry uses 6px dense rows, 10px controls and 16px larger surfaces. Existing Sage paper, sand, forest and gold colors remain the basis. Selected controls have their own full-contrast background, focus is separate from selection, and pressed controls use contact shadow without scaling. Intentional status pills remain. Avatar hues remain identifying colors; label ink is chosen for contrast. Room colors and scheduler sales shading retain their meanings.

@@ -74,3 +74,24 @@ html.manager-signal .sp-performance :is(.co-gn,.cx-gap>b,.cx-un>small,.cx-sub,.c
 html.manager-signal .sp-performance .cx-head>span{color:#52624d!important}
 html.manager-signal .fr-sheet.co-sheet{--frink3:#52624d;--frsand2:#75491e;--frok:#23674f}
 html.manager-signal .fr-sheet.co-sheet :is(.fr-st,.cx-ch.ok){color:#23674f!important}
+/* Intrinsic columns let genuinely enlarged text reflow without shrinking it. */
+@media(max-width:700px){
+ html.manager-signal .lpc .cx-hh{flex-wrap:wrap}
+ html.manager-signal .lpc .cx-days{white-space:normal;overflow-wrap:anywhere;max-width:100%}
+ html.manager-signal .lpc .cx-bench{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(30%,3.75rem)),1fr))}
+ html.manager-signal .lpc .botnav{grid-template-columns:repeat(auto-fit,minmax(min(100%,4.5rem),1fr))}
+ html.manager-signal .lpc{padding-bottom:calc(var(--sage-bottomnav-height,64px) + 16px)}
+ html.manager-signal .lpc .qpick{bottom:calc(var(--sage-bottomnav-height,64px) + 8px)}
+ html.manager-signal .fr-sheet.co-sheet :is(.cx-stats,.cx-tiles){grid-template-columns:repeat(auto-fit,minmax(min(100%,3rem),1fr))}
+ html.manager-signal .fr-sheet.co-sheet .cx-acts{grid-template-columns:repeat(auto-fit,minmax(min(100%,3rem),1fr))}
+ html.manager-signal .fr-sheet.co-sheet .cx-goal{grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr))}
+ html.manager-signal .fr-sheet.co-sheet .fr-hd{flex-wrap:wrap}
+ html.manager-signal .fr-sheet.co-sheet .fr-hdt{flex:1 1 6rem}
+ html.manager-signal .fr-sheet.co-sheet .fr-nm{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+}
+
+@media(max-width:700px){
+ html.manager-signal .lpc .co-gh{flex-wrap:wrap}
+ html.manager-signal .lpc .cx-nm{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+ html.manager-signal .lpc .cx-gap{flex-wrap:wrap}
+}
