@@ -1,0 +1,30 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 15000ms exceeded.
+Call log:
+[2m  - waiting for locator('#day-2026-10-13')[22m
+[2m    - locator resolved to <button id="day-2026-10-13" aria-pressed="false" data-day="2026-10-13" aria-controls="sheet" data-verified-low="false" data-status="Schedule conflict" aria-describedby="day-plan-help" class="month-day open staff-needs " aria-label="Tue, Oct 13, 2026, Schedule conflict. Open day details.">…</button>[22m
+[2m  - attempting click action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - performing click action[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:37:86 {
+  log: [
+    "  - waiting for locator('#day-2026-10-13')",
+    '    - locator resolved to <button id="day-2026-10-13" aria-pressed="false" data-day="2026-10-13" aria-controls="sheet" data-verified-low="false" data-status="Schedule conflict" aria-describedby="day-plan-help" class="month-day open staff-needs " aria-label="Tue, Oct 13, 2026, Schedule conflict. Open day details.">…</button>',
+    '  - attempting click action',
+    '    - waiting for element to be visible, enabled and stable',
+    '    - element is visible, enabled and stable',
+    '    - scrolling into view if needed',
+    '    - done scrolling',
+    '    - performing click action'
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

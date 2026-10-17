@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "key": "chromium-1440-1",
+      "ms": 585.9000000003725,
+      "view": {
+        "violations": [],
+        "passes": 20
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    }
+  ],
+  "latency": [],
+  "errors": []
+}

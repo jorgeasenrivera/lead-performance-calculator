@@ -1,0 +1,1097 @@
+{
+  "rect": {
+    "x": 563,
+    "y": 480.25,
+    "width": 112,
+    "height": 44,
+    "top": 480.25,
+    "right": 675,
+    "bottom": 524.25,
+    "left": 563
+  },
+  "viewport": {
+    "width": 720,
+    "height": 900,
+    "scrollX": 0,
+    "scrollY": 867
+  },
+  "style": {
+    "display": "flex",
+    "visibility": "visible",
+    "pointerEvents": "auto",
+    "position": "static"
+  },
+  "disabled": false,
+  "connected": true,
+  "hitStack": [
+    {
+      "tag": "BUTTON",
+      "id": "edit-day",
+      "class": "primary"
+    },
+    {
+      "tag": "NAV",
+      "id": "",
+      "class": "day-actions"
+    },
+    {
+      "tag": "SECTION",
+      "id": "sheet",
+      "class": "panel day-panel"
+    },
+    {
+      "tag": "DIV",
+      "id": "",
+      "class": "schedule-layout"
+    },
+    {
+      "tag": "MAIN",
+      "id": "app",
+      "class": "stacked-workspace calendar-list delivered-grid-reflow"
+    },
+    {
+      "tag": "BODY",
+      "id": "",
+      "class": ""
+    },
+    {
+      "tag": "HTML",
+      "id": "",
+      "class": ""
+    }
+  ],
+  "dialogs": [
+    {
+      "id": "month-picker",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      }
+    },
+    {
+      "id": "sales-help",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "pointerdown",
+      "time": 7044,
+      "target": "svg",
+      "x": 134,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 7047,
+      "target": "svg",
+      "x": 134,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 7047,
+      "target": "day-2026-10-01",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 7068,
+      "target": "svg",
+      "x": 134,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 7068,
+      "target": "svg",
+      "x": 134,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 7068,
+      "target": "svg",
+      "x": 134,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 8511,
+      "target": "circle",
+      "x": 360,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 8512,
+      "target": "circle",
+      "x": 360,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 8512,
+      "target": "day-2026-10-02",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 8517,
+      "target": "circle",
+      "x": 360,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 8517,
+      "target": "circle",
+      "x": 360,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 8517,
+      "target": "circle",
+      "x": 360,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 9768,
+      "scrollX": 0,
+      "scrollY": 1308,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 10158,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 10307,
+      "target": "svg",
+      "x": 586,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 10309,
+      "target": "svg",
+      "x": 586,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 10310,
+      "target": "day-2026-10-03",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 10311,
+      "target": "svg",
+      "x": 586,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 10311,
+      "target": "svg",
+      "x": 586,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 10311,
+      "target": "svg",
+      "x": 586,
+      "y": 234,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 11185,
+      "target": "svg",
+      "x": 134,
+      "y": 333,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 11186,
+      "target": "svg",
+      "x": 134,
+      "y": 333,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 11186,
+      "target": "day-2026-10-04",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 11187,
+      "target": "svg",
+      "x": 134,
+      "y": 333,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 11187,
+      "target": "svg",
+      "x": 134,
+      "y": 333,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 11187,
+      "target": "svg",
+      "x": 134,
+      "y": 333,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 12229,
+      "target": "circle",
+      "x": 586,
+      "y": 631,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 12230,
+      "target": "circle",
+      "x": 586,
+      "y": 631,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 12230,
+      "target": "day-2026-10-15",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 12234,
+      "target": "circle",
+      "x": 586,
+      "y": 631,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 12234,
+      "target": "circle",
+      "x": 586,
+      "y": 631,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 12235,
+      "target": "circle",
+      "x": 586,
+      "y": 631,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 13125,
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 13174,
+      "target": "edit-day",
+      "x": 619,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 13175,
+      "target": "edit-day",
+      "x": 619,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 13175,
+      "target": "edit-day",
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 13211,
+      "target": "edit-day",
+      "x": 619,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 13211,
+      "target": "edit-day",
+      "x": 619,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 13212,
+      "target": "edit-day",
+      "x": 619,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 920,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 15724,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 84,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 15759,
+      "scrollX": 0,
+      "scrollY": 84,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 16153,
+      "scrollX": 0,
+      "scrollY": 754,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 19447,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 19497,
+      "target": "SUMMARY",
+      "x": 360,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 19498,
+      "target": "SUMMARY",
+      "x": 360,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 19498,
+      "target": "SUMMARY",
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 19508,
+      "target": "SUMMARY",
+      "x": 360,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 19508,
+      "target": "SUMMARY",
+      "x": 360,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 19508,
+      "target": "SUMMARY",
+      "x": 360,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 20275,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 380,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 20275,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 380,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 20275,
+      "target": "cancel-day",
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 20277,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 380,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 20278,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 380,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 20278,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 380,
+      "scrollX": 0,
+      "scrollY": 2908,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 21319,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 21319,
+      "target": "edit-day",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 21344,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 21607,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 22340,
+      "target": "edit-day",
+      "x": 619,
+      "y": 450,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 22342,
+      "target": "edit-day",
+      "x": 619,
+      "y": 450,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 22344,
+      "target": "edit-day",
+      "x": 619,
+      "y": 450,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 22344,
+      "target": "edit-day",
+      "x": 619,
+      "y": 450,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 22344,
+      "target": "edit-day",
+      "x": 619,
+      "y": 450,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 24376,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 84,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 24404,
+      "scrollX": 0,
+      "scrollY": 84,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 24843,
+      "scrollX": 0,
+      "scrollY": 754,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 28032,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 28137,
+      "target": "assigned",
+      "x": 584,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 28137,
+      "target": "assigned",
+      "x": 584,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 28138,
+      "target": "assigned",
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 28140,
+      "target": "assigned",
+      "x": 584,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 28140,
+      "target": "assigned",
+      "x": 584,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 28140,
+      "target": "assigned",
+      "x": 584,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 28720,
+      "target": "BUTTON",
+      "x": 124,
+      "y": 757,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 28722,
+      "target": "BUTTON",
+      "x": 124,
+      "y": 757,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 28722,
+      "target": "BUTTON",
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 28724,
+      "target": "BUTTON",
+      "x": 124,
+      "y": 757,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 28724,
+      "target": "BUTTON",
+      "x": 124,
+      "y": 757,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 28724,
+      "target": "BUTTON",
+      "x": 124,
+      "y": 757,
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "submit",
+      "time": 28724,
+      "target": "FORM",
+      "scrollX": 0,
+      "scrollY": 2578,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 30521,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 30604,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 30875,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 31963,
+      "target": "workspace",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 32435,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 32468,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 32856,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 33307,
+      "target": "edit-day",
+      "x": 619,
+      "y": 502,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 33307,
+      "target": "edit-day",
+      "x": 619,
+      "y": 502,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 33308,
+      "target": "edit-day",
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 33312,
+      "target": "edit-day",
+      "x": 619,
+      "y": 502,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 33312,
+      "target": "edit-day",
+      "x": 619,
+      "y": 502,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 33312,
+      "target": "edit-day",
+      "x": 619,
+      "y": 502,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 36004,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 84,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 36047,
+      "scrollX": 0,
+      "scrollY": 84,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 36602,
+      "scrollX": 0,
+      "scrollY": 754,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 40022,
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerdown",
+      "time": 40098,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mousedown",
+      "time": 40099,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 40099,
+      "target": "cancel-day",
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "pointerup",
+      "time": 40101,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "mouseup",
+      "time": 40103,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "click",
+      "time": 40103,
+      "target": "cancel-day",
+      "x": 422,
+      "y": 449,
+      "scrollX": 0,
+      "scrollY": 2839,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 41668,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 41669,
+      "target": "edit-day",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 41706,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 42303,
+      "scrollX": 0,
+      "scrollY": 919,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 43441,
+      "target": "workspace",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "focusin",
+      "time": 43952,
+      "target": "H2",
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 44002,
+      "scrollX": 0,
+      "scrollY": 0,
+      "defaultPrevented": false
+    },
+    {
+      "type": "scroll",
+      "time": 44640,
+      "scrollX": 0,
+      "scrollY": 867,
+      "defaultPrevented": false
+    }
+  ]
+}

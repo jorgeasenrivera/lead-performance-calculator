@@ -1,0 +1,47 @@
+{
+  "engine": "webkit",
+  "width": 320,
+  "scale": 2,
+  "status": "passed",
+  "geometry": {
+    "#period-heading": {
+      "top": 8,
+      "bottom": 123.1875
+    },
+    "#generate-month": {
+      "top": 329.28125,
+      "bottom": 391.78125
+    },
+    ".month-days": {
+      "top": 605.28125,
+      "bottom": 2263.1875
+    }
+  },
+  "textGrowth": [
+    {
+      "selector": ".day-heading",
+      "before": 18,
+      "after": 36,
+      "ratio": 2
+    },
+    {
+      "selector": ".person-identity strong",
+      "before": 16,
+      "after": 32,
+      "ratio": 2
+    },
+    {
+      "selector": "[data-status-person=p0]",
+      "before": 16,
+      "after": 32,
+      "ratio": 2
+    }
+  ],
+  "noPersistenceWrites": true,
+  "noNetworkWrites": true,
+  "scopedAxeScans": 2,
+  "splitShiftsPreserved": true,
+  "absenceProvenancePreserved": true,
+  "pendingAcrossDates": true,
+  "cancelRestoresApplied": true
+}

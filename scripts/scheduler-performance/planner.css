@@ -1,0 +1,1171 @@
+@font-face {
+  font-family: Geist;
+  src: url("/fonts/geist-latin.woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/geist-mono-latin.woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/space-grotesk-latin.woff2");
+}
+:root {
+  font-family: Geist, system-ui, sans-serif;
+  font-size: 100%;
+  color: #234939;
+  background: #f3f2e9;
+  --paper: #fffdf4;
+  --line: #cbd3c5;
+  --muted: #52624d;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 20px 24px;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font:
+    600 2rem/1.15 "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.025em;
+  margin: 16px 0 8px;
+}
+h2 {
+  font:
+    600 1.125rem/1.4 "Space Grotesk",
+    sans-serif;
+  margin: 20px 0 12px;
+}
+h3 {
+  font:
+    600 1rem/1.4 "Space Grotesk",
+    sans-serif;
+}
+p {
+  line-height: 1.5;
+}
+small,
+.muted {
+  color: var(--muted);
+}
+small {
+  font-size: 0.8125rem;
+}
+.eyebrow {
+  font:
+    600 0.75rem/1.4 "Geist Mono",
+    monospace;
+  letter-spacing: 0.07em;
+  margin-bottom: 12px;
+}
+.notice {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  background: #e8eedf;
+  border-left: 3px solid #567d61;
+  padding: 10px 14px;
+  border-radius: 0 8px 8px 0;
+}
+.toolbar,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin: 20px 0;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  min-width: 0;
+}
+input,
+select,
+button {
+  font: inherit;
+  line-height: 1.4;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: #234939;
+  padding: 10px 12px;
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+}
+button {
+  cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: normal;
+}
+button.primary {
+  background: #234939;
+  color: var(--paper);
+  border-color: #234939;
+}
+button:hover {
+  filter: brightness(0.97);
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #267d62;
+  outline-offset: 3px;
+}
+input:disabled,
+select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.toolbar > label {
+  flex: 1 1 180px;
+}
+.toolbar button {
+  flex: 0 1 auto;
+}
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.summary article {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #edeada;
+}
+.summary strong {
+  display: block;
+  font:
+    600 1.25rem/1.3 "Space Grotesk",
+    sans-serif;
+  margin: 4px 0;
+}
+.summary small {
+  display: block;
+}
+.history {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 16px 0;
+}
+.days {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.day {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.day header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.badge {
+  font:
+    500 0.75rem/1.4 "Geist Mono",
+    monospace;
+  border: 1px solid #b9cbb2;
+  background: #e8eedf;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.badge.unknown {
+  background: #f6e3c3;
+  border-color: #c7ab77;
+  color: #6c4a1e;
+}
+.badge.closed {
+  background: #e9e9e1;
+  color: #5a6357;
+  border-color: #c6c9bf;
+}
+.range {
+  font:
+    600 1.5rem/1.3 "Space Grotesk",
+    sans-serif;
+  margin: 12px 0 4px;
+}
+.range small {
+  font:
+    400 0.875rem/1.4 Geist,
+    sans-serif;
+  display: block;
+}
+.day p {
+  font-size: 0.875rem;
+  margin: 10px 0;
+}
+.person {
+  display: inline-block;
+  font-size: 0.8125rem;
+  border-radius: 5px;
+  background: #e8eedf;
+  padding: 5px 7px;
+  margin: 3px 4px 0 0;
+}
+.day details {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+summary {
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 12px 0;
+  min-height: 44px;
+}
+.issues {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #7b451b;
+  background: #fcf0dc;
+  padding: 10px 10px 10px 26px;
+  border-radius: 7px;
+}
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px 0;
+}
+.panel[hidden] {
+  display: none;
+}
+.panel h2 {
+  margin-top: 0;
+}
+.panel p {
+  font-size: 0.875rem;
+  margin: 10px 0;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+.check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+.check input {
+  appearance: auto;
+  min-height: 20px;
+  width: 20px;
+  flex-shrink: 0;
+}
+fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 16px 0;
+  padding: 8px 12px;
+}
+legend {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0 6px;
+}
+.decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+  line-height: 1.4;
+}
+.footer {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 18px 0;
+}
+.review > summary {
+  font-size: 1rem;
+}
+.review h2 {
+  margin-top: 12px;
+}
+#message {
+  font-size: 0.875rem;
+  color: #234939;
+  flex: 1 1 220px;
+}
+#error {
+  color: #8c3028;
+}
+button,
+input,
+select,
+summary {
+  scroll-margin-block: 20px;
+}
+.day,
+.panel,
+.summary article {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .days {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  main {
+    padding: 16px;
+  }
+  .days,
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .summary article {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+  }
+  .summary article > small:last-child:not(:first-child) {
+    flex-basis: 100%;
+  }
+  .summary strong {
+    font-size: 1.125rem;
+    margin: 0;
+  }
+  .toolbar {
+    gap: 10px;
+  }
+  .toolbar label {
+    flex-basis: 100%;
+  }
+  .toolbar button {
+    flex: 1;
+  }
+  .decision {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .panel {
+    padding: 14px;
+  }
+  .actions button {
+    flex: 1 1 140px;
+  }
+  h1 {
+    font-size: 1.75rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+input,
+select {
+  font-size: 1rem;
+}
+.month-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+.month-navigation h2 {
+  margin: 0;
+}
+.compact {
+  font-size: 0.875rem;
+}
+.month-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 10px;
+  margin-top: 18px;
+  align-items: stretch;
+}
+.month-day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  padding: 12px;
+  font-size: 0.875rem;
+  min-height: 150px;
+  overflow-wrap: anywhere;
+}
+.month-day .day-date {
+  font-weight: 600;
+  font-size: 1rem;
+}
+.month-day .badge {
+  font-size: 0.75rem;
+}
+.month-day.closed {
+  background: #edeada;
+}
+.month-day.unknown {
+  border-color: #b38c50;
+  background: #fff5e3;
+}
+.day-issue {
+  font-size: 0.8125rem;
+  color: #75491e;
+}
+#sheet {
+  scroll-margin-top: 16px;
+}
+.month-navigation button {
+  flex: 0 1 auto;
+}
+@media (max-width: 600px) {
+  .month-days {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .month-day {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+  .month-day > small,
+  .month-day > span:not(.day-date):not(.badge) {
+    grid-column: 1/-1;
+  }
+  .month-navigation h2 {
+    order: -1;
+    flex-basis: 100%;
+  }
+  .month-navigation button {
+    flex: 1;
+  }
+}
+.month-glance {
+  margin: 16px 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+.month-glance p {
+  font-size: 0.875rem;
+  margin: 10px 0;
+}
+.recorded-day {
+  padding: 12px;
+  background: #e8eedf;
+  border-radius: 8px;
+}
+.summary article strong {
+  overflow-wrap: anywhere;
+}
+/* A calm month overview; day editing takes its place rather than adding another panel. */
+main {
+  padding: 16px 24px;
+}
+.notice {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.toolbar {
+  margin: 16px 0;
+  gap: 8px;
+}
+.toolbar > label {
+  flex: 1 1 160px;
+}
+.toolbar button {
+  padding-inline: 12px;
+}
+.month-navigation {
+  justify-content: flex-start;
+  gap: 16px;
+  margin: 14px 0;
+}
+.month-navigation h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  flex: 1;
+}
+.month-navigation button {
+  width: 44px;
+  flex: none;
+}
+.month-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.month-days {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+.weekday-heading {
+  font:
+    0.75rem/1.4 "Geist Mono",
+    monospace;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+.month-day {
+  display: flex;
+  min-height: 112px;
+  gap: 5px;
+  padding: 10px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  align-items: flex-start;
+}
+.month-day .day-date {
+  font-size: 1.125rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.day-date > small {
+  font-size: 0.6875rem;
+  color: #315d43;
+}
+.day-weekday {
+  display: none;
+}
+.month-day.is-today {
+  border: 2px solid #567d61;
+  padding: 9px;
+}
+.day-staffing {
+  font-weight: 500;
+}
+.day-sales,
+.day-issue {
+  font-size: 0.75rem;
+}
+.month-day.closed {
+  background: #edeada;
+}
+.month-day.unknown {
+  background: #fff5e3;
+}
+.calendar-list .weekday-heading,
+.calendar-list .calendar-blank {
+  display: none;
+}
+.calendar-list .month-days {
+  grid-template-columns: minmax(0, 1fr);
+}
+.calendar-list .month-day {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  min-height: 76px;
+  gap: 6px 12px;
+}
+.calendar-list .day-weekday {
+  display: inline;
+}
+.calendar-list .day-date {
+  grid-row: span 2;
+}
+.calendar-list .day-sales,
+.calendar-list .day-staffing,
+.calendar-list .day-issue {
+  grid-column: 2;
+}
+.calendar-list .day-date > small {
+  display: block;
+}
+.month-glance {
+  border: 0;
+  margin: 8px 0;
+}
+.month-glance summary {
+  font-weight: 500;
+}
+.actions {
+  margin: 12px 0;
+}
+.review {
+  margin-top: 8px;
+}
+.review p,
+.footer {
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 600px) {
+  main {
+    padding: 14px;
+  }
+  .month-navigation h1 {
+    order: 0;
+    flex-basis: auto;
+    font-size: 1.375rem;
+  }
+  .month-navigation button {
+    flex: none;
+  }
+  .toolbar label {
+    flex-basis: 100%;
+  }
+  .toolbar button {
+    flex: 1;
+  }
+  .calendar-list .month-day > span:not(.day-date) {
+    grid-column: 2;
+  }
+  .month-summary {
+    font-size: 0.8125rem;
+  }
+  .month-navigation {
+    gap: 12px;
+  }
+}
+/* Preserve date tokens; give narrow, enlarged-text rows their own date line. */
+.month-days {
+  container-type: inline-size;
+}
+.month-day .day-date {
+  white-space: nowrap;
+  flex-wrap: wrap;
+}
+.day-date > * {
+  flex-shrink: 0;
+}
+@container (max-width: 20rem) {
+  .calendar-list .month-day {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+}
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Sage Signal: forest instruments, warm paper, mono labels and the shared PIX marks. */
+:root { --paper:#fffef8; --line:#cdd5c8; --muted:#4c5942; color:#234939; background:#f5f5ee; }
+main { padding:20px 24px 32px; }
+.sage-icon { width:1em; height:1em; flex:none; display:inline-block; vertical-align:-.1em; }
+button .sage-icon { margin-inline-end:.5em; }
+.month-navigation button .sage-icon { margin:0; }
+button, input, select { border-radius:7px; border-color:#aab9a5; background:#fffef8; }
+button { font-weight:600; }
+button:hover { background:#e4eedc; filter:none; }
+button.primary { background:#234939; border-color:#234939; color:#fffdf4; }
+button.primary:hover { background:#183c2f; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline:3px solid #267d62; outline-offset:3px; }
+label { font-size:.8125rem; color:#315d43; }
+.toolbar { align-items:end; gap:12px; margin:18px 0 22px; padding-bottom:20px; border-bottom:1px solid var(--line); }
+.toolbar label { gap:8px; }
+.toolbar button { min-height:46px; background:#e4eedc; }
+.month-navigation { margin:20px 0; gap:16px; }
+.month-navigation h1 { letter-spacing:-.035em; font-size:1.75rem; }
+.month-navigation button { background:#234939; color:#fffdf4; border-color:#3c5f49; }
+.month-summary { background:#234939; color:#fffdf4; border:1px solid #3c5f49; border-radius:9px; padding:16px 18px; gap:14px; }
+.month-summary small { color:#fffdf4; }
+.month-summary strong { font-family:"Geist Mono",monospace; }
+.heat-legend { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin:18px 0; font-size:.8125rem; }
+.heat-legend > span:first-child { font-weight:600; }
+.heat-legend > small { flex-basis:100%; }
+.heat-scale { display:flex; align-items:center; gap:5px; }
+.heat-scale i { display:block; width:1rem; height:1rem; border-radius:2px; }
+.month-days { gap:12px; }
+.weekday-heading { padding:6px 10px; font-weight:600; letter-spacing:.04em; }
+.month-day { border-radius:8px; gap:9px; padding:12px; min-height:160px; border:1px solid #bac8b2; }
+.calendar-list .month-day { min-height:88px; gap:10px 18px; }
+.month-day.is-today { padding:11px; border:2px solid #9e7940; }
+.month-day .day-date { font-family:"Geist Mono",monospace; font-weight:600; }
+.month-day :is(small,.day-weekday,.day-sales,.day-issue) { color:inherit; }
+.month-day .day-issue { font-weight:600; line-height:1.5; }
+.month-day .day-issue .sage-icon { margin-inline-end:.4em; }
+.best-day { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; padding:4px 6px; background:#e4c98d; color:#234939; border-radius:4px; font:600 .6875rem/1.5 "Geist Mono",monospace; }
+.calendar-list .best-day { grid-column:2; justify-self:start; }
+.best-day .sage-icon { margin:0; }
+.month-day.sales-unknown { background:#fffef8; border:1px dashed #9e7940; color:#234939; }
+.month-day.sales-closed { background:#e9e9e1; border:1px solid #8d9988; color:#234939; }
+.month-day.sales-future { background:#fffef8; border:1px solid #bac8b2; color:#234939; }
+.heat-0, .month-day.heat-0 { background:#183c2f; color:#fffdf4; border-color:#3c5f49; }
+.heat-1, .month-day.heat-1 { background:#234939; color:#fffdf4; border-color:#3c5f49; }
+.heat-2, .month-day.heat-2 { background:#3c5f49; color:#fffdf4; border-color:#567d61; }
+.heat-3, .month-day.heat-3 { background:#567d61; color:#fffdf4; border-color:#567d61; }
+.heat-4, .month-day.heat-4 { background:#8fd8af; color:#173d2b; border-color:#567d61; }
+.month-day:focus-visible { outline-color:#9e7940; }
+.month-day:hover { box-shadow:0 0 0 2px #9e7940; }
+.panel { background:#fffef8; border-color:var(--line); border-radius:9px; padding:20px; }
+.panel h2 { display:flex; align-items:center; gap:10px; color:#234939; }
+.panel label { color:#234939; }
+.recorded-day { background:#e4eedc; }
+.badge { background:#e4eedc; color:#234939; border-color:#aab9a5; }
+.notice { font:500 .75rem/1.5 "Geist Mono",monospace; color:#4c5942; }
+.month-glance summary, .review summary { color:#234939; }
+@media(max-width:600px) {
+  main { padding:16px 14px 28px; }
+  .toolbar { gap:10px; }
+  .month-navigation h1 { font-size:1.375rem; }
+  .month-summary { padding:14px; }
+  .month-days { gap:14px; }
+}
+@container (max-width:20rem) {
+  .calendar-list .month-day { gap:10px; }
+}
+button { transition:background-color 140ms ease-out, box-shadow 140ms ease-out; }
+#sheet:not([hidden]) { animation:sheet-arrive 160ms ease-out both; }
+@keyframes sheet-arrive { from { opacity:.65; transform:translateY(3px); } to { opacity:1; transform:none; } }
+#message:not(:empty) { border-left:3px solid #567d61; padding:8px 12px; background:#e4eedc; color:#234939; }
+@media(prefers-reduced-motion:reduce) { button { transition:none; } #sheet:not([hidden]) { animation:none; } }
+.toolbar button { display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:1 1 max-content; }
+.toolbar button .sage-icon { margin:0; }
+.heat-scale { max-width:100%; flex-wrap:wrap; gap:4px; }
+.heat-scale i { width:.625rem; height:.75rem; }
+.coverage-note { display:inline-flex; align-items:center; gap:6px; font:600 .6875rem/1.5 "Geist Mono",monospace; color:inherit; }
+.calendar-list .coverage-note { grid-column:2; }
+.month-day .coverage-low { text-decoration:underline; text-underline-offset:3px; }
+
+/* Existing Sage red/amber signals, isolated from observed-sales cell shading. */
+.staff-status { display:inline-flex; align-items:center; gap:6px; padding:4px 7px; border-radius:4px; background:#fffdf4; color:#234939; font:600 .75rem/1.5 Geist,sans-serif; }
+.staff-status.needs-schedule { border-left:4px solid #E5473C; }
+.staff-status.low-staff { border-left:4px solid #C77800; }
+.needs-schedule .sage-icon { color:#E5473C; }
+.low-staff .sage-icon { color:#C77800; }
+.day-staffing { overflow-wrap:normal; }
+.toolbar button.primary { background:#234939; color:#fffdf4; border-color:#3c5f49; }
+.team-fields { min-inline-size:0; }
+.team-fields label { min-width:0; flex:1 1 100%; }
+.team-fields select { width:100%; min-width:0; max-width:100%; }
+
+/* Compact manager controls, using the existing paper, forest and warning tokens. */
+.toolbar { margin:0 0 10px; padding:0; border:0; gap:10px; align-items:end; }
+.toolbar > label { flex:1 1 12rem; min-width:0; gap:4px; }
+.toolbar select { min-width:0; width:100%; }
+.toolbar > button { flex:0 1 auto; }
+.month-navigation { display:flex; flex-wrap:nowrap; gap:8px; margin:10px 0; }
+.month-navigation #period-heading { width:auto; flex:1; min-width:0; font-size:1.125rem; padding:8px 4px; }
+.month-summary { background:transparent; color:#234939; border:0; padding:0; margin:8px 0; gap:8px; align-items:center; font-size:.875rem; }
+.month-summary small { color:var(--muted); }
+.month-summary strong { font:inherit; font-weight:600; }
+.month-summary button { padding:6px 10px; }
+.notice { background:transparent; border:0; padding:0; margin:8px 0; font:400 .75rem/1.5 Geist,sans-serif; }
+.scheduler-popover { width:min(26rem,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:18px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:#234939; box-shadow:0 6px 24px #183c2f33; }
+.scheduler-popover input { max-width:100%; min-width:0; }
+.scheduler-popover button { margin-top:12px; }
+.scheduler-popover h2 { margin:0; }
+.scheduler-popover label { display:grid; gap:8px; }
+.scheduler-popover::backdrop { background:#183c2f22; }
+.editor-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0; }
+.demo-options { margin:16px 0; }
+.demo-options label { display:grid; gap:6px; margin:10px 0; max-width:20rem; }
+.month-day { background:var(--paper); color:#234939; }
+.month-day.staff-needs { background:color-mix(in srgb,#E5473C 16%,var(--paper)); border-color:#E5473C; }
+.month-day.staff-low { background:color-mix(in srgb,#C77800 20%,var(--paper)); border-color:#C77800; }
+.staff-status { background:transparent; padding:0; border-radius:0; }
+.staff-status.needs-schedule,.staff-status.low-staff { border:0; }
+.month-day .day-sales { display:block; width:100%; padding:5px 7px; border-radius:3px; }
+.month-day .day-sales.heat-0,.month-day .day-sales.heat-1,.month-day .day-sales.heat-2,.month-day .day-sales.heat-3 { color:#fffdf4; }
+.month-day .day-sales.heat-4 { color:#173d2b; }
+.day-sales.sales-unknown,.day-sales.sales-future { background:var(--paper); color:#234939; }
+.day-sales.sales-closed { background:#e9e9e1; color:#234939; }
+@media(max-width:400px) { .toolbar > button { flex:1 1 auto; } }
+.toolbar > label { flex:0 1 20rem; max-width:100%; }
+.toolbar > #workspace { margin-inline-start:auto; }
+/* One card hierarchy at every size: date, status, staffing groups, sales. */
+.month-day,.calendar-list .month-day { display:flex; flex-direction:column; align-items:stretch; gap:10px; min-width:0; text-align:left; }
+.month-day > * { min-width:0; max-width:100%; }
+.month-day .day-date { width:100%; padding-bottom:6px; border-bottom:1px solid #23493933; }
+.month-day .staff-status { align-self:flex-start; flex-wrap:wrap; }
+.day-staffing,.staffing-groups,.staff-teams,.staff-people { display:grid; gap:10px; min-width:0; width:100%; }
+.staff-team { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 10px; padding-bottom:6px; border-bottom:1px solid #23493922; min-width:0; }
+.staff-team-name { flex:1 1 9rem; min-width:0; overflow-wrap:anywhere; font-weight:600; }
+.staff-team-state { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; font-weight:500; }
+.staff-group-title { display:flex; align-items:center; gap:6px; font-size:.75rem; font-weight:600; }
+.staff-counts { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,6rem),1fr)); gap:6px; }
+.staff-count { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-width:0; font-size:.75rem; }
+.staff-count strong { font:600 1rem/1.4 "Geist Mono",monospace; }
+.staff-count .sage-icon { margin:0; }
+.staff-team-name .sage-icon { margin-inline-end:6px; }
+.staff-closed { display:flex; align-items:center; gap:6px; }
+.month-day .day-sales { margin-top:auto; border-top:1px solid #23493922; padding:8px; }
+.day-coverage,.issues,.recorded-day,#sheet label,#sheet p { overflow-wrap:anywhere; }
+#sheet .day-staffing { margin:12px 0; }
+#sheet .staffing-groups { max-width:36rem; }
+
+.day-context { margin:16px 0; padding:12px; border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
+.day-context section { margin-top:16px; }
+.day-context ul { list-style:none; padding:0; margin:8px 0; }
+.day-context li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; padding:6px 0; border-bottom:1px solid var(--line); }
+.day-context li > span { flex:1 1 12rem; min-width:0; }
+/* Phone browsing starts with dates; full staffing and sales remain in day details. */
+main.compact-month { display:flex; flex-direction:column; padding:8px 4px 24px; }
+.compact-month .month-navigation { order:0; margin:0 0 8px; }
+.compact-month .toolbar { order:1; gap:8px; margin:0 0 8px; }
+.compact-month .toolbar > label { flex:1 1 0; font-size:.8125rem; }
+.compact-month .toolbar > #workspace { flex:1 1 0; margin:0; padding:8px 4px; }
+.compact-month #sheet,.compact-month .month-days { order:2; }
+.compact-month .month-summary { order:4; }
+.compact-month .notice { order:5; }
+.compact-month .editor-tools { order:1; }
+.compact-month .demo-options,.compact-month .month-glance,.compact-month .actions,.compact-month .review,.compact-month .footer,.compact-month #message { order:6; }
+.compact-month .month-days { grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; margin:0; }
+.compact-month .weekday-heading { display:block; padding:4px 0; text-align:center; }
+.compact-month .calendar-blank { display:block; }
+.compact-month .month-day { min-height:48px; padding:4px 1px; gap:2px; align-items:center; justify-content:center; border-radius:4px; }
+.compact-month .month-day .day-date { width:auto; border:0; padding:0; font-size:1rem; line-height:1.3; gap:0; }
+.compact-month .month-day .day-weekday,.compact-month .month-day .day-date small { display:none; }
+.compact-month .month-day :is(.day-staffing,.day-sales,.day-issue,.day-coverage,.best-day) { display:none; }
+.compact-month .month-day .staff-status { align-self:center; min-height:1em; }
+.compact-month .month-day .staff-status .status-label { display:none; }
+.compact-month .month-day .staff-status .sage-icon { display:inline-block; width:1rem; height:1rem; margin:0; }
+.compact-month.compact-reflow .month-days { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.compact-reflow .weekday-heading,.compact-reflow .calendar-blank { display:none; }
+.compact-reflow .month-day .day-weekday { display:inline; }
+.compact-reflow .month-day .day-date { gap:6px; }
+.compact-reflow .month-day { min-height:80px; }
+.additional-names { display:grid; gap:6px; min-width:0; width:100%; }
+.additional-person { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 8px; min-width:0; border-top:1px solid #23493922; padding-top:6px; }
+.additional-person > span { flex:1 1 8rem; min-width:0; overflow-wrap:anywhere; }
+.additional-person > strong { font-weight:500; }
+.additional-preview-more,.additional-more summary { font-size:.8125rem; }
+.additional-more { margin-top:8px; }
+.additional-more .additional-names { margin-top:8px; }
+.compact-month .month-navigation { position:sticky; top:0; z-index:3; background:#f5f5ee; }
+.compact-month .month-navigation > button:not(#period-heading) { padding:4px; }
+.compact-reflow .toolbar { display:grid; grid-template-columns:minmax(0,1fr); }
+.compact-reflow .toolbar > #workspace { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:6px; }
+.compact-reflow .toolbar > #workspace { padding:6px 4px; }
+.compact-reflow .toolbar select { padding-block:6px; }
+/* Keep backward keyboard focus below the sticky month controls at either text size. */
+:root:has(main.compact-month) { scroll-padding-top:calc(var(--month-bar-height, 4rem) + 8px); }
+
+.day-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:8px 0 16px; }
+.day-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.day-actions .day-edit { margin-left:auto; }
+.icon-key { list-style:none; padding:0; display:grid; gap:10px; }
+.icon-key li { display:flex; align-items:center; gap:10px; }
+#sales-help h3 { margin-top:16px; }
+#sales-help p { margin-top:10px; }
+.day-heading:focus-visible { outline:2px solid #234939; outline-offset:4px; }
+
+.compact-month .month-navigation { gap:6px; }
+.compact-month .month-navigation #today { font-size:.8125rem; padding:6px; min-height:44px; }
+.compact-reflow .month-navigation #today { flex-basis:100%; }
+.day-context h3 { margin-bottom:6px; }
+.month-navigation #today { width:auto; flex-shrink:0; }
+.compact-reflow .month-navigation { flex-wrap:wrap; }
+
+.team-members { flex-basis:100%; display:grid; gap:6px; margin-top:6px; min-width:0; }
+.team-member { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 8px; font-weight:400; }
+.team-member > span { min-width:0; overflow-wrap:anywhere; }
+.team-member > strong { font-weight:500; }
+
+.calendar-swipe-strip { display:none; }
+@media(any-pointer:coarse) {
+ .compact-reflow .calendar-swipe-strip { display:flex; grid-column:1/-1; height:44px; align-items:center; justify-content:center; gap:12px; color:var(--muted); }
+}
+.calendar-swipe-strip > span { width:3rem; height:1px; background:var(--line); }
+@media(max-height:400px) {
+ .compact-month .month-navigation { position:static; }
+ :root:has(main.compact-month) { scroll-padding-top:0; }
+}
+
+/* Connected month and selected-day workspace, using the existing Sage tokens. */
+main { max-width:1440px; }
+.schedule-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(22rem,1fr); gap:24px; align-items:start; margin:16px 0; }
+.calendar-pane { min-width:0; }
+.calendar-context { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.calendar-context > span { display:flex; align-items:center; gap:8px; font-weight:600; }
+.calendar-context button { font-size:.8125rem; }
+.schedule-layout #sheet { min-width:0; margin:0; position:sticky; top:12px; animation:none; }
+.schedule-layout .month-days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; margin:0; }
+.schedule-layout .weekday-heading { display:block; text-align:center; padding:4px 0; }
+.schedule-layout .calendar-blank { display:block; }
+.schedule-layout .month-day { min-height:88px; padding:8px 4px; gap:6px; align-items:center; justify-content:center; }
+.schedule-layout .month-day .day-date { padding:0; border:0; width:auto; gap:4px; font-size:1.125rem; }
+.schedule-layout .month-day :is(.day-staffing,.day-issue,.day-coverage,.best-day,.day-date small,.day-weekday) { display:none; }
+.schedule-layout .month-day .staff-status { align-self:center; }
+.schedule-layout .month-day .status-label { display:none; }
+.schedule-layout .month-day .sage-icon { width:1rem; height:1rem; margin:0; }
+.schedule-layout .month-day .day-sales { font-size:.6875rem; padding:2px; border-radius:3px; align-self:stretch; text-align:center; }
+.schedule-layout .month-day[aria-pressed="true"] { outline:3px solid #234939; outline-offset:1px; box-shadow:inset 0 0 0 2px var(--paper); }
+.schedule-layout .month-day:focus-visible { outline:3px solid #846812; outline-offset:2px; }
+.coverage-summary { padding:12px; background:#e8eedf; border:1px solid var(--line); border-radius:8px; margin:12px 0; }
+.coverage-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.coverage-summary dt { font-size:.8125rem; overflow-wrap:anywhere; }
+.coverage-summary dd { font:600 1.5rem/1.2 "Space Grotesk",sans-serif; margin:4px 0; }
+.coverage-summary p,.coverage-summary small { font-size:.8125rem; }
+.workspace-intro h2 { margin:12px 0 4px; }
+.workspace-intro p { max-width:60rem; }
+.planning-basis,.applied-roster { border-block:1px solid var(--line); padding:12px 0; margin:12px 0; }
+.people-assignments { padding:0; border:0; }
+.assignment-person { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; padding:12px 0; border-top:1px solid var(--line); align-items:center; }
+.assignment-person > div { min-width:0; overflow-wrap:anywhere; }
+.assignment-person small { display:block; font-size:.8125rem; margin-top:4px; }
+.assignment-person .check { flex-direction:row; align-items:center; gap:4px; min-height:44px; }
+.assignment-person input { width:20px; height:20px; min-height:20px; flex-shrink:0; }
+.pending-note { font-size:.8125rem; color:#234939; background:#efe5c7; border-radius:4px; }
+.pending-note:not(:empty) { padding:8px; }
+#settings-sheet:not([hidden]) { margin:16px 0; border:2px solid #234939; }
+.day-heading { scroll-margin-top:12px; }
+@media(max-width:1000px) {
+ .schedule-layout { grid-template-columns:minmax(0,1fr); gap:16px; }
+ .schedule-layout #sheet { position:static; }
+ .schedule-layout .month-day { min-height:64px; }
+}
+main.compact-month .schedule-layout { order:2; margin-top:4px; }
+.compact-month .workspace-intro { order:1; }
+.compact-month #settings-sheet { order:2; }
+.compact-month .schedule-layout .month-days { gap:2px; }
+.compact-month .schedule-layout .month-day { min-height:48px; padding:4px 1px; gap:2px; }
+.compact-month .schedule-layout .day-sales { display:none; }
+.compact-month .schedule-layout .day-date { font-size:1rem; }
+.compact-month .schedule-layout .month-day .staff-status .sage-icon { display:inline-block; }
+.compact-month .month-navigation { position:static; }
+:root:has(main.compact-month) { scroll-padding-top:8px; }
+.compact-reflow .schedule-layout .month-days { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.compact-reflow .schedule-layout :is(.weekday-heading,.calendar-blank) { display:none; }
+.compact-reflow .schedule-layout .day-weekday { display:inline; }
+.compact-reflow .schedule-layout .month-day { min-height:80px; }
+.compact-reflow .assignment-person { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.compact-reflow .assignment-person > div { grid-column:1/-1; }
+
+.people-assignments { display:block; }
+@media(min-width:1001px) {
+ .calendar-pane { position:sticky; top:12px; }
+}
+.stacked-workspace .schedule-layout { grid-template-columns:minmax(0,1fr); }
+.stacked-workspace .calendar-pane,.stacked-workspace .schedule-layout #sheet { position:static; }
+.compact-month .notice { order:1; }
+.planning-workspace .schedule-layout .month-day .day-coverage { display:block; font-size:.75rem; line-height:1.4; }
+.planning-workspace .schedule-layout .month-day .day-sales { display:none; }
+.compact-month.planning-workspace .schedule-layout .month-day .day-coverage { display:none; }
+.compact-month #message { flex:none; min-height:0; }
+@media(max-height:500px) {
+ .calendar-pane,.schedule-layout #sheet { position:static; }
+}
+#settings-sheet { min-width:0; }
+#settings-sheet fieldset { min-inline-size:0; }
+#settings-sheet :is(p,label,legend) { overflow-wrap:anywhere; }
+.month-demand,.day-demand { padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--paper); margin:12px 0; min-width:0; }
+.month-demand h3 { display:flex; align-items:center; gap:8px; }
+.month-demand details,.day-demand details { margin-top:12px; }
+.month-demand p,.day-demand p { font-size:.875rem; }
+.month-demand li,.day-demand p { overflow-wrap:anywhere; }
+.day-demand .demand-range { font-size:1.125rem; font-weight:600; margin:8px 0; }
+.suggested-coverage { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.suggested-coverage dt { font-size:.8125rem; overflow-wrap:anywhere; }
+.suggested-coverage dd { margin:4px 0; font-size:1.25rem; font-weight:600; }
+.compact-month .month-demand { order:1; }
+.compact-month #message { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+/* Enlarged text needs complete metric labels, not three squeezed columns. */
+.compact-reflow :is(.coverage-summary dl,.suggested-coverage) { grid-template-columns:minmax(0,1fr); }
+.compact-reflow :is(.coverage-summary dl,.suggested-coverage) > div { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.compact-reflow :is(.coverage-summary dt,.suggested-coverage dt) { overflow-wrap:normal; }
+/* One aligned delivered line for every state, with no ellipsis or hidden values. */
+.schedule-layout .month-day .day-sales {
+ display:flex; align-items:center; justify-content:space-between; gap:.25em;
+ height:2em; min-height:2em; padding:2px; line-height:1.3; flex-shrink:0;
+ white-space:nowrap; overflow-wrap:normal; font-variant-numeric:tabular-nums;
+}
+.recorded-day {
+ display:flex; align-items:center; justify-content:space-between; gap:.5em;
+ font-size:.8125rem; line-height:1.4; height:3em; min-height:3em;
+ padding:8px; white-space:nowrap; overflow-wrap:normal; font-variant-numeric:tabular-nums;
+}
+.delivered-label,.delivered-value { flex:none; white-space:nowrap; }
+.compact-month .schedule-layout .month-day .day-sales,
+.planning-workspace .schedule-layout .month-day .day-sales { display:none; }
+.delivered-grid-reflow .schedule-layout .month-days { grid-template-columns:repeat(auto-fit,minmax(min(100%,12em),1fr)); }
+.delivered-grid-reflow .schedule-layout :is(.weekday-heading,.calendar-blank) { display:none; }
+.delivered-grid-reflow .schedule-layout .month-day .day-weekday { display:inline; }
+/* Today's accent must not shrink its sales strip relative to adjacent dates. */
+.schedule-layout .month-day.is-today { border-width:1px; }
+/* Import review reuses the planner's paper panels and controls. */
+#import-sheet { scroll-margin-top:6rem; }
+#import-sheet input[type=file], .import-row select { width:100%; max-width:100%; min-width:0; }
+#import-sheet pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.8125rem; }
+.import-row { border-top:1px solid var(--line); padding:12px 0; overflow-wrap:anywhere; }
+.import-row h4 { margin:8px 0; }
+#import-sheet .actions { flex-wrap:wrap; }
+.imported-shifts small { display:block; overflow-wrap:anywhere; }
+.coverage-gaps { padding-left:1.25em; }
+.balance-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr)); gap:16px; }
+.balance-grid > section { border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; overflow-wrap:anywhere; }
+.balance-grid dl > div { margin:12px 0; }
+.balance-grid dd { margin:4px 0; font-weight:600; }
+.team-balance { scroll-margin-top:6rem; }
+.team-day-details { margin:16px 0; }
+.team-day-details li { margin:12px 0; overflow-wrap:anywhere; }
+.team-day-details small,.people-team-groups small { display:block; }
+.team-day-details button { max-width:100%; white-space:normal; }
+.assignment-person .absence-choice { grid-column:1 / -1; width:100%; }
+.absence-choice select { width:100%; min-width:0; }
+.people-team-groups ul { padding-left:1.25em; }
+#add-team-form { border-top:1px solid var(--line); padding-top:16px; margin-top:16px; }
+
+/* Generation uses the existing planner palette and form rhythm. */
+#generation-sheet:not([hidden]) { margin:16px 0; border:2px solid #234939; min-width:0; }
+#generation-sheet :is(p,summary,label,li) { overflow-wrap:anywhere; }
+#generation-sheet details { margin-block:12px; }
+#generation-sheet details > div { padding-block:8px; }
+#generation-sheet .generation-people { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:12px; }
+#generation-sheet fieldset { min-inline-size:0; }
+#generation-sheet .generation-days { display:grid; gap:4px; }
+#generation-sheet .generation-days details { border-bottom:1px solid var(--line); padding-block:8px; margin:0; }
+#generation-sheet input[type=checkbox] { flex:none; }
+.compact-month #generation-sheet { order:2; }
+@media(max-width:700px) { #generation-sheet .fields { grid-template-columns:1fr; } #generation-sheet .actions { display:flex;flex-wrap:wrap; } }
+
+.mobile-quick-roster,.mobile-critical-warning,.mobile-low-marker,.mobile-sales-mark,.mobile-nav-label { display:none; }
+/* Phone viewing is a quick roster. Planning detail remains in the editor. */
+.compact-month:not(.planning-workspace) .month-navigation { gap:4px; align-items:center; }
+.compact-month:not(.planning-workspace) #period-heading { font-size:1rem; padding:6px 2px; }
+.compact-month:not(.planning-workspace) .toolbar > #workspace { flex:0 1 auto; padding:6px 10px; font-size:.8125rem; }
+.compact-month:not(.planning-workspace) .toolbar > #sales-key { margin-left:auto; background:transparent; border-color:transparent; font-size:.8125rem; padding:6px; }
+.compact-month:not(.planning-workspace) .month-day { background:var(--paper); border-color:var(--line); position:relative; }
+.compact-month:not(.planning-workspace) .month-day.is-today { border-color:#9e7940; }
+.compact-month:not(.planning-workspace) .month-day .staff-status { display:none; }
+.compact-month:not(.planning-workspace) .mobile-sales-mark { display:block; position:absolute; bottom:2px; left:3px; right:3px; height:3px; border-radius:2px; }
+.compact-month:not(.planning-workspace) .mobile-low-marker { display:inline-flex; color:#234939; position:absolute; right:2px; top:2px; }
+.compact-month:not(.planning-workspace) .mobile-low-marker .sage-icon { width:.75rem;height:.75rem; }
+.compact-month:not(.planning-workspace) :is(.desktop-roster,.desktop-planning-detail,.demo-options) { display:none; }
+.compact-month:not(.planning-workspace) #sheet { padding:12px; border:0; background:var(--paper); }
+.compact-month:not(.planning-workspace) .day-heading { display:block; font-size:1rem; }
+.compact-month:not(.planning-workspace) .day-actions { gap:4px; margin:4px 0 12px; }
+.compact-month:not(.planning-workspace) .day-actions button { padding:6px 8px; min-height:44px; font-size:.8125rem; }
+.compact-month:not(.planning-workspace) .day-actions #edit-day { background:transparent;color:#234939;border-color:var(--line); }
+.compact-month:not(.planning-workspace) .day-actions #edit-day .sage-icon { display:none; }
+.compact-month:not(.planning-workspace) .desktop-nav-label { display:none; }
+.compact-month:not(.planning-workspace) .mobile-nav-label { display:inline; }
+.compact-month:not(.planning-workspace) .mobile-critical-warning { display:flex;align-items:center;gap:6px;color:#234939;font-size:.8125rem;margin-block:8px; }
+.compact-month:not(.planning-workspace) .mobile-quick-roster { display:grid; gap:12px; }
+.mobile-quick-roster h3 { font-size:1rem; margin:0 0 4px; }
+.mobile-quick-roster h3 small { font:inherit; color:var(--muted); }
+.mobile-quick-roster p { margin:4px 0; overflow-wrap:anywhere; }
+.mobile-quick-roster p strong { font-size:.875rem; }
+.mobile-quick-roster details { margin-top:6px; }
+.mobile-quick-roster summary { min-height:44px; display:flex;align-items:center; cursor:pointer; }
+
+/* A single phone detail sheet keeps calendar spacing and scroll position stable. */
+:root { --schedule-space-1:4px; --schedule-space-2:8px; --schedule-space-3:12px; --schedule-space-4:16px; }
+.day-modal-open { overflow:hidden; }
+#mobile-day-dialog { color:#234939; background:var(--paper); border:1px solid var(--line); border-radius:12px; width:calc(100% - 2 * var(--schedule-space-2)); max-width:32rem; max-height:calc(100dvh - 2 * var(--schedule-space-2)); padding:0; overscroll-behavior:contain; }
+#mobile-day-dialog::backdrop { background:rgb(18 43 33 / 40%); }
+.compact-month:not(.planning-workspace) .schedule-layout > #sheet { display:none; }
+.compact-month:not(.planning-workspace) #mobile-day-dialog #sheet { animation:none; display:block; margin:0; padding:max(var(--schedule-space-4),env(safe-area-inset-top)) max(var(--schedule-space-4),env(safe-area-inset-right)) max(var(--schedule-space-4),env(safe-area-inset-bottom)) max(var(--schedule-space-4),env(safe-area-inset-left)); border-radius:0; }
+.compact-month:not(.planning-workspace) .schedule-layout .month-days { gap:var(--schedule-space-1); }
+.compact-month:not(.planning-workspace) .schedule-layout .month-day { min-height:48px; margin:0; }
+.compact-month:not(.planning-workspace) :is(.month-navigation,.day-actions) { gap:var(--schedule-space-1); }
+.compact-month:not(.planning-workspace) .mobile-quick-roster { gap:var(--schedule-space-4); }
+.compact-month:not(.planning-workspace) .mobile-quick-roster p { margin:var(--schedule-space-1) 0; }
+.compact-month:not(.planning-workspace) .day-actions { margin:var(--schedule-space-2) 0 var(--schedule-space-4); }
+.compact-month:not(.planning-workspace) #mobile-day-dialog .recorded-day { margin:var(--schedule-space-4) 0 0; }
+/* Embedded Schedule already owns the modal. Its day sheet is a detail page,
+   so only one dialog is exposed and the calendar keeps its geometry behind it. */
+#mobile-day-dialog.embedded-day-page:not([hidden]) { display:block; position:fixed; inset:0; z-index:20; margin:0; width:100%; height:100dvh; max-width:none; max-height:none; overflow:auto; border:0; border-radius:0; }
+
+/* Day identity uses existing Sage ink, leaf, warm-paper and neutral tokens.
+   Warning and recorded-sales colors retain their separate meanings. */
+.compact-month:not(.planning-workspace) .roster-group { padding:var(--schedule-space-3); border:1px solid var(--line); border-radius:8px; background:#edeada; }
+.compact-month:not(.planning-workspace) .roster-group[data-roster-state=on] { background:#e4eedc; border-color:#aab9a5; }
+.compact-month:not(.planning-workspace) .roster-group[data-roster-state=unconfirmed] { background:#e9e9e1; border-style:dashed; }
+.compact-month:not(.planning-workspace) .roster-group h3 { display:flex; flex-wrap:wrap; align-items:center; gap:var(--schedule-space-2); margin-bottom:var(--schedule-space-2); }
+.compact-month:not(.planning-workspace) .roster-count { margin-left:auto; display:inline-grid; place-items:center; min-width:1.75em; min-height:1.75em; padding:0 var(--schedule-space-1); border-radius:4px; background:var(--paper); color:#234939; font-variant-numeric:tabular-nums; }
+.roster-team { display:inline-flex; max-width:100%; overflow-wrap:anywhere; align-items:center; gap:var(--schedule-space-1); }
+.roster-team .sage-icon { width:.875em; height:.875em; flex:none; }
+.compact-month:not(.planning-workspace) .day-heading { border-left:4px solid #e4c98d; padding-left:var(--schedule-space-2); }
+.compact-month:not(.planning-workspace) .day-actions button { border-radius:8px; }
+.compact-month:not(.planning-workspace) .day-actions .day-edit { background:transparent; color:#234939; border-color:var(--line); }
+.compact-month:not(.planning-workspace) .day-actions .day-edit .sage-icon { display:none; }
+#mobile-day-dialog { overflow-x:hidden; height:calc(100dvh - 2 * var(--schedule-space-2)); }
+.day-motion-preview { position:absolute; left:0; box-sizing:border-box; min-height:100%; margin:0; padding:max(var(--schedule-space-4),env(safe-area-inset-top)) max(var(--schedule-space-4),env(safe-area-inset-right)) max(var(--schedule-space-4),env(safe-area-inset-bottom)) max(var(--schedule-space-4),env(safe-area-inset-left)); border:0; border-radius:0; background:var(--paper); color:#234939; pointer-events:none; }
+.day-motion-preview .recorded-day { margin:var(--schedule-space-4) 0 0; }
+.day-motion-status { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+
+/* Month entry and focused editing share the existing Sage spacing and inks. */
+.planning-workspace .toolbar #workspace { background:transparent; color:var(--sage-forest); box-shadow:none; }
+.planning-workspace .editor-tools { margin:var(--schedule-space-2) 0; }
+.planning-workspace .month-demand-compact { margin:var(--schedule-space-2) 0; font-size:.875rem; }
+.planning-workspace .month-review { margin:var(--schedule-space-4) 0; }
+.planning-workspace .month-pending { font-size:.875rem; margin:var(--schedule-space-2) 0; }
+.compact-month.planning-workspace > :is(.month-demand-compact,.month-review,.demo-options,.actions,.review,.footer) { order:4; }
+.compact-month.planning-workspace > .month-pending { order:1; }
+.compact-month.planning-workspace .schedule-layout > #sheet { display:none; }
+.compact-month.planning-workspace #mobile-day-dialog #sheet { display:block; margin:0; padding:var(--schedule-space-4); border:0; border-radius:0; animation:none; }
+.compact-month.planning-workspace .day-heading { font-size:1.125rem; }
+.planning-workspace .day-actions { display:flex; flex-wrap:wrap; gap:var(--schedule-space-2); }
+.editor-coverage p { margin:var(--schedule-space-2) 0; }
+.editor-conflicts { border-left:4px solid #8c3028; padding-left:var(--schedule-space-3); margin:var(--schedule-space-3) 0; }
+.editor-conflicts h3 { font-size:1rem; }
+.editor-conflicts .issues { margin:var(--schedule-space-2) 0; }
+.editor-roster { min-width:0; }
+.editor-team { display:block; min-inline-size:0; margin:var(--schedule-space-4) 0; padding:var(--schedule-space-3); border:1px solid var(--line); border-radius:var(--sage-control); }
+.editor-team legend { display:flex; align-items:center; gap:var(--schedule-space-2); max-width:100%; overflow-wrap:anywhere; }
+.editor-team .team-bulk { display:flex; flex-wrap:wrap; align-items:center; gap:var(--schedule-space-2); }
+.editor-team .team-bulk select { flex:1 1 8rem; min-width:0; }
+.editor-team .assignment-person { grid-template-columns:minmax(0,1fr); gap:var(--schedule-space-2); }
+.editor-team .person-status { display:flex; flex-wrap:wrap; align-items:center; gap:var(--schedule-space-2); font-size:.875rem; }
+.editor-team .person-status select { flex:1 1 7rem; min-width:0; }
+.editor-team .assignment-person > :is(.absence-choice,.person-evidence,.team-exception,.shift-removal) { grid-column:1/-1; }
+.editor-team .team-exception:empty { display:none; }
+.editor-team .person-conflict { color:#8c3028; font-size:.875rem; margin:var(--schedule-space-2) 0; }
+.editor-team .person-evidence { font-size:.875rem; }
+.editor-team .person-evidence summary { min-height:44px; padding-block:var(--schedule-space-2); }
+.editor-team .shift-removal { align-items:flex-start; }
+.editor-team [hidden] { display:none!important; }
+.editor-note { font-size:.8125rem; }
+/* A setup, import or generation panel is a single focused workspace. */
+.planning-workspace:has(> #generation-sheet:not([hidden])) > :not(#generation-sheet),
+.planning-workspace:has(> #import-sheet:not([hidden])) > :not(#import-sheet),
+.planning-workspace:has(> #settings-sheet:not([hidden])) > :not(#settings-sheet),
+.planning-workspace:has(> #editor-setup:not([hidden])) > :not(#editor-setup) { display:none; }
+.editor-team :is(.team-bulk,.person-status) { flex-direction:row; }
+.editor-team :is(.team-bulk,.person-status) select { min-height:44px; }
+.planning-workspace .day-demand { padding:var(--schedule-space-3); }
+.planning-workspace .day-demand h3 { font-size:1rem; margin:0; }
+.planning-workspace .day-demand p { margin:var(--schedule-space-2) 0; }
+.planning-workspace :is(.editor-team,.day-demand,.month-demand) { border-radius:var(--sage-card); }
+.planning-workspace .pending-note { border-radius:var(--sage-dense); }

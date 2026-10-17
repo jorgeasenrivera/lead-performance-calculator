@@ -1,0 +1,377 @@
+chromium-1440-1-pointer passed
+chromium-1440-2-pointer passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ [
++   {
++     id: 'color-contrast',
++     nodes: [
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.co-gn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-head > span:nth-child(2)'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-head > span:nth-child(3)'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(3) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(3) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(4) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(4) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(5) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(5) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(6) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(6) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(7) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(7) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 3.24 (foreground color: #ffffff, background color: #33a346, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(8) > .fr-av.sm'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(8) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(8) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.89 (foreground color: #ffffff, background color: #83a333, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(9) > .fr-av.sm'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(9) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(9) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(10) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(10) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(11) > .cx-mid > .cx-gap > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-row[type="button"]:nth-child(11) > .cx-un > small'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 3.08 (foreground color: #ffffff, background color: #62a333, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.dim > .fr-av.sm'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.dim > .cx-mid > .cx-nm'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 7.1pt (9.5px), font weight: normal). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-sub'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.dim > .cx-un > small'
++         ]
++       }
++     ]
++   }
++ ]
+- []
+
+    at audit (file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:8:399)
+    at async file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:12:2 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [
+    {
+      id: 'color-contrast',
+      nodes: [
+        {
+          target: [ '.co-gn' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-head > span:nth-child(2)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-head > span:nth-child(3)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(3) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(3) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(4) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(4) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(5) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(5) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(6) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(6) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(7) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(7) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(8) > .fr-av.sm' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 3.24 (foreground color: #ffffff, background color: #33a346, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(8) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(8) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(9) > .fr-av.sm' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.89 (foreground color: #ffffff, background color: #83a333, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(9) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(9) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(10) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(10) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.cx-row[type="button"]:nth-child(11) > .cx-mid > .cx-gap > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-row[type="button"]:nth-child(11) > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.dim > .fr-av.sm' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 3.08 (foreground color: #ffffff, background color: #62a333, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.dim > .cx-mid > .cx-nm' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-sub' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 7.1pt (9.5px), font weight: normal). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.dim > .cx-un > small' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        }
+      ]
+    }
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

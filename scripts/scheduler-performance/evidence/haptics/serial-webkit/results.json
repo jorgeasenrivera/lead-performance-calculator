@@ -1,0 +1,26 @@
+[
+  {
+    "engine": "webkit",
+    "transport": "error",
+    "status": "passed",
+    "mouseKeyboardQuiet": true,
+    "preferences": true,
+    "changedOnly": true,
+    "applyAfterSuccess": true,
+    "failedReviewRefused": true,
+    "noStaleReplay": true,
+    "noPersistenceWrites": true
+  },
+  {
+    "engine": "webkit",
+    "transport": "absent",
+    "status": "passed",
+    "mouseKeyboardQuiet": true,
+    "preferences": true,
+    "changedOnly": true,
+    "applyAfterSuccess": true,
+    "failedReviewRefused": true,
+    "noStaleReplay": true,
+    "noPersistenceWrites": true
+  }
+]

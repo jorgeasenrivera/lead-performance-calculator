@@ -1,0 +1,5 @@
+The unchanged production-build salesperson harness failed at scripts/feel.mjs:657. The FlyBy button remained visible after setMine("waiting", null), exceeding the unchanged 15-second detach limit. The preceding timing bars passed; press and reduced-return checks were not reached.
+
+Captured events include floor_public and queue_public polling timeouts. A subsequent direct mock read returned in 25.58 ms and showed all three fictional people waiting with no table. The server reset therefore landed; the UI had not reflected it before the limit. This is evidence of the stale local test UI, not a proven root cause or production incident. No assertion, timeout or production polling behavior was changed, and the failed run was not retried to obtain green output.
+
+The environment had previously disconnected, stopping local services. They were restarted before this run. No additional browser workloads were intentionally running alongside the feel measurement. Remaining browser processes inspected afterward were zombies, not active background loads. No root-cause claim is made from the service restart alone.

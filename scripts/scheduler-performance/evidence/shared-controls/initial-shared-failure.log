@@ -1,0 +1,23 @@
+chromium-1440-1-pointer passed
+chromium-1440-2-pointer passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'rgba(86, 125, 97, 0.69)'
+- 'rgb(86, 125, 97)'
+      ^
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:14:468 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'rgba(86, 125, 97, 0.69)',
+  expected: 'rgb(86, 125, 97)',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

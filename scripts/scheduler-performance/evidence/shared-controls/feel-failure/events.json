@@ -1,0 +1,101 @@
+{
+  "error": "page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fba-btn.fly') to be detached\u001b[22m\n\u001b[2m    11 × locator resolved to visible <button type=\"button\" class=\"fba-btn fly\">…</button>\u001b[22m\n\n    at run (/workspace/lead-performance-calculator/scripts/feel.mjs:657:43)\n    at async main (/workspace/lead-performance-calculator/scripts/feel.mjs:226:9)",
+  "dropped": 0,
+  "events": [
+    {
+      "at": "2026-10-17T07:34:43.330Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T07:34:43.331Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T07:34:43.332Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-17T07:34:46.024Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T07:34:46.024Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T07:34:49.013Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:34:50.360Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:34:52.991Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:34:57.998Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:35:08.013Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:35:18.032Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:35:28.047Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:35:36.379Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-17 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:78027"
+    },
+    {
+      "at": "2026-10-17T07:35:45.577Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T07:35:45.578Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-17 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:78027"
+    },
+    {
+      "at": "2026-10-17T07:35:45.579Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-17 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-C-e__rKL.js:114:71560"
+    },
+    {
+      "at": "2026-10-17T07:35:45.579Z",
+      "type": "console",
+      "error": "poll queue_public sage-demo:2026-10-17 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-C-e__rKL.js:114:71695"
+    },
+    {
+      "at": "2026-10-17T07:35:45.583Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-17 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-C-e__rKL.js:115:78027"
+    }
+  ]
+}

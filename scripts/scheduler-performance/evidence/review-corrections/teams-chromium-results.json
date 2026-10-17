@@ -1,0 +1,56 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 2,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 2,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 1,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "axeScans": 4,
+    "networkRequests": 0,
+    "storageDatabaseCalls": 0,
+    "status": "passed"
+  }
+]

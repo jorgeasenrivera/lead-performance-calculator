@@ -1,0 +1,7 @@
+chromium-390-1-no-preference passed
+chromium-320-2-no-preference passed
+chromium-390-1-reduce passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit-390-1-no-preference passed
+webkit-320-2-no-preference passed
+webkit-390-1-reduce passed

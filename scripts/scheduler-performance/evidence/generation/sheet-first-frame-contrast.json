@@ -1,0 +1,377 @@
+[
+  {
+    "id": "color-contrast",
+    "impact": "serious",
+    "tags": [
+      "cat.color",
+      "wcag2aa",
+      "wcag143",
+      "TTv5",
+      "TT13.c",
+      "EN-301-549",
+      "EN-9.1.4.3",
+      "ACT",
+      "RGAAv4",
+      "RGAA-3.2.1"
+    ],
+    "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+    "help": "Elements must meet minimum color contrast ratio thresholds",
+    "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+    "nodes": [
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "12.0pt (16px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<h2 id=\"selected-day-heading\" class=\"day-heading\" tabindex=\"-1\">Mon, Dec 7, 2026</h2>",
+        "target": [
+          "#selected-day-heading"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "9.8pt (13px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<button type=\"button\" data-close=\"\" aria-label=\"Month calendar\"><span class=\"desktop-nav-label\">Month calendar</span><span class=\"mobile-nav-label\">Calendar</span></button>",
+                "target": [
+                  "button[data-close=\"\"]"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<span class=\"mobile-nav-label\">Calendar</span>",
+        "target": [
+          "button[data-close=\"\"] > .mobile-nav-label"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "9.8pt (13px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<span class=\"mobile-nav-label\">Edit</span>",
+        "target": [
+          "#edit-day > .mobile-nav-label"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "12.0pt (16px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<h3>On <small>0</small></h3>",
+        "target": [
+          "section[aria-label=\"On\"] > h3"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<p>None confirmed</p>",
+        "target": [
+          "section[aria-label=\"On\"] > p"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "12.0pt (16px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<h3>Off <small>2</small></h3>",
+        "target": [
+          "section[aria-label=\"Off\"] > h3"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<p><strong>Oak team</strong> Alex 1</p>",
+        "target": [
+          "section[aria-label=\"Off\"] > p:nth-child(2)"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "bold",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<strong>Oak team</strong>",
+        "target": [
+          "section[aria-label=\"Off\"] > p:nth-child(2) > strong"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+      },
+      {
+        "any": [
+          {
+            "id": "color-contrast",
+            "data": {
+              "fgColor": "#70887c",
+              "bgColor": "#fffef8",
+              "contrastRatio": 3.77,
+              "fontSize": "10.5pt (14px)",
+              "fontWeight": "normal",
+              "messageKey": null,
+              "expectedContrastRatio": "4.5:1"
+            },
+            "relatedNodes": [
+              {
+                "html": "<section id=\"sheet\" class=\"panel day-panel\" aria-label=\"Selected day roster\">",
+                "target": [
+                  "#sheet"
+                ]
+              },
+              {
+                "html": "<dialog id=\"mobile-day-dialog\" aria-labelledby=\"selected-day-heading\" open=\"\">",
+                "target": [
+                  "#mobile-day-dialog"
+                ]
+              }
+            ],
+            "impact": "serious",
+            "message": "Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+          }
+        ],
+        "all": [],
+        "none": [],
+        "impact": "serious",
+        "html": "<p>Frankie 1</p>",
+        "target": [
+          "section[aria-label=\"Off\"] > p:nth-child(3)"
+        ],
+        "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.77 (foreground color: #70887c, background color: #fffef8, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
+      }
+    ]
+  }
+]

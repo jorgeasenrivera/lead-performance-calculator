@@ -1,0 +1,22 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ [
++   'setItem'
++ ]
+- []
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:57:37 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [ 'setItem' ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

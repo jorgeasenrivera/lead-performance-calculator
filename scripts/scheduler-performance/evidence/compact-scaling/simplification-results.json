@@ -1,0 +1,74 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 2,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 2,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 1,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 2,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "status": "passed"
+  }
+]

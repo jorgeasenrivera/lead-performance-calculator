@@ -1,0 +1,9 @@
+{
+  "unitTests": 1064,
+  "unitFailures": 0,
+  "productionBuild": "passed",
+  "isolatedBuild": "passed",
+  "testedPlannerBytesMatchFinalBuild": true,
+  "deploymentFiles": 51,
+  "manifestSha256": "0121cd20d1b7fc57fda7d9ff1bef4628d5cdbbf3d3bedf22d6137355f8edcd84"
+}

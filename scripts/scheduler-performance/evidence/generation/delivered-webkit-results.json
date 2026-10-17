@@ -1,0 +1,1046 @@
+[
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "10",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "2",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "9",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "1",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "8",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "14",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "6",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.109375,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      },
+      {
+        "width": 105.125,
+        "height": 22,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 93.1875,
+        "bottom": 9
+      }
+    ],
+    "cards": [
+      {
+        "width": 484.15625,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 484.15625,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 484.15625,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 484.15625,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 484.15625,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 2,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "10",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "2",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "9",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "1",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "8",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "14",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "6",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      },
+      {
+        "width": 450,
+        "height": 44,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "cardHeight": 156.390625,
+        "bottom": 9
+      }
+    ],
+    "cards": [
+      {
+        "width": 1350,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 1350,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 1350,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 1350,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 1350,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 340,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 42,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "fixture": "0 / 123456 / missing / closed / future",
+    "strips": [],
+    "cards": [
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "0",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "123456",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Unknown",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Closed",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      },
+      {
+        "width": 270,
+        "height": 84,
+        "overflow": false,
+        "label": "Delivered",
+        "value": "Pending",
+        "oneLine": true,
+        "contained": true,
+        "bottom": null
+      }
+    ],
+    "status": "passed"
+  }
+]

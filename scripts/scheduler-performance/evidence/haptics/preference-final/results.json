@@ -1,0 +1,20 @@
+[
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "saved": "0",
+    "initialPreference": true,
+    "noPersistence": true,
+    "scopedAxe": true
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "saved": "0",
+    "initialPreference": true,
+    "noPersistence": true,
+    "scopedAxe": true
+  }
+]

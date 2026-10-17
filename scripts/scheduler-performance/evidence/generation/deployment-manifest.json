@@ -1,0 +1,257 @@
+[
+  {
+    "file": "app-icon-dark.svg",
+    "sha": "f94b68c8593750c4cf9c7a01d6be0f7026931a8a",
+    "size": 1661
+  },
+  {
+    "file": "app-icon-light.svg",
+    "sha": "c5bcad468aa5c0783309777eb70a03509521bb9b",
+    "size": 1661
+  },
+  {
+    "file": "apple-touch-icon.png",
+    "sha": "a105377985e809268f05e51c085392ac69ab5c93",
+    "size": 6794
+  },
+  {
+    "file": "assets/FenceEditor-BKxv7Peu.js",
+    "sha": "e127ac8300c61d2a70b5e550a6dcdca3d4f16e51",
+    "size": 7763
+  },
+  {
+    "file": "assets/index-B1WmSE62.css",
+    "sha": "ae1316173bc58a6d740eed1dc6c143f32746d694",
+    "size": 10563
+  },
+  {
+    "file": "assets/index-DEWjjBJB.js",
+    "sha": "a61051a0644d332b7c285c9dc2cc85dc53caba90",
+    "size": 2034511
+  },
+  {
+    "file": "assets/leaderboard-template-BWPwLIt8.js",
+    "sha": "f6ee020ebb0a93e0b21445851802f59e869e5b26",
+    "size": 86914
+  },
+  {
+    "file": "assets/leaflet-CIGW-MKW.css",
+    "sha": "1927d806eaea2db99c54ce4f9d43acb40802dab9",
+    "size": 15607
+  },
+  {
+    "file": "assets/leaflet-src-BR-gH2Ev.js",
+    "sha": "17f5ecfea7f9cf73fd05d1124262ea4f7ec94a04",
+    "size": 149983
+  },
+  {
+    "file": "assets/papaparse.min-Dax-k0Xv.js",
+    "sha": "d6318bf028c0a5d7073ca20612718ea52d81b1d2",
+    "size": 18888
+  },
+  {
+    "file": "assets/pdf-WHQsUQJx.js",
+    "sha": "f1b7d44ff65f71fb6fb8123afd56b4f42464d6f5",
+    "size": 329143
+  },
+  {
+    "file": "assets/pdf.worker.min-CElaEpGn.js",
+    "sha": "d4c62537a775dd90dae2559ba1ebe750ddf645f6",
+    "size": 67
+  },
+  {
+    "file": "assets/pdf.worker.min-DKQKFyKK.js",
+    "sha": "49162d546a1a5a11bd2c932b2d1b2520daef1ec3",
+    "size": 1087212
+  },
+  {
+    "file": "favicon-16.png",
+    "sha": "dd3eb6ccd3edad79e339ebef731a6f053597f358",
+    "size": 520
+  },
+  {
+    "file": "favicon-32.png",
+    "sha": "a25d5c8bf5cacb06e80d2a311cdf027f9635bd87",
+    "size": 1131
+  },
+  {
+    "file": "favicon.svg",
+    "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+    "size": 1598
+  },
+  {
+    "file": "fonts/README.md",
+    "sha": "8bbde3da436c65059125f00ee02f937d9a824e43",
+    "size": 920
+  },
+  {
+    "file": "fonts/geist-latin-ext.woff2",
+    "sha": "66a33f6a78ae71cd10e9cce31bd3c987af14297e",
+    "size": 16540
+  },
+  {
+    "file": "fonts/geist-latin.woff2",
+    "sha": "9d846db84c501327431670fe23b1a8ea1d2a5349",
+    "size": 29288
+  },
+  {
+    "file": "fonts/geist-mono-latin-ext.woff2",
+    "sha": "fbd56f5f92011dd1c11b39396cef32d44d8be3ab",
+    "size": 14712
+  },
+  {
+    "file": "fonts/geist-mono-latin.woff2",
+    "sha": "0e04bb6e7b54057d64c421b959c8c22774ae632d",
+    "size": 23108
+  },
+  {
+    "file": "fonts/space-grotesk-latin-ext.woff2",
+    "sha": "1efa87763419826a7a5376a1616fa19d4e9bc2e4",
+    "size": 18924
+  },
+  {
+    "file": "fonts/space-grotesk-latin.woff2",
+    "sha": "cbee7234c1d753e7c63f8ea9bdb19c87f5378bfb",
+    "size": 22320
+  },
+  {
+    "file": "icon-512.png",
+    "sha": "12cdf94012dd65f272296448503f4bedffdfaa36",
+    "size": 21112
+  },
+  {
+    "file": "index.html",
+    "sha": "427520a90efb06a1d8e674368cc87b9685d41781",
+    "size": 6144
+  },
+  {
+    "file": "planner/app.mjs",
+    "sha": "743f7457fefbb4d8375fcb089c14850a64f6f746",
+    "size": 56069
+  },
+  {
+    "file": "planner/assignment-view.mjs",
+    "sha": "dce558d38f4fe4b01d79b2095464c6e6c95e8a86",
+    "size": 3329
+  },
+  {
+    "file": "planner/demand-context.mjs",
+    "sha": "48c9dc7bcb669084c52c43e7a41eeeff11a9fb16",
+    "size": 1784
+  },
+  {
+    "file": "planner/generation-ui.mjs",
+    "sha": "090efa62a8c5cc424e4896c23cef9eb000eea496",
+    "size": 13087
+  },
+  {
+    "file": "planner/generation-worker.mjs",
+    "sha": "a8d4e16f645e1faff16dfefa57e8a01045f7b64a",
+    "size": 191
+  },
+  {
+    "file": "planner/generation.mjs",
+    "sha": "c2b4211927129d22e4d26f409eca0ee7dbd1e002",
+    "size": 16999
+  },
+  {
+    "file": "planner/import-ui.mjs",
+    "sha": "0df1862a576250318df8c0fab7daf06fb46238e5",
+    "size": 6746
+  },
+  {
+    "file": "planner/index.html",
+    "sha": "90b6f66d347f2a621ac96f885c14bced33a65a23",
+    "size": 459
+  },
+  {
+    "file": "planner/mobile-roster.mjs",
+    "sha": "53caf8d7e3fa5836491f55043b8a45443316f731",
+    "size": 1337
+  },
+  {
+    "file": "planner/model.mjs",
+    "sha": "e6be66633b06fe17cbfd541297be546ba69893f9",
+    "size": 5180
+  },
+  {
+    "file": "planner/month-model.mjs",
+    "sha": "0096c8aa6765506c1dd5982cb8e563d0c83eeb7b",
+    "size": 14299
+  },
+  {
+    "file": "planner/name-key.mjs",
+    "sha": "099e193d05ac5b43ec55182fe627d68b8a2e9d6f",
+    "size": 305
+  },
+  {
+    "file": "planner/sage-icons.mjs",
+    "sha": "9ba07d4c4473fdc6c6ff09e2f38ec4e0d0e25d15",
+    "size": 1951
+  },
+  {
+    "file": "planner/schedule-import.mjs",
+    "sha": "303c221e578b706c7e255cadaaef4c93fd017dd2",
+    "size": 13330
+  },
+  {
+    "file": "planner/shift-intervals.mjs",
+    "sha": "c0ce03fae595faa03230c30d4f9573d81b2b181a",
+    "size": 3053
+  },
+  {
+    "file": "planner/store-editor.mjs",
+    "sha": "284f583922624dddd948f88df64b1424984fc2d7",
+    "size": 2271
+  },
+  {
+    "file": "planner/style.css",
+    "sha": "993ab367ebcc6acee69b3ded2c4cddf521c2be05",
+    "size": 42560
+  },
+  {
+    "file": "planner/team-balance.mjs",
+    "sha": "45a8ffabb6f115a8cd21c1bff2d800f325bc9399",
+    "size": 9600
+  },
+  {
+    "file": "planner/team-model.mjs",
+    "sha": "dec92eb7e5f1c881acd2c574679c37d3df2dd645",
+    "size": 3119
+  },
+  {
+    "file": "planner/team-ui.mjs",
+    "sha": "9aa24ee06040963ccdb89109d66066e902ccad8e",
+    "size": 13209
+  },
+  {
+    "file": "privacy.html",
+    "sha": "da0980e6bea256ff5fef5d403d600e774c6152ad",
+    "size": 10901
+  },
+  {
+    "file": "sage-lockup-on-ink.svg",
+    "sha": "250d0fcff16b7b6dcfc9196b30d5ca1a42a6c672",
+    "size": 5468
+  },
+  {
+    "file": "sage-lockup-print.svg",
+    "sha": "18d74801980cb78f689f6eb724b2a6bc98638a87",
+    "size": 5434
+  },
+  {
+    "file": "sage-lockup.svg",
+    "sha": "a65b000931acef7aa1f1742231cb1bb14fcd5b9b",
+    "size": 5434
+  },
+  {
+    "file": "sage-mark.svg",
+    "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+    "size": 1598
+  },
+  {
+    "file": "support.html",
+    "sha": "aa4dc253e75addc4717b5f5381e38f799cb74db8",
+    "size": 5669
+  }
+]

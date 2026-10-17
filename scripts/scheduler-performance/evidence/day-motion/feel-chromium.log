@@ -1,0 +1,32 @@
+
+> lead-performance-calculator@1.0.0 feel
+> node scripts/feel.mjs
+
+feel · chromium · 400 ms on every data request · http://127.0.0.1:5178/
+  full sign-in to the floor  7223 ms  (the jump; by design)
+  ok   tap Lunch to shown                                17 ms  bar 50   [17, 13, 46]
+  ok   tap Here to shown                                 19 ms  bar 50   [14, 19, 20]
+  ok   swipe: the page under the thumb, px off between frames     0 px  bar 2
+  ok   swipe: frames dropped while the thumb moved        0     bar 1
+       43 long frame(s) the page rode out at the slop, 15 px, which is the runner and not the phone
+  OVER ground: biggest change between two frames of the blend    28     bar 24
+  ok   Floor to Phone tab                                76 ms  bar 110   [90, 76, 34]
+  ok   Phone to Floor tab                                74 ms  bar 110   [74, 120, 72]
+  ok   two taps in one round trip: Here > Lunch > Here, server waiting 
+  ok   FlyBy sent to chip                                39 ms  bar 100
+  ok   Never mind to chip gone                           17 ms  bar 100
+  ok   press: held scale 0.96, released none          
+  ok   press: one tick at touch-down ([6])            
+  repeat full sign-in to the floor  16194 ms  (the jump; by design)
+feel: the reduced-motion sign-in did not land in 40 s. At that moment: {"phases":["cruise","off"],"html":"js-anim is-touch bg-idle sage-flight-hover-hold sage-assemble sage-beat-assemble signin-gone","signIn":"absent","bar":"0 in the page","rootInert":false,"stall":false,"url":"/","text":""}
+feel: failure evidence: 47 events retained, 0 older events dropped
+  page errors: TypeError: Tt is not a function
+feel: page.waitForSelector: Timeout 40000ms exceeded.
+Call log:
+[2m  - waiting for locator('.ar-bar') to be visible[22m
+
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

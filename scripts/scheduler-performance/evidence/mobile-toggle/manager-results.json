@@ -1,0 +1,98 @@
+{
+  "head": "0ecdd3c863a830a55ae60fd105d58c718e52adb3",
+  "results": [
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "scale": 1,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "scale": 2,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 390,
+      "scale": 1,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 390,
+      "scale": 2,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 320,
+      "scale": 1,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 320,
+      "scale": 2,
+      "result": "passed"
+    },
+    {
+      "engine": "webkit",
+      "width": 1440,
+      "scale": 1,
+      "result": "passed"
+    },
+    {
+      "engine": "webkit",
+      "width": 1440,
+      "scale": 2,
+      "result": "passed"
+    },
+    {
+      "engine": "webkit",
+      "width": 390,
+      "scale": 1,
+      "result": "passed"
+    },
+    {
+      "engine": "webkit",
+      "width": 390,
+      "scale": 2,
+      "result": "passed"
+    },
+    {
+      "engine": "webkit",
+      "width": 320,
+      "scale": 1,
+      "result": "passed"
+    },
+    {
+      "engine": "webkit",
+      "width": 320,
+      "scale": 2,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "browserDefaultFont": 32,
+      "injectedCSSScaling": false,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 390,
+      "browserDefaultFont": 32,
+      "injectedCSSScaling": false,
+      "result": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 320,
+      "browserDefaultFont": 32,
+      "injectedCSSScaling": false,
+      "result": "passed"
+    }
+  ]
+}

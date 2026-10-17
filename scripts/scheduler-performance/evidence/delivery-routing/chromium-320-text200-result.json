@@ -1,0 +1,31 @@
+{
+  "engine": "chromium",
+  "width": 320,
+  "scale": 2,
+  "motion": "no-preference",
+  "textGrowth": [
+    {
+      "selector": ".fr-nm.bp-nm",
+      "before": 20,
+      "after": 40,
+      "ratio": 2
+    },
+    {
+      "selector": ".bp-ask small",
+      "before": 10,
+      "after": 20,
+      "ratio": 2
+    },
+    {
+      "selector": "[data-delivered-route]",
+      "before": 16,
+      "after": 32,
+      "ratio": 2
+    }
+  ],
+  "status": "passed",
+  "noNestedDialogs": true,
+  "staticFontReads": 0,
+  "networkWrites": 0,
+  "persistenceWrites": 0
+}

@@ -1,0 +1,20 @@
+chromium-1440-1-pointer passed
+chromium-1440-2-pointer passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+false !== true
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:19:240 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

@@ -1,0 +1,20 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ '0px 0.409734px'
+- 'none'
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:29:484 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: '0px 0.409734px',
+  expected: 'none',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

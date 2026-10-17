@@ -1,0 +1,199 @@
+{
+  "cases": [
+    {
+      "key": "chromium-1440-1",
+      "ms": 601,
+      "view": {
+        "violations": [],
+        "passes": 20
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "chromium-390-1",
+      "ms": 624.8000000007451,
+      "view": {
+        "violations": [],
+        "passes": 14
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "chromium-320-2",
+      "ms": 680.9000000003725,
+      "view": {
+        "violations": [],
+        "passes": 14
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "chromium-failure-cancel",
+      "workerFailure": true,
+      "inflightCancel": true,
+      "escapeFocus": true
+    },
+    {
+      "key": "webkit-1440-1",
+      "ms": 1236,
+      "view": {
+        "violations": [],
+        "passes": 20
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "webkit-390-1",
+      "ms": 1426,
+      "view": {
+        "violations": [],
+        "passes": 14
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "webkit-320-2",
+      "ms": 1238,
+      "view": {
+        "violations": [],
+        "passes": 14
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "webkit-failure-cancel",
+      "workerFailure": true,
+      "inflightCancel": true,
+      "escapeFocus": true
+    }
+  ],
+  "latency": [
+    {
+      "engine": "chromium",
+      "people": 100,
+      "days": 31,
+      "samples": [
+        901.2999999988824,
+        742.5999999996275,
+        841.6999999992549,
+        753,
+        916.0999999996275,
+        849.8000000007451,
+        748.4000000003725,
+        787.0999999996275,
+        768.7000000011176,
+        773.8000000007451,
+        818.4000000003725,
+        2060.7000000011176,
+        1810,
+        854.9000000003725,
+        823.5999999996275,
+        831.8000000007451,
+        715.4000000003725,
+        984.5,
+        960.0999999996275,
+        1001.0999999996275
+      ],
+      "p95Ms": 1810,
+      "targetMs": 30000,
+      "passed": true
+    },
+    {
+      "engine": "webkit",
+      "people": 100,
+      "days": 31,
+      "samples": [
+        1450,
+        1322,
+        1013,
+        1162,
+        929,
+        850,
+        1120,
+        997,
+        1461,
+        1188,
+        1412,
+        999,
+        1544,
+        933,
+        905,
+        1180,
+        913,
+        996,
+        1369,
+        1425
+      ],
+      "p95Ms": 1461,
+      "targetMs": 30000,
+      "passed": true
+    }
+  ],
+  "errors": []
+}

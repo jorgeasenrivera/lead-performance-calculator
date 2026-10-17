@@ -1,0 +1,28 @@
+{
+  "engine": "chromium",
+  "width": 390,
+  "scale": 1,
+  "status": "passed",
+  "geometry": {
+    "#period-heading": {
+      "top": 8,
+      "bottom": 52
+    },
+    "#generate-month": {
+      "top": 120,
+      "bottom": 164
+    },
+    ".month-days": {
+      "top": 228,
+      "bottom": 653.578125
+    }
+  },
+  "textGrowth": [],
+  "noPersistenceWrites": true,
+  "noNetworkWrites": true,
+  "scopedAxeScans": 2,
+  "splitShiftsPreserved": true,
+  "absenceProvenancePreserved": true,
+  "pendingAcrossDates": true,
+  "cancelRestoresApplied": true
+}

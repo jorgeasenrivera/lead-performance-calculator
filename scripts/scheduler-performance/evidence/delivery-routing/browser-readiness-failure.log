@@ -1,0 +1,8 @@
+file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:16
+  const f=p.frames().find(f=>f.url().includes('/planner/'));await f.locator('#workspace').waitFor({state:'attached'});
+                                                                    ^
+
+TypeError: Cannot read properties of undefined (reading 'locator')
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:16:69
+
+Node.js v24.19.0

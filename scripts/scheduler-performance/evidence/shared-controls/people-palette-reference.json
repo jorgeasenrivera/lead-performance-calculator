@@ -1,0 +1,27 @@
+{
+  ".pe-role": {
+    "background": "rgba(0, 0, 0, 0)",
+    "image": "linear-gradient(90deg, rgb(246, 227, 195), rgba(246, 227, 195, 0) 72%)",
+    "color": "rgb(21, 33, 27)"
+  },
+  ".pe-tools .fr-tool": {
+    "background": "rgb(86, 125, 97)",
+    "image": "none",
+    "color": "rgb(255, 255, 255)"
+  },
+  ".pe-bulk": {
+    "background": "rgb(243, 246, 242)",
+    "image": "none",
+    "color": "rgb(21, 33, 27)"
+  },
+  ".pe-acct": {
+    "background": "rgb(234, 242, 255)",
+    "image": "none",
+    "color": "rgb(46, 125, 224)"
+  },
+  ".pe-row": {
+    "background": "rgb(232, 241, 234)",
+    "image": "none",
+    "color": "rgb(21, 33, 27)"
+  }
+}

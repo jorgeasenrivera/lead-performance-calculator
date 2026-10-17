@@ -1,0 +1,208 @@
+[
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "status": "passed",
+    "geometry": {
+      "#period-heading": {
+        "top": 8,
+        "bottom": 52
+      },
+      "#generate-month": {
+        "top": 122,
+        "bottom": 166
+      },
+      ".month-days": {
+        "top": 230,
+        "bottom": 559.578125
+      }
+    },
+    "textGrowth": [],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true,
+    "scopedAxeScans": 2,
+    "splitShiftsPreserved": true,
+    "absenceProvenancePreserved": true,
+    "pendingAcrossDates": true,
+    "cancelRestoresApplied": true
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "status": "passed",
+    "geometry": {
+      "#period-heading": {
+        "top": 8,
+        "bottom": 126.78125
+      },
+      "#generate-month": {
+        "top": 337.171875,
+        "bottom": 401.171875
+      },
+      ".month-days": {
+        "top": 624.34375,
+        "bottom": 2042.25
+      }
+    },
+    "textGrowth": [
+      {
+        "selector": ".day-heading",
+        "before": 18,
+        "after": 36,
+        "ratio": 2
+      },
+      {
+        "selector": ".person-identity strong",
+        "before": 16,
+        "after": 32,
+        "ratio": 2
+      },
+      {
+        "selector": "[data-status-person=p0]",
+        "before": 16,
+        "after": 32,
+        "ratio": 2
+      }
+    ],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true,
+    "scopedAxeScans": 2,
+    "splitShiftsPreserved": true,
+    "absenceProvenancePreserved": true,
+    "pendingAcrossDates": true,
+    "cancelRestoresApplied": true
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "status": "passed",
+    "geometry": {
+      "#period-heading": {
+        "top": 76,
+        "bottom": 120
+      },
+      "#generate-month": {
+        "top": 130,
+        "bottom": 174
+      },
+      ".month-days": {
+        "top": 294,
+        "bottom": 966.703125
+      }
+    },
+    "textGrowth": [],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true,
+    "scopedAxeScans": 2,
+    "splitShiftsPreserved": true,
+    "absenceProvenancePreserved": true,
+    "pendingAcrossDates": true,
+    "cancelRestoresApplied": true
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "status": "passed",
+    "geometry": {
+      "#period-heading": {
+        "top": 8,
+        "bottom": 52
+      },
+      "#generate-month": {
+        "top": 122,
+        "bottom": 166
+      },
+      ".month-days": {
+        "top": 230,
+        "bottom": 559.578125
+      }
+    },
+    "textGrowth": [],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true,
+    "scopedAxeScans": 2,
+    "splitShiftsPreserved": true,
+    "absenceProvenancePreserved": true,
+    "pendingAcrossDates": true,
+    "cancelRestoresApplied": true
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "status": "passed",
+    "geometry": {
+      "#period-heading": {
+        "top": 8,
+        "bottom": 126.78125
+      },
+      "#generate-month": {
+        "top": 337.171875,
+        "bottom": 401.171875
+      },
+      ".month-days": {
+        "top": 624.34375,
+        "bottom": 2042.25
+      }
+    },
+    "textGrowth": [
+      {
+        "selector": ".day-heading",
+        "before": 18,
+        "after": 36,
+        "ratio": 2
+      },
+      {
+        "selector": ".person-identity strong",
+        "before": 16,
+        "after": 32,
+        "ratio": 2
+      },
+      {
+        "selector": "[data-status-person=p0]",
+        "before": 16,
+        "after": 32,
+        "ratio": 2
+      }
+    ],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true,
+    "scopedAxeScans": 2,
+    "splitShiftsPreserved": true,
+    "absenceProvenancePreserved": true,
+    "pendingAcrossDates": true,
+    "cancelRestoresApplied": true
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "status": "passed",
+    "geometry": {
+      "#period-heading": {
+        "top": 76,
+        "bottom": 120
+      },
+      "#generate-month": {
+        "top": 130,
+        "bottom": 174
+      },
+      ".month-days": {
+        "top": 294,
+        "bottom": 966.703125
+      }
+    },
+    "textGrowth": [],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true,
+    "scopedAxeScans": 2,
+    "splitShiftsPreserved": true,
+    "absenceProvenancePreserved": true,
+    "pendingAcrossDates": true,
+    "cancelRestoresApplied": true
+  }
+]

@@ -1,0 +1,62 @@
+[
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "axe": {
+      "violations": [],
+      "passes": 11
+    },
+    "longNames": true,
+    "outsideDismiss": true,
+    "scrollRestoration": true,
+    "editTransition": true,
+    "resize": true,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "axe": {
+      "violations": [],
+      "passes": 12
+    },
+    "longNames": true,
+    "outsideDismiss": true,
+    "scrollRestoration": true,
+    "editTransition": true,
+    "resize": true,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "axe": {
+      "violations": [],
+      "passes": 11
+    },
+    "longNames": true,
+    "outsideDismiss": true,
+    "scrollRestoration": true,
+    "editTransition": true,
+    "resize": true,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "axe": {
+      "violations": [],
+      "passes": 12
+    },
+    "longNames": true,
+    "outsideDismiss": true,
+    "scrollRestoration": true,
+    "editTransition": true,
+    "resize": true,
+    "status": "passed"
+  }
+]

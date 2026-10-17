@@ -1,0 +1,388 @@
+chromium-1440-1-pointer passed
+chromium-1440-2-pointer passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ [
++   {
++     id: 'color-contrast',
++     nodes: [
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-lbl:nth-child(2)'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-r.bp-lbl:nth-child(3)'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-r.bp-lbl:nth-child(4)'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(3) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(3) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(3) > .bp-bad.bp-verdict'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 3.2 (foreground color: #ffffff, background color: #eb6834, font size: 7.1pt (9.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(4) > .fr-av.bp-sm'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(4) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(4) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(4) > .bp-bad.bp-verdict'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(5) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(5) > .bp-verdict.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(6) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(6) > .bp-bad.bp-verdict'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 3.24 (foreground color: #ffffff, background color: #33a346, font size: 7.1pt (9.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(7) > .fr-av.bp-sm'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(7) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(7) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(7) > .bp-bad.bp-verdict'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(8) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(8) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(8) > .bp-verdict.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(9) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(9) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(9) > .bp-bad.bp-verdict'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(10) > .bp-who > .bp-lim > b'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.bp-row[type="button"]:nth-child(10) > .bp-bad.bp-verdict'
++         ]
++       }
++     ]
++   }
++ ]
+- []
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:24:76 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [
+    {
+      id: 'color-contrast',
+      nodes: [
+        {
+          target: [ '.bp-lbl:nth-child(2)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.bp-r.bp-lbl:nth-child(3)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.bp-r.bp-lbl:nth-child(4)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 9.4pt (12.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(3) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(3) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(3) > .bp-bad.bp-verdict'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.bp-row[type="button"]:nth-child(4) > .fr-av.bp-sm' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 3.2 (foreground color: #ffffff, background color: #eb6834, font size: 7.1pt (9.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(4) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(4) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(4) > .bp-bad.bp-verdict'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(5) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(5) > .bp-verdict.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(6) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(6) > .bp-bad.bp-verdict'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.bp-row[type="button"]:nth-child(7) > .fr-av.bp-sm' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 3.24 (foreground color: #ffffff, background color: #33a346, font size: 7.1pt (9.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(7) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(7) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(7) > .bp-bad.bp-verdict'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(8) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(8) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(8) > .bp-verdict.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(9) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(9) > .bp-who > .bp-lim > .bp-stnd.bp-warn'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.06 (foreground color: #e0a100, background color: #fff3de, font size: 5.6pt (7.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(9) > .bp-bad.bp-verdict'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(10) > .bp-who > .bp-lim > b'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.4pt (8.5px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [
+            '.bp-row[type="button"]:nth-child(10) > .bp-bad.bp-verdict'
+          ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 4.34 (foreground color: #c8352b, background color: #fbe5e0, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1'
+        }
+      ]
+    }
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

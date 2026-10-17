@@ -1,0 +1,273 @@
+{
+  "startingHead": "356721cd3cb9d5d20f3af33991e626346460a77c",
+  "date": "2026-10-16",
+  "unitTests": 998,
+  "importModelTests": 25,
+  "priorSourceReproduction": "expected failure: prior importer permits the Cedar cap violation",
+  "builds": [
+    "production passed",
+    "isolated passed"
+  ],
+  "browserCases": {
+    "delivered-chromium": 12,
+    "delivered-webkit": 12,
+    "import-chromium": 6,
+    "import-webkit": 6,
+    "cap-chromium": 1,
+    "cap-webkit": 1
+  },
+  "totalBrowserCases": 38,
+  "scopedAxeScans": 48,
+  "artifactFiles": [
+    {
+      "file": "app-icon-dark.svg",
+      "sha": "f94b68c8593750c4cf9c7a01d6be0f7026931a8a",
+      "size": 1661
+    },
+    {
+      "file": "app-icon-light.svg",
+      "sha": "c5bcad468aa5c0783309777eb70a03509521bb9b",
+      "size": 1661
+    },
+    {
+      "file": "apple-touch-icon.png",
+      "sha": "a105377985e809268f05e51c085392ac69ab5c93",
+      "size": 6794
+    },
+    {
+      "file": "assets/FenceEditor-KS2YwaIC.js",
+      "sha": "b261a965125a50394de00fc8e751afaa5ea027ba",
+      "size": 7763
+    },
+    {
+      "file": "assets/index-B1WmSE62.css",
+      "sha": "ae1316173bc58a6d740eed1dc6c143f32746d694",
+      "size": 10563
+    },
+    {
+      "file": "assets/index-D8E1UvbJ.js",
+      "sha": "d5b9307a7233896b5d5ca425ecdb9e87cbb6c685",
+      "size": 2022811
+    },
+    {
+      "file": "assets/leaderboard-template-BWPwLIt8.js",
+      "sha": "f6ee020ebb0a93e0b21445851802f59e869e5b26",
+      "size": 86914
+    },
+    {
+      "file": "assets/leaflet-CIGW-MKW.css",
+      "sha": "1927d806eaea2db99c54ce4f9d43acb40802dab9",
+      "size": 15607
+    },
+    {
+      "file": "assets/leaflet-src-CU5pufjo.js",
+      "sha": "bf2377085644b4f7016d142c0a68d454ee9dd252",
+      "size": 149983
+    },
+    {
+      "file": "assets/papaparse.min-DOpL1WYi.js",
+      "sha": "ce559de7f110e37a63f418875bd2eba4e3072549",
+      "size": 18888
+    },
+    {
+      "file": "assets/pdf-CYsaca9u.js",
+      "sha": "02b7dd7e0631d25c96d01afa0fc9fe9d28edafb1",
+      "size": 329143
+    },
+    {
+      "file": "assets/pdf.worker.min-CElaEpGn.js",
+      "sha": "d4c62537a775dd90dae2559ba1ebe750ddf645f6",
+      "size": 67
+    },
+    {
+      "file": "assets/pdf.worker.min-DKQKFyKK.js",
+      "sha": "49162d546a1a5a11bd2c932b2d1b2520daef1ec3",
+      "size": 1087212
+    },
+    {
+      "file": "favicon-16.png",
+      "sha": "dd3eb6ccd3edad79e339ebef731a6f053597f358",
+      "size": 520
+    },
+    {
+      "file": "favicon-32.png",
+      "sha": "a25d5c8bf5cacb06e80d2a311cdf027f9635bd87",
+      "size": 1131
+    },
+    {
+      "file": "favicon.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "fonts/README.md",
+      "sha": "8bbde3da436c65059125f00ee02f937d9a824e43",
+      "size": 920
+    },
+    {
+      "file": "fonts/geist-latin-ext.woff2",
+      "sha": "66a33f6a78ae71cd10e9cce31bd3c987af14297e",
+      "size": 16540
+    },
+    {
+      "file": "fonts/geist-latin.woff2",
+      "sha": "9d846db84c501327431670fe23b1a8ea1d2a5349",
+      "size": 29288
+    },
+    {
+      "file": "fonts/geist-mono-latin-ext.woff2",
+      "sha": "fbd56f5f92011dd1c11b39396cef32d44d8be3ab",
+      "size": 14712
+    },
+    {
+      "file": "fonts/geist-mono-latin.woff2",
+      "sha": "0e04bb6e7b54057d64c421b959c8c22774ae632d",
+      "size": 23108
+    },
+    {
+      "file": "fonts/space-grotesk-latin-ext.woff2",
+      "sha": "1efa87763419826a7a5376a1616fa19d4e9bc2e4",
+      "size": 18924
+    },
+    {
+      "file": "fonts/space-grotesk-latin.woff2",
+      "sha": "cbee7234c1d753e7c63f8ea9bdb19c87f5378bfb",
+      "size": 22320
+    },
+    {
+      "file": "icon-512.png",
+      "sha": "12cdf94012dd65f272296448503f4bedffdfaa36",
+      "size": 21112
+    },
+    {
+      "file": "index.html",
+      "sha": "51cab49f420b45db36f40f85bbf40c1896dc619d",
+      "size": 6144
+    },
+    {
+      "file": "planner/app.mjs",
+      "sha": "af8e848cb473fa2cefcaaceb1956bd0872489835",
+      "size": 45664
+    },
+    {
+      "file": "planner/assignment-view.mjs",
+      "sha": "1154e2c10ca80b46586fead9a2a53b7c242edf93",
+      "size": 2554
+    },
+    {
+      "file": "planner/demand-context.mjs",
+      "sha": "48c9dc7bcb669084c52c43e7a41eeeff11a9fb16",
+      "size": 1784
+    },
+    {
+      "file": "planner/import-ui.mjs",
+      "sha": "ffebdd905a494e4a526bd0b402f3decfb71e94cb",
+      "size": 5626
+    },
+    {
+      "file": "planner/index.html",
+      "sha": "90b6f66d347f2a621ac96f885c14bced33a65a23",
+      "size": 459
+    },
+    {
+      "file": "planner/model.mjs",
+      "sha": "e6be66633b06fe17cbfd541297be546ba69893f9",
+      "size": 5180
+    },
+    {
+      "file": "planner/month-model.mjs",
+      "sha": "9cebf57ee498556c542d386b3af3439642a514c6",
+      "size": 10676
+    },
+    {
+      "file": "planner/sage-icons.mjs",
+      "sha": "9ba07d4c4473fdc6c6ff09e2f38ec4e0d0e25d15",
+      "size": 1951
+    },
+    {
+      "file": "planner/schedule-import.mjs",
+      "sha": "ae4c2f5812948cf347e85eeb816977cd1bc18ba7",
+      "size": 8823
+    },
+    {
+      "file": "planner/shift-intervals.mjs",
+      "sha": "c0ce03fae595faa03230c30d4f9573d81b2b181a",
+      "size": 3053
+    },
+    {
+      "file": "planner/store-editor.mjs",
+      "sha": "284f583922624dddd948f88df64b1424984fc2d7",
+      "size": 2271
+    },
+    {
+      "file": "planner/style.css",
+      "sha": "075cf4332a234a864117b9cce23b73905a506e52",
+      "size": 35739
+    },
+    {
+      "file": "privacy.html",
+      "sha": "da0980e6bea256ff5fef5d403d600e774c6152ad",
+      "size": 10901
+    },
+    {
+      "file": "sage-lockup-on-ink.svg",
+      "sha": "250d0fcff16b7b6dcfc9196b30d5ca1a42a6c672",
+      "size": 5468
+    },
+    {
+      "file": "sage-lockup-print.svg",
+      "sha": "18d74801980cb78f689f6eb724b2a6bc98638a87",
+      "size": 5434
+    },
+    {
+      "file": "sage-lockup.svg",
+      "sha": "a65b000931acef7aa1f1742231cb1bb14fcd5b9b",
+      "size": 5434
+    },
+    {
+      "file": "sage-mark.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "support.html",
+      "sha": "aa4dc253e75addc4717b5f5381e38f799cb74db8",
+      "size": 5669
+    }
+  ],
+  "sourceHashes": {
+    "planner.css": "54e29c5f65d4d6c4a4f46dfd6d73feb4a39d9d02f082ef57acdfe7aec60bd955",
+    "schedule-import.mjs": "e5fc7a41ab28f0bee8e81e9faf4750df2df75c9a0d42ddfe18b62de6615db715",
+    "schedule-import.test.mjs": "4032eb1fbe477760a764376e124b7d3a550c2c53df4f6351a5ca69bbf9135881",
+    "probe-delivered.mjs": "2ea87886a827758063ba98afe6c24b6cf1d02613758cc96640cbd0f65e2dc69e",
+    "probe-import.mjs": "c6f1607260d865ceb53b5cb469793d82a9c08c3f07092f1569a4ab8111412665",
+    "probe-import-cap.mjs": "a7e5f912299d68673ea7d9370825fac1593be9985b9de130b4907b3efafd6ca0"
+  },
+  "evidenceHashes": {
+    "build.log": "16ae97cd93f06e14660f3a8ded996a70c51f9c5933548a5e7ae4a48d9a8652a8",
+    "cap-chromium-results.json": "5fd77cb8f0bce42d68c1bb470e4f17d4464ba58827b2021b309dd686ea780c4c",
+    "cap-chromium.log": "4498fccd81208d3154acc22bb7e27059251cf1b9d86fa4425e1d5bbd08d06309",
+    "cap-webkit-results.json": "9ca49f601afd1b1d763e7ef707fc23b35f66a3bf64ada737e5016937fd89dd41",
+    "cap-webkit.log": "89fb49c1674824b21177c9787682683e6154cc8144dfeb6cc5efe258582e7e1b",
+    "chromium-1440-text100-calendar.png": "d5ebf7abb3819cde4a75c35153e29b029ccff0d45cca04ed741f7934be21360b",
+    "chromium-320-text200-calendar.png": "2d6d9b3ea96e698db8451fa550a996265d02ef3c49d3b5e51f88dcfd23affa4a",
+    "chromium-390-text100-calendar.png": "0d1d74771b05220226116cddc83940a7eca661563fc6a9e84c0d375a5ab27fb0",
+    "chromium-blocked-existing-cap.png": "829a4df5628abeefce14a28308b37c693b505d23d2ea9d6d18d5671d5c83313a",
+    "delivered-chromium-results.json": "92ec755b553acd5bb4396211837fc4f33399e2146010fb6c8c537af4109e7ac2",
+    "delivered-chromium.log": "c0816f39a72d24ab900d3e6faa30bc8b1abede69e8e2dbf05891d442f49658e6",
+    "delivered-webkit-results.json": "72e30379a0975ae36404312a7444b9f9156072c6a79aaa8144d390e871520f34",
+    "delivered-webkit.log": "33acc54153b1a599c3e1e3327f05d04d47581cb1c8f569abc1f7504860c5e450",
+    "import-chromium-results.json": "595150ab9f1b656d1a57ed608cca58e68f88634945b3e033f9067e02c4a62a32",
+    "import-chromium.log": "08b01b4329b549209e7624dfbd821020c73c25f7cbe04b83f7e6f0ec2fdfbbb6",
+    "import-webkit-results.json": "3aab39e52e6724e51fe6f327b7c2dbcc649ada269780406ee94ba60a40c4768a",
+    "import-webkit.log": "82f9fd295ab5ed0ff6dc0343fd59c3ef8fc08ca30b8a6c1c34d7fa784b64e466",
+    "production.log": "ee93cfa24bf2066b7a8e3437c108e0862349fbc1494808d532014cb82988d55f",
+    "reproduction.log": "4d0ca6b5f13e1303e74109e0f378bd8db5619183883cf756a55d0fb000d8355f",
+    "tests.log": "5c6c9f98e716bf58b12767b3ab9574366f220c2dc7e8593f788d452ef1c3d320",
+    "verification-notes.md": "28452134cb12b1082e4cbae8ba8e9d177892623b68c58e2f743395a1449a82e9",
+    "webkit-1440-text100-calendar.png": "b898bf51e95c876cc038a089b6dbf602734ec184d3d3cc4d76b54ef5d23c6543",
+    "webkit-320-text200-calendar.png": "1a208008cc834927dfdc0f15638735603e598ac679171eed7bb8e351a83222a6",
+    "webkit-390-text100-calendar.png": "1e2d846cf11fcb4bf774308e01952cd044fc87e56b0cc62451f9e4bd97a55e7e",
+    "webkit-blocked-existing-cap.png": "bbd51f82ad3fcfaaa0818b8bdd95820e1a006ca1830495aa42e5fc1996e8605a"
+  }
+}

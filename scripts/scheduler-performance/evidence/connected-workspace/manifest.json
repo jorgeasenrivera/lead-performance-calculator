@@ -1,0 +1,295 @@
+{
+  "startingHead": "52ae5d930a59156f000ce90c318601f4b9402b8f",
+  "date": "2026-10-16",
+  "unitTests": 973,
+  "browserCases": {
+    "additional-people-webkit": 16,
+    "coherent-flow-webkit": 6,
+    "native-touch-chromium": 4,
+    "additional-people-chromium": 16,
+    "coherent-flow-chromium": 6,
+    "connected-workspace-webkit": 12,
+    "connected-workspace-chromium": 12,
+    "monthly-webkit": 6,
+    "monthly-chromium": 6,
+    "demand-webkit": 8,
+    "demand-chromium": 8
+  },
+  "totalBrowserCases": 100,
+  "scopedAxeScans": 68,
+  "artifactFiles": [
+    {
+      "file": "app-icon-dark.svg",
+      "sha": "f94b68c8593750c4cf9c7a01d6be0f7026931a8a",
+      "size": 1661
+    },
+    {
+      "file": "app-icon-light.svg",
+      "sha": "c5bcad468aa5c0783309777eb70a03509521bb9b",
+      "size": 1661
+    },
+    {
+      "file": "apple-touch-icon.png",
+      "sha": "a105377985e809268f05e51c085392ac69ab5c93",
+      "size": 6794
+    },
+    {
+      "file": "assets/FenceEditor-Sf0oDv8T.js",
+      "sha": "1aa6f30700b51c335fe148978672b6d9248133a8",
+      "size": 7763
+    },
+    {
+      "file": "assets/index-B1WmSE62.css",
+      "sha": "ae1316173bc58a6d740eed1dc6c143f32746d694",
+      "size": 10563
+    },
+    {
+      "file": "assets/index-CyGaI2dG.js",
+      "sha": "eda7e79966b8c9000262e069c859bf5e634021ae",
+      "size": 2022811
+    },
+    {
+      "file": "assets/leaderboard-template-BWPwLIt8.js",
+      "sha": "f6ee020ebb0a93e0b21445851802f59e869e5b26",
+      "size": 86914
+    },
+    {
+      "file": "assets/leaflet-CIGW-MKW.css",
+      "sha": "1927d806eaea2db99c54ce4f9d43acb40802dab9",
+      "size": 15607
+    },
+    {
+      "file": "assets/leaflet-src-lgN0Fzrw.js",
+      "sha": "a8a74710fe626622d7e48c4df2d79536fb2406ed",
+      "size": 149983
+    },
+    {
+      "file": "assets/papaparse.min-Dh9p1nj-.js",
+      "sha": "26a8d748f9fbea551efa3146037b3e9eaf31cbe0",
+      "size": 18888
+    },
+    {
+      "file": "assets/pdf-BWrBU_7s.js",
+      "sha": "845aeb2db1bd064304b0adae3a83fb4e789e6be1",
+      "size": 329143
+    },
+    {
+      "file": "assets/pdf.worker.min-CElaEpGn.js",
+      "sha": "d4c62537a775dd90dae2559ba1ebe750ddf645f6",
+      "size": 67
+    },
+    {
+      "file": "assets/pdf.worker.min-DKQKFyKK.js",
+      "sha": "49162d546a1a5a11bd2c932b2d1b2520daef1ec3",
+      "size": 1087212
+    },
+    {
+      "file": "favicon-16.png",
+      "sha": "dd3eb6ccd3edad79e339ebef731a6f053597f358",
+      "size": 520
+    },
+    {
+      "file": "favicon-32.png",
+      "sha": "a25d5c8bf5cacb06e80d2a311cdf027f9635bd87",
+      "size": 1131
+    },
+    {
+      "file": "favicon.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "fonts/README.md",
+      "sha": "8bbde3da436c65059125f00ee02f937d9a824e43",
+      "size": 920
+    },
+    {
+      "file": "fonts/geist-latin-ext.woff2",
+      "sha": "66a33f6a78ae71cd10e9cce31bd3c987af14297e",
+      "size": 16540
+    },
+    {
+      "file": "fonts/geist-latin.woff2",
+      "sha": "9d846db84c501327431670fe23b1a8ea1d2a5349",
+      "size": 29288
+    },
+    {
+      "file": "fonts/geist-mono-latin-ext.woff2",
+      "sha": "fbd56f5f92011dd1c11b39396cef32d44d8be3ab",
+      "size": 14712
+    },
+    {
+      "file": "fonts/geist-mono-latin.woff2",
+      "sha": "0e04bb6e7b54057d64c421b959c8c22774ae632d",
+      "size": 23108
+    },
+    {
+      "file": "fonts/space-grotesk-latin-ext.woff2",
+      "sha": "1efa87763419826a7a5376a1616fa19d4e9bc2e4",
+      "size": 18924
+    },
+    {
+      "file": "fonts/space-grotesk-latin.woff2",
+      "sha": "cbee7234c1d753e7c63f8ea9bdb19c87f5378bfb",
+      "size": 22320
+    },
+    {
+      "file": "icon-512.png",
+      "sha": "12cdf94012dd65f272296448503f4bedffdfaa36",
+      "size": 21112
+    },
+    {
+      "file": "index.html",
+      "sha": "bcca3d2d6831e2ca6f98558246fb3b3fa93ed647",
+      "size": 6144
+    },
+    {
+      "file": "planner/app.mjs",
+      "sha": "28122d3dfdb55e09d88b9b30ad72aff5d544b760",
+      "size": 43600
+    },
+    {
+      "file": "planner/assignment-view.mjs",
+      "sha": "dc549ff32e93021b49f7f4b51d9f26b67ef79b1f",
+      "size": 2531
+    },
+    {
+      "file": "planner/demand-context.mjs",
+      "sha": "48c9dc7bcb669084c52c43e7a41eeeff11a9fb16",
+      "size": 1784
+    },
+    {
+      "file": "planner/index.html",
+      "sha": "90b6f66d347f2a621ac96f885c14bced33a65a23",
+      "size": 459
+    },
+    {
+      "file": "planner/model.mjs",
+      "sha": "e6be66633b06fe17cbfd541297be546ba69893f9",
+      "size": 5180
+    },
+    {
+      "file": "planner/month-model.mjs",
+      "sha": "3b368c1d13975dc8b8c21ca6fbebb3670ffa491b",
+      "size": 9297
+    },
+    {
+      "file": "planner/sage-icons.mjs",
+      "sha": "9ba07d4c4473fdc6c6ff09e2f38ec4e0d0e25d15",
+      "size": 1951
+    },
+    {
+      "file": "planner/store-editor.mjs",
+      "sha": "284f583922624dddd948f88df64b1424984fc2d7",
+      "size": 2271
+    },
+    {
+      "file": "planner/style.css",
+      "sha": "596409f1cceda014e9f8e184b47d79e509a8654e",
+      "size": 33922
+    },
+    {
+      "file": "privacy.html",
+      "sha": "da0980e6bea256ff5fef5d403d600e774c6152ad",
+      "size": 10901
+    },
+    {
+      "file": "sage-lockup-on-ink.svg",
+      "sha": "250d0fcff16b7b6dcfc9196b30d5ca1a42a6c672",
+      "size": 5468
+    },
+    {
+      "file": "sage-lockup-print.svg",
+      "sha": "18d74801980cb78f689f6eb724b2a6bc98638a87",
+      "size": 5434
+    },
+    {
+      "file": "sage-lockup.svg",
+      "sha": "a65b000931acef7aa1f1742231cb1bb14fcd5b9b",
+      "size": 5434
+    },
+    {
+      "file": "sage-mark.svg",
+      "sha": "c048255b90f22383f0ab843bf0fb56a940bee592",
+      "size": 1598
+    },
+    {
+      "file": "support.html",
+      "sha": "aa4dc253e75addc4717b5f5381e38f799cb74db8",
+      "size": 5669
+    }
+  ],
+  "sourceSha256": {
+    "scripts/scheduler-performance/month-model.test.mjs": "269e54858f1a65c15952d0f50cba67fa7fd396be33d8ba0df07213e17668d413",
+    "scripts/scheduler-performance/probe-connected-workspace.mjs": "bbc0ba63fa75b335d13fab284dc6ea3eb6567b337f700f5c2bbc4e127147e22f",
+    "scripts/scheduler-performance/capture-connected.mjs": "73c3f6ad66ac344aeb82e8b3dfcabe2f2c46b547ac4612ceae2aabf580e48889",
+    "scripts/scheduler-performance/probe-native-touch.mjs": "ec939990eda3a7472dce5d632fe881e5367550cdb133e5418cd0e4f829bf1bb7",
+    "scripts/scheduler-performance/probe-card-layout.mjs": "0206d126d9d5b0ec5c865be45730a11f71729ff52aed40bd58d3949792b25fcf",
+    "scripts/scheduler-performance/probe-calendar-first.mjs": "7eca9a0cb9ddab6fab7674274846c4aa5263396e052488445a2ab165ab427610",
+    "scripts/scheduler-performance/probe-timezone.mjs": "c7dff4ffef6bb42b656c5ed6edbe879c6f8ec180c9b3019239fc3fab34a4e241",
+    "scripts/scheduler-performance/probe-polish.mjs": "d0d501031ef53795acf58d14eb655f53892a206cdf1b4b98d6eae77efa1cc505",
+    "scripts/scheduler-performance/probe-demand.mjs": "6baf2db26ef6b1750c06248334da6539a9c86c812c97bcae6c9c5406de694314",
+    "scripts/scheduler-performance/assignment-view.test.mjs": "0946e3c11e7baecd25766e3ea78541f4a763d4ac50dbc49042c6b5a8ea407820",
+    "scripts/scheduler-performance/month-model.mjs": "640216d39f1b42e7e3e68b96671fe0735b25df1ba23405ca7d79b4927a5a3cb3",
+    "scripts/scheduler-performance/sage-icons.test.mjs": "4de184c236f5023393f1f403343ca7b3831bef03c1ce80fcb171df0cb8d8a704",
+    "scripts/scheduler-performance/sales-heat.test.mjs": "af9d25cc1e711ea338e03d0cbde3f0775b6e72c985c33d8c169fb646234538e4",
+    "scripts/scheduler-performance/probe-manager.mjs": "d389789f175f73f734a1c42b521e84d6251c08edc68c5836d4d6f776cdacc155",
+    "scripts/scheduler-performance/store-editor.mjs": "6eca994824794f37e5b0bec7a37d430c8393630f9a1b9ef573f6aaadeb05788d",
+    "scripts/scheduler-performance/probe-mobile-toggle.mjs": "583fc9e5414c506903d39804404ad24c3d6525ad830de06d0b3b2d4073dc63c3",
+    "scripts/scheduler-performance/probe.mjs": "e955efb13572c80c64945c951b8d734d6884bad44d2b95b0224f8d1f5f6399a6",
+    "scripts/scheduler-performance/store-editor.test.mjs": "d7f2ca5b233c545ab6a169066400a349864996c2b0189b415e174ee89ac674b2",
+    "scripts/scheduler-performance/assignment-view.mjs": "7b7875b99faa686d79dd2a8aff80bb38fbd1016a0ec1463226d2a861d28028d8",
+    "scripts/scheduler-performance/month-app.mjs": "a605659faaeb3eeb6728629439a435a33528a26cc980e0b633f8f25dfe28283f",
+    "scripts/scheduler-performance/html-finalize.test.mjs": "9abf2dcc97dc7c6975eace6e00032ac0013d35a84bee420c1f82ca7bc93fc425",
+    "scripts/scheduler-performance/demand-context.test.mjs": "cf91e859e1ab52224d6d16eb8e2becbc65d0b4b1618a9d91141a2e0fdf6fd48a",
+    "scripts/scheduler-performance/html-finalize.mjs": "b49915fde7e30e0a1cce66d90cf0bb03822d85ef249e54296837872a744d98bc",
+    "scripts/scheduler-performance/probe-hero-bottom.mjs": "314660c8a02a4a1bb4951521fc8264f1e93efdc125f81a4859d472b4c7c49394",
+    "scripts/scheduler-performance/entry.css": "fe50c514f0ad79fc65a4304f5d6ac6742c80f8e3271017a4de772dabf955c13a",
+    "scripts/scheduler-performance/planner.css": "9dfeacf23d093fd95876927f0caed9d6f7c55ec1f6565997d56a652d61d84512",
+    "scripts/scheduler-performance/probe-date-readability.mjs": "2a92e3e58bc211536c87b70d017763063069719cf3c2e62b1c029c4be8ebec4e",
+    "scripts/scheduler-performance/sage-icons.mjs": "87decee596b424898bb47f821d32e9879449e684f2c1904245ced01cbab8f641",
+    "scripts/scheduler-performance/date-readability.mjs": "a3dc3dc8ba51438a47c8b4a71e1c11dc6f9216679c18d3f06ee65f33d07529cf",
+    "scripts/scheduler-performance/build.mjs": "8275afc33684646ccc7c0309b596554f079ebd37c5a9f9e21c7b36108ff19acf",
+    "scripts/scheduler-performance/probe-coherent-flow.mjs": "fd2df76ce886e670f28b12350bd447c3b3121d2b248cf19f0c362b58952ebf6d",
+    "scripts/scheduler-performance/probe-review-corrections.mjs": "91f732165b76550596f03a8f595c6583802a9507b03cb2b11c3f9dda0c520be3",
+    "scripts/scheduler-performance/probe-simplification.mjs": "839c03165b2881c12d3060bff801be540a2b7a46c88314a98da400256b84794b",
+    "scripts/scheduler-performance/probe-monthly.mjs": "cb9ca6517ddc018d2c7615070778d35fbff140600945fc81b81c814c5fd82426",
+    "scripts/scheduler-performance/isolation.test.mjs": "6ecf063c3f9bed4091ee0be8ee3806e40f4691b5f5d223bfdb490997928c5db6",
+    "scripts/scheduler-performance/probe-input-reflow.mjs": "b42bec67d18993a47a3d2a52bafe4b1e8f6fdef46303e375421714979e721186",
+    "scripts/scheduler-performance/demand-context.mjs": "3c82e4476127c9abeef92ac32b486b482162af1a78d1d94c0c8f3ea030cace8f",
+    "scripts/scheduler-performance/probe-compact-scaling.mjs": "49336b128efbd7297df23622bab15c040f8038b85a23d8e69cade7faa730ac07",
+    "scripts/scheduler-performance/probe-additional-people.mjs": "59b099c6cde8605427490e0b47b215b29a2b60839e2d15aaa1d4332ec719062b",
+    "scripts/scheduler-performance/entry.jsx": "553b616e0a44a1b3cea6612fff2ad97ae5990e9243af16f86cdcd66a3a894b62"
+  },
+  "productionSourceSha256": {
+    "src/Manager.jsx": "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501",
+    "src/LeadPerformanceCalculator.jsx": "c7455aead78b8d4994c95914080aa61d068eb5934b9d279f02672d8520b2676a",
+    "src/manager-signal.css": "93fd31a911167c1313e63ae3c630f5d2173549935a730b5eeda307befe5d105d"
+  },
+  "screenshots": [
+    "chromium-1440x1000-text100-planning.png",
+    "chromium-1440x1000-text100-roster.png",
+    "chromium-320x640-text100-roster.png",
+    "chromium-320x640-text200-planning.png",
+    "chromium-320x640-text200-roster.png",
+    "chromium-360x225-text200-roster-viewport.png",
+    "chromium-390x844-text100-roster.png",
+    "chromium-desktop-demand-enabled.png",
+    "webkit-320-text200-roster.png"
+  ],
+  "fixtureClock": "2026-10-14T16:00:00Z",
+  "scope": "Fictional static preview only; no production source, data, access or writer-claim changes.",
+  "limits": [
+    "No physical iOS/Android, physical hybrid hardware, screen reader or real browser-menu zoom execution.",
+    "Fine-pointer reduced-width/height and 200% root text are distinct emulated layout checks.",
+    "Native touch delivery tested through Chromium CDP only; WebKit gesture checks use synthetic events.",
+    "68 scoped axe scans are not accessibility certification.",
+    "Protected deployment state/hash verification is separate from authenticated hosted rendering. Hosted access result is recorded on PR #478.",
+    "Daily estimates are historical ranges, not calibrated forecasts. Month context is comparable historical sales, not a target-month forecast.",
+    "History-linked staffing requires enabled entered capacity; default remains minimum-only. No hourly or role demand inferred.",
+    "Memory-only full-store-hour fictional planning. Existing cross-month policy and closed-assignment-removal limitations remain.",
+    "No private reference attachments copied or published."
+  ],
+  "reviewNotes": "verification-notes.md",
+  "releaseIdentity": "Exact remote commit, CI run and protected deployment are recorded on PR #478."
+}

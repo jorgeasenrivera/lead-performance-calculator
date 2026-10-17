@@ -1,0 +1,92 @@
+{
+  "cases": [
+    {
+      "key": "chromium-1440-1",
+      "ms": 3186,
+      "view": {
+        "violations": [],
+        "passes": 20
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "chromium-390-1",
+      "ms": 919.7000000011176,
+      "view": {
+        "violations": [],
+        "passes": 11
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "chromium-320-2",
+      "ms": 656.5,
+      "view": {
+        "violations": [],
+        "passes": 11
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    },
+    {
+      "key": "chromium-failure-cancel",
+      "workerFailure": true,
+      "inflightCancel": true,
+      "escapeFocus": true
+    },
+    {
+      "key": "webkit-1440-1",
+      "ms": 1706,
+      "view": {
+        "violations": [],
+        "passes": 20
+      },
+      "question": {
+        "violations": [],
+        "passes": 21
+      },
+      "proposal": {
+        "violations": [],
+        "passes": 21
+      },
+      "unapplied": true,
+      "discard": true,
+      "staleAtomic": true,
+      "apply": true
+    }
+  ],
+  "latency": [],
+  "errors": []
+}

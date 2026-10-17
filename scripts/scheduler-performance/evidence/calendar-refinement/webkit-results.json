@@ -1,0 +1,114 @@
+{
+  "engine": "webkit",
+  "version": "26.6",
+  "results": [
+    {
+      "width": 1440,
+      "scale": 1,
+      "fonts": {
+        "before": [
+          16,
+          16,
+          15
+        ],
+        "after": [
+          16,
+          16,
+          15
+        ]
+      },
+      "fullFocusCycles": true,
+      "status": "passed"
+    },
+    {
+      "width": 1440,
+      "scale": 2,
+      "fonts": {
+        "before": [
+          16,
+          16,
+          15
+        ],
+        "after": [
+          32,
+          32,
+          30
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "scale": 1,
+      "fonts": {
+        "before": [
+          16,
+          16,
+          15
+        ],
+        "after": [
+          16,
+          16,
+          15
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 390,
+      "scale": 2,
+      "fonts": {
+        "before": [
+          16,
+          16,
+          15
+        ],
+        "after": [
+          32,
+          32,
+          30
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "scale": 1,
+      "fonts": {
+        "before": [
+          16,
+          16,
+          15
+        ],
+        "after": [
+          16,
+          16,
+          15
+        ]
+      },
+      "fullFocusCycles": false,
+      "status": "passed"
+    },
+    {
+      "width": 320,
+      "scale": 2,
+      "fonts": {
+        "before": [
+          16,
+          16,
+          15
+        ],
+        "after": [
+          32,
+          32,
+          30
+        ]
+      },
+      "fullFocusCycles": true,
+      "status": "passed"
+    }
+  ]
+}

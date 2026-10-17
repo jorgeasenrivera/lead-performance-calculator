@@ -1,0 +1,25 @@
+chromium gestures passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  [
+    'tick',
++   'tick'
+  ]
+
+    at count (file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-haptics-gestures.mjs:8:115)
+    at async file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-haptics-gestures.mjs:9:21 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [ 'tick', 'tick' ],
+  expected: [ 'tick' ],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

@@ -1,0 +1,13 @@
+{
+  "engine": "webkit",
+  "casesPassed": 3,
+  "controlsAndSelectionsUnchanged": true,
+  "timeoutMs": 30000,
+  "instrumented": true,
+  "previousUninstrumentedRun": "Stopped at Next month before literal-name assertions; cause unproven.",
+  "traceHashes": {
+    "case-1.zip": "58e67de02b8ef195b0940c47f03290c0ac8ec3d45b9ee0fb622d74031691e2d5",
+    "case-2.zip": "c62b40de8352ef11d0b538b3b9b0dc2922ced0d530a2df66b62d7a4a059e56c2",
+    "case-3.zip": "97b7ac7a392c4244b43a6f993a6b97771c1f15bd291eb261bad3074b3bae74fe"
+  }
+}

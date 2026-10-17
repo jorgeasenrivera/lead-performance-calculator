@@ -1,0 +1,22 @@
+chromium-390-1-no-preference passed
+chromium-320-2-no-preference passed
+chromium-390-1-reduce passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Dec 7/. Input:
+
+'Tue, Dec 8, 2026'
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-day-motion.mjs:7:57 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'Tue, Dec 8, 2026',
+  expected: /Dec 7/,
+  operator: 'match',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

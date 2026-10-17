@@ -1,0 +1,21 @@
+[
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "status": "passed",
+    "activeMotionObserved": true,
+    "closeCancelsPanes": true,
+    "focusRestoredToPace": true,
+    "evidence": "interruption.log"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "status": "blocked",
+    "stage": "Waiting to observe active day-motion pane after tap",
+    "timeoutMs": 15000,
+    "evidence": "interruption.log"
+  }
+]
