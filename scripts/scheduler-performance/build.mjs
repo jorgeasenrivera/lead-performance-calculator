@@ -140,7 +140,7 @@ export async function buildPreview() {
   const editor = (await readFile("scripts/scheduler-performance/store-editor.mjs", "utf8"))
     .replace("../scheduler-proposal/model.mjs", "./model.mjs");
   await writeFile(planner + "/store-editor.mjs", editor);
-  for (const name of ["off-day-ui.mjs", "off-day-command.mjs", "haptics.mjs", "day-edit-state.mjs", "day-motion.mjs", "mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-compatibility.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
+  for (const name of ["calendar-key.mjs", "calendar-tokens.css", "off-day-ui.mjs", "off-day-command.mjs", "haptics.mjs", "day-edit-state.mjs", "day-motion.mjs", "mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-compatibility.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
   await writeFile(planner+"/generation.mjs",(await readFile("scripts/scheduler-performance/generation.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await writeFile(planner+"/weekly-hours.mjs",(await readFile("scripts/scheduler-performance/weekly-hours.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");

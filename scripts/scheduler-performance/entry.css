@@ -1,3 +1,4 @@
+@import "./calendar-tokens.css";
 .sp-preview-note {
   box-sizing: border-box;
   max-width: 1320px;
@@ -388,10 +389,5 @@ html.manager-signal .sp-date-buttons .sp-hero-day { min-height:44px; padding:0; 
 .sp-dialog-bar [data-context-back] span { min-width:0; overflow-wrap:anywhere; }
 
 /* The small overview uses the same descriptive history scale as the full month. */
-html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).history-0 {background:#fffdf4;color:#234939;}
-html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).history-1 {background:#e4eedc;color:#234939;}
-html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).history-2 {background:#8fd8af;color:#234939;}
-html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).history-3 {background:#567d61;color:#fffdf4;}
-html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).history-4 {background:#234939;color:#fffdf4;}
-html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).history-unknown {background:repeating-linear-gradient(135deg,#eeeee6,#eeeee6 4px,#deded5 4px,#deded5 5px);color:#234939;}
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day)[class*="history-"] {background-color:var(--history-fill);background-image:var(--history-pattern);color:var(--history-ink);}
 html.manager-signal .sp-mini-grid .sp-hero-day[aria-current] {border-width:1px;outline:2px solid #e4c98d;outline-offset:1px;}
