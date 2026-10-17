@@ -1,9 +1,10 @@
+import {historyClass,historyScale,scheduleMarker,scheduleKey} from './calendar-key.mjs';
 import {openOffDayCommand} from './off-day-ui.mjs';
 import {captureHapticAction,feedback,cancelHaptics,standaloneHaptics} from "./haptics.mjs";
 standaloneHaptics();
 import {intendedStatus,dayEditRecord} from "./day-edit-state.mjs";
 import {createDayMotion,swipeIntent,swipeDirection} from "./day-motion.mjs";
-import { quickRosterGroups, verifiedLow } from "./mobile-roster.mjs";
+import { quickRosterGroups, verifiedLow, calendarWarning } from "./mobile-roster.mjs";
 import { openGeneration } from "./generation-ui.mjs";
 import { teamsOnDay, membershipAt, membershipMismatches, teamSnapshot, dayAbsence, absenceKind, absenceLabel } from "./team-model.mjs";
 import { balanceMarkup, teamDayMarkup, openTeamEditor, peopleTeamsMarkup, personTeamLabel } from "./team-ui.mjs";
@@ -24,11 +25,22 @@ import {
 } from "./month-model.mjs";
 import { storeRuleDraft, applyStoreRuleForm, effectiveExceptions } from "./store-editor.mjs";
 import { fixtureAssignments, assignmentSummary } from "./assignment-view.mjs";
-import { dayDemand, monthDemand } from "./demand-context.mjs";
+import { dayDemand, monthDemand, historicalCalendar } from "./demand-context.mjs";
 import { icon } from "./sage-icons.mjs";
 const stores = fixtures(),
   planner = createPlanner(stores, { assignmentForDay: fixtureAssignments }),
   app = document.querySelector("#app");
+const popoverOpeners=new Map();
+app.addEventListener('click',e=>{const trigger=e.target.closest('[popovertarget]');if(trigger&&trigger.getAttribute('popovertargetaction')!=='hide')popoverOpeners.set(trigger.getAttribute('popovertarget'),trigger);},{capture:true});
+function bindHistoryPopovers(root){
+ for(const pop of root.querySelectorAll('[popover]')){
+  if(pop.dataset.bound)continue;pop.dataset.bound='true';
+  const triggers=[...app.querySelectorAll(`[popovertarget="${pop.id}"]`)].filter(t=>t.getAttribute('popovertargetaction')!=='hide');
+  for(const t of triggers){t.setAttribute('aria-controls',pop.id);t.setAttribute('aria-expanded','false');}
+  pop.addEventListener('toggle',e=>{for(const t of triggers)t.setAttribute('aria-expanded',String(e.newState==='open'));if(e.newState==='open'){const target=pop.querySelector('h2')||pop.querySelector('input,button');if(target){if(target.tagName==='H2')target.tabIndex=-1;target.focus();}}});
+  const close=pop.querySelector('[data-dismiss]');if(close)close.onclick=()=>{pop.hidePopover();(popoverOpeners.get(pop.id)||triggers[0])?.focus();};
+ }
+}
 let dayHapticToken=null;
 let quickEdit = false, localSettingsChanged=false;
 let editorReturnScroll = null;
@@ -52,7 +64,10 @@ function returnToGeneration() {
 // Unapplied choices are local to a store/date and never enter coverage calculations.
 const pendingAssignments = new Map();
 const pendingSettings = new Map();
-window.addEventListener('beforeunload',event=>{if(localSettingsChanged||planner.revision||pendingAssignments.size||pendingSettings.size){event.preventDefault();event.returnValue='';}});
+let leavingPreview=false;
+window.addEventListener('pageshow',()=>{leavingPreview=false;});
+const hasLocalDraft=()=>Boolean(localSettingsChanged||planner.revision||pendingAssignments.size||pendingSettings.size||generationAnswers.size);
+window.addEventListener('beforeunload',event=>{if(!leavingPreview&&hasLocalDraft()){event.preventDefault();event.returnValue='';}});
 const pendingKey = day => `${selected}:${day}`;
 const initialDay = () => month === today().slice(0,7) ? today() : month + "-01";
 function updateSelection() {
@@ -62,7 +77,7 @@ function updateSelection() {
   }
 }
 let editing = false, mode = "mixed", selectedDay = null;
-let motionRows = [];
+let motionRows = [], historicalView=null;
 let selected = 0,
   month = storeToday().slice(0, 7);
 const today = () => storeToday();
@@ -117,22 +132,22 @@ function syncCalendarLayout() {
   const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
   app.classList.remove("delivered-grid-reflow");
   app.classList.toggle("stacked-workspace", app.clientWidth < 60 * font);
-  app.classList.toggle("calendar-list", app.clientWidth < 7 * 8 * font);
+  app.classList.remove("calendar-list");
   const compact = app.clientWidth <= 700;
   const inset = `${app.querySelector(".month-navigation")?.offsetHeight || 0}px`;
   if(document.documentElement.style.getPropertyValue("--month-bar-height")!==inset)document.documentElement.style.setProperty("--month-bar-height",inset);
   app.classList.toggle("compact-month", compact);
   app.classList.toggle("compact-reflow", compact && font >= 24);
   // Preserve readable single-line sales strips before keeping the desktop panes side by side.
-  if (!compact && !editing) {
+  if (!compact && font >= 24) {
     const grid = app.querySelector(".month-days");
     const cellWidth = () => (grid.clientWidth - 6 * parseFloat(getComputedStyle(grid).columnGap)) / 7;
     if (cellWidth() < 7 * font) app.classList.add("stacked-workspace");
     if (cellWidth() < 7 * font) app.classList.add("delivered-grid-reflow");
   }
   for (const button of app.querySelectorAll("[data-day]")) {
-    if (compact) button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. Open day details.`);
-    else button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. Show day roster.`);
+    if (compact) button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. ${button.dataset.historyLabel}. Open day details.`);
+    else button.setAttribute("aria-label", `${dateLabel(button.dataset.day)}, ${button.dataset.status}. ${button.dataset.historyLabel}. Show day roster.`);
   }
 }
 // WebKit's native backward focus scroll can ignore the sticky header inset.
@@ -166,40 +181,48 @@ function render(focusId, announcement = "") {
     d = draft(),
     issues = list.reduce((n, r) => n + r.issues.length, 0);
   const sales = monthSales(d.store, month, today());
-  const demand = monthDemand(d.store.history,month);
+  historicalView = historicalCalendar(d.store.history,month);
+  const historicalDays=new Map(historicalView.days.map(d=>[d.day,d]));
   const heat = new Map(salesHeat(d.store, month, today()).map(r => [r.day, r]));
   const reviewed = d.accepted && d.reviewFingerprint === fingerprint(list);
   const byDay = new Map(list.map((r) => [r.day, r]));
-  app.innerHTML = `<div class="toolbar"><button id="workspace" class="primary">${icon(editing?"arrowleft":"calendar")}${editing ? "Return to manager view" : "Make Schedule"}</button>${editing ? "" : '<button id="sales-key" popovertarget="sales-help">Sales key</button>'}</div>
+  app.innerHTML = `<div class="toolbar">${embeddedPlanner?'':`<button id="preview-back">${icon("arrowleft")}Back to dashboard</button>`}<button id="workspace" class="primary">${icon(editing?"arrowleft":"calendar")}${editing ? "Return to manager view" : "Make Schedule"}</button></div>
  <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button><button id="today">Today</button></div>
  <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button data-dismiss="month-picker">Done</button></div>
- <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Pending means future sales are not yet available. Unknown means no known sales record.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
- ${editing ? `<div class="editor-tools"><button id="generate-month" class="${list.some(r=>r.ids.length)?'':'primary'}">${generationAnswers.has(generationKey())?'Resume generation':'Generate month'}</button><button id="import-schedule">Import</button><button id="off-day-tools">Move / copy off-day</button>${lastOffDayUndo?.index===selected?'<button id="off-day-undo">Undo off-day change</button>':''}<button id="setup" aria-expanded="false" aria-controls="editor-setup">Setup</button></div><section id="editor-setup" class="panel" hidden aria-label="Schedule setup"><h2 tabindex="-1">Schedule setup</h2><div class="actions"><button id="teams">Teams</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button></div><button id="close-setup">Back to month</button></section>` : ""}
+
+ ${editing ? `<div class="editor-tools" role="group" aria-label="Schedule tools, scroll horizontally for more"><button id="generate-month" class="${list.some(r=>r.ids.length)?'':'primary'}">${generationAnswers.has(generationKey())?'Resume generation':'Generate month'}</button><button id="import-schedule">Import</button><button id="off-day-tools">Move / copy off-day</button>${lastOffDayUndo?.index===selected?'<button id="off-day-undo">Undo off-day change</button>':''}<button id="setup" aria-expanded="false" aria-controls="editor-setup">Setup</button></div><section id="editor-setup" class="panel" hidden aria-label="Schedule setup"><h2 tabindex="-1">Schedule setup</h2><div class="actions"><button id="teams">Teams</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button></div><button id="close-setup">Back to month</button></section>` : ""}
  <section id="generation-sheet" class="panel" hidden aria-label="Monthly schedule generation"></section>
  <section id="off-day-sheet" class="panel" hidden aria-label="Off-day operation"></section>
  <section id="import-sheet" class="panel" hidden aria-label="Import schedule review"></section>
  <section id="settings-sheet" class="panel" hidden aria-label="Planning settings"></section>
- ${editing ? `<details class="month-demand-compact"><summary>${demand.range?`History: ${demand.range.low}–${demand.range.high} deliveries`:'Historical range unavailable'} · not a forecast</summary>${monthDemandMarkup(d.store)}</details>` : ""}
+
  ${editing&&[...pendingAssignments.keys()].some(k=>k.startsWith(`${selected}:${month}`))?'<p class="month-pending" role="status">Pending day choices kept in this page. Open a date to apply or cancel.</p>':''}
  <div class="schedule-layout"><section class="calendar-pane" aria-label="Month calendar"><div class="calendar-context"><span>${icon("calendar")}${editing ? "Plan by date" : "Month"}</span><button id="selected-roster">${icon("users")}Selected day</button></div>
- <p class="sr-only" id="day-plan-help">${monthLabel(month)}. Open this date’s daily plan.</p>
+ <p class="calendar-list-label">Day list · enlarged text</p><p class="sr-only" id="day-plan-help">${monthLabel(month)}. Open this date’s daily plan.</p>
  <section class="month-days" aria-label="${monthLabel(month)} daily plans"><span class="calendar-swipe-strip" aria-hidden="true">${icon("arrowleft")}<span></span>${icon("arrow")}</span>${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((n) => `<span class="weekday-heading">${n}</span>`).join("")}${calendarCells(
    month,
  )
    .map((day) => {
      if (!day) return '<span class="calendar-blank" aria-hidden="true"></span>';
      const r = byDay.get(day),
-       sales = heat.get(day), staff = staffing(r);
-     return `<button class="month-day ${r.state} staff-${staff.status === "Needs schedule" || staff.status === "Schedule conflict" ? "needs" : staff.status === "Low staff" ? "low" : "normal"} ${day === today() ? "is-today" : ""}" id="day-${day}" data-day="${day}" data-status="${staff.status}" data-verified-low="${verifiedLow(r,staff)}" ${day === today() ? 'aria-current="date"' : ""} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day + "T12:00:00Z").getUTCDay()]} </span>${Number(day.slice(-2))}${day === today() ? "<small>Today</small>" : ""}</span>${statusMarkup(staff)}${verifiedLow(r,staff)?`<span class="mobile-low-marker" aria-hidden="true">${icon("warn")}</span>`:""}${sales.state==="known"?`<span class="mobile-sales-mark heat-${sales.level}" aria-hidden="true"></span>`:""}<span class="day-staffing">${staffingMarkup(staff)}</span>${editing ? `<span class="day-coverage">${r.state === "open" ? `${r.ids.length} assigned · ${r.eligibleIds.length} eligible / ${r.required} needed` : r.state === "closed" ? "Closed" : "Unknown hours"}</span>` : ""}<small class="day-sales sales-${sales.state} ${sales.level === null ? "" : "heat-" + sales.level}">${deliveredMarkup(sales)}</small>${sales.best ? `<span class="best-day">${icon("trophy")}${sales.bestLabel}</span>` : ""}${editing && r.override ? "<small>Edited</small>" : ""}${r.issues.length ? `<span class="day-issue">${icon("warn")}${r.issues.length} to resolve</span>` : ""}</button>`;
+       sales = heat.get(day), staff = staffing(r), history=historicalDays.get(day);
+     const alert=calendarWarning(r,staff),warning=alert?.kind;
+     return `<button class="month-day ${r.state} staff-${warning||'normal'} ${historyClass(history.level)} ${day===today()?'is-today':''}" id="day-${day}" data-day="${day}" data-status="${alert?.label||staff.status}" data-history-label="${esc(historyLabel(history))}" data-verified-low="${verifiedLow(r,staff)}" ${day===today()?'aria-current="date"':''} aria-describedby="day-plan-help"><span class="day-date"><span class="day-weekday">${names[new Date(day+'T12:00:00Z').getUTCDay()]} </span>${Number(day.slice(-2))}</span><span class="schedule-slot">${scheduleMarker(warning||(r.state==='closed'?'closed':r.state!=='open'?'unknown':null))}</span><span class="day-coverage">${r.state==='open'?`${r.minimumCoverage}/${r.required} coverage`:r.state==='closed'?'Closed':'Hours unknown'}</span><small class="day-sales sales-${sales.state}">${deliveredMarkup(sales)}</small>${r.override?'<span class="day-edited sr-only">Edited in this page</span>':''}</button>`;
    })
-   .join("")}</section></section><section id="sheet" class="panel day-panel" aria-label="Selected day roster"></section></div>${embeddedPlanner?'<section id="mobile-day-dialog" class="embedded-day-page" role="region" aria-labelledby="selected-day-heading" hidden></section>':'<dialog id="mobile-day-dialog" aria-labelledby="selected-day-heading"></dialog>'}
+   .join("")}</section></section><section id="sheet" class="panel day-panel" tabindex="0" aria-label="Selected day roster"></section></div>${embeddedPlanner?'<section id="mobile-day-dialog" class="embedded-day-page" role="region" aria-labelledby="selected-day-heading" hidden></section>':'<dialog id="mobile-day-dialog" aria-labelledby="selected-day-heading"></dialog>'}
 
  ${editing ? `<details class="month-review"><summary>Review month · ${issues ? `${issues} to resolve` : reviewed ? "Reviewed" : "Ready for review"}</summary>${balanceMarkup(planner,selected,month)}<div id="selected-week-audit">${weeklyAuditMarkup(selectedDay||month+"-01")}</div><div class="actions"><button id="accept" class="primary">${icon("check")}Mark reviewed</button><button id="reset">${icon("roundup")}Reset this draft</button></div></details>` : ""}
  <details class="demo-options"><summary>Roster display</summary><label>Roster display mode<select id="mode">${["team","individual","mixed"].map(m=>`<option ${mode===m?"selected":""}>${m}</option>`).join("")}</select></label></details>
 
  ${editing ? `<p id="message" role="status">${esc(announcement)}</p>
  <details class="panel review"><summary>About this draft</summary><p>Connected month and roster viewing is separate from deliberate people and coverage editing. This is a fictional preview, not a published staff schedule.</p><p>Each store/month starts with a separate copy of fictional availability and store rules. Edits to those settings apply only inside that month’s draft; they are not automatically copied into other months. Returning to Performance keeps applied drafts while this page stays open. Reset affects assignments and settings only in the selected store/month. Dated team history remains until explicitly edited.</p><p>Weekly person limits run Monday–Sunday, including earlier dates from the previous month. Those dates use that month’s draft if one exists, otherwise fictional defaults. Editing an earlier month can change a later month’s boundary-week suggestions and invalidate its review; explicit overrides remain intact.</p><p>Six fictional stores have synthetic history from 1 Jan 2014 to 13 Oct 2026. Explicit NA is Closed, missing is Unknown, and zero means zero delivered cars. Ranges illustrate prior same-weekday counts, not validated forecasts. Future months reuse the available fictional history; there is no future observation.</p></details>
- <details class="footer"><summary>Shift limits</summary><p>Manual On uses full store hours. Imported CSV shifts keep exact minutes. No overnight shifts, DST-change dates, breaks, appointments, overtime policy, database connection or publishing.</p></details>` : `<p id="message" role="status">${esc(announcement)}</p>`}`;
+ <details class="footer"><summary>Shift limits</summary><p>Manual On uses full store hours. Imported CSV shifts keep exact minutes. No overnight shifts, DST-change dates, breaks, appointments, overtime policy, database connection or publishing.</p></details>` : `<p id="message" role="status">${esc(announcement)}</p>`}<footer class="calendar-reference" aria-label="Calendar key and history"> <section class="month-history" aria-label="Historical delivery context"><div><strong>${new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',timeZone:'UTC'})} history</strong><span>${historicalView.month.range?`${historicalView.month.range.low}–${historicalView.month.range.high} delivered`:'Full-month range unavailable'}</span></div><button id="sales-key" class="history-legend" popovertarget="sales-help" aria-label="Recent weekday pattern: quieter to busier sales. Open samples and calendar key"><span>Historical deliveries</span>${historyScale()}</button></section> <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Calendar key"><h2>Calendar key</h2><h3>Historical deliveries</h3>${historyScale()}<h3>Staffing</h3>${scheduleKey()}<p>Delivered = actual recorded total.</p><details><summary>How to read this</summary><p>Needs review: missing schedule, conflict or unconfirmed coverage. Low staff: confirmed coverage below the minimum. These markers do not describe sales.</p><p>Hatching means too little history, not zero. In Delivered, 0 is recorded zero; Unknown is missing, Pending is not yet available, and Closed is a recorded closure.</p></details><details><summary>Method &amp; samples</summary><p>Color: average of up to eight known matching weekdays before ${historicalView.cutoff}; at least four required. Missing and closed observations are excluded; zero is included.</p><p>Samples and scale are fixed before this month. Scale: 0–${historicalView.ceiling??'unknown'}, using the highest observed sample range. It may change between months. Old history may not reflect current conditions. No forecast, traffic or hourly demand is inferred.</p>${monthDemandMarkup(d.store)}</details><button data-dismiss="sales-help">Close calendar key</button></div></footer>`;
+  const previewBack=document.querySelector('#preview-back');
+  if(previewBack)previewBack.onclick=()=>{
+    if(hasLocalDraft()&&!window.confirm('Return to the preview dashboard and discard this page’s draft changes? Changes are only kept while this planner page stays open.'))return;
+    leavingPreview=true;
+    window.location.assign(new URL('../',window.location.href));
+  };
   const offButton=document.querySelector('#off-day-tools');if(offButton)offButton.onclick=()=>startOffDay(selectedDay||month+'-01');
   const undoButton=document.querySelector('#off-day-undo');if(undoButton)undoButton.onclick=()=>{try{if(lastOffDayUndo.index!==selected)throw Error('Return to the source store before undo.');if(hasPendingChoices())throw Error('Apply or cancel pending choices before undo.');const result=planner.undoOffDay(lastOffDayUndo);lastOffDayUndo=null;month=result.from.slice(0,7);selectedDay=result.from;render(undefined,'Off-day change undone. Original records restored.');daySheet(result.from);pulseOffDay(result.personId);}catch(error){document.querySelector('#message').textContent=error.message;document.querySelector('#message').scrollIntoView({block:'nearest'});}};
   const importButton = document.querySelector("#import-schedule");
@@ -208,14 +231,7 @@ function render(focusId, announcement = "") {
     closeImport();
     closeImport = openScheduleImport({host:document.querySelector('#import-sheet'),planner,index:selected,month,onApply:result=>{if(result.changed){selectedDay=result.firstDay;month=selectedDay.slice(0,7);}render('import-schedule',result.changed?`Applied reviewed source entries to ${result.changed} dates.${result.skipped?` ${result.skipped} entries skipped.`:''}`:`No changes. ${result.skipped||0} entries skipped; existing facts kept.`);},onClose:()=>importButton.focus()});
   }
-  for (const pop of document.querySelectorAll("[popover]")) {
-    const trigger = document.querySelector(`[popovertarget="${pop.id}"]`);
-    if(!trigger)continue;
-    pop.addEventListener("toggle", e => { trigger.setAttribute("aria-expanded", String(e.newState === "open")); if (e.newState === "open") pop.querySelector("input,button")?.focus(); });
-    trigger.setAttribute("aria-expanded", "false");
-    trigger.setAttribute("aria-controls", pop.id);
-    pop.querySelector("[data-dismiss]").onclick = () => { pop.hidePopover(); trigger.focus(); };
-  }
+  bindHistoryPopovers(app);
   document.querySelector("#month").onchange = (e) => {
     if (!validMonth(e.target.value)) {
       e.target.setCustomValidity(
@@ -312,7 +328,7 @@ function startGeneration() {
   closeGeneration();closeImport();
   const key=generationKey();
   const visit=opener=>answers=>{generationAnswers.set(key,answers);generationDetour=key;opener();};
-  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,initialAnswers:generationAnswers.get(key),onMonth:value=>{generationDetour=null;month=value;selectedDay=null;render();startGeneration();},onApply:result=>{generationAnswers.delete(key);generationDetour=null;mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>{generationAnswers.delete(key);generationDetour=null;render('generate-month');},onPeople:visit(()=>personSheet()),onRules:visit(()=>storeSheet())});
+  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,initialAnswers:generationAnswers.get(key),onAnswers:answers=>generationAnswers.set(key,answers),onMonth:value=>{generationAnswers.delete(key);generationDetour=null;month=value;selectedDay=null;render();startGeneration();},onApply:result=>{generationAnswers.delete(key);generationDetour=null;mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>{generationAnswers.delete(key);generationDetour=null;render('generate-month');},onPeople:visit(()=>personSheet()),onRules:visit(()=>storeSheet())});
 }
 const reduceDayMotion=matchMedia('(prefers-reduced-motion: reduce)');
 const dayMotion=createDayMotion({getLive:()=>document.querySelector('#sheet'),getHost:()=>document.querySelector('#mobile-day-dialog'),getDay:()=>selectedDay,neighbor:(day,delta)=>{const next=addDays(day,delta);return next.startsWith(month)?next:null;},markup:day=>{const row=motionRows.find(r=>r.day===day);return dayViewMarkup(row,staffing(row));},commit:(day,focusId)=>{const token=dayHapticToken;dayHapticToken=null;const changed=day!==selectedDay;daySheet(day);if(changed)feedback('tick',token);const control=focusId&&document.getElementById(focusId);if(control&&!control.disabled)control.focus({preventScroll:true});},reduced:()=>reduceDayMotion.matches});
@@ -343,6 +359,7 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   sheet.hidden = false;
   dayMotion.cancel();if(mobileDaySession)mobileDaySession.closing=false;
   sheet.innerHTML = html;
+  bindHistoryPopovers(sheet);
   if(isDay&&innerWidth<=700&&(focus||mobileDaySession))showMobileDay(sheet);
   if (!isDay) {
     const setup=document.querySelector("#editor-setup");if(setup){setup.hidden=true;document.querySelector("#setup").setAttribute("aria-expanded","false");}
@@ -405,9 +422,17 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   }
   return sheet;
 }
+function historyLabel(d) {
+  return d?.estimate?`Recent weekday average ${d.average.toFixed(1)} delivered; observed range ${d.estimate.low} to ${d.estimate.high}; ${d.count} samples`:`Recent weekday history unavailable; ${d?.count||0} samples`;
+}
+function historyDayMarkup(day) {
+  const d=historicalView?.days.find(d=>d.day===day);if(!d)return '';
+  const id='history-evidence-'+day;
+  return `<div class="day-history-context"><button popovertarget="${id}">${d.estimate?`History: ${d.estimate.low}–${d.estimate.high} delivered`:'Insufficient history'} ${icon('question')}</button><div id="${id}" popover class="scheduler-popover" role="dialog" aria-label="Historical weekday evidence"><h2>${dateLabel(day)}: history</h2><p>${d.estimate?`Average ${d.average.toFixed(1)} · range ${d.estimate.low}–${d.estimate.high} delivered`:'Insufficient history'} · ${d.count} samples.</p><details><summary>Samples &amp; method</summary><p>${d.first?`${d.first}–${d.last}. Latest sample: ${d.daysSinceComparable} days before this date.`:'No comparable recorded days.'}</p><p>Up to eight known matching weekdays before ${historicalView.cutoff}; at least four required. Samples and scale stay fixed for this month. Zero counts; missing and closed observations do not.</p><p>Range: observed minimum–maximum, not a confidence interval or forecast. Color uses the average, not the midpoint. No holiday, traffic or hourly adjustment. Synthetic history through 13 Oct 2026; old samples may not reflect current conditions.</p></details><button type="button" popovertarget="${id}" popovertargetaction="hide">Close history</button></div></div>`;
+}
 function monthDemandMarkup(store) {
-  const context = monthDemand(store.history, month);
-  return `<section class="month-demand" aria-label="Monthly demand context"><h3>${icon("calendar")}Month demand context</h3><p>${context.range ? `Comparable full-month sales: <strong>${context.range.low} to ${context.range.high} deliveries</strong>` : "Comparable full-month range unavailable"}. Historical range, not a forecast of this month.</p><details><summary>Comparable months &amp; uncertainty</summary>${context.comparable.length ? `<ul>${context.comparable.map(r=>`<li>${monthLabel(r.month)}: ${r.total ?? "Unknown"} recorded deliveries · ${r.known} recorded / ${r.closed} closed / ${r.unknown} unknown days${r.unknown ? " (partial total)" : ""}.</li>`).join("")}</ul>` : "No prior same-calendar-month observations."}<p>Latest three prior observed instances of this calendar month. A range requires two complete months; partial totals never stand in for complete months. Daily estimates use prior same weekdays, not monthly totals divided into hours. Synthetic history ends 13 Oct 2026; no live history connection.</p></details></section>`;
+  const context=monthDemand(store.history,month);
+  return `<h3>Prior matching months</h3><p>${context.range?`${context.range.low}–${context.range.high} delivered across ${context.range.months} complete months.`:'Fewer than two complete months: no full-month range.'}</p>${context.comparable.length?`<ul>${context.comparable.map(r=>`<li>${monthLabel(r.month)}: ${r.total??'Unknown'} delivered${r.unknown?' (partial)':''}; ${r.known} known, ${r.closed} closed, ${r.unknown} missing days.</li>`).join('')}</ul>`:'<p>No prior matching months.</p>'}<p>Latest three prior matching calendar months, separate from the recent weekday samples. Partial totals are not a complete month; no busy-month ranking is inferred. Synthetic preview history ends 13 Oct 2026.</p>`;
 }
 function dayDemandMarkup(row) {
   if (row.state !== "open") return "";
@@ -453,7 +478,7 @@ function importedShifts(row) {
 }
 function dayHeader(day, row) {
   const smallWarning=!editing&&verifiedLow(row,staffing(row));
-  return `<h2 id="selected-day-heading" class="day-heading" tabindex="-1">${dateLabel(day)}${smallWarning?` <span class="mobile-critical-warning">${icon("warn")}Below minimum: ${row.minimumCoverage}/${row.required}</span>`:""}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close aria-label="${editing?'Back to month':'Month calendar'}"><span class="desktop-nav-label">${editing?'Back to month':'Month calendar'}</span><span class="mobile-nav-label">${editing?'Back':'Calendar'}</span></button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary day-edit" aria-label="Edit day">${icon("calendar")}<span class="desktop-nav-label">Edit day</span><span class="mobile-nav-label">Edit</span></button>` : ""}`}</nav>`;
+  return `<h2 id="selected-day-heading" class="day-heading" tabindex="-1">${dateLabel(day)}${smallWarning?` <span class="mobile-critical-warning">${icon("warn")}Below minimum: ${row.minimumCoverage}/${row.required}</span>`:""}</h2><nav class="day-actions" aria-label="Day actions"><button type="button" data-close aria-label="Back to month calendar"><span class="desktop-nav-label">Back to calendar</span><span class="mobile-nav-label">Back</span></button>${`<button type="button" id="day-previous" aria-label="Previous day" ${day===month+"-01" ? "disabled" : ""}>${icon("arrowleft")}</button><button type="button" id="day-next" aria-label="Next day" ${day===monthDays(month).at(-1) ? "disabled" : ""}>${icon("arrow")}</button>${!editing && row.state === "open" ? `<button type="button" id="edit-day" class="primary day-edit" aria-label="Edit day">${icon("calendar")}<span class="desktop-nav-label">Edit day</span><span class="mobile-nav-label">Edit</span></button>` : ""}`}</nav>`;
 }
 function bindDayActions(sheet, day) {
   for (const [id,delta] of [["day-previous",-1],["day-next",1]]) {
@@ -466,7 +491,7 @@ function bindDayActions(sheet, day) {
   if(cancel)cancel.onclick=()=>{pendingAssignments.delete(pendingKey(day));if(quickEdit){editorReturnScroll=mobileDaySession?.scrollY??null;quickEdit=false;editing=false;render();daySheet(day);document.querySelector("#edit-day")?.focus();}else{daySheet(day);sheet.querySelector('.day-heading')?.focus();}};
 }
 
-function dayViewMarkup(r,summary){const day=r.day;return `${dayHeader(day, r)}${mobileRosterMarkup(r,summary)}<div class="desktop-roster day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><div class="desktop-planning-detail"><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}</div>${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}`;}
+function dayViewMarkup(r,summary){const day=r.day;return `${dayHeader(day, r)}${mobileRosterMarkup(r,summary)}<div class="desktop-roster day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p><details class="desktop-planning-detail"><summary>Coverage &amp; sources</summary><p>${statusMarkup(summary)}</p>${dayContext(r, summary)}${importedShifts(r)}${teamDayMarkup(draft().store,r.record,day,editing)}${r.issues.length ? `<ul class="issues">${r.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>` : ""}</details>${pendingAssignments.has(pendingKey(day)) ? '<p class="pending-note">Unapplied choices saved in this page. Open Edit day to continue.</p>' : ""}${historyDayMarkup(day)}`;}
 function daySheet(day, openerId = `day-${day}`, focus = true) {
   closeImport();
   motionRows = rows();
@@ -490,7 +515,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       r.state === "open"
         ? `<form class="assignment-form">${editorRoster(r,summary)}<p class="editor-note">On keeps imported times. New On uses full store hours. Back keeps pending choices in this page; Cancel restores this date’s applied choices.</p><p class="pending-note" id="pending-status" role="status"></p><p id="day-error" role="alert"></p><div class="actions"><button class="primary">Apply day</button><button type="button" id="cancel-day">Cancel</button></div></form>`
         : `<p>${r.state === "closed" ? "Store closed. Entered assignments remain visible and are excluded from coverage." : "Confirm store hours before planning coverage. Entered assignments retain their times; unknown duration remains unknown."}</p>`
-    }${r.state!=="open"?importedShifts(r):""}${teamDayMarkup(draft().store,r.record,day,editing)}<details class="applied-roster"><summary>Applied roster &amp; sales</summary><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p></details>`,
+    }${r.state!=="open"?importedShifts(r):""}${teamDayMarkup(draft().store,r.record,day,editing)}<details class="applied-roster"><summary>Applied roster &amp; sales</summary><div class="day-staffing">${staffingMarkup(summary, true)}</div><p class="recorded-day">${deliveredMarkup(recordedDay(draft().store, day, today()))}</p></details>${historyDayMarkup(day)}`,
     openerId, true, focus,
   );
   bindDayActions(sheet,day);
@@ -648,7 +673,7 @@ window.addEventListener("scheduler-view", event => { lastDayInput=event.detail?.
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !e.defaultPrevented) {
     const pop = document.querySelector(":popover-open");
-    if (pop) { e.preventDefault(); pop.hidePopover(); document.querySelector(`[popovertarget="${pop.id}"]`).focus(); return; }
+    if (pop) { e.preventDefault(); pop.hidePopover(); (popoverOpeners.get(pop.id)||document.querySelector(`[popovertarget="${pop.id}"]`))?.focus(); return; }
     e.preventDefault();
     if (editing) { editing=false; quickEdit=false; render("workspace", "Returned to roster. Unapplied choices are kept in this page."); }
     else if (embeddedPlanner) window.parent.dispatchEvent(new CustomEvent("scheduler-close"));

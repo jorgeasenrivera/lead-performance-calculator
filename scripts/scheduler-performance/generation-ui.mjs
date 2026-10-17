@@ -3,7 +3,7 @@ import {fixtureGenerationPolicy,generationInput,applyProposal} from './generatio
 import {monthDays,validMonth} from './month-model.mjs';
 import {minute,timeLabel} from './shift-intervals.mjs';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function openGeneration({host,planner,index,month,mode,onMonth,onApply,onClose,onPeople,onRules,initialPolicy,initialAnswers}){
+export function openGeneration({host,planner,index,month,mode,onMonth,onApply,onClose,onPeople,onRules,initialPolicy,initialAnswers,onAnswers=()=>{}}){
  let worker=null,timer=null,disposed=false,proposal=null,clickedAt=null,replacement=null;const store=planner.get(index,month).store,policy=structuredClone(initialPolicy||planner.get(index,month).generationPolicy||fixtureGenerationPolicy(store));policy.mode=initialPolicy?.mode||mode;
  const dispose=()=>{replacement?.();disposed=true;worker?.terminate();clearTimeout(timer);host.hidden=true;host.replaceChildren();};
  const close=()=>{dispose();onClose();};
@@ -14,6 +14,8 @@ export function openGeneration({host,planner,index,month,mode,onMonth,onApply,on
  host.querySelector('#generation-cancel').onclick=close;host.onkeydown=e=>{if(e.key==='Escape'){e.stopPropagation();close();}};
  // Keep raw answers, including invalid/unfinished values, separate from an applied policy.
  const answers=()=>({fields:[...host.querySelector('form').elements].filter(e=>e.name).map(e=>({name:e.name,value:e.value,checked:e.checked})),people:store.people.map(p=>({id:p.id,eligible:host.querySelector(`[data-eligible="${p.id}"]`).checked,role:host.querySelector(`[data-role="${p.id}"]`).checked})),expanded:[...host.querySelectorAll('form > details')].map(e=>e.open)});
+ host.querySelector('form').addEventListener('input',()=>onAnswers(answers()));
+ host.querySelector('form').addEventListener('change',()=>{if(!disposed)onAnswers(answers());});
  const detour=callback=>{const saved=answers();dispose();callback(saved);};
  host.querySelector('#generation-hours').onclick=()=>detour(onRules);host.querySelector('#generation-people').onclick=()=>detour(onPeople);
  host.querySelector('#generation-month').onchange=e=>{if(validMonth(e.target.value)&&e.target.value!==month){dispose();onMonth(e.target.value);}else if(!validMonth(e.target.value))e.target.setCustomValidity('Choose a month from January 2014 through December 2100.');else e.target.setCustomValidity('');};
@@ -30,7 +32,7 @@ export function openGeneration({host,planner,index,month,mode,onMonth,onApply,on
  host.querySelector('#generation-start').addEventListener('click',()=>{clickedAt=performance.now();});
  host.querySelector('form').onsubmit=e=>{
   const haptic=captureHapticAction();
-  e.preventDefault();const started=clickedAt??performance.now(),form=e.target,f=new FormData(form),status=host.querySelector('#generation-status');clickedAt=null;
+  e.preventDefault();onAnswers(answers());const started=clickedAt??performance.now(),form=e.target,f=new FormData(form),status=host.querySelector('#generation-status');clickedAt=null;
   try{
    policy.mode=f.get('mode');policy.confirmed=f.has('reviewed');policy.regenerate=f.has('regenerate');policy.useMarket=f.has('market');policy.requiredRoles={sales:Number(f.get('roleMinimum'))};
    policy.shifts=f.has('fullDay')?[{id:'open-hours',fullDay:true}]:[{id:'custom',startMinute:minute(f.get('start')),endMinute:minute(f.get('end'))}];
@@ -51,7 +53,7 @@ export function openGeneration({host,planner,index,month,mode,onMonth,onApply,on
   host.querySelector('h2').focus();host.scrollIntoView({block:'start'});
   for(const details of host.querySelectorAll('[data-proposal-day]'))details.addEventListener('toggle',()=>{if(!details.open||details.dataset.loaded)return;details.dataset.loaded='true';const day=details.dataset.proposalDay,d=proposal.days.find(x=>x.day===day),before=input.records[day],after=proposal.records[day];const state=(r,id)=>r?.on?.includes(id)?((r.shifts||[]).filter(s=>s.personId===id).map(s=>`${timeLabel(s.startMinute)}–${timeLabel(s.endMinute)} ${s.role||'role unspecified'}`).join(', ')||'full opening shift'):r?.off?.includes(id)?r.absences?.[id]?.kind||'off':'unknown';details.querySelector('div').innerHTML=`<p>${d.segments.map(s=>`${timeLabel(s.start)}–${timeLabel(s.end)}: ${s.count} people; ${Object.entries(s.roles).map(([r,n])=>`${esc(r)} ${n}`).join(', ')}`).join('<br>')||'No eligible opening interval.'}</p><ul>${d.gaps.map(g=>`<li>${timeLabel(g.start)}–${timeLabel(g.end)}: ${g.missing} ${esc(g.role||'people')} missing.</li>`).join('')}${d.conflicts.map(c=>`<li>${esc(name(c.id))}: ${c.reasons.map(esc).join('; ')}</li>`).join('')}${d.unknown.length?`<li>Unknown inputs: ${d.unknown.map(id=>esc(name(id))).join(', ')}</li>`:''}</ul><ul>${store.people.filter(p=>state(before,p.id)!==state(after,p.id)).map(p=>`<li>${esc(p.name)}: ${esc(state(before,p.id))} → ${esc(state(after,p.id))}</li>`).join('')||'<li>No work/off changes.</li>'}</ul><p>${d.notes.map(esc).join(' ')}</p>`;});
   host.querySelector('#generation-cancel').onclick=close;
-  host.querySelector('#generation-back').onclick=()=>{dispose();replacement=openGeneration({host,planner,index,month,mode,onMonth,onApply,onClose,onPeople,onRules,initialPolicy:policy});};
+  host.querySelector('#generation-back').onclick=()=>{dispose();replacement=openGeneration({host,planner,index,month,mode,onMonth,onApply,onClose,onPeople,onRules,onAnswers,initialPolicy:policy});};
   host.querySelector('#generation-apply').onclick=()=>{try{if(proposal.status==='incomplete'&&!host.querySelector('#generation-ack').checked)throw Error('Acknowledge the gaps before applying this incomplete draft.');applyProposal(planner,proposal);feedback('taken');dispose();onApply({month,mode:policy.mode,status:proposal.status});}catch(error){host.querySelector('#generation-status').textContent=error.message;feedback('refused');}};
   requestAnimationFrame(()=>requestAnimationFrame(()=>{if(disposed)return;const elapsed=performance.now()-started;host.dataset.generateMs=String(elapsed);host.querySelector('#generation-timing').textContent=`Generate to usable proposal: ${(elapsed/1000).toFixed(2)} seconds in this browser. Local draft only.`;host.dispatchEvent(new CustomEvent('generation-rendered',{bubbles:true,detail:{elapsedMs:elapsed,computeMs:proposal.computeMs,people:store.people.length,days:monthDays(month).length}}));}));
  }
