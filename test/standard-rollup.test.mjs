@@ -350,11 +350,11 @@ const THRESHOLDS = { internet: { green: 20, yellow: 10 }, phone: { green: 25, ye
 /* Who the phone's list shows after Who is below on this standard, for these people. */
 function listedBelow({ config, roster, M, metric, roleFilter = null, query = "" }) {
   const run = new Function("boardRoster", "M", "norm", "evaluateAssociate", "tiersOf", "FIVE", "thr", "bpDotState", "isRestricted",
-    "bpFirstTag", "strengths", "unitsOf", "restrictions", "useMemo", "limitOnly", "roleFilter", "drill", "q",
+    "bpFirstTag", "strengths", "unitsOf", "restrictions", "useMemo", "limitOnly", "roleFilter", "drill", "q", "isMeasured",
     `${peopleSource}\n${rowsSource}\nreturn rows;`);
   const tiersOf = (roleId) => config.standards.s1[roleId]?.tiers;
   const rows = run(roster, M, norm, evaluateAssociate, tiersOf, FIVE, THRESHOLDS, bpDotState, () => false,
-    () => null, {}, () => 0, {}, (fn) => fn(), false, roleFilter, { kind: "below", id: metric }, norm(query));
+    () => null, {}, () => 0, {}, (fn) => fn(), false, roleFilter, { kind: "below", id: metric }, norm(query), isMeasured);
   return rows.map((p) => p.a.name);
 }
 const dialFor = (args, metric) => phoneDials(args).find((v) => v.m === metric);
@@ -365,6 +365,28 @@ test("Who is below lists the people the dial counts, for a standard on the row's
     const listed = listedBelow({ ...args, metric });
     assert.deepEqual(listed.sort(), ["Fixture B", "Fixture C"], `${metric}: the measured people under the bar, and nobody who is missing`);
     assert.equal(listed.length, dialFor(args, metric).below, metric);
+  }
+});
+
+test("a negative figure is not listed under Who is below when the dial did not count it", () => {
+  // Found in independent review: the dial said one below and the list named two. The row's dot reads a
+  // negative as "bad", but a negative is not a measurement, so the dial calls it unavailable.
+  const L = person("Fixture L"), N = person("Fixture N");
+  const args = { config, roster: [L, N], M: { stats: { [norm(L.name)]: stat(0.25, 0.5, 0.4), [norm(N.name)]: stat(-0.2, 0.5, 0.4) } } };
+  assert.equal(dialFor(args, "apptVideoDayPct").below, 1);
+  assert.deepEqual(listedBelow({ ...args, metric: "apptVideoDayPct" }), ["Fixture L"]);
+});
+
+test("Who is below admits what the dial admits: no invalid figure is listed, and a real zero is", () => {
+  const people = { LOW: stat(0.25, 0.5, 0.1), ZERO: stat(0, 0.5, 0), NEG: stat(-0.2, 0.5, -0.2), NAN: stat(NaN, 0.5, NaN),
+    INF: stat(Infinity, 0.5, Infinity), NEGINF: stat(-Infinity, 0.5, -Infinity), HIGH: stat(0.6, 0.5, 0.4) };
+  const who = Object.fromEntries(Object.keys(people).map((k) => [k, person(`Fixture ${k}`)]));
+  const M2 = { stats: Object.fromEntries(Object.entries(people).map(([k, st]) => [norm(who[k].name), st])) };
+  const args = { config, roster: Object.values(who), M: M2 };
+  for (const metric of ["apptVideoDayPct", "engagedVideoPct"]) {
+    const dial = dialFor(args, metric);
+    assert.deepEqual([dial.observed, dial.missing, dial.below], [3, 4, 2], `${metric}: LOW, ZERO and HIGH were measured; four figures are unavailable`);
+    assert.deepEqual(listedBelow({ ...args, metric }).sort(), ["Fixture LOW", "Fixture ZERO"], `${metric}: the list names the two the dial counted below`);
   }
 });
 

@@ -39,7 +39,7 @@ import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT } from "../
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
-import { attainmentOf, newRollup, addToRollup, readRollup, weakestRollup } from "../api/_standard-rollup.mjs";
+import { isMeasured, attainmentOf, newRollup, addToRollup, readRollup, weakestRollup } from "../api/_standard-rollup.mjs";
 import { doorCheck, readingVerdict, settle, watchCircle } from "../api/_geofence.mjs";
 import { assistWhere } from "../api/_queue-notify.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
@@ -17196,7 +17196,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const rows = useMemo(() => {
     let list = people.filter((p) => (limitOnly ? p.atLimit : (!roleFilter || p.a.roleId === roleFilter)));
     if (q) list = list.filter((p) => norm(p.a.name).includes(q));
-    if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && (d.state === "bad" || d.state === "warn"); });
+    /* The same admission as the dial's count: only a figure that can be a measurement
+       is below anything. A negative or a NaN reads "bad" on the row's dot, and listing
+       it here would name somebody the dial did not count. A real zero still counts. */
+    if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && isMeasured(d.v) && (d.state === "bad" || d.state === "warn"); });
     if (drill && drill.kind === "channel") list = list.slice().sort((x, y) => ((y.st?.[drill.id + "Pct"] ?? -1) - (x.st?.[drill.id + "Pct"] ?? -1)));
     else list = list.slice().sort((x, y) => y.units - x.units || x.a.name.localeCompare(y.a.name));
     return list;
