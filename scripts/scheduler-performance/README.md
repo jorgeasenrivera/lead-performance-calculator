@@ -358,3 +358,7 @@ Touch day navigation follows horizontal displacement with opaque adjacent surfac
 Closing restores calendar selection, focus and scroll. The embedded path stays a full-page region inside the existing modal, and closing Performance cancels child transitions. Adjacent preview panes are inert and hidden from accessibility APIs. Month projections are captured before dragging instead of recomputed in every first drag frame.
 
 Browser evidence and unresolved test failures for this increment are retained under `evidence/day-motion/`. Synthetic gestures and Chromium native touch dispatch are emulator checks, not physical-device or screen-reader verification. This checkpoint does not change the shared application motion system or production source.
+
+## Shared controls preview
+
+The next isolated increment applies the approved shared control, motion and visual proposal to Performance, Coaching and the scheduler. Its source pins, browser matrix, preserved failures and limitations are recorded in [the shared-system checkpoint](evidence/shared-system/CHECKPOINT.md). Production application files remain unchanged. This does not make the preview a live application or a fair schedule generator.

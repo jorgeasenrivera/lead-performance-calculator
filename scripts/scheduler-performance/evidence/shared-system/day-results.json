@@ -1,0 +1,268 @@
+[
+  {
+    "key": "chromium-390-1-no-preference",
+    "forward": {
+      "prevented": [
+        true,
+        true
+      ],
+      "during": {
+        "transform": "matrix(1, 0, 0, 1, -100, 0)",
+        "previews": 2,
+        "opacity": "1",
+        "headingTops": [
+          25,
+          25,
+          25
+        ]
+      },
+      "elapsed": 25.800000000745058
+    },
+    "vertical": {
+      "prevented": [
+        false,
+        false
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 0.7000000011175871
+    },
+    "axe": {
+      "violations": [],
+      "passes": 15
+    },
+    "boundaries": true,
+    "rapidReverse": true,
+    "coalescing": true,
+    "hybridInput": true,
+    "liveReducedMotion": true,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-320-2-no-preference",
+    "forward": {
+      "prevented": [
+        true,
+        true
+      ],
+      "during": {
+        "transform": "matrix(1, 0, 0, 1, -100, 0)",
+        "previews": 2,
+        "opacity": "1",
+        "headingTops": [
+          25,
+          25,
+          25
+        ]
+      },
+      "elapsed": 34.20000000111759
+    },
+    "vertical": {
+      "prevented": [
+        false,
+        false
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 1.299999998882413
+    },
+    "axe": {
+      "violations": [],
+      "passes": 16
+    },
+    "boundaries": true,
+    "rapidReverse": true,
+    "coalescing": true,
+    "hybridInput": true,
+    "liveReducedMotion": true,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-reduce",
+    "forward": {
+      "prevented": [
+        true,
+        true
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 579.2000000011176
+    },
+    "vertical": {
+      "prevented": [
+        false,
+        false
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 3.699999999254942
+    },
+    "axe": {
+      "violations": [],
+      "passes": 14
+    },
+    "boundaries": true,
+    "rapidReverse": true,
+    "coalescing": true,
+    "hybridInput": true,
+    "liveReducedMotion": true,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-no-preference",
+    "forward": {
+      "prevented": [
+        true,
+        true
+      ],
+      "during": {
+        "transform": "matrix(1, 0, 0, 1, -100, 0)",
+        "previews": 2,
+        "opacity": "1",
+        "headingTops": [
+          25,
+          25,
+          25
+        ]
+      },
+      "elapsed": 31
+    },
+    "vertical": {
+      "prevented": [
+        false,
+        false
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 2
+    },
+    "axe": {
+      "violations": [],
+      "passes": 15
+    },
+    "boundaries": true,
+    "rapidReverse": true,
+    "coalescing": true,
+    "hybridInput": true,
+    "liveReducedMotion": true,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-320-2-no-preference",
+    "forward": {
+      "prevented": [
+        true,
+        true
+      ],
+      "during": {
+        "transform": "matrix(1, 0, 0, 1, -100, 0)",
+        "previews": 2,
+        "opacity": "1",
+        "headingTops": [
+          25,
+          25,
+          25
+        ]
+      },
+      "elapsed": 123
+    },
+    "vertical": {
+      "prevented": [
+        false,
+        false
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 3
+    },
+    "axe": {
+      "violations": [],
+      "passes": 16
+    },
+    "boundaries": true,
+    "rapidReverse": true,
+    "coalescing": true,
+    "hybridInput": true,
+    "liveReducedMotion": true,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-reduce",
+    "forward": {
+      "prevented": [
+        true,
+        true
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 2008
+    },
+    "vertical": {
+      "prevented": [
+        false,
+        false
+      ],
+      "during": {
+        "transform": "none",
+        "previews": 0,
+        "opacity": "1",
+        "headingTops": [
+          25
+        ]
+      },
+      "elapsed": 152
+    },
+    "axe": {
+      "violations": [],
+      "passes": 14
+    },
+    "boundaries": true,
+    "rapidReverse": true,
+    "coalescing": true,
+    "hybridInput": true,
+    "liveReducedMotion": true,
+    "status": "passed"
+  }
+]

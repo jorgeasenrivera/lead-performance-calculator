@@ -1,0 +1,57 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ [
++   {
++     id: 'color-contrast',
++     nodes: [
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-head > span:nth-child(2)'
++         ]
++       },
++       {
++         summary: 'Fix any of the following:\n' +
++           '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1',
++         target: [
++           '.cx-head > span:nth-child(3)'
++         ]
++       }
++     ]
++   }
++ ]
+- []
+
+    at audit (file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:8:399)
+    at async file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:12:2 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [
+    {
+      id: 'color-contrast',
+      nodes: [
+        {
+          target: [ '.cx-head > span:nth-child(2)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1'
+        },
+        {
+          target: [ '.cx-head > span:nth-child(3)' ],
+          summary: 'Fix any of the following:\n' +
+            '  Element has insufficient color contrast of 2.59 (foreground color: #9aa39d, background color: #ffffff, font size: 6.0pt (8px), font weight: bold). Expected contrast ratio of 4.5:1'
+        }
+      ]
+    }
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

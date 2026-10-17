@@ -1,3 +1,4 @@
+import {sharedCore,sharedManager} from "./shared-transform.mjs";
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { build } from "vite";
@@ -102,7 +103,7 @@ export async function buildPreview() {
   seed.storeData.__storeId = "fictional-0";
   await writeFile(
     "scripts/scheduler-performance/fixture.json",
-    JSON.stringify({ store: seed.storeConfig, data: seed.storeData }),
+    JSON.stringify({ store: seed.storeConfig, data: seed.storeData }).replaceAll("Sam Demo","Sam Morgan").replaceAll("sam demo","sam morgan"),
   );
   const outDir = "dist-harness/scheduler-performance";
   await build({
@@ -114,8 +115,9 @@ export async function buildPreview() {
         transform(source, id) {
           if (id.endsWith("/src/main.jsx"))
             return 'import "/scripts/scheduler-performance/entry.jsx";';
-          if (id.endsWith("/src/Manager.jsx")) return patchManager(source);
-          if (id.endsWith("/src/LeadPerformanceCalculator.jsx")) return patchPhoneLayout(source);
+          if (id.split('?')[0].endsWith('/src/manager-signal.css')) {if(createHash('sha256').update(source).digest('hex')!=='93fd31a911167c1313e63ae3c630f5d2173549935a730b5eeda307befe5d105d')throw Error('Manager CSS boundary changed. Re-review shared preview.');return source.replace('.manager-signal .page button:active { transform:translateY(1px); }','').replaceAll('transform:translateY(1px)','transform:none').replaceAll('transform:translateY(-1px)','transform:none');}
+          if (id.endsWith("/src/Manager.jsx")) return sharedManager(patchManager(source));
+          if (id.endsWith("/src/LeadPerformanceCalculator.jsx")) return sharedCore(patchPhoneLayout(source));
         },
       },
       react(),
@@ -151,9 +153,10 @@ export async function buildPreview() {
   );
   await writeFile(planner + "/month-model.mjs", monthlyModel);
   await cp("scripts/scheduler-performance/planner.css", planner + "/style.css");
+  await cp("scripts/scheduler-performance/shared-system.css", planner + "/shared-system.css");
   await writeFile(
     planner + "/index.html",
-    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; connect-src \'none\'; style-src \'self\' \'unsafe-inline\'; object-src \'none\'; base-uri \'none\'"><title>Plan the month · Sage</title><link rel="stylesheet" href="style.css"></head><body><main id="app"></main><script type="module" src="app.mjs"></script></body></html>',
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; connect-src \'none\'; style-src \'self\' \'unsafe-inline\'; object-src \'none\'; base-uri \'none\'"><title>Plan the month · Sage</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="shared-system.css"></head><body><main id="app"></main><script type="module" src="app.mjs"></script></body></html>',
   );
   let html = await readFile(outDir + "/index.html", "utf8");
   html = html

@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AppShell,
+  CoachingPanel,
+  SegControl,
   BoardRoomPhone,
   StoreHero,
   Board,
@@ -13,6 +15,8 @@ import {
 } from "../../src/LeadPerformanceCalculator.jsx";
 import seed from "./fixture.json";
 import "./entry.css";
+import "./shared-system.css";
+import {navigatePage} from "./shared-motion.mjs";
 const noop = () => {};
 const config = {
   stores: [seed.store],
@@ -31,6 +35,10 @@ const config = {
   holidays: [],
 };
 function Preview() {
+  const [coachId,setCoachId]=useState(null);
+  const [section,setSection]=useState("dashboard"),[data,setData]=useState(seed.data);
+  const selectSection=value=>navigatePage(()=>setSection(value));
+  useEffect(()=>{const warn=e=>{if(data!==seed.data){e.preventDefault();e.returnValue="";}};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[data]);
   const phone = usePhoneLayout(),
     dialog = useRef(),
     frame = useRef(),
@@ -40,16 +48,16 @@ function Preview() {
   const props = {
     config,
     store: seed.store,
-    data: seed.data,
-    session: { role: "manager", name: "Preview Manager" },
+    data,
+    session: { role: "manager", name: "Jordan Lee" },
     canSetGoal: false,
     onSaveConfig: noop,
     onSetRestriction: noop,
-    onCoach: noop,
+    onCoach: person=>{setCoachId(person.id);selectSection("coaching");},
     onGoTab: noop,
     onFilter: noop,
     onMove: noop,
-    onChange: noop,
+    onChange: setData,
     readOnly: true,
   };
   const close = () => {
@@ -129,25 +137,22 @@ function Preview() {
     <>
       <AppShell
         session={props.session}
-        appModule="performance"
+        appModule="perf"
         onSignOut={noop}
-        onReplayIntro={noop}
-        onHelp={noop}
+        onReplayIntro={undefined}
+        onHelp={()=>{const about=document.querySelector(".sp-about");about.open=true;requestAnimationFrame(()=>about.querySelector("summary").focus());about.scrollIntoView({block:"nearest"});}}
         onToolChange={noop}
-        onImport={noop}
-        navItems={[]}
-        navValue="dashboard"
-        navOnChange={noop}
-        storeData={seed.data}
+        onImport={undefined}
+        navItems={[["dashboard","Dashboard"],["coaching","Coaching"]]}
+        navValue={section}
+        navOnChange={setSection}
+        storeData={data}
         storeName={seed.store.name}
         brand={seed.store.brand}
       >
-        <div className="sp-preview-note">
-          Fictional preview{" "}
-          <span>Performance → Schedule · Nothing is published</span>
-        </div>
-        <main className="page sp-performance" aria-label="Performance preview">
-          {phone ? (
+        <main className="page sp-performance" aria-label={section==="coaching"?"Coaching":"Performance"}>
+          {!phone&&<SegControl items={[["dashboard","Dashboard"],["coaching","Coaching"]]} value={section} onChange={setSection}/>}
+          {section==="coaching"?<CoachingPanel initialPerson={coachId} config={config} store={seed.store} data={data} onChange={setData} userName="Jordan Lee"/>:phone ? (
             <BoardRoomPhone {...props} />
           ) : (
             <>
@@ -156,6 +161,7 @@ function Preview() {
             </>
           )}
         </main>
+        <details className="sp-about"><summary><PixIcon glyph="question" size={16}/>About this preview</summary><p>Performance, Coaching and Schedule use sample records. Changes stay in this page and are lost on refresh. No live data is connected and no schedule is published. Other tools and account actions are unavailable here.</p></details>
       </AppShell>
       <dialog
         ref={dialog}
