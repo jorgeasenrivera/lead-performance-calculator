@@ -1,0 +1,253 @@
+{
+  "rail": {
+    "left": 896,
+    "right": 1376,
+    "top": 173,
+    "bottom": 631.78125,
+    "width": 480,
+    "height": 458.78125
+  },
+  "labels": [
+    {
+      "text": "Internet",
+      "rect": {
+        "left": 417.421875,
+        "right": 559.0625,
+        "top": 412.40625,
+        "bottom": 443.40625,
+        "width": 141.640625,
+        "height": 31
+      },
+      "owner": {
+        "left": 417.421875,
+        "right": 559.0625,
+        "top": 347,
+        "bottom": 445,
+        "width": 141.640625,
+        "height": 98
+      },
+      "group": {
+        "left": 400.8125,
+        "right": 867.984375,
+        "top": 310,
+        "bottom": 445,
+        "width": 467.171875,
+        "height": 135
+      }
+    },
+    {
+      "text": "Phone",
+      "rect": {
+        "left": 587.6875,
+        "right": 681.09375,
+        "top": 412.40625,
+        "bottom": 443.40625,
+        "width": 93.40625,
+        "height": 31
+      },
+      "owner": {
+        "left": 587.6875,
+        "right": 681.09375,
+        "top": 347,
+        "bottom": 445,
+        "width": 93.40625,
+        "height": 98
+      },
+      "group": {
+        "left": 400.8125,
+        "right": 867.984375,
+        "top": 310,
+        "bottom": 445,
+        "width": 467.171875,
+        "height": 135
+      }
+    },
+    {
+      "text": "Showroom",
+      "rect": {
+        "left": 709.71875,
+        "right": 851.359375,
+        "top": 412.40625,
+        "bottom": 443.40625,
+        "width": 141.640625,
+        "height": 31
+      },
+      "owner": {
+        "left": 709.71875,
+        "right": 851.359375,
+        "top": 347,
+        "bottom": 445,
+        "width": 141.640625,
+        "height": 98
+      },
+      "group": {
+        "left": 400.8125,
+        "right": 867.984375,
+        "top": 310,
+        "bottom": 445,
+        "width": 467.171875,
+        "height": 135
+      }
+    },
+    {
+      "text": "Appt Video",
+      "rect": {
+        "left": 400.8125,
+        "right": 561.625,
+        "top": 593,
+        "bottom": 624,
+        "width": 160.8125,
+        "height": 31
+      },
+      "owner": {
+        "left": 400.8125,
+        "right": 561.625,
+        "top": 504,
+        "bottom": 625.59375,
+        "width": 160.8125,
+        "height": 121.59375
+      },
+      "group": {
+        "left": 400.8125,
+        "right": 867.984375,
+        "top": 467,
+        "bottom": 625.59375,
+        "width": 467.171875,
+        "height": 158.59375
+      }
+    },
+    {
+      "text": "BH Video",
+      "rect": {
+        "left": 571.625,
+        "right": 700.265625,
+        "top": 593,
+        "bottom": 624,
+        "width": 128.640625,
+        "height": 31
+      },
+      "owner": {
+        "left": 571.625,
+        "right": 700.265625,
+        "top": 504,
+        "bottom": 625.59375,
+        "width": 128.640625,
+        "height": 121.59375
+      },
+      "group": {
+        "left": 400.8125,
+        "right": 867.984375,
+        "top": 467,
+        "bottom": 625.59375,
+        "width": 467.171875,
+        "height": 158.59375
+      }
+    },
+    {
+      "text": "Engaged Video",
+      "rect": {
+        "left": 710.265625,
+        "right": 919.3125,
+        "top": 593,
+        "bottom": 624,
+        "width": 209.046875,
+        "height": 31
+      },
+      "owner": {
+        "left": 710.265625,
+        "right": 919.3125,
+        "top": 504,
+        "bottom": 625.59375,
+        "width": 209.046875,
+        "height": 121.59375
+      },
+      "group": {
+        "left": 400.8125,
+        "right": 867.984375,
+        "top": 467,
+        "bottom": 625.59375,
+        "width": 467.171875,
+        "height": 158.59375
+      }
+    }
+  ],
+  "sentence": "On pace for 134 of 96",
+  "sentenceRect": {
+    "left": 49,
+    "right": 347.8125,
+    "top": 545,
+    "bottom": 631.78125,
+    "width": 298.8125,
+    "height": 86.78125
+  },
+  "words": [
+    {
+      "text": "On",
+      "rect": {
+        "left": 69,
+        "right": 107.84375,
+        "top": 548,
+        "bottom": 584,
+        "width": 38.84375,
+        "height": 36
+      }
+    },
+    {
+      "text": "pace",
+      "rect": {
+        "left": 114.21875,
+        "right": 181.625,
+        "top": 548,
+        "bottom": 584,
+        "width": 67.40625,
+        "height": 36
+      }
+    },
+    {
+      "text": "for",
+      "rect": {
+        "left": 69,
+        "right": 109.390625,
+        "top": 591.390625,
+        "bottom": 627.390625,
+        "width": 40.390625,
+        "height": 36
+      }
+    },
+    {
+      "text": "134",
+      "rect": {
+        "left": 224.40625,
+        "right": 274.8125,
+        "top": 569.6875,
+        "bottom": 605.6875,
+        "width": 50.40625,
+        "height": 36
+      }
+    },
+    {
+      "text": "of",
+      "rect": {
+        "left": 281.8125,
+        "right": 310.796875,
+        "top": 548,
+        "bottom": 584,
+        "width": 28.984375,
+        "height": 36
+      }
+    },
+    {
+      "text": "96",
+      "rect": {
+        "left": 281.8125,
+        "right": 317.328125,
+        "top": 591.390625,
+        "bottom": 627.390625,
+        "width": 35.515625,
+        "height": 36
+      }
+    }
+  ],
+  "columns": "298.812px 492.172px",
+  "headingSize": "60px"
+}

@@ -95,3 +95,14 @@ html.manager-signal .fr-sheet.co-sheet :is(.fr-st,.cx-ch.ok){color:#23674f!impor
  html.manager-signal .lpc .cx-nm{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
  html.manager-signal .lpc .cx-gap{flex-wrap:wrap}
 }
+/* Keep a sentence in one inline formatting context, including its emphasized number. */
+html.manager-signal .sp-performance .s2-hero.s2-hasrail .s2-say{display:block}
+html.manager-signal .sp-performance .s2-say .vmark{display:inline-block;vertical-align:middle;margin-right:7px}
+html.manager-signal .sp-performance .s2-hero.s2-hasrail>.s2-tube{container-name:sage-hero;container-type:inline-size}
+html.manager-signal .sp-performance .s2-right .s2-mklbl{white-space:normal;overflow-wrap:anywhere;text-align:center;max-width:100%}
+@container sage-hero (max-width:42em){
+ html.manager-signal .sp-performance .s2-body{display:grid;grid-template-columns:minmax(0,1fr)}
+ html.manager-signal .sp-performance .s2-right{border-left:0;padding-left:0}
+ html.manager-signal .sp-performance :is(.s2-marks,.s2-hbars){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
+ html.manager-signal .sp-performance :is(.s2-mark,.s2-hbar){min-width:0}
+}

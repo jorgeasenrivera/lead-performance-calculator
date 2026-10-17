@@ -1,5 +1,7 @@
 # Measured shared text scaling
 
+**Further pixel-review correction:** The computed font growth below remains valid, but the enlarged desktop Performance image exposed internal hero-label overlap and a fragmented pace sentence. That image is retained as rejected evidence. See [hero reflow](../hero-reflow/CHECKPOINT.md) for containment and visual reading-order assertions.
+
 Independent review of d12d333 found that the previous shared probe changed only the root font size. Fixed-pixel typography remained unchanged. Reproduction at 320px measured 12px selectors, 13px section headings and 14px person names both before and after the old 200% setting. The prior claim of 200% text coverage was incorrect and was withdrawn on the draft PR. Earlier evidence remains available.
 
 The isolated build now converts font sizes and fixed line heights in the pinned Manager/core stylesheet copies and manager stylesheet copy from px to rem, preserving the normal 16px-root sizes. Production source remains unchanged. Non-text geometry is not globally scaled. Enlarged Coaching cards and controls use intrinsic columns and wrapping; the selected person's name no longer truncates. Bottom navigation wraps to two columns when its text needs the space, and a ResizeObserver reserves its actual height so it does not obscure the final content.
