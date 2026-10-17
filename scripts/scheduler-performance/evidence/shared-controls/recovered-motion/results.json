@@ -1,0 +1,36 @@
+[
+  {
+    "key": "chromium-390-1-pointer",
+    "state": {
+      "radius": "14px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(86, 125, 97)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-pointer",
+    "state": {
+      "radius": "14px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(86, 125, 97)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  }
+]

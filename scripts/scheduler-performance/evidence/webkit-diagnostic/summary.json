@@ -1,0 +1,75 @@
+{
+  "sourceSha": "492037d419c0485fbb0815ef4e1bb68133c8040e",
+  "node": "24.19.0",
+  "playwright": "1.63.0",
+  "platform": "linux x64",
+  "browser": "WebKit WPE build 2359",
+  "cpuQuota": "4 cores (800000/200000)",
+  "cases": [
+    {
+      "case": "teams",
+      "width": 320,
+      "textScale": 1,
+      "status": "passed once under instrumentation; prior timeout not reproduced",
+      "actions": [
+        {
+          "durationMs": 1921.4,
+          "timeoutMs": 15000,
+          "error": null
+        },
+        {
+          "durationMs": 222.2,
+          "timeoutMs": 15000,
+          "error": null
+        }
+      ],
+      "traceSha256": "799fb1e47652b95ca1e28ee0bf20fa24eb12b79ea9e88c20f8c07e07840c580f",
+      "postClickSnapshotLimit": false
+    },
+    {
+      "case": "import",
+      "width": 390,
+      "textScale": 1,
+      "status": "passed once under instrumentation; prior timeout not reproduced",
+      "actions": [
+        {
+          "durationMs": 1643.5,
+          "timeoutMs": 12000,
+          "error": null
+        }
+      ],
+      "traceSha256": "dbc6a7df7dc4fc914c03802baf1108e603740b93c3fdcf894090ad5b7f1f1aaa",
+      "postClickSnapshotLimit": false
+    },
+    {
+      "case": "delivered",
+      "width": 720,
+      "textScale": 1,
+      "status": "passed once under instrumentation; prior timeout not reproduced",
+      "actions": [
+        {
+          "durationMs": 2756.5,
+          "timeoutMs": 12000,
+          "error": null
+        },
+        {
+          "durationMs": 2257.9,
+          "timeoutMs": 12000,
+          "error": null
+        },
+        {
+          "durationMs": 2983.5,
+          "timeoutMs": 12000,
+          "error": null
+        },
+        {
+          "durationMs": 2942.2,
+          "timeoutMs": 12000,
+          "error": null
+        }
+      ],
+      "traceSha256": "2e0fe645b2587673d18fdd5c83fb33418aa1be220df02d36309e250509a16efe",
+      "postClickSnapshotLimit": true
+    }
+  ]
+}

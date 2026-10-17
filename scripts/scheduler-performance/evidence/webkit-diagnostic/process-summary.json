@@ -1,0 +1,17 @@
+{
+  "teams": {
+    "samples": 57,
+    "maxObservedWpeLifetimeCpuPercent": 149.0,
+    "metricNote": "ps percent is process-lifetime average, not instantaneous load; samples include PID, parent PID, state and elapsed time"
+  },
+  "import": {
+    "samples": 43,
+    "maxObservedWpeLifetimeCpuPercent": 144.0,
+    "metricNote": "ps percent is process-lifetime average, not instantaneous load; samples include PID, parent PID, state and elapsed time"
+  },
+  "delivered": {
+    "samples": 61,
+    "maxObservedWpeLifetimeCpuPercent": 150.0,
+    "metricNote": "ps percent is process-lifetime average, not instantaneous load; samples include PID, parent PID, state and elapsed time"
+  }
+}

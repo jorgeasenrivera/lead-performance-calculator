@@ -1,0 +1,36 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Unconfirmed preview setting/. Input:
+
+'Sun, Nov 1, 2026\n' +
+  'Month calendar\n' +
+  '\n' +
+  'Store closed\n' +
+  '\n' +
+  'Teams and absence sources\n' +
+  '\n' +
+  'Confirmed closed. No shifts or forecast.\n' +
+  '\n' +
+  'Applied roster & sales'
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-weekly-hours.mjs:17:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'Sun, Nov 1, 2026\n' +
+    'Month calendar\n' +
+    '\n' +
+    'Store closed\n' +
+    '\n' +
+    'Teams and absence sources\n' +
+    '\n' +
+    'Confirmed closed. No shifts or forecast.\n' +
+    '\n' +
+    'Applied roster & sales',
+  expected: /Unconfirmed preview setting/,
+  operator: 'match',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

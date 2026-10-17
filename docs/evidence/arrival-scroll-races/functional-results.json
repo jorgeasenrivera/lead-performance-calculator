@@ -1,0 +1,106 @@
+[
+  {
+    "engine": "chromium",
+    "browser": "151.0.7922.173",
+    "passed": true,
+    "fullLoginMs": 7433,
+    "reducedLoginMs": 2134,
+    "selections": [
+      {
+        "at": 1792243504112,
+        "selected": "Live Floor",
+        "left": 390,
+        "width": 390,
+        "ramping": false
+      },
+      {
+        "at": 1792243505028,
+        "selected": "Home",
+        "left": 0,
+        "width": 390,
+        "ramping": false
+      },
+      {
+        "at": 1792243505660,
+        "selected": "Live Floor",
+        "left": 390,
+        "width": 390,
+        "ramping": false
+      }
+    ],
+    "events": [
+      {
+        "at": 1792243509346,
+        "kind": "phase",
+        "value": "cruise"
+      },
+      {
+        "at": 1792243511091,
+        "kind": "phase",
+        "value": "off"
+      },
+      {
+        "at": 1792243512080,
+        "kind": "click",
+        "value": "Home"
+      },
+      {
+        "at": 1792243512206,
+        "kind": "click",
+        "value": "Live Floor"
+      }
+    ]
+  },
+  {
+    "engine": "webkit",
+    "browser": "26.6",
+    "passed": true,
+    "fullLoginMs": 24059,
+    "reducedLoginMs": 5715,
+    "selections": [
+      {
+        "at": 1792243555041,
+        "selected": "Live Floor",
+        "left": 390,
+        "width": 390,
+        "ramping": false
+      },
+      {
+        "at": 1792243555294,
+        "selected": "Home",
+        "left": 0,
+        "width": 390,
+        "ramping": false
+      },
+      {
+        "at": 1792243555979,
+        "selected": "Live Floor",
+        "left": 390,
+        "width": 390,
+        "ramping": false
+      }
+    ],
+    "events": [
+      {
+        "at": 1792243563158,
+        "kind": "phase",
+        "value": "cruise"
+      },
+      {
+        "at": 1792243565097,
+        "kind": "phase",
+        "value": "off"
+      },
+      {
+        "at": 1792243566643,
+        "kind": "click",
+        "value": "Home"
+      },
+      {
+        "at": 1792243568251,
+        "kind": "click",
+        "value": "Live Floor"
+      }
+    ]
+  }
+]

@@ -1,0 +1,194 @@
+[
+  {
+    "key": "chromium-1440-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-1440-2-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-320-2-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-reduce",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-1440-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-1440-2-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-320-2-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-reduce",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "axe": 22,
+    "status": "passed"
+  }
+]

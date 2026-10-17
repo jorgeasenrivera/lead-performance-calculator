@@ -1,0 +1,74 @@
+[
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "motion": "reduce",
+    "font": 16,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "motion": "reduce",
+    "font": 32,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "motion": "no-preference",
+    "font": 16,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "motion": "no-preference",
+    "font": 32,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "motion": "reduce",
+    "font": 16,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "motion": "reduce",
+    "font": 32,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "motion": "no-preference",
+    "font": 16,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "motion": "no-preference",
+    "font": 32,
+    "status": "passed",
+    "containment": "direct last child of hero; below all percentages"
+  }
+]

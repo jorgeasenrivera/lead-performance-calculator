@@ -1,0 +1,75 @@
+[
+  {
+    "key": "chromium-390-before",
+    "geometry": {
+      "calendarTop": 871.578125,
+      "generateTop": 487.1875,
+      "scrollY": 0
+    },
+    "status": "baseline captured"
+  },
+  {
+    "key": "chromium-390-after",
+    "geometry": {
+      "calendarTop": 230,
+      "generateTop": 122,
+      "scrollY": 0
+    },
+    "status": "passed",
+    "singleDialog": true,
+    "pendingSurvivesOuterClose": true,
+    "cancelPreservesApplied": true,
+    "scroll": {
+      "height": 832,
+      "total": 2125
+    },
+    "tiles": [
+      {
+        "file": "chromium-390-after-day-scroll-1.png",
+        "offset": 0
+      },
+      {
+        "file": "chromium-390-after-day-scroll-2.png",
+        "offset": 732
+      },
+      {
+        "file": "chromium-390-after-day-scroll-3.png",
+        "offset": 1293
+      }
+    ],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true
+  },
+  {
+    "key": "webkit-390-after",
+    "geometry": {
+      "calendarTop": 230,
+      "generateTop": 122,
+      "scrollY": 0
+    },
+    "status": "passed",
+    "singleDialog": true,
+    "pendingSurvivesOuterClose": true,
+    "cancelPreservesApplied": true,
+    "scroll": {
+      "height": 832,
+      "total": 2189
+    },
+    "tiles": [
+      {
+        "file": "webkit-390-after-day-scroll-1.png",
+        "offset": 0
+      },
+      {
+        "file": "webkit-390-after-day-scroll-2.png",
+        "offset": 732
+      },
+      {
+        "file": "webkit-390-after-day-scroll-3.png",
+        "offset": 1357
+      }
+    ],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true
+  }
+]

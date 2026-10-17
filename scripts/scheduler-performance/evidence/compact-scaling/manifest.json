@@ -1,0 +1,113 @@
+{
+  "startingHead": "7fc8e3a8d004aa6c6213a742b423d98713fbf392",
+  "checks": {
+    "unitTests": 963,
+    "productionBuild": "pass",
+    "isolatedBuild": "pass",
+    "freshCompactScalingCases": 32,
+    "freshSimplificationCases": 12,
+    "freshMonthlyCases": 12,
+    "retainedUnchangedCardCases": 24
+  },
+  "computedGrowth": {
+    "monthPx": [
+      16,
+      32
+    ],
+    "ctaPx": [
+      14,
+      28
+    ]
+  },
+  "widths": [
+    320,
+    360,
+    390,
+    430
+  ],
+  "motion": [
+    "reduce",
+    "no-preference"
+  ],
+  "textScale": [
+    1,
+    2
+  ],
+  "retainedEvidence": "../simplification/card-layout-results.json; planner app/model/style files unchanged from 7fc8e3a",
+  "invalidatedPriorClaim": "The prior WebKit compact text200 screenshots did not enlarge visible labels",
+  "sha256": {
+    ".gitignore": "c796fd3c0852ef00c0aad692206f3de7d22da0b11e80c27fcbd1dec2b7bbd6ef",
+    "README.md": "8390f38e0fffcd92a80fc9d5873efe96b8c43b180cff3bfe44dad1255224cd39",
+    "assignment-view.mjs": "a9e94e35a6b3fa2a6562c56a5e83f58a13dcd40420834bb350e3923bc70cec56",
+    "assignment-view.test.mjs": "e0cbc79800b966c97c46d88ec0778517a33e842697fb6f7acf289d88c6e01a29",
+    "build.mjs": "ef00e6a51efc39b05fad6626ccfda20aa4b1cc2affced1cc815158def2aeb02c",
+    "date-readability.mjs": "a3dc3dc8ba51438a47c8b4a71e1c11dc6f9216679c18d3f06ee65f33d07529cf",
+    "entry.css": "bd8f28237dd407af5f33119c7c35e30030f42f2122f0a17a5dbd27c882f22df6",
+    "entry.jsx": "4df16b571c371bbb4df1582bf6b267d5c85159cd2a69e4ef4987c1435bd982ee",
+    "fixture.json": "16d4dd16be8a787035861a67ae3baeda405f999daf8435e0793bff689fc2e97b",
+    "html-finalize.mjs": "b49915fde7e30e0a1cce66d90cf0bb03822d85ef249e54296837872a744d98bc",
+    "html-finalize.test.mjs": "9abf2dcc97dc7c6975eace6e00032ac0013d35a84bee420c1f82ca7bc93fc425",
+    "isolation.test.mjs": "66069893189b9d630fd5eafcaf241883005192526a842b0ca7c5ca3a96481bf0",
+    "month-app.mjs": "3522511484155a5f3bcce2f266a36be31b9e7ce374b56b0679dd62ff9c5819a1",
+    "month-model.mjs": "640216d39f1b42e7e3e68b96671fe0735b25df1ba23405ca7d79b4927a5a3cb3",
+    "month-model.test.mjs": "269e54858f1a65c15952d0f50cba67fa7fd396be33d8ba0df07213e17668d413",
+    "planner.css": "65cb2eb0b018802ed485fd9d8bc91bf4385449b221ce241ba2494a652aa34374",
+    "probe-card-layout.mjs": "0206d126d9d5b0ec5c865be45730a11f71729ff52aed40bd58d3949792b25fcf",
+    "probe-compact-scaling.mjs": "49336b128efbd7297df23622bab15c040f8038b85a23d8e69cade7faa730ac07",
+    "probe-date-readability.mjs": "2a92e3e58bc211536c87b70d017763063069719cf3c2e62b1c029c4be8ebec4e",
+    "probe-manager.mjs": "d389789f175f73f734a1c42b521e84d6251c08edc68c5836d4d6f776cdacc155",
+    "probe-mobile-toggle.mjs": "583fc9e5414c506903d39804404ad24c3d6525ad830de06d0b3b2d4073dc63c3",
+    "probe-monthly.mjs": "08da84672f94ddab46567e2968d599f050920b30f8b3c98f70892694c774e780",
+    "probe-polish.mjs": "d0d501031ef53795acf58d14eb655f53892a206cdf1b4b98d6eae77efa1cc505",
+    "probe-review-corrections.mjs": "91f732165b76550596f03a8f595c6583802a9507b03cb2b11c3f9dda0c520be3",
+    "probe-simplification.mjs": "839c03165b2881c12d3060bff801be540a2b7a46c88314a98da400256b84794b",
+    "probe-timezone.mjs": "c7dff4ffef6bb42b656c5ed6edbe879c6f8ec180c9b3019239fc3fab34a4e241",
+    "probe.mjs": "e955efb13572c80c64945c951b8d734d6884bad44d2b95b0224f8d1f5f6399a6",
+    "sage-icons.mjs": "87decee596b424898bb47f821d32e9879449e684f2c1904245ced01cbab8f641",
+    "sage-icons.test.mjs": "4de184c236f5023393f1f403343ca7b3831bef03c1ce80fcb171df0cb8d8a704",
+    "sales-heat.test.mjs": "af9d25cc1e711ea338e03d0cbde3f0775b6e72c985c33d8c169fb646234538e4",
+    "store-editor.mjs": "6eca994824794f37e5b0bec7a37d430c8393630f9a1b9ef573f6aaadeb05788d",
+    "store-editor.test.mjs": "d7f2ca5b233c545ab6a169066400a349864996c2b0189b415e174ee89ac674b2",
+    "vercel.json": "efa70abf3dca75580108768de7f1926580ca0d61c64c2cb00b62fb7398e6a388"
+  },
+  "evidenceSha256": {
+    "before-font-transition.log": "5c9486375d52bddd26967e08e4d1a12623f78dad67675e82effec9ad62aa8934",
+    "before-motion-clock-factors.log": "dbff34e7b4d1640cd4cf6891ce67024293f4251a5a5051125274a726dac199b8",
+    "before-unscaled-labels.json": "297343c39fa494e77b9b5e0210f15cbb8b5c67f3a6c92a61dec04501e29fb668",
+    "chromium-320-text100-no-preference.png": "5705f4d4802dd470bae865a13d821d11167cbc4f0b752d193cab3b44eff8d97b",
+    "chromium-320-text100-reduce.png": "1650034b3a5f194fe692de67226a6da33ee5bb5b7e465fcd67b3c6cefb1dadd5",
+    "chromium-320-text200-no-preference.png": "5394db561fc31b9bbdf5c686e72cd9f3bbb0f6d684a2df13b0e6b76a138fb41c",
+    "chromium-320-text200-reduce.png": "d38f8a1cf28a3c2fd9c44390065763c5a8d6c6975cf9e2c4404cf81849c4e009",
+    "chromium-360-text100-no-preference.png": "011504d49305d6484ea5d224e7614ca599fc3a38373d4267b9fbf4c03b35b9f0",
+    "chromium-360-text100-reduce.png": "73e9a635f44ddc4396d541e732d67aacf7dd7635eb2ff65c3a42a2a266bdace7",
+    "chromium-360-text200-no-preference.png": "461792f3660274aac403961a4f1b7d6d08c73bc6b5843b14d7adc5b48651df2e",
+    "chromium-360-text200-reduce.png": "f1fecb0473adc32f29e5662a3123832b34eef3fe7c33603d4bc4ba0fc795f0f6",
+    "chromium-390-text100-no-preference.png": "885af449eb5dbdb94e468b2bed11f695610f33474733adcc8bc2f28307e8848e",
+    "chromium-390-text100-reduce.png": "e492815e07ab40e3cc5a5e796fa55f2771de8a0ac7a7d30102be63b3506cd409",
+    "chromium-390-text200-no-preference.png": "c81258ace5f5cf5e2d0c8b182959568d208b94a46d5ef4fc1e39a6abdad20050",
+    "chromium-390-text200-reduce.png": "85b1d1684b18806bf352bb18d9e7047295c4b5352dea0407f95e3a73b05bde78",
+    "chromium-430-text100-no-preference.png": "b87c9b161ec19fcc683e8172d6f285e9cf6c86c54a2ea703e4be07c6d3ce5e6b",
+    "chromium-430-text100-reduce.png": "4857c5727d3f8663dd5cfb985465a6afa6186333feeedbba210b43ab9d3ea574",
+    "chromium-430-text200-no-preference.png": "f6d78480f8f370eae460a14fbb0d484d085052021111958d045f10183889717f",
+    "chromium-430-text200-reduce.png": "188acef2cc9c97f739aff1c4b0ba7047a0533ff44dfe327123cb988f8195d36f",
+    "compact-scaling-results.json": "67f64ffdf1b36143c0596eb300c4c4cd1378b2ed54d1d24d0c85f03f148fa50a",
+    "monthly-results.json": "a44645054949ad47d4337f8cabb7cae64120814308072f8615a335a7b737e600",
+    "simplification-results.json": "a0542633056cf0455edb5220444b34911cdcd0705b23663dcb8e7f02b6e0bef3",
+    "webkit-320-text100-no-preference.png": "31ecfd0d22246a4df5ec830c97ad5b39fb8c5c896f3a6ce48c66c542dc4858ed",
+    "webkit-320-text100-reduce.png": "812cb19e3d6e055b4fb8e3b3403c6b63d17f9aabaf41fb2feef7ac1159a16179",
+    "webkit-320-text200-no-preference.png": "3feb57ed1b1d05f3a1e74a7e524f1963ed84808ae58acaeeb4de5e9f19334ad6",
+    "webkit-320-text200-reduce.png": "bf909af8b9852541421e2e57831d9f6160a1f59ac8cd33166e64e4d18c372f9c",
+    "webkit-360-text100-no-preference.png": "7ee24bcd06b117ff06af5fc7bdc6fd53840a8d63c7cab82cb15effd0f0d92f88",
+    "webkit-360-text100-reduce.png": "d4b4641502f47efe432fdc8fdc5af1395ded51bbbf0c69de41b2be0f17fb19a8",
+    "webkit-360-text200-no-preference.png": "22d41381470c38aa96ac629b640610473fe5a1921b7edef016a4dd59d49aa4a3",
+    "webkit-360-text200-reduce.png": "055e75697bc1d229ab7dc4ecab841ce4dc81bf0d887e2907bed0776a8bf0fbd7",
+    "webkit-390-text100-no-preference.png": "472c16fa2d44dce9b82ae379a67168a09771d9e897f8ffc83d080f790fddb85d",
+    "webkit-390-text100-reduce.png": "c3d050a8138bd1c86b9b98508ab537c7361084bf7bf6230becedf084b89e7f9b",
+    "webkit-390-text200-no-preference.png": "2d02be82c3bbd55066c43d1a8dba171d3190fbd88230917b07cd54a03361d077",
+    "webkit-390-text200-reduce.png": "99af0449f9d954236a7ca3f45572dc771290e36abbee336e1a8dce2028eb58a0",
+    "webkit-430-text100-no-preference.png": "27aea4b0eca1250eecc8eb0d07ef88f138a42c8569fb854bd30118f3e6231b0d",
+    "webkit-430-text100-reduce.png": "9acc2001c27a4d2774fd540dee6c7b366a4bc208d7c773b5464c85dfa771ed58",
+    "webkit-430-text200-no-preference.png": "9fc617823720ca5b8e4d243f7ced7ef5e67d437294b20537f0805d6d6dc6b245",
+    "webkit-430-text200-reduce.png": "8f17501c26803f1944b9a215019986a55c840ae051c1f5250051c4a66ab1578d"
+  }
+}

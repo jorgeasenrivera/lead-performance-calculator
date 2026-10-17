@@ -1,0 +1,388 @@
+.sp-preview-note {
+  box-sizing: border-box;
+  max-width: 1320px;
+  margin: 12px auto;
+  padding: 10px 20px;
+  color: #234939;
+  font: 600 0.875rem/1.4 var(--font-ui);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sp-preview-note span {
+  font-weight: 400;
+}
+.sp-performance {
+  padding: 12px 20px !important;
+}
+html.manager-signal .sp-plan-entry {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #b6c6a4;
+  border-radius: 8px;
+  background: #e8eedf;
+  color: #173d2b;
+  font: 600 0.9375rem/1.35 var(--font-ui);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  transition: background-color 140ms ease-out;
+  transform: none !important;
+}
+html.manager-signal .sp-plan-entry small {
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+html.manager-signal .sp-plan-entry:hover {
+  background: #d5e1c7;
+}
+html.manager-signal .sp-plan-entry:focus-visible {
+  outline: 3px solid #e4c98d;
+  outline-offset: 3px;
+}
+html.manager-signal .sp-phone-schedule {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  gap: 4px;
+}
+.sp-today {
+  color: inherit;
+  border: 0;
+  background: none;
+  font: inherit;
+  min-height: 44px;
+  text-align: right;
+}
+.sp-phone-schedule .sp-plan-entry {
+  font-size: 0.875rem;
+  align-items: center;
+  padding: 8px;
+  margin: 0;
+}
+.sp-dialog {
+  box-sizing: border-box;
+  width: min(1200px, calc(100vw - 32px));
+  max-width: none;
+  height: calc(100dvh - 32px);
+  max-height: none;
+  border: 1px solid #b7c5ad;
+  border-radius: 16px;
+  padding: 0;
+  background: #f3f2e9;
+  color: #234939;
+  overflow: hidden;
+}
+.sp-dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.sp-dialog::backdrop {
+  background: #102a24b3;
+}
+.sp-dialog-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #173d2b;
+  color: #fffdf4;
+  font: 600 1rem/1.3 var(--font-ui);
+}
+.sp-dialog-bar button {
+  flex-shrink: 0;
+  background: #fffdf4;
+  color: #234939;
+  border: 1px solid #cbd3c5;
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  font: 600 0.9375rem/1.3 var(--font-ui);
+  cursor: pointer;
+}
+.sp-dialog-bar button:focus-visible {
+  outline: 3px solid #e4c98d;
+  outline-offset: 3px;
+}
+.sp-dialog-bar span {
+  min-width: 0;
+  text-align: right;
+}
+.sp-dialog-bar small {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+.sp-dialog iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  min-width: 0;
+}
+.sp-dialog-bar,
+.sp-dialog-bar * {
+  box-sizing: border-box;
+}
+@media (max-width: 700px) {
+  .sp-dialog {
+    width: 100vw;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+  }
+  .sp-dialog-bar {
+    padding: 10px 12px;
+  }
+  .sp-dialog-bar small {
+    display: none;
+  }
+  .sp-performance {
+    padding: 0 12px !important;
+  }
+  .sp-preview-note {
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+  }
+}
+/* Use the available viewport width, including classic scrollbar layouts. */
+.sp-dialog {
+  width: min(1200px, calc(100% - 32px));
+}
+.sp-dialog-bar {
+  flex-wrap: wrap;
+}
+.sp-dialog-bar span {
+  overflow-wrap: anywhere;
+}
+html.manager-signal .sp-phone-schedule .sp-today {
+  min-height: 44px;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+html.manager-signal .sp-phone-schedule .sp-plan-entry {
+  margin-top: 0;
+  align-items: center;
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .sp-dialog {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.manager-signal .sp-plan-entry {
+    transition: none;
+  }
+}
+html.manager-signal .sp-month-trigger {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  min-height: 44px;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+html.manager-signal .sp-month-context {
+  position: relative;
+}
+html.manager-signal .sp-month-context .sg-schedule-details {
+  top: 100%;
+}
+html.manager-signal .bp-r3.sp-plan-entry {
+  margin: 0;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+  color: #173d2b;
+}
+html.manager-signal .bp-r3.sp-plan-entry small {
+  font-size: 0.75rem;
+}
+/* The former count pill is too narrow for a readable Schedule entry at large text. */
+html.manager-signal .bp-r3.sp-plan-entry {
+  grid-column: 1/-1;
+  grid-row: 4;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+html.manager-signal .bp-r3.sp-plan-entry > * {
+  max-width: 100%;
+  min-width: 0;
+}
+/* One full-width calendar surface, with dates that follow the reader's text size. */
+html.manager-signal .sp-calendar-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 0;
+  padding: 6px;
+  overflow-wrap: anywhere;
+}
+html.manager-signal .sp-entry-month {
+  font: 600 1rem/1.4 var(--font-ui);
+  text-align: left;
+}
+html.manager-signal .sp-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+}
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day) {
+  display: grid;
+  place-items: center;
+  font: 500 0.8125rem/1.5 var(--font-mono);
+  min-height: 1.75rem;
+  font-style: normal;
+  white-space: nowrap;
+  transition: none;
+  border-radius: 3px;
+  background: #d5e1c7;
+  color: #234939;
+}
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).blank { visibility: hidden; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).today {
+  background: #e4c98d;
+  color: #173d2b;
+  outline: 1px solid #9e7940;
+}
+html.manager-signal .sp-performance .s2-rail .s2-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+html.manager-signal .sp-performance .s2-chip-state {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+html.manager-signal .sp-performance .bp-h5 .bp-r1.sp-calendar-entry {
+  grid-column: 1/-1;
+  grid-row: 4;
+  align-self: stretch;
+  margin-top: 8px;
+  width: 100%;
+}
+html.manager-signal .sp-calendar-entry:focus-visible {
+  outline: 3px solid #e4c98d;
+  outline-offset: 3px;
+}
+
+@media (min-width: 1101px) {
+  html.manager-signal .sp-performance .s2-hero.s2-hasrail {
+    grid-template-columns: minmax(0, 1fr) 15rem;
+  }
+  html.manager-signal .sp-performance .s2-rail .s2-chips { height: 100%; }
+  html.manager-signal .sp-performance .s2-chip-state { flex: 1; }
+  html.manager-signal .sp-performance .s2-chip-state .sp-calendar-entry { flex: 1; }
+  html.manager-signal .sp-performance .s2-chip-state .sp-mini-grid { flex: 1; }
+}
+/* The hero calendar is part of Sage's forest surface; heat uses recorded sales only. */
+html.manager-signal .sp-calendar-entry { padding:0; border:0; border-radius:4px; box-shadow:0 0 0 4px #234939, 0 0 0 5px #bfd0b473; background:transparent; color:#fffdf4; gap:10px; }
+html.manager-signal .sp-calendar-entry:hover { background:#193b2e; }
+html.manager-signal .sp-mini-grid { gap:6px; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day) { min-height:1.75rem; border:1px solid #bfd0b473; background:#183c2f; color:#fffdf4; position:relative; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).heat-0 { background:#183c2f; color:#fffdf4; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).heat-1 { background:#234939; color:#fffdf4; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).heat-2 { background:#3c5f49; color:#fffdf4; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).heat-3 { background:#567d61; color:#fffdf4; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).heat-4 { background:#8fd8af; color:#173d2b; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).sales-unknown { border-style:dashed; background:#fffef8; color:#234939; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).sales-closed { background:#e9e9e1; color:#234939; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).sales-future { background:transparent; color:#fffdf4; border-color:#bfd0b473; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).sales-unknown::after { content:'○'; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).sales-closed::after { content:'×'; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).sales-future::after { content:'·'; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day)::after { position:absolute; right:2px; top:2px; bottom:auto; font-size:.375rem; line-height:1; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).today { outline:2px solid #e4c98d; outline-offset:1px; }
+html.manager-signal .sp-mini-grid :is(i,.sp-hero-day).best { border:1px solid #e4c98d; box-shadow:inset 0 0 0 1px #e4c98d; }
+html.manager-signal .sp-heat-note, html.manager-signal .sp-heat-key { font:400 .6875rem/1.5 var(--font-ui); color:#fffdf4; }
+html.manager-signal .sp-heat-key { display:flex; flex-wrap:wrap; gap:4px 8px; }
+.sp-dialog { background:#f5f5ee; border-color:#3c5f49; border-radius:10px; }
+.sp-dialog-bar { background:#234939; padding:14px 20px; }
+.sp-dialog-bar button { display:inline-flex; align-items:center; gap:8px; background:#183c2f; color:#fffdf4; border:1px solid #bfd0b473; border-radius:7px; }
+@media(max-width:700px) { .sp-dialog { border-radius:0; } .sp-dialog-bar { padding:12px; } }
+
+@media(max-width:360px) { html.manager-signal .sp-mini-grid { gap:5px; } }
+/* The phone calendar is the final row inside the Performance hero. */
+html.manager-signal .sp-performance .bp-hero > .bp-r1.sp-mobile-calendar {
+  display:block; align-self:stretch; margin-top:16px; width:100%;
+  min-width:0; border-radius:4px; box-shadow:0 0 0 4px #234939, 0 0 0 5px #bfd0b473;
+}
+html.manager-signal .sp-mobile-calendar .sp-calendar-entry { box-shadow:none; }
+html.manager-signal .sp-calendar-entry [hidden] { display:none; }
+.sp-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.sp-dialog-bar h1 { margin:0; font:600 1.125rem/1.4 Geist,sans-serif; color:#fffdf4; }
+html.manager-signal .sp-mobile-calendar .sp-compact-entry { display:flex; flex-direction:row; align-items:center; flex-wrap:wrap; gap:10px; padding:12px; }
+html.manager-signal .sp-mobile-calendar .sp-compact-entry .sp-entry-month { flex:1; min-width:0; }
+html.manager-signal .sp-mobile-calendar [hidden] { display:none; }
+html.manager-signal .sp-calendar-toggle { width:100%; min-height:48px; cursor:pointer; }
+html.manager-signal .sp-calendar-toggle:focus-visible { outline:3px solid #e4c98d; outline-offset:3px; }
+html.manager-signal #sp-mobile-calendar-panel { padding:8px 0 0; }
+/* The inherited near-zero reduced-motion duration creates font-size transitions
+   in WebKit. Remove motion entirely for this compact entry so text can resize. */
+@media (prefers-reduced-motion: reduce) {
+  html.manager-signal .sp-mobile-calendar,
+  html.manager-signal .sp-mobile-calendar * {
+    animation:none !important;
+    transition:none !important;
+  }
+}
+html.manager-signal .sp-mobile-calendar { scroll-margin-block:100px; }
+
+html.manager-signal .sp-date-buttons { padding:6px; }
+html.manager-signal .sp-hero-day { display:grid; place-items:center; min-width:0; min-height:44px; padding:2px; border:1px solid #bfd0b473; border-radius:3px; background:#234939; color:#fffdf4; font:500 .8125rem/1.4 var(--font-mono); }
+html.manager-signal .sp-hero-day[aria-current] { border:2px solid #e4c98d; }
+html.manager-signal .sp-hero-day:focus-visible { outline:3px solid #e4c98d; outline-offset:1px; }
+html.manager-signal .sp-date-buttons { gap:2px; padding:4px; }
+html.manager-signal .sp-hero-day { padding:0; }
+html.manager-signal .sp-hero-day[aria-current] { border-width:1px; outline:2px solid #e4c98d; outline-offset:1px; }
+
+html.manager-signal .sp-date-buttons .sp-hero-day { min-height:44px; padding:0; }
+/* Preserve the desktop component at zoomed fine-pointer widths, but reflow its rail. */
+@media(max-width:700px) {
+ html.manager-signal .sp-performance .s2-hero.s2-hasrail { grid-template-columns:minmax(0,1fr); }
+ html.manager-signal .sp-performance .s2-hasrail > :is(.s2-tube,.s2-rail) { grid-column:1/-1; min-width:0; width:100%; }
+}
+
+@media(max-width:360px) {
+ html.manager-signal .sp-performance .sp-calendar-entry { padding:2px; }
+ html.manager-signal .sp-performance .sp-mini-grid { gap:2px; }
+}
+@media(max-width:360px) {
+ html.manager-signal .sp-performance .s2-hero { padding-inline:14px; }
+}
+@media(max-height:400px) {
+ .sp-dialog-bar { padding:8px 12px; }
+ .sp-dialog-bar h1 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+}
+
+/* Keep the shared tools reachable without covering the hero in short zoomed views. */
+@media(max-height:400px){
+ html.manager-signal .botnav{position:static}
+}
+
+/* Context return stays readable beside Close when text is enlarged. */
+.sp-dialog-bar [data-context-back] { flex-shrink:1; min-width:0; text-align:left; }
+.sp-dialog-bar [data-context-back] span { min-width:0; overflow-wrap:anywhere; }

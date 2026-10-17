@@ -1,0 +1,18 @@
+{
+  "source": "/tmp/sage-generation-delivered-chromium.log",
+  "cases": [
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "scale": 1,
+      "status": "passed"
+    },
+    {
+      "engine": "chromium",
+      "width": 1440,
+      "scale": 2,
+      "status": "passed"
+    }
+  ],
+  "limitation": "Assertions logged success; the original runner wrote result JSON only on full completion and later stopped at the outdated mobile initial-visibility wait. Full row measurements were not saved for these two cases."
+}

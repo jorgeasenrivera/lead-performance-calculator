@@ -32,6 +32,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
 import { watchFeelEvidence } from "./feel-evidence.mjs";
+import { watchFeelReloads } from "./feel-navigation.mjs";
 import { followAssessment, followDetail, groundStep } from "./feel-read.mjs";
 import { verifyManagerPhoneSearch } from "./manager-phone-search.mjs";
 
@@ -231,8 +232,9 @@ async function main() {
 }
 async function run(b) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  if (LAG) await ctx.route(/127\.0\.0\.1:5433/, async (r) => { await new Promise((z) => setTimeout(z, LAG)); r.continue(); });
+  if (LAG) await ctx.route(/127\.0\.0\.1:5433/, async (r) => { await new Promise((z) => setTimeout(z, LAG)); await r.continue(); });
   const p = await ctx.newPage();
+  const settleBeforeReload = watchFeelReloads(p);
   /* FEEL_CPU=4 slows the page's processor four times over, which is roughly a
      three-year-old phone on a hot afternoon, and the shape of a shared CI
      runner. The bars are meant to hold there too. */
@@ -699,6 +701,7 @@ async function run(b) {
 
   /* X5: repeat sign-in deliberately plays the whole arrival. Seed an older
      version's daily mark so this catches reintroducing the shortcut. */
+  await settleBeforeReload();
   await p.evaluate(() => {
     localStorage.setItem("lpc:jump:day", new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()));
     for (const k of Object.keys(localStorage)) if (k === "lpc-auth" || /^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k);
@@ -708,6 +711,7 @@ async function run(b) {
 
   /* Keep the speed bar for the short path that still exists, not for the
      full animation Jorge explicitly asked to replay. */
+  await settleBeforeReload();
   await p.emulateMedia({ reducedMotion: "reduce" });
   await p.evaluate(() => { for (const k of Object.keys(localStorage)) if (k === "lpc-auth" || /^sb-.*-auth-token$/.test(k)) localStorage.removeItem(k); });
   await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(2400);

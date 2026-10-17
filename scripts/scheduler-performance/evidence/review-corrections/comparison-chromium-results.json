@@ -1,0 +1,80 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "status": "passed",
+    "axeScans": 3,
+    "populatedTwentyPointPrompt": true,
+    "incompleteSuppressed": true,
+    "noTeamContext": true,
+    "sharedDenominatorDisclosed": true,
+    "missingHistoryAndCap": true,
+    "peopleMismatchCue": true
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 2,
+    "status": "passed",
+    "axeScans": 3,
+    "populatedTwentyPointPrompt": true,
+    "incompleteSuppressed": true,
+    "noTeamContext": true,
+    "sharedDenominatorDisclosed": true,
+    "missingHistoryAndCap": true,
+    "peopleMismatchCue": true
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "status": "passed",
+    "axeScans": 3,
+    "populatedTwentyPointPrompt": true,
+    "incompleteSuppressed": true,
+    "noTeamContext": true,
+    "sharedDenominatorDisclosed": true,
+    "missingHistoryAndCap": true,
+    "peopleMismatchCue": true
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 2,
+    "status": "passed",
+    "axeScans": 3,
+    "populatedTwentyPointPrompt": true,
+    "incompleteSuppressed": true,
+    "noTeamContext": true,
+    "sharedDenominatorDisclosed": true,
+    "missingHistoryAndCap": true,
+    "peopleMismatchCue": true
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 1,
+    "status": "passed",
+    "axeScans": 3,
+    "populatedTwentyPointPrompt": true,
+    "incompleteSuppressed": true,
+    "noTeamContext": true,
+    "sharedDenominatorDisclosed": true,
+    "missingHistoryAndCap": true,
+    "peopleMismatchCue": true
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "status": "passed",
+    "axeScans": 3,
+    "populatedTwentyPointPrompt": true,
+    "incompleteSuppressed": true,
+    "noTeamContext": true,
+    "sharedDenominatorDisclosed": true,
+    "missingHistoryAndCap": true,
+    "peopleMismatchCue": true
+  }
+]

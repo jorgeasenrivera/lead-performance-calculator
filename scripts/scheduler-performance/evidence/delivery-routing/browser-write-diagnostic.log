@@ -1,0 +1,52 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
++ [
++   {
++     key: 'lpc:roundup:fictional-0:2026-10-14',
++     method: 'setItem',
++     stack: 'Error\n' +
++       '    at Storage.<computed> [as setItem] (eval at evaluate (:311:30), <anonymous>:1:260)\n' +
++       '    at Km (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:153917)\n' +
++       '    at http://127.0.0.1:5190/assets/index-vnd60dJe.js:6216:23262\n' +
++       '    at bl (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:24283)\n' +
++       '    at Os (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:42409)\n' +
++       '    at P2 (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:41231)\n' +
++       '    at Wn (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:40278)\n' +
++       '    at Fm (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:36886)\n' +
++       '    at Un (http://127.0.0.1:5190/assets/index-vnd60dJe.js:38:3279)\n' +
++       '    at http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:34263'
++   }
++ ]
+- []
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-routing.mjs:57:37 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [
+    {
+      method: 'setItem',
+      key: 'lpc:roundup:fictional-0:2026-10-14',
+      stack: 'Error\n' +
+        '    at Storage.<computed> [as setItem] (eval at evaluate (:311:30), <anonymous>:1:260)\n' +
+        '    at Km (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:153917)\n' +
+        '    at http://127.0.0.1:5190/assets/index-vnd60dJe.js:6216:23262\n' +
+        '    at bl (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:24283)\n' +
+        '    at Os (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:42409)\n' +
+        '    at P2 (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:41231)\n' +
+        '    at Wn (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:40278)\n' +
+        '    at Fm (http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:36886)\n' +
+        '    at Un (http://127.0.0.1:5190/assets/index-vnd60dJe.js:38:3279)\n' +
+        '    at http://127.0.0.1:5190/assets/index-vnd60dJe.js:40:34263'
+    }
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

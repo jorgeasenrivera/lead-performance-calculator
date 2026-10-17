@@ -1,0 +1,15 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: chromium-1440-2 label escapes its column: Engaged Video
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-hero-reflow.mjs:5:88 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

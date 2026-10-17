@@ -1,0 +1,30 @@
+[
+  {
+    "engine": "chromium",
+    "instant": "2027-01-01T04:59:00Z",
+    "browserTimeZone": "Asia/Tokyo",
+    "expectedStoreDay": "2026-12-31",
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "instant": "2027-01-01T05:00:00Z",
+    "browserTimeZone": "America/Los_Angeles",
+    "expectedStoreDay": "2027-01-01",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "instant": "2027-01-01T04:59:00Z",
+    "browserTimeZone": "Asia/Tokyo",
+    "expectedStoreDay": "2026-12-31",
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "instant": "2027-01-01T05:00:00Z",
+    "browserTimeZone": "America/Los_Angeles",
+    "expectedStoreDay": "2027-01-01",
+    "status": "passed"
+  }
+]

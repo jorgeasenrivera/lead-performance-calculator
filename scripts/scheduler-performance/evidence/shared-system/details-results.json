@@ -1,0 +1,15 @@
+{
+  "help": {
+    "open": true,
+    "focused": true,
+    "inert": false,
+    "scroll": ""
+  },
+  "coach": "Coaching for Marisol Vantry",
+  "tooltip": {
+    "scaleX": 1,
+    "scaleY": 1,
+    "opacity": "1",
+    "inViewport": true
+  }
+}

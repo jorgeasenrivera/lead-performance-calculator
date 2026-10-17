@@ -1,0 +1,89 @@
+{
+  "productionSource": "15ea1a80db1c17e7f5d9b99db026f7fc09b30697",
+  "previousMonthlyHead": "0c0798470e65ae567c70ef4b4f4275a0eaffe3bd",
+  "tests": 946,
+  "monthlyBrowserScenarios": 12,
+  "timezoneBrowserScenarios": 4,
+  "files": [
+    {
+      "file": "chromium-1440-text100-calendar.png",
+      "sha256": "ffc0ecdb3af13586eb53d19957032d12298eec6cae0c028ddb2e8f09709a0973"
+    },
+    {
+      "file": "chromium-1440-text100-day.png",
+      "sha256": "6c09c1b0bdaf832892fdc38cad895b5639c4d4d1b1be31804dc29a08c6470b70"
+    },
+    {
+      "file": "chromium-1440-text100-entry.png",
+      "sha256": "8d6ac0700fc44ed3bef621b1e5394b4833e8fb976eb69b4812afdcb086f1ae57"
+    },
+    {
+      "file": "chromium-1440-text100-overview.png",
+      "sha256": "c4741bfb97d6851ebcff2ec7b0210e83bc1f0666af9f6bb459ac2f8aae4ffed9"
+    },
+    {
+      "file": "chromium-1440-text200-overview.png",
+      "sha256": "009e733a58f5d1e3d6a4d3956cbe09eaa1675a3deca55e07f7ea5319df70946e"
+    },
+    {
+      "file": "chromium-320-text200-entry.png",
+      "sha256": "256a6583efb9800d41e302e19ad092b2677bf9c8722b6d84cbe31788f028f964"
+    },
+    {
+      "file": "chromium-320-text200-overview.png",
+      "sha256": "7110f7e5b6a4bfeb52c3b4f88b6cdb66955452dc79f3461b6226447b310f7013"
+    },
+    {
+      "file": "chromium-320-text200-person.png",
+      "sha256": "6fe87afe93bd3cb1f8d4d49ee9b36947af188199cd146a0e99990175893f8b36"
+    },
+    {
+      "file": "chromium-320-text200-store.png",
+      "sha256": "5a3fb6535497c468900cbd6923a02603a7bf9b8c04ee12461ea7432d61ee0842"
+    },
+    {
+      "file": "chromium-results.json",
+      "sha256": "fff57326676b0b5df6f44c358a795d56ee4a7576076d91737efe869ce497d7be"
+    },
+    {
+      "file": "timezone-results.json",
+      "sha256": "3145bd4838a25c5fc311fbf342d359e265448e4b469d3d365637f9e9b220aa0d"
+    },
+    {
+      "file": "webkit-320-text200-entry.png",
+      "sha256": "6f88bd479dd64179e3dc22e159dae77e1fdadde8f5040244ffa24fb1154907a9"
+    },
+    {
+      "file": "webkit-320-text200-overview.png",
+      "sha256": "a702dc41c654aebe57590b610cf978a371b374a593a5ea811dc55056c3d9bde4"
+    },
+    {
+      "file": "webkit-320-text200-person.png",
+      "sha256": "8a26bb0a5491db5f977715dd2068af1135db789da5cf669db3262e65c26eee5c"
+    },
+    {
+      "file": "webkit-320-text200-store.png",
+      "sha256": "6b302bbe13bdd8be042e0925ed52f49fa6ba1bf775faab31f4658d6bac38d663"
+    },
+    {
+      "file": "webkit-390-text100-calendar.png",
+      "sha256": "17c3685263bcbc84353d2afbe212f25b8cbeeb44c143bb1c9f6067bbb133b6bf"
+    },
+    {
+      "file": "webkit-390-text100-day.png",
+      "sha256": "a4ddc941776866beb56b0be2a736ace7530673c74a76b70de79a6a1cdc1dfd1f"
+    },
+    {
+      "file": "webkit-390-text100-entry.png",
+      "sha256": "ff0a219f4726952f9b4d7a996536463f7bfcd527c45a0b05cd9b3a8958275aeb"
+    },
+    {
+      "file": "webkit-390-text100-overview.png",
+      "sha256": "fc84345b993841e22f8753957feea0a911ac1c6728990bfba9a24cf551abc928"
+    },
+    {
+      "file": "webkit-results.json",
+      "sha256": "b02bce10762504d98bcf0be080ebba35d30d2a7ee90c05944225fbedf1a024e2"
+    }
+  ]
+}

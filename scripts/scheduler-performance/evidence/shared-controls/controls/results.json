@@ -1,0 +1,403 @@
+[
+  {
+    "key": "chromium-320-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 289,
+      "height": 90.1875,
+      "radius": "20px",
+      "scrollWidth": 287,
+      "clientWidth": 287,
+      "buttons": [
+        {
+          "x": 15,
+          "y": 810.8125,
+          "width": 65.75,
+          "height": 76.1875,
+          "text": "Performance",
+          "font": "12px"
+        },
+        {
+          "x": 84.75,
+          "y": 810.8125,
+          "width": 65.75,
+          "height": 76.1875,
+          "text": "Activity",
+          "font": "12px"
+        },
+        {
+          "x": 154.5,
+          "y": 810.8125,
+          "width": 65.75,
+          "height": 76.1875,
+          "text": "Rooms",
+          "font": "12px"
+        },
+        {
+          "x": 224.25,
+          "y": 810.8125,
+          "width": 65.75,
+          "height": 76.1875,
+          "text": "More",
+          "font": "12px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "chromium-390-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 359,
+      "height": 74.59375,
+      "radius": "20px",
+      "scrollWidth": 357,
+      "clientWidth": 357,
+      "buttons": [
+        {
+          "x": 15,
+          "y": 826.40625,
+          "width": 83.25,
+          "height": 60.59375,
+          "text": "Performance",
+          "font": "12px"
+        },
+        {
+          "x": 102.25,
+          "y": 826.40625,
+          "width": 83.25,
+          "height": 60.59375,
+          "text": "Activity",
+          "font": "12px"
+        },
+        {
+          "x": 189.5,
+          "y": 826.40625,
+          "width": 83.25,
+          "height": 60.59375,
+          "text": "Rooms",
+          "font": "12px"
+        },
+        {
+          "x": 276.75,
+          "y": 826.40625,
+          "width": 83.25,
+          "height": 60.59375,
+          "text": "More",
+          "font": "12px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "chromium-768-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 316.046875,
+      "height": 58,
+      "radius": "20px",
+      "scrollWidth": 314,
+      "clientWidth": 314,
+      "buttons": [
+        {
+          "x": 31,
+          "y": 65,
+          "width": 104.4375,
+          "height": 44,
+          "text": "Performance",
+          "font": "12.5px"
+        },
+        {
+          "x": 139.4375,
+          "y": 65,
+          "width": 106.046875,
+          "height": 44,
+          "text": "Daily Activity",
+          "font": "12.5px"
+        },
+        {
+          "x": 249.484375,
+          "y": 65,
+          "width": 83.5625,
+          "height": 44,
+          "text": "TV Board",
+          "font": "12.5px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "chromium-1440-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 316.046875,
+      "height": 58,
+      "radius": "20px",
+      "scrollWidth": 314,
+      "clientWidth": 314,
+      "buttons": [
+        {
+          "x": 659.640625,
+          "y": 19,
+          "width": 104.4375,
+          "height": 44,
+          "text": "Performance",
+          "font": "12.5px"
+        },
+        {
+          "x": 768.078125,
+          "y": 19,
+          "width": 106.046875,
+          "height": 44,
+          "text": "Daily Activity",
+          "font": "12.5px"
+        },
+        {
+          "x": 878.125,
+          "y": 19,
+          "width": 83.5625,
+          "height": 44,
+          "text": "TV Board",
+          "font": "12.5px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "chromium-320-text200",
+    "status": "failed",
+    "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   {\n+     id: 'color-contrast',\n+     nodes: [\n+       [\n+         '.bm-role'\n+       ]\n+     ]\n+   }\n+ ]\n- []\n",
+    "pageErrors": []
+  },
+  {
+    "key": "chromium-1024-text200",
+    "status": "passed",
+    "geometry": {
+      "width": 526.078125,
+      "height": 67.75,
+      "radius": "20px",
+      "scrollWidth": 524,
+      "clientWidth": 524,
+      "buttons": [
+        {
+          "x": 31,
+          "y": 65,
+          "width": 180.859375,
+          "height": 53.75,
+          "text": "Performance",
+          "font": "25px"
+        },
+        {
+          "x": 215.859375,
+          "y": 65,
+          "width": 184.09375,
+          "height": 53.75,
+          "text": "Daily Activity",
+          "font": "25px"
+        },
+        {
+          "x": 403.953125,
+          "y": 65,
+          "width": 139.125,
+          "height": 53.75,
+          "text": "TV Board",
+          "font": "25px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "webkit-320-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 304,
+      "height": 90.1875,
+      "radius": "20px",
+      "scrollWidth": 302,
+      "clientWidth": 302,
+      "buttons": [
+        {
+          "x": 15,
+          "y": 810.8125,
+          "width": 69.5,
+          "height": 76.1875,
+          "text": "Performance",
+          "font": "12px"
+        },
+        {
+          "x": 88.5,
+          "y": 810.8125,
+          "width": 69.5,
+          "height": 76.1875,
+          "text": "Activity",
+          "font": "12px"
+        },
+        {
+          "x": 162,
+          "y": 810.8125,
+          "width": 69.5,
+          "height": 76.1875,
+          "text": "Rooms",
+          "font": "12px"
+        },
+        {
+          "x": 235.5,
+          "y": 810.8125,
+          "width": 69.5,
+          "height": 76.1875,
+          "text": "More",
+          "font": "12px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "webkit-390-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 374,
+      "height": 74.59375,
+      "radius": "20px",
+      "scrollWidth": 372,
+      "clientWidth": 372,
+      "buttons": [
+        {
+          "x": 15,
+          "y": 826.40625,
+          "width": 87,
+          "height": 60.59375,
+          "text": "Performance",
+          "font": "12px"
+        },
+        {
+          "x": 106,
+          "y": 826.40625,
+          "width": 87,
+          "height": 60.59375,
+          "text": "Activity",
+          "font": "12px"
+        },
+        {
+          "x": 197,
+          "y": 826.40625,
+          "width": 87,
+          "height": 60.59375,
+          "text": "Rooms",
+          "font": "12px"
+        },
+        {
+          "x": 288,
+          "y": 826.40625,
+          "width": 87,
+          "height": 60.59375,
+          "text": "More",
+          "font": "12px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "webkit-768-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 315.375,
+      "height": 58,
+      "radius": "20px",
+      "scrollWidth": 313,
+      "clientWidth": 313,
+      "buttons": [
+        {
+          "x": 31,
+          "y": 65,
+          "width": 104.15625,
+          "height": 44,
+          "text": "Performance",
+          "font": "12.5px"
+        },
+        {
+          "x": 139.15625,
+          "y": 65,
+          "width": 106.640625,
+          "height": 44,
+          "text": "Daily Activity",
+          "font": "12.5px"
+        },
+        {
+          "x": 249.796875,
+          "y": 65,
+          "width": 82.578125,
+          "height": 44,
+          "text": "TV Board",
+          "font": "12.5px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "webkit-1440-text100",
+    "status": "passed",
+    "geometry": {
+      "width": 315.375,
+      "height": 58,
+      "radius": "20px",
+      "scrollWidth": 313,
+      "clientWidth": 313,
+      "buttons": [
+        {
+          "x": 675.3125,
+          "y": 19,
+          "width": 104.15625,
+          "height": 44,
+          "text": "Performance",
+          "font": "12.5px"
+        },
+        {
+          "x": 783.46875,
+          "y": 19,
+          "width": 106.640625,
+          "height": 44,
+          "text": "Daily Activity",
+          "font": "12.5px"
+        },
+        {
+          "x": 894.109375,
+          "y": 19,
+          "width": 82.578125,
+          "height": 44,
+          "text": "TV Board",
+          "font": "12.5px"
+        }
+      ]
+    },
+    "menuFocusRestored": true,
+    "scopedAxe": true
+  },
+  {
+    "key": "webkit-320-text200",
+    "status": "failed",
+    "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'12px' !== '24px'\n",
+    "pageErrors": []
+  },
+  {
+    "key": "webkit-1024-text200",
+    "status": "failed",
+    "error": "TimeoutError: locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Close the round-up' })\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"ru-x x-close\" aria-label=\"Close the round-up\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n",
+    "pageErrors": []
+  }
+]

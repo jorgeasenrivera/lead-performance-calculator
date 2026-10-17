@@ -1,0 +1,116 @@
+[
+  {
+    "engine": "webkit",
+    "width": 320,
+    "height": 640,
+    "scale": 1,
+    "layout": {
+      "columns": 7,
+      "overflow": false,
+      "last": 422.78125,
+      "height": 572
+    },
+    "taps": {
+      "openDay": 2,
+      "teamMembers": 0,
+      "editDay": 1,
+      "today": 1
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "height": 640,
+    "scale": 2,
+    "layout": {
+      "columns": 2,
+      "overflow": false,
+      "last": 1873.671875,
+      "height": 493
+    },
+    "taps": {
+      "openDay": 2,
+      "teamMembers": 0,
+      "editDay": 1,
+      "today": 1
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "height": 844,
+    "scale": 1,
+    "layout": {
+      "columns": 7,
+      "overflow": false,
+      "last": 422.78125,
+      "height": 776
+    },
+    "taps": {
+      "openDay": 2,
+      "teamMembers": 0,
+      "editDay": 1,
+      "today": 1
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "height": 844,
+    "scale": 2,
+    "layout": {
+      "columns": 2,
+      "overflow": false,
+      "last": 1823.28125,
+      "height": 697
+    },
+    "taps": {
+      "openDay": 2,
+      "teamMembers": 0,
+      "editDay": 1,
+      "today": 1
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 430,
+    "height": 932,
+    "scale": 1,
+    "layout": {
+      "columns": 7,
+      "overflow": false,
+      "last": 422.78125,
+      "height": 864
+    },
+    "taps": {
+      "openDay": 2,
+      "teamMembers": 0,
+      "editDay": 1,
+      "today": 1
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 430,
+    "height": 932,
+    "scale": 2,
+    "layout": {
+      "columns": 2,
+      "overflow": false,
+      "last": 1823.28125,
+      "height": 785
+    },
+    "taps": {
+      "openDay": 2,
+      "teamMembers": 0,
+      "editDay": 1,
+      "today": 1
+    },
+    "status": "passed"
+  }
+]

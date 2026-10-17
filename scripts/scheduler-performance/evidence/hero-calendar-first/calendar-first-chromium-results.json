@@ -1,0 +1,110 @@
+[
+  {
+    "engine": "chromium",
+    "width": 320,
+    "height": 640,
+    "scale": 1,
+    "metrics": {
+      "columns": 7,
+      "nav": 8,
+      "firstTop": 160.796875,
+      "lastBottom": 408.796875,
+      "height": 572,
+      "overflow": false,
+      "minWidth": 40.703125,
+      "minHeight": 48,
+      "hasDetail": false
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "height": 640,
+    "scale": 2,
+    "metrics": {
+      "columns": 2,
+      "nav": 8,
+      "firstTop": 301.78125,
+      "lastBottom": 1671.78125,
+      "height": 493,
+      "overflow": false,
+      "minWidth": 145.5,
+      "minHeight": 80,
+      "hasDetail": false
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "height": 844,
+    "scale": 1,
+    "metrics": {
+      "columns": 7,
+      "nav": 8,
+      "firstTop": 160.796875,
+      "lastBottom": 408.796875,
+      "height": 776,
+      "overflow": false,
+      "minWidth": 50.703125,
+      "minHeight": 48,
+      "hasDetail": false
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "height": 844,
+    "scale": 2,
+    "metrics": {
+      "columns": 2,
+      "nav": 8,
+      "firstTop": 251.390625,
+      "lastBottom": 1621.390625,
+      "height": 697,
+      "overflow": false,
+      "minWidth": 180.5,
+      "minHeight": 80,
+      "hasDetail": false
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 430,
+    "height": 932,
+    "scale": 1,
+    "metrics": {
+      "columns": 7,
+      "nav": 8,
+      "firstTop": 160.796875,
+      "lastBottom": 408.796875,
+      "height": 864,
+      "overflow": false,
+      "minWidth": 56.421875,
+      "minHeight": 48,
+      "hasDetail": false
+    },
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 430,
+    "height": 932,
+    "scale": 2,
+    "metrics": {
+      "columns": 2,
+      "nav": 8,
+      "firstTop": 251.390625,
+      "lastBottom": 1621.390625,
+      "height": 785,
+      "overflow": false,
+      "minWidth": 200.5,
+      "minHeight": 80,
+      "hasDetail": false
+    },
+    "status": "passed"
+  }
+]

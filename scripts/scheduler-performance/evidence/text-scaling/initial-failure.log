@@ -1,0 +1,17 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.evaluate: Error: Missing text representative: .bp-mo
+    at eval (eval at evaluate (:311:30), <anonymous>:1:154)
+    at Array.map (<anonymous>)
+    at read (eval at evaluate (:311:30), <anonymous>:1:100)
+    at eval (eval at evaluate (:311:30), <anonymous>:1:286)
+    at UtilityScript.evaluate (<anonymous>:313:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)
+    at growth (/workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:10:83)
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:30:8 {
+  log: []
+}
+
+Node.js v24.19.0

@@ -1,0 +1,32 @@
+
+> lead-performance-calculator@1.0.0 feel
+> node scripts/feel.mjs
+
+feel · chromium · 400 ms on every data request · http://127.0.0.1:5178/
+  full sign-in to the floor  7201 ms  (the jump; by design)
+  ok   tap Lunch to shown                                17 ms  bar 50   [18, 17, 17]
+  ok   tap Here to shown                                 14 ms  bar 50   [13, 14, 19]
+  ok   swipe: the page under the thumb, px off between frames     0 px  bar 2
+  ok   swipe: frames dropped while the thumb moved        0     bar 1
+       11 long frame(s) the page rode out at the slop, 15 px, which is the runner and not the phone
+  ok   ground: biggest change between two frames of the blend    15     bar 24
+  ok   Floor to Phone tab                                46 ms  bar 110   [51, 36, 46]
+  ok   Phone to Floor tab                                50 ms  bar 110   [37, 50, 52]
+  ok   two taps in one round trip: Here > Lunch > Here, server waiting
+  ok   FlyBy sent to chip                                26 ms  bar 100
+  ok   Never mind to chip gone                            7 ms  bar 100
+  ok   press: held scale 0.96, released none
+  ok   press: one tick at touch-down ([6])
+  repeat full sign-in to the floor  11758 ms  (the jump; by design)
+  OVER reduced-motion return sign-in to floor          2142 ms  bar 2100
+feel: 1 over the bar
+feel: failure evidence: 26 events retained, 0 older events dropped
+feel: the machine: 1.30 GB used at its highest of 16.00 allowed, 16.08 GB free on the box, no process was killed for memory (oom_kill 0)
+manager phone search: 390px visible, type, no-match, clear and print passed
+manager phone search: 720px visible, type, no-match, clear and print passed
+manager phone search: 760px visible, type, no-match, clear and print passed
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

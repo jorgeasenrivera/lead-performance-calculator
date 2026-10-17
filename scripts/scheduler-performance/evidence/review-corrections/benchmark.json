@@ -1,0 +1,33 @@
+{
+  "scope": "Local Node monthly evaluator only. Baseline generated assignments; current evaluates entered shifts. No production performance budget or device claim.",
+  "results": [
+    {
+      "name": "baseline",
+      "people": 6,
+      "iterations": 20,
+      "medianMs": 88.728924,
+      "maxMs": 125.09995800000002
+    },
+    {
+      "name": "current",
+      "people": 6,
+      "iterations": 20,
+      "medianMs": 63.550396999999975,
+      "maxMs": 105.89357299999983
+    },
+    {
+      "name": "baseline",
+      "people": 30,
+      "iterations": 20,
+      "medianMs": 82.7810499999996,
+      "maxMs": 114.78593999999975
+    },
+    {
+      "name": "current",
+      "people": 30,
+      "iterations": 20,
+      "medianMs": 53.52646300000015,
+      "maxMs": 56.97700700000041
+    }
+  ]
+}

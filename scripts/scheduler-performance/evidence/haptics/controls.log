@@ -1,0 +1,38 @@
+chromium-320-text100 passed
+chromium-390-text100 passed
+chromium-768-text100 passed
+chromium-1440-text100 passed
+chromium-320-text200 passed
+chromium-1024-text200 passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit-320-text100 passed
+webkit-390-text100 passed
+webkit-768-text100 passed
+webkit-1440-text100 TimeoutError: locator.click: Timeout 15000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Close the round-up' })[22m
+[2m    - locator resolved to <button type="button" class="ru-x x-close" aria-label="Close the round-up">…</button>[22m
+[2m  - attempting click action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - performing click action[22m
+
+webkit-320-text200 passed
+webkit-1024-text200 passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Controls matrix has failures; inspect retained results.
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-controls.mjs:33:8 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

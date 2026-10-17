@@ -1,0 +1,5 @@
+chromium 390 preference passed
+chromium 320 preference passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit 390 preference passed
+webkit 320 preference passed

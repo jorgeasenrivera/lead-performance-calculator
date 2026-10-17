@@ -1,0 +1,16 @@
+[
+  {
+    "engine": "chromium",
+    "committedSwipeOnce": true,
+    "cancelAndScrollQuiet": true,
+    "dayNavigationOnce": true,
+    "syntheticTouch": true
+  },
+  {
+    "engine": "webkit",
+    "committedSwipeOnce": true,
+    "cancelAndScrollQuiet": true,
+    "dayNavigationOnce": true,
+    "syntheticTouch": true
+  }
+]

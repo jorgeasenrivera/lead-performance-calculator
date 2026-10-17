@@ -1,0 +1,151 @@
+{
+  "error": "Error: feel: 1 over the bar, 0 page errors\n    at run (file:///workspace/lead-performance-calculator/scripts/feel.mjs:723:57)\n    at async main (file:///workspace/lead-performance-calculator/scripts/feel.mjs:226:9)",
+  "dropped": 0,
+  "events": [
+    {
+      "at": "2026-10-17T08:14:21.316Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:14:21.321Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:14:21.321Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-17T08:14:23.917Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:14:23.918Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:14:26.599Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:14:27.783Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:14:29.804Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:14:34.809Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:14:44.818Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:14:54.828Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:15:04.837Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:15:06.611Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:15:06.611Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:15:06.611Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-17T08:15:09.367Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:15:09.367Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:15:12.181Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:15:13.333Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:15:15.358Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-17T08:15:19.676Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:15:19.680Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:15:19.680Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-17T08:15:22.971Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-17T08:15:22.972Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-17T08:15:25.108Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    }
+  ]
+}

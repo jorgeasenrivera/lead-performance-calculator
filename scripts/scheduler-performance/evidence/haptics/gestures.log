@@ -1,0 +1,13 @@
+chromium gestures passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.evaluate: TypeError: Illegal constructor
+    at swipe (/workspace/lead-performance-calculator/scripts/scheduler-performance/probe-haptics-gestures.mjs:7:77)
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-haptics-gestures.mjs:9:9 {
+  log: []
+}
+
+Node.js v24.19.0

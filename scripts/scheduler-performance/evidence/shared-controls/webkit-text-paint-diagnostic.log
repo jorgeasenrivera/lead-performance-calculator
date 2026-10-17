@@ -1,0 +1,19 @@
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+{
+  before: {
+    root: '16px',
+    font: '12px',
+    html: '--sftxt: 1; --sage-bottomnav-height: 90.1875px;'
+  },
+  immediate: {
+    root: '32px',
+    font: '12px',
+    html: '--sftxt: 1; --sage-bottomnav-height: 90.1875px; font-size: 200%;'
+  },
+  frames: {
+    root: '32px',
+    font: '24px',
+    html: '--sftxt: 1; --sage-bottomnav-height: 90.1875px; font-size: 200%;'
+  },
+  rules: []
+}

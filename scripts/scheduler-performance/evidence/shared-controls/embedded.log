@@ -1,0 +1,35 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  {
+    '.day-demand': '20px',
+    '.editor-team': '20px',
++   '.month-day': '12px',
+-   '.month-day': '6px',
+    '.person-status select': '12px'
+  }
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-editor-embedded.mjs:19:201 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: {
+    '.editor-team': '20px',
+    '.day-demand': '20px',
+    '.person-status select': '12px',
+    '.month-day': '12px'
+  },
+  expected: {
+    '.editor-team': '20px',
+    '.day-demand': '20px',
+    '.person-status select': '12px',
+    '.month-day': '6px'
+  },
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

@@ -1,0 +1,101 @@
+{
+  "head": "c9f0cc0555ea9962498311d0e750038fadc0beac",
+  "results": [
+    {
+      "browser": "chromium",
+      "version": "151.0.7922.173",
+      "width": 1440,
+      "textPercent": 100,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "chromium",
+      "version": "151.0.7922.173",
+      "width": 1440,
+      "textPercent": 200,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "chromium",
+      "version": "151.0.7922.173",
+      "width": 390,
+      "textPercent": 100,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "chromium",
+      "version": "151.0.7922.173",
+      "width": 390,
+      "textPercent": 200,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "chromium",
+      "version": "151.0.7922.173",
+      "width": 320,
+      "textPercent": 100,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "chromium",
+      "version": "151.0.7922.173",
+      "width": 320,
+      "textPercent": 200,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "webkit",
+      "version": "26.6",
+      "width": 1440,
+      "textPercent": 100,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "webkit",
+      "version": "26.6",
+      "width": 1440,
+      "textPercent": 200,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "webkit",
+      "version": "26.6",
+      "width": 390,
+      "textPercent": 100,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "webkit",
+      "version": "26.6",
+      "width": 390,
+      "textPercent": 200,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "webkit",
+      "version": "26.6",
+      "width": 320,
+      "textPercent": 100,
+      "datesChecked": 31,
+      "status": "passed"
+    },
+    {
+      "browser": "webkit",
+      "version": "26.6",
+      "width": 320,
+      "textPercent": 200,
+      "datesChecked": 31,
+      "status": "passed"
+    }
+  ]
+}

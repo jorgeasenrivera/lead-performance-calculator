@@ -1,0 +1,80 @@
+{
+  "checkoutSha": "d55a4e6940b287f9b35f1c139f7cb9632b3920ba",
+  "runtimeSha": "80611a8f82ed8359ad025cc48e5fe8f1d51b4bbb",
+  "previewSha": "492037d419c0485fbb0815ef4e1bb68133c8040e",
+  "manifestSha256": "04e44cb3afa3d9dc6830373e5ebc558bc2b1910b5fd66bae4e0db1049897bccb",
+  "cases": [
+    {
+      "matrix": "teams",
+      "width": 320,
+      "scale": 2,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "c910165f139b913c09fc3aae5e4e1226d9dc6c2c7cdce726b1995f59e7289321"
+    },
+    {
+      "matrix": "import",
+      "width": 390,
+      "scale": 2,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "38140a6367467bd2ad7247b0619a790bb0c254e81239ff7809f4bbbcec0c1ff8"
+    },
+    {
+      "matrix": "import",
+      "width": 320,
+      "scale": 1,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "a926472483a35ced7d774ed0d170a23bfdc3bdaf463a367337703cefd7be7f41"
+    },
+    {
+      "matrix": "import",
+      "width": 320,
+      "scale": 2,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "24c187190e9fca907a56ba46ace6a229b3812dbc6909fc34ca4dfe4150b79e33"
+    },
+    {
+      "matrix": "delivered",
+      "width": 720,
+      "scale": 2,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "3fdaa742408cd8b82b9646eeb07ce73dddbc33fa2b2c575276010bbb417da976"
+    },
+    {
+      "matrix": "delivered",
+      "width": 390,
+      "scale": 1,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "c85bec0ba0da832b6a1493e22dc423df4508f39fc7b2d26a39fc6586df663b42"
+    },
+    {
+      "matrix": "delivered",
+      "width": 390,
+      "scale": 2,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "e68aaaf1dff6a0da1d97e7a050d5c49bf85e7c627d269088353fbe48797174a3"
+    },
+    {
+      "matrix": "delivered",
+      "width": 320,
+      "scale": 1,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "a55a33e3e13451042e7beb222d4fe957b24c445814d9ecf3909ad661aac1d84f"
+    },
+    {
+      "matrix": "delivered",
+      "width": 320,
+      "scale": 2,
+      "status": "passed",
+      "attempts": 1,
+      "traceSha256": "7023a0d929e7ea7ac1243cef124b2993f2c1ee4efba844a9bc16999a359842f5"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "engine": "chromium",
+  "width": 390,
+  "scale": 2,
+  "status": "passed",
+  "axeScans": 1,
+  "networkRequests": 0,
+  "storageWrites": 0
+}

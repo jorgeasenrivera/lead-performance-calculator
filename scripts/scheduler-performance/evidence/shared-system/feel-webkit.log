@@ -1,0 +1,31 @@
+
+> lead-performance-calculator@1.0.0 feel
+> node scripts/feel.mjs
+
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+feel · webkit · 400 ms on every data request · http://127.0.0.1:5178/
+  full sign-in to the floor  13793 ms  (the jump; by design)
+  OVER tap Lunch to shown                                78 ms  bar 60   [186, 69, 78]
+  OVER tap Here to shown                                115 ms  bar 60   [922, 115, 23]
+  --   swipe: not run in WebKit (no input channel to move a real thumb)
+  --   ground: not measured in WebKit: the runner gave 1 frame(s) in the 700 ms watched (about 13 a second on a tab's travel), too few to read a blend of a few points a frame
+  OVER Floor to Phone tab                               369 ms  bar 140   [369, 717, 92]
+  OVER Phone to Floor tab                               155 ms  bar 140   [351, 155, 96]
+  ok   two taps in one round trip: Here > Lunch > Here, server waiting 
+  ok   FlyBy sent to chip                                70 ms  bar 100
+  ok   Never mind to chip gone                           26 ms  bar 100
+  OVER press: held scale 1, released none             
+  ok   press: one tick at touch-down ([6])            
+  repeat full sign-in to the floor  18792 ms  (the jump; by design)
+  ok   reduced-motion return sign-in to floor          1562 ms  bar 2100
+feel: 5 over the bar
+feel: failure evidence: 37 events retained, 0 older events dropped
+feel: the machine: 3.12 GB used at its highest of 16.00 allowed, 14.94 GB free on the box, no process was killed for memory (oom_kill 0)
+manager phone search: 390px visible, type, no-match, clear and print passed
+manager phone search: 720px visible, type, no-match, clear and print passed
+manager phone search: 760px visible, type, no-match, clear and print passed
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

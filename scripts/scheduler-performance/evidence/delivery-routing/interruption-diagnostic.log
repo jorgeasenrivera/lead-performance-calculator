@@ -1,0 +1,14 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.evaluate: Timeout 15000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: /^Pace, / })[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-delivery-interruption.mjs:15:943 {
+  log: [ "  - waiting for getByRole('button', { name: /^Pace, / })" ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

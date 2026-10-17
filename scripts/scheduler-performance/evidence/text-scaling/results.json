@@ -1,0 +1,486 @@
+[
+  {
+    "key": "chromium-320-2-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [
+      {
+        "surface": "coaching",
+        "values": [
+          {
+            "selector": ".sect-chip",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".co-gh",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          },
+          {
+            "selector": ".cx-nm",
+            "before": 14,
+            "after": 28,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "detail",
+        "values": [
+          {
+            "selector": ".fr-nm",
+            "before": 20,
+            "after": 40,
+            "ratio": 2
+          },
+          {
+            "selector": ".cx-hint",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".fr-tool",
+            "before": 11,
+            "after": 22,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "performance",
+        "values": [
+          {
+            "selector": ".sect-chip",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".bp-goal",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          },
+          {
+            "selector": ".bp-row .bp-nmx",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          }
+        ]
+      }
+    ],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-320-2-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [
+      {
+        "surface": "coaching",
+        "values": [
+          {
+            "selector": ".sect-chip",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".co-gh",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          },
+          {
+            "selector": ".cx-nm",
+            "before": 14,
+            "after": 28,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "detail",
+        "values": [
+          {
+            "selector": ".fr-nm",
+            "before": 20,
+            "after": 40,
+            "ratio": 2
+          },
+          {
+            "selector": ".cx-hint",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".fr-tool",
+            "before": 11,
+            "after": 22,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "performance",
+        "values": [
+          {
+            "selector": ".sect-chip",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".bp-goal",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          },
+          {
+            "selector": ".bp-row .bp-nmx",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          }
+        ]
+      }
+    ],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-1440-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-1440-2-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [
+      {
+        "surface": "coaching",
+        "values": [
+          {
+            "selector": ".sp-performance>.seg .seg-btn",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          },
+          {
+            "selector": ".s2-store",
+            "before": 25,
+            "after": 50,
+            "ratio": 2
+          },
+          {
+            "selector": ".coach-name",
+            "before": 14,
+            "after": 28,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "detail",
+        "values": [
+          {
+            "selector": ".assoc-card-full .ac-name",
+            "before": 22,
+            "after": 44,
+            "ratio": 2
+          },
+          {
+            "selector": ".coach-role",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".sp-performance>.seg .seg-btn",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "performance",
+        "values": [
+          {
+            "selector": ".s2-store",
+            "before": 30,
+            "after": 60,
+            "ratio": 2
+          },
+          {
+            "selector": ".s2-greet",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".sp-performance>.seg .seg-btn",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          }
+        ]
+      }
+    ],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-1440-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-1440-2-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [
+      {
+        "surface": "coaching",
+        "values": [
+          {
+            "selector": ".sp-performance>.seg .seg-btn",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          },
+          {
+            "selector": ".s2-store",
+            "before": 25,
+            "after": 50,
+            "ratio": 2
+          },
+          {
+            "selector": ".coach-name",
+            "before": 14,
+            "after": 28,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "detail",
+        "values": [
+          {
+            "selector": ".assoc-card-full .ac-name",
+            "before": 22,
+            "after": 44,
+            "ratio": 2
+          },
+          {
+            "selector": ".coach-role",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".sp-performance>.seg .seg-btn",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          }
+        ]
+      },
+      {
+        "surface": "performance",
+        "values": [
+          {
+            "selector": ".s2-store",
+            "before": 30,
+            "after": 60,
+            "ratio": 2
+          },
+          {
+            "selector": ".s2-greet",
+            "before": 12,
+            "after": 24,
+            "ratio": 2
+          },
+          {
+            "selector": ".sp-performance>.seg .seg-btn",
+            "before": 13,
+            "after": 26,
+            "ratio": 2
+          }
+        ]
+      }
+    ],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-reduce",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "chromium-390-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-touch",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-reduce",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  },
+  {
+    "key": "webkit-390-1-pointer",
+    "state": {
+      "radius": "10px",
+      "outline": "solid",
+      "color": "rgb(255, 253, 244)",
+      "background": "rgb(35, 73, 57)",
+      "scale": "none",
+      "opacity": [
+        "1",
+        "1"
+      ]
+    },
+    "textGrowth": [],
+    "axe": 22,
+    "status": "passed"
+  }
+]

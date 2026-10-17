@@ -1,0 +1,260 @@
+{
+  "error": "page.waitForSelector: Timeout 40000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ar-bar') to be visible\u001b[22m\n\n    at signIn (/workspace/lead-performance-calculator/scripts/feel.mjs:275:15)\n    at async run (/workspace/lead-performance-calculator/scripts/feel.mjs:718:49)\n    at async main (/workspace/lead-performance-calculator/scripts/feel.mjs:226:9)",
+  "dropped": 0,
+  "events": [
+    {
+      "at": "2026-10-16T23:36:05.845Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:36:05.854Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:36:05.867Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-16T23:36:08.630Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:36:08.630Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:36:11.012Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:12.318Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:14.357Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:19.362Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:29.757Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:39.780Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:49.787Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:52.820Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:36:52.821Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:36:52.821Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-16T23:36:56.165Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:36:56.166Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:36:58.701Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:36:59.815Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:03.894Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:78027"
+    },
+    {
+      "at": "2026-10-16T23:37:03.992Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:71560"
+    },
+    {
+      "at": "2026-10-16T23:37:03.992Z",
+      "type": "console",
+      "error": "poll queue_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:71695"
+    },
+    {
+      "at": "2026-10-16T23:37:04.771Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:07.438Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:78027"
+    },
+    {
+      "at": "2026-10-16T23:37:07.444Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:71560"
+    },
+    {
+      "at": "2026-10-16T23:37:07.444Z",
+      "type": "console",
+      "error": "poll queue_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:71695"
+    },
+    {
+      "at": "2026-10-16T23:37:07.444Z",
+      "type": "console",
+      "error": "poll queue_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:27486"
+    },
+    {
+      "at": "2026-10-16T23:37:10.656Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:78027"
+    },
+    {
+      "at": "2026-10-16T23:37:10.656Z",
+      "type": "console",
+      "error": "poll floor_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:71560"
+    },
+    {
+      "at": "2026-10-16T23:37:10.656Z",
+      "type": "console",
+      "error": "poll queue_public sage-demo:2026-10-16 Error: timed out\n    at Pn (http://127.0.0.1:5178/assets/index-5eBiY52x.js:115:40630)\n    at async http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:71695"
+    },
+    {
+      "at": "2026-10-16T23:37:10.667Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:13.097Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:37:13.099Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:37:13.099Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/_vercel/speed-insights/script.js",
+      "method": "GET",
+      "resource": "script",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-16T23:37:15.646Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/vitals",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:37:15.646Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:37:17.337Z",
+      "type": "console",
+      "error": "TypeError: Tt is not a function\n    at ni (http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:38496)\n    at http://127.0.0.1:5178/assets/index-5eBiY52x.js:95:100152\n    at Oi (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:32:24178)\n    at Nr (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:32:42110)\n    at http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:32:40465\n    at T (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:17:1570)\n    at MessagePort.Jr (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:17:1940)"
+    },
+    {
+      "at": "2026-10-16T23:37:17.339Z",
+      "type": "pageerror",
+      "error": "TypeError: Tt is not a function\n    at ni (http://127.0.0.1:5178/assets/index-5eBiY52x.js:114:38496)\n    at http://127.0.0.1:5178/assets/index-5eBiY52x.js:95:100152\n    at Oi (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:32:24178)\n    at Nr (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:32:42110)\n    at http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:32:40465\n    at T (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:17:1570)\n    at MessagePort.Jr (http://127.0.0.1:5178/assets/vendor-D-k-xYdl.js:17:1940)"
+    },
+    {
+      "at": "2026-10-16T23:37:17.350Z",
+      "type": "http",
+      "url": "http://127.0.0.1:5178/api/client-error",
+      "status": 404
+    },
+    {
+      "at": "2026-10-16T23:37:17.350Z",
+      "type": "console",
+      "error": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "at": "2026-10-16T23:37:17.350Z",
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:5178/api/client-error",
+      "method": "POST",
+      "resource": "fetch",
+      "error": "net::ERR_ABORTED"
+    },
+    {
+      "at": "2026-10-16T23:37:17.590Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:18.835Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:21.486Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:28.355Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:40.888Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    },
+    {
+      "at": "2026-10-16T23:37:52.859Z",
+      "type": "console",
+      "error": "WebSocket connection to 'ws://127.0.0.1:5433/realtime/v1/websocket?apikey=mock-anon-key&vsn=2.0.0' failed: Error during WebSocket handshake: Unexpected response code: 200"
+    }
+  ]
+}

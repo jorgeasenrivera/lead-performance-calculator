@@ -1,0 +1,22 @@
+chromium-1440-1-pointer passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.click: Target page, context or browser has been closed
+Call log:
+[2m  - waiting for locator('.coach-row').first()[22m
+[2m    - locator resolved to <button class="coach-row " aria-pressed="false">…</button>[22m
+[2m  - attempting click action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-shared-system.mjs:13:101 {
+  log: [
+    "  - waiting for locator('.coach-row').first()",
+    '    - locator resolved to <button class="coach-row " aria-pressed="false">…</button>',
+    '  - attempting click action',
+    '    - waiting for element to be visible, enabled and stable'
+  ]
+}
+
+Node.js v24.19.0

@@ -1,0 +1,29 @@
+chromium native passed
+chromium browser passed
+chromium error passed
+chromium absent passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit native passed
+webkit browser passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.tap: Timeout 15000ms exceeded.
+Call log:
+[2m  - waiting for locator('.sect-chip').filter({ hasText: 'Coaching' })[22m
+[2m    - locator resolved to <button class="sect-chip" aria-pressed="false">Coaching</button>[22m
+[2m  - attempting tap action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-haptics.mjs:13:16 {
+  log: [
+    "  - waiting for locator('.sect-chip').filter({ hasText: 'Coaching' })",
+    '    - locator resolved to <button class="sect-chip" aria-pressed="false">Coaching</button>',
+    '  - attempting tap action',
+    '    - waiting for element to be visible, enabled and stable'
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

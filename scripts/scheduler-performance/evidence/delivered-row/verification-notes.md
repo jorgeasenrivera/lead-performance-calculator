@@ -1,0 +1,9 @@
+# Delivered cleanup verification
+
+The 24 focused cases cover Chromium and WebKit at 1440, 1280, 1024, 720, 390 and 320 CSS pixels, each with 100% and 200% root text. Every visible sales strip is measured for a single line, containment, equal dimensions and equal placement inside equal-height date cards. The connected roster checks zero, six-digit, missing, closed and future values. Tests also check the applied-roster disclosure, removed controls, demand context, internal store isolation, future-month navigation and Sales key. Each case runs scoped axe checks for names, labels and contrast.
+
+The coherent-flow regression uses the retained scheduler-view event for store context instead of the intentionally removed selector. It checks the outer Performance hero, day edits, month navigation, cancellation and return context. Its synthetic swipe coverage is not a physical-device gesture claim.
+
+Intermediate findings: a stale local HTTP server initially returned empty responses and was replaced; no UI results were counted from those attempts. The geometry probe caught insufficient desktop row width and a two-pixel inset difference from today's border. Both were corrected. Inline axe injection was rejected by the existing CSP, so the test serves axe through a same-origin intercepted route. The old round-trip probe timed out looking for the removed selector; it was updated to assert internal context and selector absence. No security policy or failing assertion was relaxed.
+
+Limits: root-font scaling is not actual browser menu zoom. Physical phones, assistive-technology sessions and authenticated hosted rendering were not exercised. The existing full-store-hours scheduling model is unchanged. No schedule-hour import is implemented in this revision. Older evidence folders are historical results, not claims of fresh reruns.

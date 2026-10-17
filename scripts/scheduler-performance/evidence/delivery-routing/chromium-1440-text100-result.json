@@ -1,0 +1,12 @@
+{
+  "engine": "chromium",
+  "width": 1440,
+  "scale": 1,
+  "motion": "reduce",
+  "textGrowth": [],
+  "status": "passed",
+  "noNestedDialogs": true,
+  "staticFontReads": 0,
+  "networkWrites": 0,
+  "persistenceWrites": 0
+}

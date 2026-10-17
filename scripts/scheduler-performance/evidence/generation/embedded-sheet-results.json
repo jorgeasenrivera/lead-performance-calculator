@@ -1,0 +1,74 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "axe": {
+      "violations": [],
+      "passes": 20
+    },
+    "noNestedDialogs": true,
+    "focusRestoration": true,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "axe": {
+      "violations": [],
+      "passes": 13
+    },
+    "noNestedDialogs": true,
+    "focusRestoration": true,
+    "status": "passed"
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "axe": {
+      "violations": [],
+      "passes": 13
+    },
+    "noNestedDialogs": true,
+    "focusRestoration": true,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "axe": {
+      "violations": [],
+      "passes": 20
+    },
+    "noNestedDialogs": true,
+    "focusRestoration": true,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "axe": {
+      "violations": [],
+      "passes": 13
+    },
+    "noNestedDialogs": true,
+    "focusRestoration": true,
+    "status": "passed"
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "axe": {
+      "violations": [],
+      "passes": 13
+    },
+    "noNestedDialogs": true,
+    "focusRestoration": true,
+    "status": "passed"
+  }
+]

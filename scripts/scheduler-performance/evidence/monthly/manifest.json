@@ -1,0 +1,92 @@
+{
+  "productionSource": "15ea1a80db1c17e7f5d9b99db026f7fc09b30697",
+  "previousIntegration": "f5b7a6566ef779ea156b06849c14c79e845e5097",
+  "tests": 944,
+  "browserScenarios": 12,
+  "files": [
+    {
+      "file": "chromium-1440-future-month.png",
+      "sha256": "442958ed95d095e9e655c261d258f46f96105342e9ec980f662caf8cbd2b78fc"
+    },
+    {
+      "file": "chromium-1440-glance.png",
+      "sha256": "f793fe625892cd18c7d372c2d675a19f2ae925a08a1ab94acd9155b720c8b884"
+    },
+    {
+      "file": "chromium-1440-recorded-day.png",
+      "sha256": "617a52aad8dd2c2a5efe7aa95724988e8b32ed7890d3ab1b0698c426e8d39a2f"
+    },
+    {
+      "file": "chromium-1440-text100-calendar.png",
+      "sha256": "99a73281af13bf0c9a8f94b8ba39c47952d71d288a524609dc499956513d947c"
+    },
+    {
+      "file": "chromium-1440-text100-entry.png",
+      "sha256": "651fa91650953f96f14da16fd66f1d7931674c2aa6d5e425ca110cf70c25a4c4"
+    },
+    {
+      "file": "chromium-1440-text100-overview.png",
+      "sha256": "ed94d2eaaaffd70650bca631f22805f5c0e11921e49c516b76a886edb16ae346"
+    },
+    {
+      "file": "chromium-320-text200-entry.png",
+      "sha256": "31e4e07b012195cc9ed89b68cccc15a2e0e0ab99a8ce34fea0139e2076a02c5c"
+    },
+    {
+      "file": "chromium-320-text200-person.png",
+      "sha256": "ead47d13fda1105e63c9845d9b45c5d9ba3dc4b48b0d24d6a8bf3414b2e1be00"
+    },
+    {
+      "file": "chromium-320-text200-store.png",
+      "sha256": "b5d88e200af0431ebe624928738aef2ea64ec9c46ce7c237d278151c63a04d6c"
+    },
+    {
+      "file": "chromium-results.json",
+      "sha256": "fff57326676b0b5df6f44c358a795d56ee4a7576076d91737efe869ce497d7be"
+    },
+    {
+      "file": "webkit-320-text200-entry.png",
+      "sha256": "c20890ca42a0b9b21358d1a61702cf7784786c0b3f802ce23cc3d9c5e2feffbf"
+    },
+    {
+      "file": "webkit-320-text200-person.png",
+      "sha256": "96a932a0ad5cec2228b5ca7dd6478851c6fe0c21b197d66ab07bc157e71f5e06"
+    },
+    {
+      "file": "webkit-320-text200-store.png",
+      "sha256": "0a817d7fa5d543b0699a07ebf4117953543e6a9e44915c4e85dbf6fe7e0cbf23"
+    },
+    {
+      "file": "webkit-390-future-month.png",
+      "sha256": "135f2f8430e92a1afa6009427191922f6683e325ae0a6f7429a6013074ae9066"
+    },
+    {
+      "file": "webkit-390-glance.png",
+      "sha256": "0105bfec8091151390a7437c38ef0bddf85f90f06c60d86cd4b2b7fa3d27d097"
+    },
+    {
+      "file": "webkit-390-recorded-day.png",
+      "sha256": "5be63d4afd266b76118e55d78c8ff30ffd8703ad15d59a200bd29ed8f5a5ea57"
+    },
+    {
+      "file": "webkit-390-text100-calendar.png",
+      "sha256": "8761f78c71358f2b5c22d4864fc8081104a7745640d18850365710a47a3fac23"
+    },
+    {
+      "file": "webkit-390-text100-day.png",
+      "sha256": "05fc3cc3b2fcde2343001a8f2abdb67671e1cf76d813393d6c148138b899e79f"
+    },
+    {
+      "file": "webkit-390-text100-entry.png",
+      "sha256": "ac1fe13eed65cefc091b02cede3a701e39c32622560c5405f1fdfe2dea9bfa06"
+    },
+    {
+      "file": "webkit-390-text100-overview.png",
+      "sha256": "72576cf7cca73b85449aac5a481f4a2ff5c23f80951a0400beaca7f337533b0e"
+    },
+    {
+      "file": "webkit-results.json",
+      "sha256": "b02bce10762504d98bcf0be080ebba35d30d2a7ee90c05944225fbedf1a024e2"
+    }
+  ]
+}

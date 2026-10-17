@@ -1,0 +1,19 @@
+chromium-1440-text100 passed
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+locator.waitFor: Timeout 12000ms exceeded.
+Call log:
+[2m  - waiting for locator('.day-heading') to be visible[22m
+[2m    27 × locator resolved to hidden <h2 tabindex="-1" class="day-heading" id="selected-day-heading">Wed, Oct 14, 2026</h2>[22m
+
+    at /workspace/lead-performance-calculator/scripts/scheduler-performance/probe-weekly-hours.mjs:14:82 {
+  log: [
+    "  - waiting for locator('.day-heading') to be visible",
+    '    27 × locator resolved to hidden <h2 tabindex="-1" class="day-heading" id="selected-day-heading">Wed, Oct 14, 2026</h2>'
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v24.19.0

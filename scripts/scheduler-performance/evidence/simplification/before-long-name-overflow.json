@@ -1,0 +1,26 @@
+{
+  "card": {
+    "x": 14,
+    "y": 224.71875,
+    "width": 362,
+    "height": 450.328125,
+    "top": 224.71875,
+    "right": 376,
+    "bottom": 675.046875,
+    "left": 14
+  },
+  "scrollWidth": 629,
+  "clientWidth": 360,
+  "staffing": {
+    "x": 27,
+    "y": 298.109375,
+    "width": 336,
+    "height": 218.34375,
+    "top": 298.109375,
+    "right": 363,
+    "bottom": 516.453125,
+    "left": 27
+  },
+  "pageWidth": 390,
+  "documentWidth": 644
+}

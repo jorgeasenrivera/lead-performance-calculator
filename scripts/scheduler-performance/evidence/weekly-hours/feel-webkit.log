@@ -1,0 +1,17 @@
+
+> lead-performance-calculator@1.0.0 feel
+> node scripts/feel.mjs
+
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+feel · webkit · 400 ms on every data request · http://127.0.0.1:5178/
+  full sign-in to the floor  20104 ms  (the jump; by design)
+  OVER tap Lunch to shown                                77 ms  bar 60   [77, 145, 75]
+  ok   tap Here to shown                                 40 ms  bar 60   [292, 40, 19]
+  --   swipe: not run in WebKit (no input channel to move a real thumb)
+feel: failure evidence: 15 events retained, 0 older events dropped
+feel: page.waitForFunction: Timeout 30000ms exceeded.
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

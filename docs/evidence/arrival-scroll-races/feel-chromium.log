@@ -1,0 +1,28 @@
+
+> lead-performance-calculator@1.0.0 feel
+> node scripts/feel.mjs
+
+feel · chromium · 400 ms on every data request · http://127.0.0.1:5181/
+  full sign-in to the floor  7525 ms  (the jump; by design)
+  ok   tap Lunch to shown                                26 ms  bar 50   [48, 20, 26]
+  ok   tap Here to shown                                 28 ms  bar 50   [28, 18, 29]
+  ok   swipe: the page under the thumb, px off between frames     0 px  bar 2
+  ok   swipe: frames dropped while the thumb moved        0     bar 1
+       50 long frame(s) the page rode out at the slop, 15 px, which is the runner and not the phone
+  ok   ground: biggest change between two frames of the blend    19     bar 24
+(node:20979) TimeoutNegativeWarning: -481.9279999999999 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  OVER Floor to Phone tab                               362 ms  bar 110   [624, 358, 362]
+  OVER Phone to Floor tab                               387 ms  bar 110   [500, 248, 387]
+  ok   two taps in one round trip: Here > Lunch > Here, server waiting
+  OVER FlyBy sent to chip                               203 ms  bar 100
+  ok   Never mind to chip gone                            8 ms  bar 100
+  OVER press: held scale 1, released none
+  ok   press: one tick at touch-down ([6])
+  repeat full sign-in to the floor  8797 ms  (the jump; by design)
+  OVER reduced-motion return sign-in to floor          2577 ms  bar 2100
+feel: 5 over the bar
+feel: failure evidence: 28 events retained, 0 older events dropped
+feel: the machine: 1.07 GB used at its highest of 16.00 allowed, 16.19 GB free on the box, no process was killed for memory (oom_kill 0)
+manager phone search: 390px visible, type, no-match, clear and print passed
