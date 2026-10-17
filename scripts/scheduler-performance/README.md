@@ -366,3 +366,7 @@ The next isolated increment applies the approved shared control, motion and visu
 ## Legacy off-days and team-grid compatibility
 
 The isolated preview now accepts scoped saved off-days JSON and a bounded date-row team-grid CSV through the existing review/apply flow. Valid off-days do not require working hours. Legacy OFF/VAC stays an unknown absence reason, unlisted work stays unknown, and historical membership is never borrowed from current People defaults. See [the compatibility contract](IMPORT-COMPATIBILITY.md) for supported shapes, provenance, additive imports, explicit conflict handling and pending original-workbook gaps. Only synthetic equivalent fixtures are included.
+
+## Off-day command preview
+
+The stacked [off-day command contract](OFF-DAY-COMMANDS.md) describes same-person Move/Copy, planner-owned atomic updates, conservative lineage-aware undo and the desktop-only drag adapter. Tap/keyboard review and Apply remain primary. This is isolated preview code; no scheduler activation or live persistence is added.

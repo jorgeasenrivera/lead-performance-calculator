@@ -1,3 +1,4 @@
+import {planOffDay} from './off-day-command.mjs';
 import { nameKey, reservedTeamName } from './name-key.mjs';
 import { seedTeams, teamSnapshot, validateMembership } from "./team-model.mjs";
 import { personIntervals, unionMinutes, coverageSegments, shiftProblem, stableLocalDate, storeTimezone } from "./shift-intervals.mjs";
@@ -103,7 +104,34 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     name=String(name).trim();if(!nameKey(name)||name.length>60||reservedTeamName(name)||teamState[index].teams.some(t=>nameKey(t.name)===nameKey(name)))throw Error('Use a unique team name, up to 60 characters, without the reserved name none or |.');
     let n=teamState[index].teams.length+1;while(teamState[index].teams.some(t=>t.id==='team-'+n))n++;const id='team-'+n;teamState[index].teams.push({id,name});revision++;return id;
   };
-  return { get, rows, record, setAssignment, reset, drafts, setMembership, addTeam, teamState, get revision() { return revision; }, context: (index,day) => ({...resolve(index,day),record:record(index,day)}) };
+  const context=(index,day)=>({...resolve(index,day),record:record(index,day)});
+  const settingsChanged=(index,month)=>{const d=get(index,month);revision++;d.accepted=false;d.reviewFingerprint=null;};
+  const reviews=new WeakMap(),undos=new WeakMap();
+  const stamp=(command)=>JSON.stringify({revision,days:[command.from,command.to].map(day=>{const c=context(command.index,day);return {record:c.record,override:Object.hasOwn(c.overrides,day),people:c.store.people,rules:c.store.rules,policy:c.store.planningPolicy,teams:c.store.teams,memberships:c.store.memberships,timezone:storeTimezone(c.store)};})});
+  const reviewOffDay=command=>{
+    const planned=planOffDay(command,context);
+    const stateFor=day=>{const r=ruleFor(resolve(command.index,day).store.rules,day);if(!r||!Number.isFinite(r.open)||!Number.isFinite(r.close)||r.open<0||r.close>24||r.close<=r.open||!Number.isInteger(r.minimum)||r.minimum<1)return 'Hours unknown';const state=r.holidays[day]||(r.closedDays.includes(weekday(day))?'closed':'open');return state==='closed'?'Closed':state==='open'?'Open':'Hours unknown';};
+    const token=Object.freeze(structuredClone({...planned.summary,sourceState:stateFor(command.from),destinationState:stateFor(command.to)}));
+    reviews.set(token,{command:structuredClone(command),changes:planned.changes,stamp:stamp(command)});return token;
+  };
+  const applyOffDay=token=>{
+    const review=reviews.get(token);if(!review||review.stamp!==stamp(review.command))throw Error('The draft changed. Review this off-day operation again.');
+    const {index}=review.command,before={},batch=structuredClone(review.changes);
+    for(const day of Object.keys(batch)){const d=resolve(index,day);before[day]={present:Object.hasOwn(d.overrides,day),value:structuredClone(d.overrides[day])};}
+    // Preflight every date and clone before the synchronous commit. No partial callback writes.
+    const prepared=new Map();for(const day of Object.keys(batch)){const month=day.slice(0,7),k=key(index,month);if(!prepared.has(k)){const existing=drafts.get(k);prepared.set(k,existing?{...existing,overrides:{...existing.overrides},accepted:false,reviewFingerprint:null}:{store:{...stores[index],...teamState[index],timezone:storeTimezone(stores[index]),people:structuredClone(stores[index].people),rules:structuredClone(stores[index].rules)},overrides:{},accepted:false,reviewFingerprint:null});}}
+    for(const [day,value] of Object.entries(batch))prepared.get(key(index,day.slice(0,7))).overrides[day]=value;
+    for(const [k,d] of prepared)drafts.set(k,d);
+    revision++;reviews.delete(token);const undo=Object.freeze({...token});undos.set(undo,{command:review.command,before,stamp:stamp(review.command)});return undo;
+  };
+  const undoOffDay=token=>{
+    const entry=undos.get(token);if(!entry||entry.stamp!==stamp(entry.command))throw Error('Undo is unavailable after another edit. Review the affected days.');
+    const before=structuredClone(entry.before),prepared=new Map();
+    for(const [day,state] of Object.entries(before)){const k=key(entry.command.index,day.slice(0,7));if(!prepared.has(k)){const existing=drafts.get(k);prepared.set(k,{...existing,overrides:{...existing.overrides},accepted:false,reviewFingerprint:null});}const d=prepared.get(k);if(state.present)d.overrides[day]=state.value;else delete d.overrides[day];}
+    for(const [k,d] of prepared)drafts.set(k,d);
+    revision++;undos.delete(token);return {...token};
+  };
+  return { get, rows, record, setAssignment, reset, drafts, setMembership, addTeam, teamState, settingsChanged,reviewOffDay,applyOffDay,undoOffDay,get revision() { return revision; },context };
 }
 // Evaluate legacy full-day and explicit minute shifts across complete Monday–Sunday weeks.
 // Suggestions never contribute hours and never become assignments implicitly.
