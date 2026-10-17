@@ -39,6 +39,16 @@ const embeddedPlanner = window.parent !== window;
 let closeImport = () => {};
 let closeOffDay = () => {}, lastOffDayUndo=null;
 let closeGeneration = () => {};
+const generationAnswers = new Map();
+let generationDetour = null, absenceRecoveryNotice = null;
+const generationKey = () => `${selected}:${month}`;
+const returningToGeneration = () => generationDetour === generationKey();
+function returnToGeneration() {
+  if (!returningToGeneration()) return false;
+  generationDetour = null;
+  startGeneration();
+  return true;
+}
 // Unapplied choices are local to a store/date and never enter coverage calculations.
 const pendingAssignments = new Map();
 const pendingSettings = new Map();
@@ -143,6 +153,7 @@ new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
   attributeFilter: ["style"],
 });
 function render(focusId, announcement = "") {
+  if(generationDetour && !returningToGeneration())generationDetour=null;
   closeOffDay();
   closeMobileDay(false);
   closeGeneration();
@@ -163,7 +174,7 @@ function render(focusId, announcement = "") {
  <div class="month-navigation"><button id="previous" ${month === "2014-01" ? "disabled" : ""} aria-label="Previous month">${icon("arrowleft")}</button><button id="period-heading" popovertarget="month-picker" aria-label="Choose month, ${monthLabel(month)}">${monthLabel(month)}</button><button id="next" ${month === "2100-12" ? "disabled" : ""} aria-label="Next month">${icon("arrow")}</button><button id="today">Today</button></div>
  <div id="month-picker" class="scheduler-popover" popover role="dialog" aria-label="Choose month"><label>Month (YYYY-MM)<input id="month" type="text" maxlength="7" value="${month}" min="2014-01" max="2100-12" pattern="[0-9]{4}-[0-9]{2}" placeholder="YYYY-MM" required></label><button data-dismiss="month-picker">Done</button></div>
  <div id="sales-help" class="scheduler-popover" popover role="dialog" aria-label="Sales key"><h2>Sales key</h2><div class="heat-legend"><span>Recorded sales</span><span class="heat-scale"><span>Fewer</span>${[0,1,2,3,4].map(n=>`<i class="heat-${n}" aria-hidden="true"></i>`).join("")}<span>More</span></span><small>Only the sales strip uses sales shading. Missing is Unknown, zero means zero deliveries, and Closed is a recorded closure. Pending means future sales are not yet available. Unknown means no known sales record.</small></div><p>On touchscreens, swipe the calendar heading or arrow strip to browse months; swipe day details to browse dates. Buttons work too. Swipes are off while editing.</p><h3>Calendar icons</h3><ul class="icon-key">${[["warn","Needs schedule or conflict (red)"],["users","Low staff (orange)"],["check","Scheduled / On"],["close","Closed / Off"],["question","Unknown"],["trophy","Best recorded sales"]].map(([glyph,label])=>`<li>${icon(glyph)}<span>${label}</span></li>`).join("")}</ul><p>Staffing colors do not describe sales. Invalid assignments stay visible but do not count toward coverage.</p><h3>This month</h3><p>${sales.known} recorded · ${sales.closed} Closed · ${sales.unknown} unknown · ${sales.future} future days.</p><p>${sales.best ? `Best recorded: ${sales.bestDays.map(r=>dateLabel(r.day)).join("; ")}, ${sales.best.units} cars each.` : "No recorded best day."}</p><p>No sales goal is entered. Dates use America/New_York; fictional history ends 13 Oct 2026. Planning ranges are estimates, not observed sales.</p><button data-dismiss="sales-help">Close sales key</button></div>
- ${editing ? `<div class="editor-tools"><button id="generate-month" class="${list.some(r=>r.ids.length)?'':'primary'}">Generate month</button><button id="import-schedule">Import</button><button id="off-day-tools">Move / copy off-day</button>${lastOffDayUndo?.index===selected?'<button id="off-day-undo">Undo off-day change</button>':''}<button id="setup" aria-expanded="false" aria-controls="editor-setup">Setup</button></div><section id="editor-setup" class="panel" hidden aria-label="Schedule setup"><h2 tabindex="-1">Schedule setup</h2><div class="actions"><button id="teams">Teams</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button></div><button id="close-setup">Back to month</button></section>` : ""}
+ ${editing ? `<div class="editor-tools"><button id="generate-month" class="${list.some(r=>r.ids.length)?'':'primary'}">${generationAnswers.has(generationKey())?'Resume generation':'Generate month'}</button><button id="import-schedule">Import</button><button id="off-day-tools">Move / copy off-day</button>${lastOffDayUndo?.index===selected?'<button id="off-day-undo">Undo off-day change</button>':''}<button id="setup" aria-expanded="false" aria-controls="editor-setup">Setup</button></div><section id="editor-setup" class="panel" hidden aria-label="Schedule setup"><h2 tabindex="-1">Schedule setup</h2><div class="actions"><button id="teams">Teams</button><button id="people">${icon("users")}People</button><button id="rules">${icon("clock")}Store hours</button></div><button id="close-setup">Back to month</button></section>` : ""}
  <section id="generation-sheet" class="panel" hidden aria-label="Monthly schedule generation"></section>
  <section id="off-day-sheet" class="panel" hidden aria-label="Off-day operation"></section>
  <section id="import-sheet" class="panel" hidden aria-label="Import schedule review"></section>
@@ -256,6 +267,7 @@ function render(focusId, announcement = "") {
   if (editing) document.querySelector("#reset").onclick = () => {
     if(!confirm("Reset this month’s assignments and settings? This cannot be undone."))return;
     for (const drafts of [pendingAssignments,pendingSettings]) for (const key of drafts.keys()) if (key.startsWith(`${selected}:${month}`)) drafts.delete(key);
+    generationAnswers.delete(generationKey());generationDetour=null;absenceRecoveryNotice=null;
     planner.reset(selected, month);
     render("reset");
     document.querySelector("#message").textContent =
@@ -298,7 +310,9 @@ function startOffDay(from,personId){
 function startGeneration() {
   if([...pendingAssignments.keys(),...pendingSettings.keys()].some(k=>k.startsWith(selected+":"))){document.querySelector("#message").textContent="Apply or cancel pending edits before generating a month.";return;}
   closeGeneration();closeImport();
-  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,onMonth:value=>{month=value;selectedDay=null;render();startGeneration();},onApply:result=>{mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>document.querySelector("#generate-month")?.focus(),onPeople:()=>personSheet(),onRules:()=>storeSheet()});
+  const key=generationKey();
+  const visit=opener=>answers=>{generationAnswers.set(key,answers);generationDetour=key;opener();};
+  closeGeneration=openGeneration({host:document.querySelector("#generation-sheet"),planner,index:selected,month,mode,initialAnswers:generationAnswers.get(key),onMonth:value=>{generationDetour=null;month=value;selectedDay=null;render();startGeneration();},onApply:result=>{generationAnswers.delete(key);generationDetour=null;mode=result.mode;editing=true;render("generate-month",result.status==="covered"?"Draft applied. Review before use. Manual edits lock that date.":"Incomplete generated draft applied in this page. Resolve the visible gaps before marking reviewed.");},onClose:()=>{generationAnswers.delete(key);generationDetour=null;render('generate-month');},onPeople:visit(()=>personSheet()),onRules:visit(()=>storeSheet())});
 }
 const reduceDayMotion=matchMedia('(prefers-reduced-motion: reduce)');
 const dayMotion=createDayMotion({getLive:()=>document.querySelector('#sheet'),getHost:()=>document.querySelector('#mobile-day-dialog'),getDay:()=>selectedDay,neighbor:(day,delta)=>{const next=addDays(day,delta);return next.startsWith(month)?next:null;},markup:day=>{const row=motionRows.find(r=>r.day===day);return dayViewMarkup(row,staffing(row));},commit:(day,focusId)=>{const token=dayHapticToken;dayHapticToken=null;const changed=day!==selectedDay;daySheet(day);if(changed)feedback('tick',token);const control=focusId&&document.getElementById(focusId);if(control&&!control.disabled)control.focus({preventScroll:true});},reduced:()=>reduceDayMotion.matches});
@@ -333,6 +347,12 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   if (!isDay) {
     const setup=document.querySelector("#editor-setup");if(setup){setup.hidden=true;document.querySelector("#setup").setAttribute("aria-expanded","false");}
     closeImport();
+    if(returningToGeneration()){
+      const notice=document.createElement('p');notice.className='pending-note';notice.textContent='Your generation answers are kept. Apply or cancel these settings to return.';
+      sheet.querySelector('h2').after(notice);
+      sheet.querySelector('button.primary').textContent='Apply and return to generation';
+      sheet.querySelector('[data-close]').textContent='Cancel settings and return to generation';
+    }
     const key = `${selected}:${month}:${openerId}:${settingsId}`;
     sheet.dataset.pendingKey = key;
     const form = sheet.querySelector("form"), saved = pendingSettings.get(key);
@@ -360,7 +380,7 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   if (more) more.addEventListener("toggle", () => more.querySelector("summary").setAttribute("aria-expanded", String(more.open)));
   sheet.querySelector("[data-close]").onclick = () => {
     if(isDay&&mobileDaySession){requestCloseMobileDay();return;}
-    if (!isDay) { pendingSettings.delete(sheet.dataset.pendingKey); sheet.hidden = true; }
+    if (!isDay) { pendingSettings.delete(sheet.dataset.pendingKey); sheet.hidden = true; if(returnToGeneration())return; }
     document.getElementById(!isDay&&editing?"setup":openerId || `day-${selectedDay}`)?.focus();
   };
   sheet.onkeydown = e => {
@@ -415,7 +435,12 @@ function editorRoster(row,summary) {
   const person=p=>{
     const shifts=(row.record?.shifts||[]).filter(s=>s.personId===p.id),absence=dayAbsence(store,row.record,row.day,p.id),source=row.record?.absences?.[p.id]?.source,mismatch=mismatches.get(p.id);
     const conflict=row.conflicts[p.id]||[];
-    return `<div class="assignment-person" data-edit-person="${esc(p.id)}" data-has-shifts="${Boolean(shifts.length)}"><div class="person-identity"><strong>${esc(p.name)}</strong>${conflict.length?`<p class="person-conflict">${icon('warn')}${conflict.map(esc).join('; ')}</p>`:''}${absence?`<small>Applied: ${esc(absenceLabel(absence))}${source?` · ${esc(source.file||source.kind)}${source.line?`, line ${esc(source.line)}`:''}${source.transfer?` · ${source.transfer.mode==='copy'?'Copied':'Moved'} from ${esc(source.transfer.from)}`:''}`:''}</small>`:''}${shifts.length?`<small class="person-shifts">${shifts.map(s=>`${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)}`).join(', ')} · America/New_York</small>`:''}${row.record?.unknownNotes?.[p.id]?`<small>${esc(typeof row.record.unknownNotes[p.id]==='string'?row.record.unknownNotes[p.id]:'Unknown assignment · '+(row.record.unknownNotes[p.id].source?.file||row.record.unknownNotes[p.id].source?.kind||'Unknown source'))}</small>`:''}</div><label class="person-status">Intended status<select data-status-person="${esc(p.id)}" aria-label="${esc(p.name)} intended status" required>${intendedStatus(row.record,p.id)===''?'<option value="">Resolve conflict</option>':''}${['On','Off','Unknown'].map(value=>`<option>${value}</option>`).join('')}</select></label><label class="absence-choice" hidden>Off reason<select data-absence="${esc(p.id)}" aria-label="${esc(p.name)} off reason">${['off','legacy-off','vacation','unavailable'].filter(kind=>kind!=='legacy-off'||absenceKind(row.record,p.id)==='legacy-off').map(kind=>`<option value="${kind}" ${kind===(absenceKind(row.record,p.id)||'off')?'selected':''}>${kind==='legacy-off'?'Unknown':absenceLabel(kind)}</option>`).join('')}</select></label>${['off','legacy-off'].includes(absenceKind(row.record,p.id))?`<button type="button" data-off-person="${esc(p.id)}" aria-label="Move or copy ${esc(p.name)} off-day">Move / copy off-day</button>`:''}<p class="team-exception" role="status"></p>${shifts.length?`<label class="check shift-removal" hidden><input type="checkbox" data-confirm-remove="${esc(p.id)}">Remove ${esc(p.name)}’s imported times when applying this day</label>`:''}${mismatch?`<p class="person-conflict">Assignment teams differ from current dated membership.</p><button type="button" data-review-membership="${esc(p.id)}">Review current teams for ${esc(p.name)}</button>`:''}<details class="person-evidence"><summary>${esc(p.name)}: hours &amp; sources</summary><p>${esc(personTeamLabel(store,p.id,row.day))}. Shared members appear once; team controls affect all their members.</p>${shifts.map(s=>`<p>${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)} · ${esc(s.date)} · ${esc(s.timezone)}. Source: ${esc(s.source?.file||s.source?.kind||'CSV')}${s.source?.line?`, line ${esc(s.source.line)}`:''}.</p>`).join('')}${weeklyAuditMarkup(row.day,p.id)}</details></div>`;
+    const recurring=Array.isArray(p.off)&&p.off.includes(new Date(row.day+'T12:00:00Z').getUTCDay());
+    const recorded=(row.record?.off||[]).includes(p.id);
+    const cleared=absenceRecoveryNotice?.index===selected&&absenceRecoveryNotice.day===row.day&&absenceRecoveryNotice.revision===planner.revision&&absenceRecoveryNotice.ids.includes(p.id);
+    const recovery=[recurring?'Recurring unavailability applies on this weekday. Review Setup → People before assigning work. Clearing this date does not change recurring availability.':'',recorded?'To change this absence to work: choose Unknown and Apply day to clear it first. Then, if available, choose On and Apply day. Clearing an absence does not assign work.':cleared?'Absence cleared. This person is still Unknown. If available, choose On and Apply day to assign work.':''].filter(Boolean).join(' ');
+    const recoveryId=`absence-recovery-${p.id}`;
+    return `<div class="assignment-person" data-edit-person="${esc(p.id)}" data-has-shifts="${Boolean(shifts.length)}"><div class="person-identity"><strong>${esc(p.name)}</strong>${conflict.length?`<p class="person-conflict">${icon('warn')}${conflict.map(esc).join('; ')}</p>`:''}${absence?`<small>Applied: ${esc(absenceLabel(absence))}${source?` · ${esc(source.file||source.kind)}${source.line?`, line ${esc(source.line)}`:''}${source.transfer?` · ${source.transfer.mode==='copy'?'Copied':'Moved'} from ${esc(source.transfer.from)}`:''}`:''}</small>`:''}${shifts.length?`<small class="person-shifts">${shifts.map(s=>`${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)}`).join(', ')} · America/New_York</small>`:''}${row.record?.unknownNotes?.[p.id]?`<small>${esc(typeof row.record.unknownNotes[p.id]==='string'?row.record.unknownNotes[p.id]:'Unknown assignment · '+(row.record.unknownNotes[p.id].source?.file||row.record.unknownNotes[p.id].source?.kind||'Unknown source'))}</small>`:''}</div><label class="person-status">Intended status<select data-status-person="${esc(p.id)}" aria-label="${esc(p.name)} intended status" ${recovery?`aria-describedby="${esc(recoveryId)}"`:""} required>${intendedStatus(row.record,p.id)===''?'<option value="">Resolve conflict</option>':''}${['On','Off','Unknown'].map(value=>`<option>${value}</option>`).join('')}</select></label>${recovery?`<p class="absence-recovery" id="${esc(recoveryId)}">${esc(recovery)}</p>`:""}<label class="absence-choice" hidden>Off reason<select data-absence="${esc(p.id)}" aria-label="${esc(p.name)} off reason">${['off','legacy-off','vacation','unavailable'].filter(kind=>kind!=='legacy-off'||absenceKind(row.record,p.id)==='legacy-off').map(kind=>`<option value="${kind}" ${kind===(absenceKind(row.record,p.id)||'off')?'selected':''}>${kind==='legacy-off'?'Unknown':absenceLabel(kind)}</option>`).join('')}</select></label>${['off','legacy-off'].includes(absenceKind(row.record,p.id))?`<button type="button" data-off-person="${esc(p.id)}" aria-label="Move or copy ${esc(p.name)} off-day">Move / copy off-day</button>`:''}<p class="team-exception" role="status"></p>${shifts.length?`<label class="check shift-removal" hidden><input type="checkbox" data-confirm-remove="${esc(p.id)}">Remove ${esc(p.name)}’s imported times when applying this day</label>`:''}${mismatch?`<p class="person-conflict">Assignment teams differ from current dated membership.</p><button type="button" data-review-membership="${esc(p.id)}">Review current teams for ${esc(p.name)}</button>`:''}<details class="person-evidence"><summary>${esc(p.name)}: hours &amp; sources</summary><p>${esc(personTeamLabel(store,p.id,row.day))}. Shared members appear once; team controls affect all their members.</p>${shifts.map(s=>`<p>${timeLabel(s.startMinute)} to ${timeLabel(s.endMinute)} · ${esc(s.date)} · ${esc(s.timezone)}. Source: ${esc(s.source?.file||s.source?.kind||'CSV')}${s.source?.line?`, line ${esc(s.source.line)}`:''}.</p>`).join('')}${weeklyAuditMarkup(row.day,p.id)}</details></div>`;
   };
   const groups=teams.map((team,index)=>{const people=store.people.filter(p=>team.ids.includes(p.id)&&!seen.has(p.id));people.forEach(p=>seen.add(p.id));return {name:team.name,index,people,shared:team.ids.length-people.length};});
   const remaining=store.people.filter(p=>!seen.has(p.id));if(remaining.length)groups.push({name:'Additional people',people:remaining});
@@ -508,7 +533,7 @@ function daySheet(day, openerId = `day-${day}`, focus = true) {
       const statuses=Object.fromEntries(statusControls.map(c=>[c.dataset.statusPerson,c.value])),reasons=Object.fromEntries([...form.querySelectorAll('[data-absence]')].map(c=>[c.dataset.absence,c.value])),confirmed=[...form.querySelectorAll('[data-confirm-remove]:checked')].map(c=>c.dataset.confirmRemove);
       let record;try{record=dayEditRecord(r.record,statuses,reasons,confirmed,draft().store.people.map(p=>p.id));}catch(error){sheet.querySelector('#day-error').textContent=error.message;feedback('refused');return;}
       planner.setAssignment(selected,day,record);pendingAssignments.delete(pendingKey(day));
-      markChanged();editorReturnScroll=mobileDaySession?.scrollY??null;
+      markChanged();absenceRecoveryNotice={index:selected,day,revision:planner.revision,ids:(r.record?.off||[]).filter(id=>statuses[id]==='Unknown')};editorReturnScroll=mobileDaySession?.scrollY??null;
       if(quickEdit)editing=false;quickEdit=false;
       render(undefined,`Saved ${dateLabel(day)} in this page.`);daySheet(day);feedback("taken");sheet.querySelector('.day-heading')?.focus();
     };
@@ -550,7 +575,7 @@ function personSheet(id = "p0") {
       off: f.getAll("off").map(Number),
     });
     markChanged();
-    render("people", "Person availability saved for this month.");feedback("taken");
+    render("people", "Person availability saved for this month.");feedback("taken");returnToGeneration();
   };
 }
 function storeSheet(effective = month + "-01") {
@@ -614,6 +639,7 @@ function storeSheet(effective = month + "-01") {
     store.rules = applyStoreRuleForm(store.rules, f);feedback("taken");
     markChanged();
     render("rules", `Store hours saved from ${f.get("effective")}.${f.has("editHoliday") ? ` Special day ${f.get("holiday")}: ${f.get("holidayState")}, applied to the rule governing that date.` : ""}`);
+    returnToGeneration();
   };
 }
 render();
