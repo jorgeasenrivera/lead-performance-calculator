@@ -1,0 +1,9 @@
+/* Shared by cells, overview and key; a missing sample is never the zero level. */
+.history-0 { --history-fill:#fffdf4; --history-ink:#234939; --history-pattern:none; }
+.history-1 { --history-fill:#e4eedc; --history-ink:#234939; --history-pattern:none; }
+.history-2 { --history-fill:#8fd8af; --history-ink:#173d2b; --history-pattern:none; }
+.history-3 { --history-fill:#567d61; --history-ink:#fffdf4; --history-pattern:none; }
+.history-4 { --history-fill:#234939; --history-ink:#fffdf4; --history-pattern:none; }
+.history-unknown { --history-fill:#eeeee6; --history-ink:#234939; --history-pattern:repeating-linear-gradient(135deg,#eeeee6 0px,#eeeee6 7px,#dce1d5 7px,#dce1d5 8px); }
+.schedule-flag.needs,.staff-needs { --schedule-ink:#8c3028; }
+.schedule-flag.low,.staff-low { --schedule-ink:#C77800; }

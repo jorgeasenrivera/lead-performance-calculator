@@ -12,3 +12,11 @@ export function quickRosterGroups(people,summary,record){
   return {label,items};
  });
 }
+
+// A low-coverage count with unknown people is not confirmed low staffing.
+export function calendarWarning(row,summary){
+ if(summary.status==='Schedule conflict'||summary.conflicting.length||Object.keys(row.conflicts||{}).length)return {kind:'needs',label:'Schedule conflict'};
+ if(summary.status==='Needs schedule')return {kind:'needs',label:'Needs schedule'};
+ if(summary.status==='Low staff')return verifiedLow(row,summary)?{kind:'low',label:'Low staff'}:{kind:'needs',label:'Coverage unconfirmed'};
+ return null;
+}
