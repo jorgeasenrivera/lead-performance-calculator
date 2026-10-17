@@ -38,6 +38,7 @@ export function reviewImport(planner,index,rows,choices={}) {
     const raw=row.raw,context=planner.context(index,raw.date),store=context.store;
     const item={...row,storeId:store.id,personId:null,state:'blocked',messages:[]};items.push(item);
     if(row.problem)item.messages.push(row.problem);
+    if(row.scope && (row.scope.storeId!==store.id || !raw.date?.startsWith(row.scope.month+'-')))item.messages.push('Source store/month does not match this review.');
     const exact=store.people.filter(p=>raw['person id'] ? p.id===raw['person id'] && (!raw.name || normalize(p.name)===normalize(raw.name)) : normalize(p.name)===normalize(raw.name||''));
     const selected=choices[row.index]?.personId;
     const person=Object.hasOwn(choices[row.index]||{},'personId') ? store.people.find(p=>p.id===selected) : exact.length===1 ? exact[0] : null;
@@ -46,7 +47,7 @@ export function reviewImport(planner,index,rows,choices={}) {
     if(choices[row.index]?.skip){item.state='skipped';item.messages=[];continue;}
     if(!validDate(raw.date))item.messages.push('Use a real Date in YYYY-MM-DD, including the year.');
     const status=normalize(raw.status||'work');
-    if(!['work','off','vacation','unavailable','unknown'].includes(status))item.messages.push('Status must be work, off, vacation, unavailable or unknown.');
+    if(!['work','off','legacy-off','vacation','unavailable','unknown'].includes(status))item.messages.push('Status must be work, off, vacation, unavailable or unknown.');
     const zone=raw.timezone||storeTimezone(store);
     const endDate=raw['end date']||raw.date;
     if(zone!==storeTimezone(store))item.messages.push('Timezone does not match this store.');
@@ -54,9 +55,11 @@ export function reviewImport(planner,index,rows,choices={}) {
     const shift={storeId:store.id,personId:person?.id,date:raw.date,endDate,timezone:zone,startMinute:minute(raw.start||''),endMinute:minute(raw.end||''),source:row.source};
     if(status==='work'){const problem=shiftProblem(shift,store,raw.date);if(problem)item.messages.push(problem);}
     item.shift=status==='work'?shift:null;item.status=status;
+    const existingFact=candidates.get(raw.date)||context.record;
+    if(row.noAssertion&&person&&!item.messages.length&&(existingFact?.off?.includes(person.id)||existingFact?.on?.includes(person.id)||existingFact?.shifts?.some(s=>s.personId===person.id)||existingFact?.unknownNotes?.[person.id])){item.state='unchanged';item.messages.push('Blank cell: existing assignment and provenance kept unchanged.');const m=existingFact.teamSnapshot?.[person.id]||membershipAt(store,person.id,raw.date);item.currentTeams=m.teamIds;item.currentTeamUnknown=Boolean(m.unknown);continue;}
     let acceptedTeam=null,teamChange=null,declaredTeams=null;
     if(person&&validDate(raw.date)) {
-      const current=membershipChanges.get(person.id+':'+raw.date)||membershipAt(store,person.id,raw.date);
+      const current=row.membershipUnknown?{storeId:store.id,personId:person.id,teamIds:[],unknown:true,from:raw.date,to:raw.date,source:{kind:'Historical membership not supplied'}}:membershipChanges.get(person.id+':'+raw.date)||membershipAt(store,person.id,raw.date);
       const names=raw.team?String(raw.team).normalize('NFKC').split('|').map(normalize):null;
       const noTeam=names?.length===1&&names[0]==='none';
       const malformed=names&&(!names.every(Boolean)||!noTeam&&names.includes('none'));
@@ -74,7 +77,7 @@ export function reviewImport(planner,index,rows,choices={}) {
       item.currentTeams=current.teamIds;item.currentTeamUnknown=Boolean(current.unknown);item.declaredTeam=raw.team||'';
       item.teamMismatch=Boolean(names&&(declared.some(id=>!id)||current.unknown||!sameTeams(declared,current.teamIds)));
       item.knownTeams=!declared?.some(id=>!id);item.teamDecision=choices[row.index]?.teamDecision||'';
-      if(item.teamMismatch&&!['keep','confirm'].includes(item.teamDecision))item.messages.push('Team membership differs. Explicitly keep current teams or confirm the declared teams for this date.');
+      if(item.teamMismatch&&!['keep','confirm'].includes(item.teamDecision))item.messages.push('Team membership differs. Explicitly retain the shown membership or confirm the declared teams for this date.');
       if(item.teamMismatch&&item.teamDecision==='confirm'&&!item.knownTeams)item.messages.push('Unknown team name. Add it in Teams first, keep current teams, or skip.');
       const useDeclared=item.teamMismatch&&item.teamDecision==='confirm'&&item.knownTeams;
       acceptedTeam={...current,date:raw.date,from:raw.date,to:raw.date,membershipBasis:{from:current.from,to:current.to,source:current.source},unknown:useDeclared?false:current.unknown,teamIds:useDeclared?declared:current.teamIds,source:{kind:useDeclared?'CSV confirmed team change':raw.team?'CSV reviewed membership':'CSV retained membership',...row.source,declaredTeam:raw.team||null}};
@@ -83,6 +86,7 @@ export function reviewImport(planner,index,rows,choices={}) {
     if(item.messages.length)continue;
     const record=structuredClone(candidates.get(raw.date)||context.record||{on:[],off:[]});record.on||=[];record.off||=[];record.shifts||=[];
     const existing=record.shifts.filter(s=>s.personId===person.id);
+    if(status!=='unknown'&&record.generationLocks?.includes(person.id)&&!record.on.includes(person.id)&&!record.off.includes(person.id)&&!existing.length&&!record.unknownNotes?.[person.id])item.messages.push('A manager explicitly kept or cleared this person to Unknown. Edit that day deliberately before importing this fact, or skip it. It will not be restored automatically.');
     if(record.teamSnapshot?.[person.id]&&(!sameTeams(record.teamSnapshot[person.id].teamIds,acceptedTeam.teamIds)||Boolean(record.teamSnapshot[person.id].unknown)!==Boolean(acceptedTeam.unknown)))item.messages.push('This date already has a different assignment team snapshot. Review its teams in day details first.');
     if(item.messages.length)continue;
     if(declaredTeams!==null)declarations.set(person.id+':'+raw.date,declaredTeams);
@@ -136,5 +140,5 @@ export function applyImport(planner,review) {
   // All validation precedes this synchronous, in-memory batch. No network or persistence.
   for(const [day,record] of review.candidates)planner.setAssignment(review.index,day,record);
   for(const entry of review.membershipChanges||[])planner.setMembership(review.index,entry);
-  review.applied=true;return {changed:review.candidates.size,duplicate:review.candidates.size===0,firstDay:[...review.candidates.keys()].sort()[0]};
+  review.applied=true;return {changed:review.candidates.size,duplicate:review.candidates.size===0,skipped:review.items.filter(i=>i.state==='skipped').length,firstDay:[...review.candidates.keys()].sort()[0]};
 }
