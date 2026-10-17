@@ -1,0 +1,13 @@
+chromium-1440-1-pointer passed
+chromium-1440-2-pointer passed
+chromium-390-1-touch passed
+chromium-320-2-touch passed
+chromium-390-1-reduce passed
+chromium-390-1-pointer passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit-1440-1-pointer passed
+webkit-1440-2-pointer passed
+webkit-390-1-touch passed
+webkit-320-2-touch passed
+webkit-390-1-reduce passed
+webkit-390-1-pointer passed

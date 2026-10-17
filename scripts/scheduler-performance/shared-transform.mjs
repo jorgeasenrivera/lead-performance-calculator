@@ -88,6 +88,28 @@ export function sharedManager(source){
  source=once(source,'<button key={id} className={"drawer-item " + (appModule','<button disabled key={id} className={"drawer-item " + (appModule');
  source=once(source,'<button className="bm-item" onClick={() => { setOpen(false); setAcct(true); }}>','<button disabled className="bm-item" onClick={() => { setOpen(false); setAcct(true); }}>');
  source=once(source,'<button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>','<button disabled className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>');
+ // The account popup is a small nonmodal dialog with ordinary buttons.
+ const brandStart=source.indexOf('function BrandMenu('),brandEnd=source.indexOf('/* ---------------- Repairing',brandStart);
+ if(brandStart<0||brandEnd<brandStart)throw Error('Account popup boundary changed');
+ let brand=source.slice(brandStart,brandEnd);
+ brand=once(brand,'aria-haspopup="menu"','aria-haspopup="dialog"');
+ brand=once(brand,'className="brand-menu" role="menu"','className="brand-menu" role="dialog" aria-label="Account menu"');
+ brand=once(brand,'    const away = (e) =>',`    const trigger=ref.current?.querySelector('.brand-btn');
+    ref.current?.querySelector('.brand-menu button:not(:disabled)')?.focus({preventScroll:true});
+    const away = (e) =>`);
+ brand=once(brand,'    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };',`    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc);
+      if(document.activeElement===document.body||ref.current?.contains(document.activeElement))trigger?.focus({preventScroll:true});
+    };`);
+ source=source.slice(0,brandStart)+brand+source.slice(brandEnd);
+ // Family identifiers style primitives without enabling disconnected destinations.
+ source=once(source,'disabled={id!=="perf"} aria-pressed={value === id} className={"tool-btn "','data-sage-family={id} disabled={id!=="perf"} aria-pressed={value === id} className={"tool-btn "');
+ source=once(source,'type="button" disabled aria-pressed={value === id}','type="button" data-sage-family={id} disabled aria-pressed={value === id}');
+ source=once(source,'<button type="button" disabled={id!=="perf"} key={id}','<button type="button" data-sage-family={id} disabled={id!=="perf"} key={id}');
+ source=once(source,'<button type="button" className={"botnav-btn" + (queueOn','<button type="button" data-sage-family={queueOn?appModule:"floor"} className={"botnav-btn" + (queueOn');
+ source=once(source,'<button type="button" className="botnav-btn" aria-haspopup="dialog"','<button type="button" data-sage-family="more" className="botnav-btn" aria-haspopup="dialog"');
+ source=once(source,'<button type="button" disabled key={q.id}','<button type="button" data-sage-family={q.id} disabled key={q.id}');
+ source=once(source,'<div className="sect-strip no-print" ref={ref}>','<div className="sect-strip no-print" role="group" aria-label="Performance sections" ref={ref}>');
+ source=once(source,'<button key={id} className={"drawer-item " + (value === id','<button aria-current={value === id?"page":undefined} key={id} className={"drawer-item " + (value === id');
  // The global press owner already owns the touch tick, including cancellation.
  const shell=source.indexOf('function AppShell('),haptic=source.indexOf('  /* On the manager\'s phone every control ticks',shell),hapticEnd=source.indexOf('\n  return (\n    <Shell',haptic)+1;
  if(haptic<0||hapticEnd<haptic)throw Error('Shell press boundary changed');source=source.slice(0,haptic)+source.slice(hapticEnd);

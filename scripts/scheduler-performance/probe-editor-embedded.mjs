@@ -1,5 +1,5 @@
 import{createRequire}from'node:module';import{mkdirSync,readFileSync,writeFileSync}from'node:fs';import{execFileSync}from'node:child_process';import assert from'node:assert/strict';
-const pw=createRequire(import.meta.url)('/workspace/cloud-tools/node_modules/playwright'),out='scripts/scheduler-performance/evidence/editor-focus';mkdirSync(out,{recursive:true});
+const pw=createRequire(import.meta.url)('/workspace/cloud-tools/node_modules/playwright'),out=process.env.EVIDENCE_DIR||'scripts/scheduler-performance/evidence/editor-focus';mkdirSync(out,{recursive:true});
 const results=[];
 for(const engine of process.env.BROWSER?[process.env.BROWSER]:['chromium','webkit']){
  const browser=await pw[engine].launch(engine==='chromium'?{executablePath:'/usr/bin/chromium',args:['--no-sandbox']}:{});
@@ -16,7 +16,7 @@ for(const engine of process.env.BROWSER?[process.env.BROWSER]:['chromium','webki
   await f.evaluate(()=>scrollTo(0,0));await p.screenshot({path:`${out}/${key}-month.png`});const geometry=await f.evaluate(()=>({calendarTop:document.querySelector('.month-days').getBoundingClientRect().top,generateTop:document.querySelector('#generate-month').getBoundingClientRect().top,scrollY}));
   if(before){results.push({key,geometry,status:'baseline captured'});await p.close();continue;}
   assert.ok(geometry.calendarTop<350);await f.locator('#day-2026-11-04').click();assert.equal(await p.locator('dialog[open]').count(),1);assert.equal(await f.locator('dialog[open]').count(),0);assert.equal(await f.locator('#mobile-day-dialog').isVisible(),true);
-  const radii=await f.evaluate(()=>Object.fromEntries(['.editor-team','.day-demand','.person-status select','.month-day'].map(q=>[q,getComputedStyle(document.querySelector(q)).borderRadius])));assert.deepEqual(radii,{'.editor-team':'16px','.day-demand':'16px','.person-status select':'10px','.month-day':'10px'});const s=f.locator('[data-status-person=p4]');await s.selectOption('On');await f.locator('#day-next').click();await f.locator('#day-previous').click();assert.equal(await s.inputValue(),'On');
+  const radii=await f.evaluate(()=>Object.fromEntries(['.editor-team','.day-demand','.person-status select','.month-day'].map(q=>[q,getComputedStyle(document.querySelector(q)).borderRadius])));assert.deepEqual(radii,{'.editor-team':'20px','.day-demand':'20px','.person-status select':'12px','.month-day':'6px'});const s=f.locator('[data-status-person=p4]');await s.selectOption('On');await f.locator('#day-next').click();await f.locator('#day-previous').click();assert.equal(await s.inputValue(),'On');
   await f.locator('.day-heading').focus();await p.keyboard.press('Tab');assert.equal(await f.locator('[data-close]').evaluate(e=>e===document.activeElement),true);await p.keyboard.press('Enter');await f.locator('#mobile-day-dialog').waitFor({state:'hidden'});assert.equal(await f.locator('#day-2026-11-04').evaluate(e=>e===document.activeElement),true);
   await p.keyboard.press('Enter');assert.equal(await s.inputValue(),'On');await f.locator('#cancel-day').click();assert.equal(await s.inputValue(),'Unknown');
   // Capture the actual embedded scrolling editor, never the host Performance document.

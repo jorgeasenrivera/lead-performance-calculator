@@ -1,0 +1,7 @@
+chromium-390-text100 passed
+chromium-320-text200 passed
+chromium-1440-text100 passed
+Skipping host requirements validation logic because `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS` env variable is set.
+webkit-390-text100 passed
+webkit-320-text200 passed
+webkit-1440-text100 passed

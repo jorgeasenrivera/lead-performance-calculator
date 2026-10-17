@@ -1,0 +1,78 @@
+[
+  {
+    "key": "chromium-390-after",
+    "geometry": {
+      "calendarTop": 228,
+      "generateTop": 120,
+      "scrollY": 0
+    },
+    "status": "passed",
+    "singleDialog": true,
+    "radii": {
+      ".editor-team": "20px",
+      ".day-demand": "20px",
+      ".person-status select": "12px",
+      ".month-day": "6px"
+    },
+    "pendingSurvivesOuterClose": true,
+    "cancelPreservesApplied": true,
+    "scroll": {
+      "height": 832,
+      "total": 2161
+    },
+    "tiles": [
+      {
+        "file": "chromium-390-after-day-scroll-1.png",
+        "offset": 0
+      },
+      {
+        "file": "chromium-390-after-day-scroll-2.png",
+        "offset": 732
+      },
+      {
+        "file": "chromium-390-after-day-scroll-3.png",
+        "offset": 1329
+      }
+    ],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true
+  },
+  {
+    "key": "webkit-390-after",
+    "geometry": {
+      "calendarTop": 228,
+      "generateTop": 120,
+      "scrollY": 0
+    },
+    "status": "passed",
+    "singleDialog": true,
+    "radii": {
+      ".editor-team": "20px",
+      ".day-demand": "20px",
+      ".person-status select": "12px",
+      ".month-day": "6px"
+    },
+    "pendingSurvivesOuterClose": true,
+    "cancelPreservesApplied": true,
+    "scroll": {
+      "height": 832,
+      "total": 2225
+    },
+    "tiles": [
+      {
+        "file": "webkit-390-after-day-scroll-1.png",
+        "offset": 0
+      },
+      {
+        "file": "webkit-390-after-day-scroll-2.png",
+        "offset": 732
+      },
+      {
+        "file": "webkit-390-after-day-scroll-3.png",
+        "offset": 1393
+      }
+    ],
+    "noPersistenceWrites": true,
+    "noNetworkWrites": true
+  }
+]

@@ -1,68 +1,107 @@
-/* Existing Sage palette, pixel icons and typography. Geometry 6/10/16 is the
-   approved shared proposal: dense cells, controls, and larger surfaces. */
-:root{--sage-canvas:#f3f2e9;--sage-paper:#fffdf4;--sage-sand:#edeada;--sage-leaf:#e4eedc;--sage-forest:#234939;--sage-deep:#193b2e;--sage-gold:#e4c98d;--sage-line:#cbd3c5;--sage-dense:6px;--sage-control:10px;--sage-card:16px;--sage-ease:cubic-bezier(.2,.8,.2,1);--sage-contact:inset 0 2px 3px #132d2329;--sage-lift:0 3px 8px -5px #132d2366;}
+/* Shared preview primitives. People supplies warm role headers, sage actions,
+   blue account accents and varied role tones; warning semantics stay separate. */
+:root{--sage-canvas:#f4f1e7;--sage-paper:#fffdf4;--sage-sand:#edeada;--sage-leaf:#e8f1ea;--sage-warm:#f6e3c3;--sage-blue-wash:#eaf2ff;--sage-forest:#234939;--sage-deep:#193b2e;--sage-gold:#e4c98d;--sage-line:#cbd3c5;--sage-perf:#567d61;--sage-activity:#2a6fb8;--sage-violet:#8150ab;--sage-dense:6px;--sage-control:12px;--sage-card:20px;--sage-sheet:28px;--sage-inset:6px;--sage-capsule:calc(var(--sage-card) - var(--sage-inset));--sage-ease:cubic-bezier(.2,.8,.2,1);--sage-contact:inset 0 2px 4px #132d2340;--sage-lift:inset 0 1px #ffffff60,0 2px 3px #132d2324,0 5px 12px -8px #132d2370;--sage-sheet-shadow:inset 0 1px #ffffffb3,0 8px 28px -8px #132d2359;}
 html.manager-signal body{background:var(--sage-canvas)}
-html.manager-signal .lpc{--ease-bloop:var(--sage-ease);--spring:var(--sage-ease)}
-html.manager-signal .lpc :is(.card,.coach-list,.coach-detail){background:var(--sage-paper);border-color:var(--sage-line);border-radius:var(--sage-card);box-shadow:none}
-html.manager-signal .lpc :is(.s2-hero,.bp-hero,.co-gon){border-radius:var(--sage-card);box-shadow:0 8px 18px -13px #132d2380}
-html.manager-signal .lpc :is(.tool-switch,.seg,.sect-strip){background:var(--sage-sand);border-color:var(--sage-line);border-radius:var(--sage-card)}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip,.btn,.btn-ghost,.btn-quiet,.fr-b,.view-select,.s2-ru,.s2-imp,.sp-plan-entry,input:not([type=checkbox]):not([type=radio]),select,textarea),#app :is(button,input:not([type=checkbox]):not([type=radio]),select,textarea){border-radius:var(--sage-control)}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip,.btn,.btn-ghost,.btn-quiet,.fr-b,.view-select,.s2-ru,.sp-plan-entry),#app :is(.actions button,.day-actions button,.month-navigation button){min-height:44px;min-width:44px}
-html.manager-signal .lpc :is(.tool-thumb,.seg-thumb,.sect-pill){border-radius:var(--sage-control);background:var(--sage-forest);box-shadow:var(--sage-lift);transition:transform 160ms var(--sage-ease),width 160ms var(--sage-ease)}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip){color:var(--sage-forest);transition:background-color 120ms ease-out,color 120ms ease-out,box-shadow 120ms ease-out}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip)[aria-pressed=true]{background:var(--sage-forest)!important;color:var(--sage-paper)!important;font-weight:700}
-html.manager-signal .lpc .qsel-pill[aria-pressed=false]{background:var(--sage-paper)!important;border-color:var(--sage-line)!important;color:var(--sage-forest)}
-html.manager-signal .lpc :is(.coach-row,.s2-person,.drawer-item){border-radius:var(--sage-dense);box-shadow:none}
-html.manager-signal .lpc .coach-row.on{background:var(--sage-leaf);box-shadow:inset 3px 0 var(--sage-forest);color:var(--sage-forest)}
-html.manager-signal .lpc :is(.btn.primary,.fr-b.pri){background:var(--sage-forest);color:var(--sage-paper);border-color:var(--sage-forest);box-shadow:var(--sage-lift)}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip,.btn,.btn-ghost,.btn-quiet,.fr-b,.qsel-pill,.s2-person,.s2-pod,.s2-ru,.s2-imp,.coach-row,.drawer-item,.sp-plan-entry):is(:active,[data-sage-pressed=true]),#app button:is(:active,[data-sage-pressed=true]){transform:none!important;scale:1;box-shadow:var(--sage-contact)!important}
+html.manager-signal .lpc{--ease-bloop:var(--sage-ease);--spring:var(--sage-ease);--sage-accent:var(--sage-perf)}
+html.manager-signal .lpc :is(.card,.coach-list,.coach-detail,.s2-hero,.bp-hero,.cx-hero,.co-gon){border-radius:var(--sage-card)!important}
+html.manager-signal .lpc :is(.card,.coach-list,.coach-detail){background:var(--sage-paper);border-color:var(--sage-line);box-shadow:0 2px 7px -5px #132d2340}
+html.manager-signal .lpc :is(.s2-hero,.bp-hero,.co-gon){box-shadow:0 8px 18px -13px #132d2380}
+/* One selected capsule owns its text and persistent underline. Legacy plates
+   are hidden so a travelling plate cannot leave white labels on light paper. */
+html.manager-signal .lpc :is(.tool-thumb,.seg-thumb,.sect-pill){display:none}
+html.manager-signal .lpc :is(.tool-switch,.seg,.sect-strip){padding:var(--sage-inset);gap:4px;background:var(--sage-sand);border:1px solid var(--sage-line);border-radius:var(--sage-card);box-shadow:inset 0 1px 3px #23493918}
+html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip,.qsel-pill,.btn,.btn-primary,.btn-ghost,.btn-quiet,.fr-b,.fr-tool,.view-select,.s2-ru,.s2-imp,.sp-plan-entry,.manager-context-action,.assoc-search-trigger,.assoc-search-done,.bm-item,.drawer-item,.qpick-btn),#app :is(button,input:not([type=checkbox]):not([type=radio]),select,textarea){border-radius:var(--sage-control)}
+html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip,.btn,.btn-primary,.btn-ghost,.btn-quiet,.fr-b,.fr-tool,.qsel-pill,.s2-ru,.sp-plan-entry,.bm-item),#app :is(button,select,input:not([type=checkbox])){min-height:44px;min-width:0}
+html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip,.btn,.btn-primary,.btn-ghost,.btn-quiet,.fr-b,.fr-tool,.qsel-pill,.s2-ru,.manager-context-action),#app button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;line-height:1.35;vertical-align:middle}
+html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip){position:relative;border-radius:var(--sage-capsule);color:var(--sage-forest);background:transparent;font-weight:650;transition:box-shadow 200ms var(--sage-ease),translate 80ms ease-out!important}
+html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip)[aria-pressed=true]{background:var(--sage-accent)!important;color:var(--sage-paper)!important;box-shadow:var(--sage-lift);font-weight:700}
+html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip)[aria-pressed=true]::after{content:"";position:absolute;bottom:4px;left:calc(50% - 9px);width:18px;height:2px;background:var(--sage-paper);border-radius:1px}
+html.manager-signal [data-sage-family=activity]{--sage-accent:var(--sage-activity)}
+html.manager-signal [data-sage-family=online]{--sage-accent:var(--sage-violet)}
+html.manager-signal [data-sage-family=line]{--sage-accent:var(--sage-activity)}
+html.manager-signal [data-sage-family=floor]{--sage-accent:var(--sage-perf)}
+html.manager-signal [data-sage-family=more]{--sage-accent:var(--sage-forest)}
+html.manager-signal .lpc .qsel-pill{background:var(--sage-paper)!important;border:1px solid var(--sage-line)!important;color:var(--sage-accent);box-shadow:inset 0 1px #ffffff80}
+html.manager-signal .lpc .qsel-pill[aria-pressed=true]{background:var(--sage-accent)!important;color:var(--sage-paper)!important}
+html.manager-signal .lpc :is(.coach-row,.s2-person,.drawer-item){border-radius:var(--sage-control)}
+html.manager-signal .lpc .coach-row.on{background:var(--sage-leaf);box-shadow:inset 3px 0 var(--sage-perf);color:var(--sage-forest)}
+html.manager-signal .lpc :is(.btn.primary,.btn-primary,.fr-b.pri,.fr-tool.pri){background:var(--sage-perf);color:var(--sage-paper);border-color:var(--sage-perf);box-shadow:var(--sage-lift)}
+html.manager-signal .lpc :is(button,a.btn),html.manager-signal .fr-pop button,#app button{transition:box-shadow 80ms ease-out,translate 80ms ease-out!important}
+html.manager-signal .lpc :is(button,a.btn):not(:disabled):not([aria-disabled=true])[data-sage-pressed=true],html.manager-signal .fr-pop button:not(:disabled)[data-sage-pressed=true],#app button:not(:disabled):is(:active,[data-sage-pressed=true]){transform:none!important;scale:1!important;translate:0 1px;box-shadow:var(--sage-contact)!important}
+html.manager-signal .lpc button:is(.tool-btn,.seg-btn,.sect-chip,.botnav-btn){transition:box-shadow 200ms var(--sage-ease),translate 80ms ease-out!important}
+html.manager-signal .lpc button:is(.tool-btn,.seg-btn,.sect-chip,.botnav-btn):is(:active,[data-sage-pressed=true]){transition-duration:80ms!important}
+html.manager-signal .lpc :is(button,a.btn):active:not([data-sage-pressed=true]),html.manager-signal .fr-pop button:active:not([data-sage-pressed=true]){transform:none!important;scale:1!important;translate:none!important;box-shadow:none!important;transition:none!important}
 @media(hover:hover){
- html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip):not([aria-pressed=true]):not(:disabled):hover{background:var(--sage-leaf);color:var(--sage-forest)}
- html.manager-signal .lpc :is(.coach-row,.drawer-item):not(:disabled):hover{background:var(--sage-leaf)}
- html.manager-signal .lpc :is(.btn.primary,.fr-b.pri):not(:disabled):hover{background:var(--sage-deep)}
+ html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip):not([aria-pressed=true]):not(:disabled):hover{background:var(--sage-warm);color:var(--sage-forest)}
+ html.manager-signal .lpc :is(.coach-row,.drawer-item,.bm-item):not(:disabled):hover{background:var(--sage-blue-wash);color:var(--sage-forest)}
+ html.manager-signal .lpc :is(.btn.primary,.btn-primary,.fr-b.pri,.fr-tool.pri):not(:disabled):hover{background:#476b51;color:var(--sage-paper)}
 }
-html.manager-signal .lpc :is(button,input,select,textarea):focus-visible,#app :is(button,input,select,textarea,summary):focus-visible{outline:3px solid #267d62;outline-offset:3px}
-html.manager-signal .lpc :is(.s2-hero,.bp-hero,.co-gon) :is(button,input,select):focus-visible{outline-color:var(--sage-gold)}
-html.manager-signal .lpc :is(button,input,select,textarea):disabled,#app :is(button,input,select,textarea):disabled{opacity:1;cursor:not-allowed;color:#52624d;background:var(--sage-sand);box-shadow:none!important}
+html.manager-signal .lpc :is(button,input,select,textarea):focus-visible,html.manager-signal .fr-pop :is(button,input,select,textarea):focus-visible,#app :is(button,input,select,textarea,summary):focus-visible{outline:3px solid var(--sage-forest);outline-offset:3px}
+html.manager-signal .lpc :is(.s2-hero,.bp-hero,.co-gon) :is(button,input,select):focus-visible{outline-color:var(--sage-paper)}
+html.manager-signal .lpc :is(button,input,select,textarea):disabled,#app :is(button,input,select,textarea):disabled{opacity:1;cursor:not-allowed;color:#52624d;background:var(--sage-sand);box-shadow:none!important;translate:none}
 html.manager-signal .lpc :is(.qpick,.drawer){animation:none!important;opacity:1;will-change:transform}
 html.manager-signal .lpc .drawer-root[data-presence=closing],html.manager-signal .lpc .botnav-scrim[data-presence=closing]{pointer-events:none}
 html.manager-signal .lpc .drawer-scrim{animation:none;opacity:1}
 html.manager-signal .lpc .acard .ac-gauges .bloopwin{transform:translate(-50%,0)!important;transition:none!important}
 html.manager-signal .lpc .bloop-host:is(:hover,:focus-within)>.bloopwin{opacity:1;transition:none!important}
-html.manager-signal .lpc .sp-performance,html.manager-signal .lpc .sp-performance :is(.s2-hero,.bp-hero,.co-gon,.co-row,.coach-row,.coach-detail){animation:none!important}
+html.manager-signal .lpc .sp-performance,html.manager-signal .lpc .sp-performance :is(.bp-page,.coaching,.co-grp,.acard,.coach-detail){animation:none!important}
 .sp-about{max-width:1280px;margin:16px auto;padding:8px 20px;color:var(--sage-forest);font-size:.875rem}
 .sp-about summary{cursor:pointer;min-height:44px;display:flex;align-items:center;gap:8px}
 .sp-about p{max-width:65ch;line-height:1.5}
-#app :is(.panel,.roster-group),.sp-dialog{border-radius:var(--sage-card)}
-#app :is(.month-day,.roster-count,.sales-strip){border-radius:var(--sage-dense)}
-#app button{transition:background-color 120ms ease-out,box-shadow 120ms ease-out,color 120ms ease-out}
+#app :is(.panel,.roster-group){border-radius:var(--sage-card)}
+.sp-dialog,html.manager-signal .fr-sheet{border-radius:var(--sage-sheet);background:var(--sage-paper);box-shadow:var(--sage-sheet-shadow)}
+#app button.month-day,#app :is(.roster-count,.sales-strip){border-radius:var(--sage-dense)!important}
 #app button:hover{transform:none}
 #app :is(.primary,button[aria-pressed=true]){box-shadow:var(--sage-lift)}
-@media(prefers-reduced-motion:reduce){html.manager-signal .lpc :is(.tool-thumb,.seg-thumb,.sect-pill,button),#app button{transition:none!important}}
-html.manager-signal:is(.manager-signal-reduce,.sage-signal-reduce) .lpc :is(.tool-thumb,.seg-thumb,.sect-pill,button){transition:none!important}
+#app .primary{background:var(--sage-perf);border-color:var(--sage-perf);color:var(--sage-paper)}
 html.manager-signal :is(.fr-pop,.fr-sheet){animation:none!important;opacity:1}
 html.manager-signal .fr-pop[data-presence=closing]{pointer-events:none}
-html.manager-signal .fr-sheet{border-radius:var(--sage-card);background:var(--sage-paper);box-shadow:0 12px 28px -16px #132d2399}
-html.manager-signal .fr-pop :is(button,input,select,textarea):focus-visible{outline:3px solid #267d62;outline-offset:3px}
-html.manager-signal .fr-pop .fr-x{width:44px;height:44px}
+html.manager-signal .fr-pop .fr-x{width:44px;height:44px;border-radius:var(--sage-control);display:grid;place-items:center;padding:0}
 html.manager-signal .fr-pop .fr-hd{padding-right:72px}
 html.manager-signal .fr-pop :is(.fr-b,input:not([type=checkbox]):not([type=radio]),select,textarea){border-radius:var(--sage-control);min-height:44px}
-html.manager-signal .fr-pop button:is(:active,[data-sage-pressed=true]){scale:1;box-shadow:var(--sage-contact)}
 html.manager-signal .version-stamp{display:none}
-/* Selection owns its full-contrast background. A second sliding plate would
-   temporarily put the previous label on the wrong surface. */
-html.manager-signal .lpc :is(.tool-thumb,.seg-thumb,.sect-pill){display:none}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip){transition:box-shadow 120ms ease-out!important}
-html.manager-signal .lpc :is(.tool-btn,.seg-btn,.sect-chip)[aria-pressed=true]{box-shadow:inset 0 -2px var(--sage-gold)}
 html.manager-signal .lpc .sp-performance>*,html.manager-signal .lpc .sp-performance :is(.bp-page,.coaching,.co-grp,.acard,.coach-detail){animation:none!important;opacity:1}
 @media(max-width:700px){html.manager-signal .lpc .sp-performance>.seg{display:none}}
 html.manager-signal .lpc .s2-an-big>small{color:var(--sage-paper)}
 html.manager-signal .lpc .role-empty{color:#52624d}
 html.manager-signal .bloopwin:not(.bloopclone){transform:translate(-50%,0)!important;transition:none!important}
-html.manager-signal .bloopwin.r:not(.port):not(.bloopclone){transform:none!important}
+html.manager-signal .bloopwin.r:not(.port):not(.bloopclone){transform:none!important;transition:none!important}
 html.manager-signal .bloopwin.port.r{transform:translate(-100%,0)!important}
 html.manager-signal .bloopwin.bloopclone{transform:translate(-50%,-50%)!important;transition:none!important}
-html.manager-signal .lpc :is(.s2-hero,.bp-hero,.cx-hero,.co-gon,.card){border-radius:var(--sage-card)!important}
+/* Four equal destinations never wrap into a second nav row. Text may grow down. */
+@media(max-width:700px){
+ html.manager-signal .lpc .botnav{left:8px;right:8px;bottom:calc(6px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:stretch;gap:4px;padding:var(--sage-inset);min-height:68px;border:1px solid var(--sage-line);border-radius:var(--sage-card);background:var(--sage-sand);box-shadow:var(--sage-sheet-shadow);overflow:visible;backdrop-filter:none}
+ html.manager-signal .lpc .botnav-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:56px;height:auto;padding:8px 2px;border:0;border-radius:var(--sage-capsule);color:var(--sage-forest);background:transparent;line-height:1.3;transition:box-shadow 200ms var(--sage-ease),translate 80ms ease-out!important}
+ html.manager-signal .lpc .botnav-btn.on{background:var(--sage-accent);color:var(--sage-paper);box-shadow:var(--sage-lift)}
+ html.manager-signal .lpc .botnav-btn.on::after{top:auto;bottom:3px;left:calc(50% - 9px);height:2px;width:18px;background:var(--sage-paper);border-radius:1px}
+ html.manager-signal .lpc .botnav-btn[aria-expanded=true]{box-shadow:inset 0 0 0 2px var(--sage-accent);background:var(--sage-paper);color:var(--sage-accent)}
+ html.manager-signal .lpc .botnav-lbl{font-size:.75rem;line-height:1.3;letter-spacing:0;white-space:normal;overflow-wrap:anywhere;max-width:100%;text-align:center}
+ html.manager-signal .lpc .botnav-ico,html.manager-signal .lpc .botnav-ico>.pix{width:24px;height:24px;flex:none;display:grid;place-items:center}
+ html.manager-signal .lpc .qpick{left:0;right:0;bottom:calc(100% + 10px);padding:12px;border-radius:var(--sage-sheet);background:var(--sage-paper);box-shadow:var(--sage-sheet-shadow);max-height:calc(100dvh - var(--sage-bottomnav-height,80px) - 32px);overflow:auto}
+ html.manager-signal .lpc .qpick button.qpick-btn{border-radius:var(--sage-control);padding:10px 12px;gap:12px;color:var(--sage-accent);background:transparent;min-height:52px}
+ html.manager-signal .lpc .qpick button.qpick-btn .qpick-ico{color:var(--sage-accent);background:var(--sage-blue-wash);width:40px;height:40px;border-radius:var(--sage-control);display:grid;place-items:center}
+ html.manager-signal .lpc .qpick button.qpick-btn[data-sage-family=floor] .qpick-ico{background:var(--sage-leaf)}
+ html.manager-signal .lpc .qpick button.qpick-btn[data-sage-family=online] .qpick-ico{background:#f0e8f7}
+ html.manager-signal .lpc .qpick button.qpick-btn:disabled{background:transparent;color:#52624d}
+ html.manager-signal .lpc .drawer{bottom:calc(var(--sage-bottomnav-height,80px) + 24px + env(safe-area-inset-bottom));left:8px;right:8px;width:auto;border:1px solid var(--sage-line);border-radius:var(--sage-sheet);background:var(--sage-paper);box-shadow:var(--sage-sheet-shadow);max-height:calc(100dvh - var(--sage-bottomnav-height,80px) - 48px)}
+ html.manager-signal .lpc .drawer-head{background:var(--sage-warm);border-radius:calc(var(--sage-sheet) - 1px) calc(var(--sage-sheet) - 1px) 0 0}
+ html.manager-signal .lpc .drawer-scroll{padding-bottom:12px}
+ html.manager-signal .lpc .drawer-item.on{background:var(--sage-perf);color:var(--sage-paper);box-shadow:var(--sage-lift)}
+ html.manager-signal .lpc .drawer-item.on .drawer-tick{color:var(--sage-paper)}
+ html.manager-signal .lpc{padding-bottom:calc(var(--sage-bottomnav-height,80px) + 30px + env(safe-area-inset-bottom))}
+}
+html.manager-signal .lpc .brand-menu{background:var(--sage-paper);border:1px solid var(--sage-line);border-radius:var(--sage-sheet);box-shadow:var(--sage-sheet-shadow);max-width:calc(100vw - 24px);padding:12px;transform-origin:top left}
+html.manager-signal .lpc .bm-head{background:var(--sage-warm);border-radius:calc(var(--sage-sheet) - 12px);padding:12px}
+html.manager-signal .lpc .bm-item{text-align:left;padding:10px 12px;line-height:1.4}
+/* Team color is grouping, never coverage or absence status. */
+#app.planning-workspace .editor-team{background:var(--sage-paper);border-radius:var(--sage-card);box-shadow:inset 0 1px #ffffffb3,0 2px 6px -4px #23493935}
+#app.planning-workspace .editor-team legend{padding:6px 10px;border-radius:var(--sage-control);background:var(--sage-warm);color:var(--sage-forest)}
+#app.planning-workspace .editor-team:nth-child(even) legend{background:var(--sage-blue-wash)}
+#app.planning-workspace .editor-team .person-status select[data-intent=On]{background:var(--sage-leaf);border-color:var(--sage-perf);color:var(--sage-forest)}
+#app.planning-workspace .day-demand{background:var(--sage-leaf);border-color:#b5cbb8}
+#app.planning-workspace .day-demand #suggest{background:var(--sage-paper);color:var(--sage-forest);box-shadow:var(--sage-lift)}
+@media(prefers-reduced-motion:reduce){html.manager-signal .lpc :is(button,a.btn),html.manager-signal .fr-pop button,#app button{transition:none!important;translate:none!important}}
+html.manager-signal:is(.manager-signal-reduce,.sage-signal-reduce) .lpc :is(button,a.btn){transition:none!important;translate:none!important}
 
 html.manager-signal .sp-performance :is(.bp-lbl,.bp-lim>b){color:#52624d!important}
 html.manager-signal .sp-performance :is(.bp-stnd.bp-warn,.bp-verdict.bp-warn){color:#75491e!important}
@@ -79,9 +118,6 @@ html.manager-signal .fr-sheet.co-sheet :is(.fr-st,.cx-ch.ok){color:#23674f!impor
  html.manager-signal .lpc .cx-hh{flex-wrap:wrap}
  html.manager-signal .lpc .cx-days{white-space:normal;overflow-wrap:anywhere;max-width:100%}
  html.manager-signal .lpc .cx-bench{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(30%,3.75rem)),1fr))}
- html.manager-signal .lpc .botnav{grid-template-columns:repeat(auto-fit,minmax(min(100%,4.5rem),1fr))}
- html.manager-signal .lpc{padding-bottom:calc(var(--sage-bottomnav-height,64px) + 16px)}
- html.manager-signal .lpc .qpick{bottom:calc(var(--sage-bottomnav-height,64px) + 8px)}
  html.manager-signal .fr-sheet.co-sheet :is(.cx-stats,.cx-tiles){grid-template-columns:repeat(auto-fit,minmax(min(100%,3rem),1fr))}
  html.manager-signal .fr-sheet.co-sheet .cx-acts{grid-template-columns:repeat(auto-fit,minmax(min(100%,3rem),1fr))}
  html.manager-signal .fr-sheet.co-sheet .cx-goal{grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr))}
@@ -109,3 +145,10 @@ html.manager-signal .sp-performance .s2-right .s2-mklbl{white-space:normal;overf
 /* Retained monthly delivery context uses the same readable inks as Coaching. */
 html.manager-signal .fr-sheet:is(.fr-k-units,.fr-k-pace,.fr-k-month){--frink3:#52624d;--frsand2:#75491e;--frok:#23674f}
 html.manager-signal .fr-sheet:is(.fr-k-units,.fr-k-pace,.fr-k-month) .fr-st{color:#23674f!important}
+
+/* The anchored account popup must paint above the following section strip. */
+html.manager-signal .lpc .topbar:has(.brand-menu){position:relative;z-index:2}
+html.manager-signal .lpc .bm-role{color:#52624d}
+#app #mobile-day-dialog:not(.embedded-day-page){border-radius:var(--sage-sheet);box-shadow:var(--sage-sheet-shadow)}
+
+html.manager-signal .lpc :is(button,a.btn)[data-sage-cancelled=true],html.manager-signal .fr-pop button[data-sage-cancelled=true]{transform:none!important;scale:1!important;translate:none!important;box-shadow:none!important;transition:none!important}

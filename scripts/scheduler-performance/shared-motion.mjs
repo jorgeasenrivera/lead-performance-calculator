@@ -1,7 +1,7 @@
 import {useLayoutEffect,useRef,useState} from 'react';
 // Proposed shared durations use the approved review ranges, not platform detection.
-export const motion={control:120,pointerEnter:140,touchEnter:240,exit:160,tab:160};
-let input='keyboard',contact=null,toolIntent=null;
+export const motion={control:80,pointerEnter:220,touchEnter:240,exit:220,tab:200};
+let input='keyboard',contact=null,cancelled=null,toolIntent=null;
 const active=new Set();
 export const inputKind=()=>input;
 export const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches||document.documentElement.matches('.manager-signal-reduce,.sage-signal-reduce');
@@ -23,8 +23,12 @@ export function pressDown(e,buzz){
  const tick=e.pointerType==='touch'&&buzz?setTimeout(()=>{if(contact?.el===el)buzz(6,true);},50):null;
  contact={el,tick,x:e.clientX,y:e.clientY};
 }
-export function pressMove(e){if(contact&&contact.x!=null&&(Math.abs(e.clientX-contact.x)>8||Math.abs(e.clientY-contact.y)>8))pressUp();}
-export function pressUp(){if(!contact)return;clearTimeout(contact.tick);delete contact.el.dataset.sagePressed;contact=null;}
+export function pressMove(e){
+ if(!contact||contact.x==null)return;
+ const box=contact.el.getBoundingClientRect?.(),outside=box&&(e.clientX<box.left||e.clientX>box.right||e.clientY<box.top||e.clientY>box.bottom);
+ if(outside||Math.abs(e.clientX-contact.x)>8||Math.abs(e.clientY-contact.y)>8){const el=contact.el;pressUp();cancelled=el;el.dataset.sageCancelled='true';}
+}
+export function pressUp(){if(cancelled){delete cancelled.dataset.sageCancelled;cancelled=null;}if(!contact)return;clearTimeout(contact.tick);delete contact.el.dataset.sagePressed;contact=null;}
 let locks=0,priorOverflow='';
 function lockScroll(){if(!locks++) {priorOverflow=document.body.style.overflow;document.body.style.overflow='hidden';}let done=false;return()=>{if(!done){done=true;if(!--locks)document.body.style.overflow=priorOverflow;}};}
 const inertOwners=new WeakMap();

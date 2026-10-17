@@ -1,5 +1,5 @@
 import{createRequire}from'node:module';import{readFileSync,writeFileSync}from'node:fs';import assert from'node:assert/strict';
-const pw=createRequire(import.meta.url)('/workspace/cloud-tools/node_modules/playwright'),out='scripts/scheduler-performance/evidence/editor-focus',results=[];
+const pw=createRequire(import.meta.url)('/workspace/cloud-tools/node_modules/playwright'),out=process.env.EVIDENCE_DIR||'scripts/scheduler-performance/evidence/editor-focus',results=[];
 for(const engine of['chromium','webkit']){
  const b=await pw[engine].launch(engine==='chromium'?{executablePath:'/usr/bin/chromium',args:['--no-sandbox']}:{});
  try{const p=await b.newPage({viewport:{width:390,height:900},hasTouch:true,reducedMotion:'reduce'});p.setDefaultTimeout(15000);const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.route('**/__axe.js',r=>r.fulfill({contentType:'application/javascript',body:readFileSync('/workspace/qa-tools/node_modules/axe-core/axe.min.js','utf8')}));

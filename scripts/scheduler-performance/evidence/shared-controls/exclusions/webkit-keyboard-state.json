@@ -1,0 +1,130 @@
+{
+  "active": "<summary>Applied roster &amp; sales</summary>",
+  "dialogOpen": true,
+  "controls": [
+    {
+      "html": "<button type=\"button\" data-close=\"\" aria-label=\"Back to month\"><span class=\"desktop-nav-label\">Back to month</span><span class=\"mobile-nav-label\">Back</span></button>",
+      "visible": "visible"
+    },
+    {
+      "html": "<button type=\"button\" id=\"day-previous\" aria-label=\"Previous day\"><svg class=\"sage-icon\" viewBox=\"0 0 7 7\" aria-hidden=\"true\" focusable=\"false\" fill=\"currentColor\"><circle cx=\"3.5\" cy=\"0.5\" r=\".48\"></circle><circle cx=\"2.5\" cy=\"1.5\" r=\".48\"></circle><circle cx=\"1.5\" cy=\"2.5\" r=\".48\"></circle><circle cx=\"0.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"1.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"2.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"3.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"4.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"5.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"6.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"1.5\" cy=\"4.5\" r=\".48\"></circle><circle cx=\"2.5\" cy=\"5.5\" r=\".48\"></circle><circle cx=\"3.5\" cy=\"6.5\" r=\".48\"></circle></svg></button>",
+      "visible": "visible"
+    },
+    {
+      "html": "<button type=\"button\" id=\"day-next\" aria-label=\"Next day\"><svg class=\"sage-icon\" viewBox=\"0 0 7 7\" aria-hidden=\"true\" focusable=\"false\" fill=\"currentColor\"><circle cx=\"3.5\" cy=\"0.5\" r=\".48\"></circle><circle cx=\"4.5\" cy=\"1.5\" r=\".48\"></circle><circle cx=\"5.5\" cy=\"2.5\" r=\".48\"></circle><circle cx=\"0.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"1.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"2.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"3.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"4.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"5.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"6.5\" cy=\"3.5\" r=\".48\"></circle><circle cx=\"5.5\" cy=\"4.5\" r=\".48\"></circle><circle cx=\"4.5\" cy=\"5.5\" r=\".48\"></circle><circle cx=\"3.5\" cy=\"6.5\" r=\".48\"></circle></svg></button>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Coverage gaps</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<button type=\"button\" id=\"suggest\">Use suggestion</button>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Why this suggestion?</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-team=\"0\" aria-label=\"Oak team team status\"><option value=\"\">Choose status</option><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-status-person=\"p0\" aria-label=\"Alex 1 intended status\" required=\"\" data-intent=\"On\"><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Alex 1: hours &amp; sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Weekly hours · 2026-11-02 to 2026-11-08</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-status-person=\"p1\" aria-label=\"Blair 1 intended status\" required=\"\" data-intent=\"Unknown\"><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Blair 1: hours &amp; sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Weekly hours · 2026-11-02 to 2026-11-08</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-team=\"1\" aria-label=\"Pine team team status\"><option value=\"\">Choose status</option><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-status-person=\"p2\" aria-label=\"Casey 1 intended status\" required=\"\" data-intent=\"Unknown\"><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Casey 1: hours &amp; sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Weekly hours · 2026-11-02 to 2026-11-08</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-status-person=\"p3\" aria-label=\"Drew 1 intended status\" required=\"\" data-intent=\"Unknown\"><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Drew 1: hours &amp; sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Weekly hours · 2026-11-02 to 2026-11-08</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-status-person=\"p4\" aria-label=\"Ellis 1 intended status\" required=\"\" data-intent=\"Unknown\"><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Ellis 1: hours &amp; sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Weekly hours · 2026-11-02 to 2026-11-08</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<select data-status-person=\"p5\" aria-label=\"Frankie 1 intended status\" required=\"\" data-intent=\"Unknown\"><option>On</option><option>Off</option><option>Unknown</option></select>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Frankie 1: hours &amp; sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Weekly hours · 2026-11-02 to 2026-11-08</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<button class=\"primary\">Apply day</button>",
+      "visible": "visible"
+    },
+    {
+      "html": "<button type=\"button\" id=\"cancel-day\">Cancel</button>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Teams and absence sources</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary>Applied roster &amp; sales</summary>",
+      "visible": "visible"
+    },
+    {
+      "html": "<summary aria-expanded=\"false\" aria-controls=\"additional-remaining\">3 more people</summary>",
+      "visible": "visible"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "engine": "chromium",
+    "status": "passed",
+    "closureAndUnknownKeepExactTimes": true,
+    "noEligibleSuggestionWhenExcluded": true,
+    "orientationPreservesPending": true,
+    "keyboardBoundaryAndBack": true,
+    "scopedAxeScans": 1
+  },
+  {
+    "engine": "webkit",
+    "status": "passed",
+    "closureAndUnknownKeepExactTimes": true,
+    "noEligibleSuggestionWhenExcluded": true,
+    "orientationPreservesPending": true,
+    "keyboardBoundaryAndBack": true,
+    "scopedAxeScans": 1
+  }
+]
