@@ -5,44 +5,57 @@
  * short. The sentence has to be true, so the two ways a person can have nothing
  * to show are counted apart.
  *
- * OBSERVED: the reports gave a figure, and that includes a measured zero. A
- * salesperson who posted no videos has a real 0% and is really below the bar.
+ * OBSERVED: the reports gave a figure that can be a measurement, which is a
+ * finite number, zero or more. A measured zero is observed. A salesperson who
+ * posted no videos has a real 0% and is really below the bar.
  *
- * MISSING: the reports never mentioned them. No figure at all, null or
- * undefined, which is the same test evaluateAssociate uses for "absent". A new
- * hire in their first week, somebody on leave, a store whose report has not
- * landed yet. That is not a shortfall. It is the absence of the thing that
- * would say whether there is one, and a hero that scored it as 0% would tell a
- * manager the floor is failing when the truth is that a file has not arrived.
+ * UNAVAILABLE, counted as "missing": there is nothing to measure. Either no
+ * figure at all (null or undefined, which is the same test evaluateAssociate
+ * uses for "absent"), or a figure that cannot be a measurement: a negative,
+ * NaN, Infinity, or anything that is not a number. The report reader lets a
+ * negative and an infinite figure through, and a hero that scored one would put
+ * a dial over 100% or print "NaN%". Neither is a shortfall and neither is a
+ * pass. A new hire in their first week, somebody on leave, a store whose report
+ * has not landed yet: each is the absence of the thing that would say whether
+ * there is a shortfall, and a hero that scored it as 0% would tell a manager the
+ * floor is failing when the truth is that a file has not arrived.
  *
  * This decides how the heroes COUNT and average, and nothing else. It does not
  * decide who is restricted: evaluateAssociate still treats one missing figure
- * among several as a real shortfall, on purpose, and none of this reaches it.
+ * among several as a real shortfall, on purpose, reads every figure by its own
+ * rules, and none of this reaches it.
  */
 
-/* How much of the bar this person has cleared, 0 to 1, or null when there is no
-   figure to measure. `need` is the bar in the same units as `value` and must be
-   above zero: a standard with no bar has nothing to be measured against, and the
-   caller leaves it out before it gets here. */
+/* A figure the hero may score: a finite number, zero or more. Zero passes. */
+export function isMeasured(value) {
+  return Number.isFinite(value) && value >= 0;
+}
+
+/* How much of the bar this person has cleared, 0 to 1, or null when there is
+   nothing to measure: no figure, a figure that cannot be a measurement, or a bar
+   that is not a finite number above zero. A standard with no bar has nothing to
+   be measured against, and the caller leaves it out before it gets here. */
 export function attainmentOf(value, need) {
-  if (value == null) return null;
-  return Math.min(1, value / need);
+  if (!isMeasured(value) || !Number.isFinite(need) || !(need > 0)) return null;
+  const got = Math.min(1, value / need);
+  return got === 0 ? 0 : got;
 }
 
 export function newRollup() {
   return { total: 0, observed: 0, missing: 0, below: 0, sum: 0 };
 }
 
-/* One person's attainment, as attainmentOf gave it. `below` only ever counts
-   somebody who was measured. */
+/* One person's attainment, as attainmentOf gave it. Anything that is not a
+   finite number of zero or more is unavailable and counts as missing, and
+   `below` only ever counts somebody who was measured. */
 export function addToRollup(rollup, got) {
   rollup.total++;
-  if (got == null) {
+  if (!isMeasured(got)) {
     rollup.missing++;
     return rollup;
   }
   rollup.observed++;
-  rollup.sum += got;
+  rollup.sum += Math.min(1, got);
   if (got < 1) rollup.below++;
   return rollup;
 }

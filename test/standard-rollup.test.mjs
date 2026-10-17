@@ -6,7 +6,8 @@
  *   1. The Summary shows the goal of the month on screen (storeGoalFor), not the
  *      standing figure the store record still carries.
  *   2. The heroes count a person with no figure as MISSING, not as 0%. A measured
- *      zero stays a measured zero.
+ *      zero stays a measured zero. A figure that cannot be a measurement (a
+ *      negative, NaN, Infinity) is unavailable, the same as no figure.
  *   3. The Live Floor button that opens "Behind the standard" says so.
  *
  * Manager.jsx is JSX and cannot be imported, so, as hero-channel-status.test.mjs
@@ -18,7 +19,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { norm } from "../api/_report-parsers.mjs";
 import { storeGoalFor } from "../api/_store-month.mjs";
-import { attainmentOf, newRollup, addToRollup, readRollup, weakestRollup } from "../api/_standard-rollup.mjs";
+import { isMeasured, attainmentOf, newRollup, addToRollup, readRollup, weakestRollup } from "../api/_standard-rollup.mjs";
 
 const manager = readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
 
@@ -129,6 +130,38 @@ test("the weakest standard is chosen among those somebody was measured on", () =
   assert.deepEqual([weakest.total, weakest.observed, weakest.missing, weakest.below], [2, 2, 0, 2], "both measured people are under the bar");
 });
 
+test("only a finite number of zero or more is a figure, and zero is one", () => {
+  for (const ok of [0, -0, 0.0001, 0.5, 1, 1.5, 250, Number.MAX_VALUE]) assert.equal(isMeasured(ok), true, String(ok));
+  for (const bad of [-0.0001, -1, -Infinity, Infinity, NaN, null, undefined, "", "0", "0.4", true, false, {}, [], [0], 1n]) {
+    assert.equal(isMeasured(bad), false, `${String(bad)} is not a figure`);
+  }
+});
+
+test("a figure that cannot be a measurement is unavailable: not a shortfall and not a pass", () => {
+  // The report reader lets a negative and an infinite figure through, and arithmetic upstream can make a NaN.
+  for (const bad of [-0.2, -1, NaN, Infinity, -Infinity, "0.4", true, {}, 1n]) {
+    assert.equal(attainmentOf(bad, 0.5), null, String(bad));
+  }
+  assert.ok(Object.is(attainmentOf(0, 0.5), 0), "a genuine zero is observed, and it is zero");
+  assert.ok(Object.is(attainmentOf(-0, 0.5), 0), "a negative-signed zero is just zero");
+  assert.equal(attainmentOf(0.25, 0.5), 0.5);
+});
+
+test("a bar that cannot be measured against measures nobody", () => {
+  for (const bar of [0, -0.5, NaN, Infinity, -Infinity, undefined, null, "0.5"]) {
+    assert.equal(attainmentOf(0.3, bar), null, `bar ${String(bar)}`);
+  }
+});
+
+test("a rollup counts an invalid attainment as missing, and what it prints is always a real number", () => {
+  const roll = newRollup();
+  for (const got of [1, NaN, -0.3, Infinity, -Infinity, 0.5, 3, "0.9", null, undefined]) addToRollup(roll, got);
+  const read = readRollup(roll);
+  assert.deepEqual([read.total, read.observed, read.missing, read.below], [10, 3, 7, 1]);
+  assert.equal(read.mean, (1 + 0.5 + 1) / 3, "a 3 is a met bar, capped at 1, and nothing else moves the average");
+  for (const v of Object.values(read)) assert.ok(Number.isFinite(v), "no NaN or Infinity in what a hero prints");
+});
+
 test("the desk hero: missing figures are counted apart and never scored as underperformance", () => {
   const { metricRoll, weakest, anyMissing, videoDials } = deskHero({ config, roster: [A, B, C, D, E], M });
   const read = (metric) => readRollup(metricRoll[metric]);
@@ -188,6 +221,26 @@ test("when nobody has a figure, neither hero invents one", () => {
     assert.equal(v.observed, 0);
     assert.equal(v.missing, 2);
   }
+});
+
+test("negative, NaN and infinite figures are unavailable in both heroes, and nothing prints NaN", () => {
+  const H = person("Fixture H"); // nothing usable
+  const I = person("Fixture I"); // a string, a negative infinity, and one real figure
+  const odd = { stats: { ...stats, [norm(H.name)]: stat(-0.2, Infinity, NaN), [norm(I.name)]: stat("0.4", -Infinity, 0.1) } };
+  const roster = [A, B, H, I];
+  const desk = deskHero({ config, roster, M: odd });
+  const read = (metric) => readRollup(desk.metricRoll[metric]);
+  // A clears and B is a real zero, so each of these has one person below, measured.
+  assert.deepEqual(read("apptVideoDayPct"), { total: 4, observed: 2, missing: 2, below: 1, mean: 0.5 });
+  assert.deepEqual(read("bhVideoPct"), { total: 4, observed: 2, missing: 2, below: 1, mean: 0.5 });
+  const engaged = read("engagedVideoPct");
+  assert.deepEqual([engaged.total, engaged.observed, engaged.missing, engaged.below], [4, 3, 1, 2]);
+  close(engaged.mean, (1 + 0 + 0.1 / 0.3) / 3);
+  assert.equal(desk.weakest.metric, "engagedVideoPct");
+  for (const dials of [desk.videoDials, phoneDials({ config, roster, M: odd })]) {
+    for (const v of dials) for (const [k, n] of Object.entries(v)) if (typeof n === "number") assert.ok(Number.isFinite(n), `${v.m}.${k} is a real number`);
+  }
+  assert.ok(Number.isFinite(desk.attSum) && Number.isFinite(desk.pct), "the store average is a real number too");
 });
 
 test("with every figure present the heroes say what they always said", () => {
@@ -267,6 +320,70 @@ test("what a hero prints says how many were not measured", () => {
   const dial = cut("function S2Dial(", "\n}\n");
   assert.ok(/ratio == null/.test(dial) && /–/.test(dial), "a dial with no figure is a bare track, not a red 0%");
   assert.ok(/t \? Math\.round\(v\.mean \* 100\) : 0/.test(manager), "the phone ring draws nothing for no figure");
+});
+
+/* ------------------------------------------------ the phone's Who is below ---- */
+
+/* The dial says "N of M below" and Who is below opens the board's list. This PR
+   does not claim the two always agree, because they do not, and none of it is
+   eligibility:
+
+   - Scope. The count covers every role with standards. The list is the board's
+     people for the role tab that is showing, narrowed by the search box.
+   - The bar. Where a person's tier does not name a standard, the dial judges them
+     at the gentlest bar set for it across the tiers; the list falls back to the
+     store's threshold for it.
+   - BH Video. A row carries five dots: internet, phone, showroom, appt video and
+     engaged video. BH Video is not one of them, so the list cannot say who is
+     below on it, and it is empty while the dial counts people.
+
+   The second and third are marked todo below, as the gap itself and not as the
+   behaviour anybody wants. Fixing either decides which bar and which people the
+   list means, which is not a presentation detail, so it is left for a decision. */
+const FIVE = new Function(`${cut("const FIVE = [", "\n];")}; return FIVE;`)();
+const bpDotState = new Function(`${cut("function bpDotState(", "\n}\n")}; return bpDotState;`)();
+const peopleSource = cut("const people = useMemo(() => boardRoster.map((a) => {", "[boardRoster, M, thr, restrictions, strengths]); // eslint-disable-line", phoneAt);
+const rowsSource = cut("const rows = useMemo(() => {", "[people, roleFilter, limitOnly, drill, q]);", phoneAt);
+const THRESHOLDS = { internet: { green: 20, yellow: 10 }, phone: { green: 25, yellow: 12 }, showroom: { green: 30, yellow: 15 },
+  apptVideoDayPct: { green: 60 }, engagedVideoPct: { green: 50 } };
+
+/* Who the phone's list shows after Who is below on this standard, for these people. */
+function listedBelow({ config, roster, M, metric, roleFilter = null, query = "" }) {
+  const run = new Function("boardRoster", "M", "norm", "evaluateAssociate", "tiersOf", "FIVE", "thr", "bpDotState", "isRestricted",
+    "bpFirstTag", "strengths", "unitsOf", "restrictions", "useMemo", "limitOnly", "roleFilter", "drill", "q",
+    `${peopleSource}\n${rowsSource}\nreturn rows;`);
+  const tiersOf = (roleId) => config.standards.s1[roleId]?.tiers;
+  const rows = run(roster, M, norm, evaluateAssociate, tiersOf, FIVE, THRESHOLDS, bpDotState, () => false,
+    () => null, {}, () => 0, {}, (fn) => fn(), false, roleFilter, { kind: "below", id: metric }, norm(query));
+  return rows.map((p) => p.a.name);
+}
+const dialFor = (args, metric) => phoneDials(args).find((v) => v.m === metric);
+
+test("Who is below lists the people the dial counts, for a standard on the row's dots that every tier names", () => {
+  const args = { config, roster: [A, B, C, D, E, G], M };
+  for (const metric of ["apptVideoDayPct", "engagedVideoPct"]) {
+    const listed = listedBelow({ ...args, metric });
+    assert.deepEqual(listed.sort(), ["Fixture B", "Fixture C"], `${metric}: the measured people under the bar, and nobody who is missing`);
+    assert.equal(listed.length, dialFor(args, metric).below, metric);
+  }
+});
+
+test("Who is below lists nobody for BH Video while the dial counts people", { todo: "pre-existing: a row's five dots do not include BH Video" }, () => {
+  const args = { config, roster: [A, B, C, D, E, G], M };
+  assert.equal(dialFor(args, "bhVideoPct").below, 1, "the dial counts Fixture B, a measured zero");
+  assert.equal(listedBelow({ ...args, metric: "bhVideoPct" }).length, dialFor(args, "bhVideoPct").below);
+});
+
+test("Who is below and the dial use the same bar when a person's tier does not name the standard", { todo: "pre-existing: the list falls back to the store threshold, the dial to the gentlest tier bar" }, () => {
+  // The lower tier names engaged video only; appt video is asked of the upper tier at 50.
+  const tiered = { roles: config.roles, standards: { s1: { sales: { tiers: [
+    { cap: 50, requirements: [{ metric: "engagedVideoPct", min: 30 }] },
+    { cap: 100, requirements: [{ metric: "apptVideoDayPct", min: 50 }, { metric: "engagedVideoPct", min: 30 }] },
+  ] } } } };
+  const X = person("Fixture X"); // in the lower tier, at 55% appt video
+  const args = { config: tiered, roster: [X], M: { stats: { [norm(X.name)]: stat(0.55, null, 0.4) } } };
+  assert.equal(dialFor(args, "apptVideoDayPct").below, 0, "55% clears the gentlest bar, 50%");
+  assert.equal(listedBelow({ ...args, metric: "apptVideoDayPct" }).length, 0, "but the list judges 55% against the store threshold, 60%");
 });
 
 /* ---------------------------------------------------------------- 1 ---- */
