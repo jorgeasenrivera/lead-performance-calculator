@@ -9,7 +9,7 @@ import { fixtures } from "../scheduler-proposal/model.mjs";
 import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
-  "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
+  "69116d63e08e7d71728fa18563bf4a56772455ec57bf9978001af3998d275241";
 export function patchPhoneLayout(source) {
   if (createHash("sha256").update(source).digest("hex") !== "b117da4fe40732be8b534c8a8cd1be547cc150bf7673ef47409161e0b905afc0") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
