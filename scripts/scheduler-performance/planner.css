@@ -1124,3 +1124,48 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 .day-motion-preview { position:absolute; left:0; box-sizing:border-box; min-height:100%; margin:0; padding:max(var(--schedule-space-4),env(safe-area-inset-top)) max(var(--schedule-space-4),env(safe-area-inset-right)) max(var(--schedule-space-4),env(safe-area-inset-bottom)) max(var(--schedule-space-4),env(safe-area-inset-left)); border:0; border-radius:0; background:var(--paper); color:#234939; pointer-events:none; }
 .day-motion-preview .recorded-day { margin:var(--schedule-space-4) 0 0; }
 .day-motion-status { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+
+/* Month entry and focused editing share the existing Sage spacing and inks. */
+.planning-workspace .toolbar #workspace { background:transparent; color:var(--sage-forest); box-shadow:none; }
+.planning-workspace .editor-tools { margin:var(--schedule-space-2) 0; }
+.planning-workspace .month-demand-compact { margin:var(--schedule-space-2) 0; font-size:.875rem; }
+.planning-workspace .month-review { margin:var(--schedule-space-4) 0; }
+.planning-workspace .month-pending { font-size:.875rem; margin:var(--schedule-space-2) 0; }
+.compact-month.planning-workspace > :is(.month-demand-compact,.month-review,.demo-options,.actions,.review,.footer) { order:4; }
+.compact-month.planning-workspace > .month-pending { order:1; }
+.compact-month.planning-workspace .schedule-layout > #sheet { display:none; }
+.compact-month.planning-workspace #mobile-day-dialog #sheet { display:block; margin:0; padding:var(--schedule-space-4); border:0; border-radius:0; animation:none; }
+.compact-month.planning-workspace .day-heading { font-size:1.125rem; }
+.planning-workspace .day-actions { display:flex; flex-wrap:wrap; gap:var(--schedule-space-2); }
+.editor-coverage p { margin:var(--schedule-space-2) 0; }
+.editor-conflicts { border-left:4px solid #8c3028; padding-left:var(--schedule-space-3); margin:var(--schedule-space-3) 0; }
+.editor-conflicts h3 { font-size:1rem; }
+.editor-conflicts .issues { margin:var(--schedule-space-2) 0; }
+.editor-roster { min-width:0; }
+.editor-team { display:block; min-inline-size:0; margin:var(--schedule-space-4) 0; padding:var(--schedule-space-3); border:1px solid var(--line); border-radius:var(--sage-control); }
+.editor-team legend { display:flex; align-items:center; gap:var(--schedule-space-2); max-width:100%; overflow-wrap:anywhere; }
+.editor-team .team-bulk { display:flex; flex-wrap:wrap; align-items:center; gap:var(--schedule-space-2); }
+.editor-team .team-bulk select { flex:1 1 8rem; min-width:0; }
+.editor-team .assignment-person { grid-template-columns:minmax(0,1fr); gap:var(--schedule-space-2); }
+.editor-team .person-status { display:flex; flex-wrap:wrap; align-items:center; gap:var(--schedule-space-2); font-size:.875rem; }
+.editor-team .person-status select { flex:1 1 7rem; min-width:0; }
+.editor-team .assignment-person > :is(.absence-choice,.person-evidence,.team-exception,.shift-removal) { grid-column:1/-1; }
+.editor-team .team-exception:empty { display:none; }
+.editor-team .person-conflict { color:#8c3028; font-size:.875rem; margin:var(--schedule-space-2) 0; }
+.editor-team .person-evidence { font-size:.875rem; }
+.editor-team .person-evidence summary { min-height:44px; padding-block:var(--schedule-space-2); }
+.editor-team .shift-removal { align-items:flex-start; }
+.editor-team [hidden] { display:none!important; }
+.editor-note { font-size:.8125rem; }
+/* A setup, import or generation panel is a single focused workspace. */
+.planning-workspace:has(> #generation-sheet:not([hidden])) > :not(#generation-sheet),
+.planning-workspace:has(> #import-sheet:not([hidden])) > :not(#import-sheet),
+.planning-workspace:has(> #settings-sheet:not([hidden])) > :not(#settings-sheet),
+.planning-workspace:has(> #editor-setup:not([hidden])) > :not(#editor-setup) { display:none; }
+.editor-team :is(.team-bulk,.person-status) { flex-direction:row; }
+.editor-team :is(.team-bulk,.person-status) select { min-height:44px; }
+.planning-workspace .day-demand { padding:var(--schedule-space-3); }
+.planning-workspace .day-demand h3 { font-size:1rem; margin:0; }
+.planning-workspace .day-demand p { margin:var(--schedule-space-2) 0; }
+.planning-workspace :is(.editor-team,.day-demand,.month-demand) { border-radius:var(--sage-card); }
+.planning-workspace .pending-note { border-radius:var(--sage-dense); }

@@ -1,0 +1,91 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: only generation module/worker reads, no network writes
++ actual - expected
+
++ [
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/fonts/space-grotesk-latin.woff2'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/month-model.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/model.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/shift-intervals.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/team-model.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/schedule-import.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/demand-context.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/weekly-hours.mjs'
++   },
++   {
++     method: 'GET',
++     url: 'http://127.0.0.1:5190/planner/name-key.mjs'
++   }
++ ]
+- []
+
+    at file:///workspace/lead-performance-calculator/scripts/scheduler-performance/probe-editor-focus.mjs:48:101 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: [
+    {
+      url: 'http://127.0.0.1:5190/fonts/space-grotesk-latin.woff2',
+      method: 'GET'
+    },
+    {
+      url: 'http://127.0.0.1:5190/planner/month-model.mjs',
+      method: 'GET'
+    },
+    { url: 'http://127.0.0.1:5190/planner/model.mjs', method: 'GET' },
+    {
+      url: 'http://127.0.0.1:5190/planner/shift-intervals.mjs',
+      method: 'GET'
+    },
+    {
+      url: 'http://127.0.0.1:5190/planner/team-model.mjs',
+      method: 'GET'
+    },
+    {
+      url: 'http://127.0.0.1:5190/planner/schedule-import.mjs',
+      method: 'GET'
+    },
+    {
+      url: 'http://127.0.0.1:5190/planner/demand-context.mjs',
+      method: 'GET'
+    },
+    {
+      url: 'http://127.0.0.1:5190/planner/weekly-hours.mjs',
+      method: 'GET'
+    },
+    {
+      url: 'http://127.0.0.1:5190/planner/name-key.mjs',
+      method: 'GET'
+    }
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0
