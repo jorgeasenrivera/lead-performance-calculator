@@ -20,3 +20,13 @@ test('missing comparable months remain unavailable; complete known zero is valid
  assert.equal(monthDemand([],'2026-10').range,null);
  const h=['2024-10','2025-10'].flatMap(m=>monthDays(m).map(d=>row(d,0)));assert.deepEqual(monthDemand(h,'2026-10').range,{low:0,high:0,months:2});h.pop();assert.equal(monthDemand(h,'2026-10').range,null);
 });
+
+test('calendar shading reuses daily evidence without target-day or future leakage',async()=>{
+ const {historicalCalendar}=await import('./demand-context.mjs');const h=[row('2026-09-02',0),row('2026-09-09',4),row('2026-09-16',8),row('2026-09-23',6),row('2026-10-14',999),row('2026-10-15',999)];const before=structuredClone(h),calendar=historicalCalendar(h,'2026-10'),d=calendar.days.find(d=>d.day==='2026-10-14');assert.deepEqual(d.estimate,dayDemand(h,d.day).estimate);assert.equal(d.count,4);assert.equal(d.average,4.5);assert.deepEqual(h,before);assert.equal(calendar.days.find(d=>d.day==='2026-10-01').level,null);
+});
+test('calendar keeps zero supported and missing or closed-only history neutral',async()=>{
+ const {historicalCalendar}=await import('./demand-context.mjs');for(const state of ['unknown','closed'])assert.ok(historicalCalendar(Array.from({length:4},(_,i)=>({day:`2026-09-${String(2+i*7).padStart(2,'0')}`,state})),'2026-10').days.every(d=>d.level===null));const zero=historicalCalendar([2,9,16,23].map(n=>row(`2026-09-${String(n).padStart(2,'0')}`,0)),'2026-10');const d=zero.days.find(d=>d.day==='2026-10-14');assert.equal(d.level,0);assert.equal(d.average,0);assert.equal(d.estimate.low,0);assert.equal(d.estimate.high,0);
+});
+test('calendar bins are zero-anchored and do not stretch small range differences',async()=>{
+ const {historicalCalendar}=await import('./demand-context.mjs');const history=[];for(const month of ['2026-07','2026-08','2026-09'])for(const day of monthDays(month))history.push(row(day,Number(day.slice(-2))%2?10:11));const c=historicalCalendar(history,'2026-10');assert.equal(c.ceiling,11);assert.ok(c.days.every(d=>d.level===3));assert.deepEqual(c.month,monthDemand(history,'2026-10'));
+});
