@@ -400,3 +400,11 @@ The key and day cells now call the same marker renderer in `calendar-key.mjs`. C
 `probe-key.mjs` compares computed fills/patterns for every history level and the unknown state, plus exact marker markup, color and dimensions. It also checks keyboard details, Escape/focus return, concise default content, overflow and scoped accessibility at desktop and 320/390/412 widths, normal and enlarged text.
 
 The calendar key and month history now follow the primary calendar and selected-day content in a bottom reference section, in both DOM and visual order. Day-history disclosures likewise follow the roster and editing content. Navigation and primary actions remain first. The ordering probe checks desktop, mobile and enlarged text without changing shared tokens, data semantics or card geometry.
+
+### Compact overview and return navigation
+
+Normal 390×844 layout keeps month navigation, the primary action and the whole month visible. Secondary desktop coverage/source details start collapsed. Long desktop editing forms scroll inside the selected-day pane; enlarged text retains document scrolling and its readable day list.
+
+The embedded planner's visible Back to dashboard control and browser Back use one history entry and retain the existing iframe draft. Forward reopens that preview. The original dashboard focus and scroll return on close. Direct `/planner/` entry offers Back to dashboard in the existing action row, targeting this preview's root. With local changes it asks before leaving because a standalone page cannot promise to retain its in-memory draft after navigation. Browser unload retains its existing dirty-page guard. Day Back returns to the month and preserves pending choices. No new swipe-back handler is installed; device gesture behavior remains unverified.
+
+`probe-navigation.mjs` checks standalone return, confirmation, pending choices, browser history and scoped accessibility. `probe-embedded-navigation.mjs` checks retained pending choices, focus, scroll and a single Back/Forward history entry at desktop/mobile and enlarged text. Performance phase evidence is kept separately; these functional checks do not establish a smoothness pass.
