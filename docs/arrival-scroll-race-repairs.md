@@ -28,6 +28,12 @@ held press scale 1, and reduced return 2,577 ms / 2,100 ms. No thresholds were
 changed. This local run does not clear the release gate. Raw results and screenshots are in
 [evidence/arrival-scroll-races](evidence/arrival-scroll-races).
 
+The unchanged WebKit feel harness failed three assertions: Lunch 508 ms / 60 ms,
+Here 229 ms / 60 ms, and Phone to Floor 146 ms / 140 ms. Reduced return passed
+at 1,060 ms, with no page errors. WebKit skips real-thumb swipe input and could
+not sample enough frames to measure the ground blend. The existing Manager phone
+search check passed. These local failures remain visible even if CI passes.
+
 The combined scheduler tree uses approved preview head
 `dc8e42e81e6054b16f5798a1098e7b2f5f4b953b` plus these exact core bytes. It passed
 1,101 tests, a normal build and the isolated preview build. The old core hash pin
