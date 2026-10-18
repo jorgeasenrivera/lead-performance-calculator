@@ -70,7 +70,7 @@ export function buildDailyDeliveryEvidence({ lines, bytes, metadata = {}, stores
   let source;
   try { source = makeReportVersion({ ...metadata, bytes, storeId }); }
   catch (e) { return { ...base, businessDate: date.businessDate, status: "incomplete", reason: e.message, date }; }
-  if (summary.status !== "available" || !Number.isFinite(summary.total) || summary.total < 0)
+  if (summary.status !== "available" || !Number.isSafeInteger(summary.total) || summary.total < 0)
     return { ...base, businessDate: date.businessDate, status: summary.status === "conflict" ? "conflict" : "incomplete",
       reason: summary.reason || "printed_total_unavailable", source, date };
   return { ...base, status: "provisional", reason: "exact_report_total_finality_unknown", businessDate: date.businessDate,
@@ -105,7 +105,7 @@ export function deliveryLedger({ storeId, month, candidates = [] }) {
       return unknown(status, all.length === 1 ? unresolved[0].reason : "unresolved_source_for_date");
     }
     if (all.some((c) => c.metric !== DAILY_DELIVERY_METRIC || c.parserVersion !== DAILY_DELIVERY_PARSER
-      || c.date?.status !== "supported" || c.date.businessDate !== date || !Number.isFinite(c.count) || c.count < 0
+      || c.date?.status !== "supported" || c.date.businessDate !== date || !Number.isSafeInteger(c.count) || c.count < 0
       || c.source?.rawBytesHashed !== true || c.source.storeId !== storeId || c.source.reportType !== "activity"
       || !/^[a-f0-9]{64}$/.test(c.source.sha256 || "")
       || c.source.sourceId !== `${storeId}:activity:sha256:${c.source.sha256}`
@@ -134,7 +134,10 @@ export function deliveryLedger({ storeId, month, candidates = [] }) {
     if (ordered.some((c,i) => i && c.source.receipt.sentAt === ordered[i - 1].source.receipt.sentAt))
       return unknown("conflict", "different_versions_same_sent_time");
     const selected = ordered.at(-1), preceding = ordered.at(-2);
-    return { date, status: "provisional", count: selected.count, vehicles: selected.vehicles,
+    return { date, status: "provisional", count: selected.count, vehicles: {
+        new: Number.isSafeInteger(selected.vehicles?.new) && selected.vehicles.new >= 0 ? selected.vehicles.new : null,
+        used: Number.isSafeInteger(selected.vehicles?.used) && selected.vehicles.used >= 0 ? selected.vehicles.used : null,
+      },
       isFinal: false, asOf: selected.asOf, selectionBasis: ordered.length > 1 ? "latest_sent_report" : "only_distinct_source",
       revision: !!preceding && selected.count < preceding.count, selectedSourceId: selected.source.sourceId,
       publicationEligible: false, publicationHold: "archive_commit_and_application_review_required",

@@ -67,10 +67,10 @@ for (const visit of [false, true]) {
 }
 
 test("a grouped App Confirmed percentage stays one cell before Units Delivered", () => {
-  const values = cells(5.5);
+  const values = cells(5);
   values[7] = "1,200%";
   const source = [...geometricHeading(), line("All", ...values)];
-  assert.deepEqual(readDailyActivityStoreTotals(source), available(5.5));
+  assert.deepEqual(readDailyActivityStoreTotals(source), available(5));
 });
 
 test("unrecognized geometry cannot fall back to guessing from an unordered vocabulary bag", () => {
@@ -134,13 +134,27 @@ test("zero is printed evidence and a missing vehicle row stays null", () => {
   ]), available(0, { new: null, used: 0 }));
 });
 
-test("each vehicle count is independent and decimals are neither rounded nor reconciled", () => {
-  assert.deepEqual(readDailyActivityStoreTotals([
-    ...heading(), row("New", 1.25), row("Used", 2.5), row("All", 4.75),
-  ]), available(4.75, { new: 1.25, used: 2.5 }));
-  assert.deepEqual(readDailyActivityStoreTotals([
-    ...heading(), row("New", 0), row("All", "1,234.5"),
-  ]), available(1234.5, { new: 0, used: null }));
+test("store counts reject fractional and unsafe units without rounding employee credits", () => {
+  for (const value of ["4.75", "1,234.5", "7.0000000000000001", "9007199254740991.1", "9007199254740992", "9007199254740993", "-1"]) {
+    const got = readDailyActivityStoreTotals([...heading(), row("All", value), ...people()]);
+    assert.equal(got.status, "incomplete");
+    assert.equal(got.total, null);
+  }
+  for (const value of ["0", "7.0", "1,234", String(Number.MAX_SAFE_INTEGER)]) {
+    assert.equal(readDailyActivityStoreTotals([...heading(), row("All", value)]).total, Number(value.replace(/,/g, "")));
+  }
+  for (const tag of ["New", "Used"]) {
+    const other = tag === "New" ? "Used" : "New";
+    for (const value of ["1.25", "9007199254740992"]) {
+      const got = readDailyActivityStoreTotals([...heading(), row(tag, value), row(other, 2), row("All", 5)]);
+      assert.equal(got.total, 5);
+      assert.equal(got.vehicles[tag.toLowerCase()], null);
+      assert.equal(got.vehicles[other.toLowerCase()], 2);
+    }
+  }
+  const legacy = mapDailyActivityGrid([...heading(), row("All", 5), ...people()]);
+  assert.ok(legacy.rows.some(row => row.includes(7.5)));
+  assert.ok(legacy.rows.some(row => row.includes(6.5)));
 });
 
 test("a store-only report does not need the employee mapper's three-person threshold", () => {
