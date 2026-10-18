@@ -18,8 +18,10 @@ adapter and one attempt at a time. It never disposes the shared adapter/client.
   the old attempt and visible values when these fields change. Equivalent
   contexts do nothing. Close or loaded-store mismatch is idle with no values.
 - `retry()` synchronously starts a new generation and current-token attempt.
-  Failed requests do not retry automatically. Auth changes start a fresh
-  generation and clear values immediately, even at the same store.
+  Failed requests do not retry automatically. Auth epoch changes start a fresh
+  generation and clear values immediately, even at the same store. Routine
+  notifications for the same identifiable session retain the current snapshot;
+  they do not start a fetch. See the auth contract for conservative fallbacks.
 - `dispose()` aborts pending work, clears values and unsubscribes once.
 
 There is no React hook in this slice. A future `useReportedMonth` integration
@@ -48,8 +50,9 @@ decoded or displayed.
 The projector follows #456's `publicDailyMonth`, not the proposal fixture.
 Store/month identity must match exactly. The response must contain every valid
 date in the month once. Sort dates only after validation. Provisional counts
-are finite nonnegative numbers, including explicit zero. New/Used is either
-two nulls or a valid nonnegative pair summing to the count. Missing, incomplete
+are nonnegative safe integers, including explicit zero. New/Used is either
+two nulls or nonnegative safe integers summing to the count. Fractional, unsafe,
+negative, string and partial split values are rejected. Missing, incomplete
 and conflict days carry null count, both null split values and null asOf.
 
 Provisional asOf is the original canonical UTC `{timestamp, basis}` pair,
@@ -67,6 +70,7 @@ The synthetic suite covers complete/leap months, zero vs unknown, identity and
 shape faults, timestamp basis, strict splits, Eastern month boundaries, status
 handling and private-safe failures. It also covers token lookup cancellation,
 account replacement during decoding, loaded-store mismatch, store/month changes,
+same-session refresh retention, fresh retry credentials, new session identity,
 same-store retry and close/reopen, disposal, late failures, hung lookup/fetch/
 decode, and one deadline rather than sequential budgets.
 
@@ -75,3 +79,11 @@ React mount lifecycle and phone screen remain unverified. Independent review
 of request checkpoints and schema parity precedes integration. No merge,
 backend activation, ingestion rollout, historical write or deployment is
 authorized by these synthetic results.
+
+The H-X55 continuation starts exactly at #463 on the new reader integration
+branch. Synthetic backend parity uses #456 at
+`24439237003167a781e5c78bf676e99d58b68de7`: known zero, safe-integer maximum,
+missing counts, upward and downward corrections, invalid counts, optional
+unknown splits, tied conflicts and wrong-store rejection. It performs no HTTP
+request or live storage operation. The public backend projection normalizes
+unsupported splits to two nulls; the client rejects malformed wire splits.

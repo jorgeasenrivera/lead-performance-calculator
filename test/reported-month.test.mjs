@@ -258,3 +258,52 @@ test('reader remains unimported by production screens and has no global API or p
   const source = readFileSync(new URL('../src/reported-month.mjs', import.meta.url), 'utf8');
   for (const forbidden of ['apiCall', 'localStorage', 'sessionStorage', 'console.', 'user_metadata', 'service_role']) assert.equal(source.includes(forbidden), false, forbidden);
 });
+
+
+test('whole-unit count and optional split boundaries match the backend contract', () => {
+  for (const count of [0, 1, Number.MAX_SAFE_INTEGER]) {
+    for (const vehicles of [{new: count, used: 0}, {new: null, used: null}]) {
+      const p = payload(); Object.assign(p.days[0], known(count), {vehicles});
+      assert.equal(projectReportedMonth(p, context)[0].count, count);
+    }
+  }
+  for (const count of [0.5, Number.MAX_SAFE_INTEGER + 1, Number.MAX_VALUE, -1, '1']) {
+    const p = payload(); Object.assign(p.days[0], known(count), {vehicles: {new: null, used: null}});
+    assert.throws(() => projectReportedMonth(p, context));
+  }
+  for (const vehicles of [{new: 0.5, used: 0.5}, {new: null, used: 1},
+    {new: Number.MAX_SAFE_INTEGER + 1, used: 0}, {new: -1, used: 2}, {new: '1', used: 0}]) {
+    const p = payload(); Object.assign(p.days[0], known(1), {vehicles});
+    assert.throws(() => projectReportedMonth(p, context));
+  }
+});
+
+test('real adapter retains ready values on refresh, uses fresh token on retry and clears on replacement', async t => {
+  const makeSession = (user, sessionId, iat) => ({user: {id: user},
+    access_token: `header.${Buffer.from(JSON.stringify({sub: user, session_id: sessionId, iat})).toString('base64url')}.signature`});
+  const id = '00000000-0000-4000-8000-000000000001';
+  let current = makeSession('account-a', id, 1), event;
+  const auth = createReportedAuthAdapter({auth: {
+    onAuthStateChange(fn) { event = fn; return {data: {subscription: {unsubscribe() {}}}}; },
+    getSession() { return Promise.resolve({data: {session: current}}); },
+  }});
+  t.after(() => auth.dispose());
+  const {reader, calls} = setup(t, {auth});
+  // Resolve using reader notifications, independent of event-loop timer speed.
+  const ready = () => new Promise(resolve => {
+    if (reader.getSnapshot().status === 'ready') return resolve();
+    const stop = reader.subscribe(() => { if (reader.getSnapshot().status === 'ready') { stop(); resolve(); } });
+  });
+  reader.setContext(context); await ready();
+  const original = reader.getSnapshot();
+  current = makeSession('account-a', id, 2);
+  event('TOKEN_REFRESHED', current); event('SIGNED_IN', current);
+  assert.equal(reader.getSnapshot(), original); assert.equal(calls.length, 1);
+  reader.retry(); await ready();
+  assert.equal(calls[1][1].headers.Authorization, `Bearer ${current.access_token}`);
+  current = makeSession('account-b', id, 3); event('SIGNED_IN', current);
+  assert.equal(reader.getSnapshot().status, 'loading'); assert.equal(reader.getSnapshot().days.length, 0);
+  await ready(); assert.equal(calls[2][1].headers.Authorization, `Bearer ${current.access_token}`);
+  current = null; event('SIGNED_OUT', null);
+  assert.equal(reader.getSnapshot().days.length, 0);
+});

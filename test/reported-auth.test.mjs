@@ -14,7 +14,7 @@ function fixture(t, read = async () => session('fixture.current.token'), options
   const adapter = createReportedAuthAdapter(client, options);
   t.after(() => adapter.dispose());
   return {adapter, calls: () => calls, unsubscriptions: () => unsubscriptions,
-    emit(event = 'SIGNED_IN') { insideAuth=true; try { callback(event, {access_token:'never.persist.this'}); } finally {insideAuth=false;} },
+    emit(event = 'SIGNED_IN', value = {access_token:'never.persist.this'}) { insideAuth=true; try { callback(event, value); } finally {insideAuth=false;} },
   };
 }
 
@@ -31,7 +31,7 @@ test('an opt-in adapter reads the current token per attempt without storing cred
   assert.equal(JSON.stringify(f.adapter.getSnapshot()).includes('token'), false);
 });
 
-test('every auth event invalidates same-store and same-account readers with a non-secret epoch', t => {
+test('auth events without identifiable sessions invalidate readers with a non-secret epoch', t => {
   const f = fixture(t);
   const first = f.adapter.getSnapshot(); let notifications = 0;
   const stop = f.adapter.subscribe(() => notifications++);
@@ -136,4 +136,80 @@ test('application screens and global request helper do not import the preparator
   for (const file of ['LeadPerformanceCalculator.jsx', 'Manager.jsx', 'main.jsx']) {
     assert.equal(fs.readFileSync(new URL('../src/' + file, import.meta.url), 'utf8').includes('reported-auth'), false);
   }
+});
+
+const identified = (user = 'fictional-account', id = '00000000-0000-4000-8000-000000000001', rotation = 1) => ({
+  user: {id: user}, access_token: `header.${Buffer.from(JSON.stringify({sub: user, session_id: id, iat: rotation})).toString('base64url')}.signature`,
+});
+const resultOf = value => ({data: {session: value}, error: null});
+
+test('routine notifications retain an identified session and each attempt gets the rotated token', async t => {
+  let current = identified();
+  const f = fixture(t, () => resultOf(current));
+  assert.equal(await f.adapter.getAccessToken(), current.access_token);
+  const before = f.adapter.getSnapshot(); let notices = 0;
+  f.adapter.subscribe(() => notices++);
+  for (const event of ['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED']) {
+    current = identified(undefined, undefined, notices + 2);
+    f.emit(event, current);
+    assert.equal(f.adapter.getSnapshot(), before);
+    assert.equal(await f.adapter.getAccessToken(), current.access_token);
+  }
+  assert.equal(notices, 0);
+});
+
+test('new account, new same-account session and security events invalidate synchronously', async t => {
+  for (const [event, next] of [
+    ['SIGNED_IN', identified('other-account')],
+    ['SIGNED_IN', identified(undefined, '00000000-0000-4000-8000-000000000002')],
+    ['USER_UPDATED', identified()], ['PASSWORD_RECOVERY', identified()],
+    ['MFA_CHALLENGE_VERIFIED', identified()], ['SIGNED_OUT', null], ['UNKNOWN_EVENT', identified()],
+  ]) {
+    const f = fixture(t, () => resultOf(identified()));
+    await f.adapter.getAccessToken(); let notices = 0;
+    f.adapter.subscribe(() => notices++);
+    f.emit(event, next);
+    assert.equal(f.adapter.getSnapshot().principalEpoch, 1, event);
+    assert.equal(notices, 1, event);
+  }
+});
+
+test('unreadable or contradictory session identity never suppresses refresh invalidation', async t => {
+  const wrong = identified(); wrong.user.id = 'other-account';
+  for (const next of [null, {}, {user: {id: 'fictional-account'}, access_token: 'opaque'}, wrong,
+    identified(undefined, 'not-a-session'), {user: {id: 'fictional-account'}, access_token: 'header.%%%%.signature'}]) {
+    const f = fixture(t, () => resultOf(identified())); await f.adapter.getAccessToken();
+    f.emit('TOKEN_REFRESHED', next);
+    assert.equal(f.adapter.getSnapshot().principalEpoch, 1);
+  }
+});
+
+test('refresh during lookup re-reads the current credential without resetting the epoch', async t => {
+  const wait = deferred(), started = deferred(); let count = 0, current = identified();
+  const f = fixture(t, () => { if (++count === 2) { started.resolve(); return wait.promise; } return resultOf(current); });
+  await f.adapter.getAccessToken();
+  const pending = f.adapter.getAccessToken(); await started.promise;
+  const old = current; current = identified(undefined, undefined, 2);
+  f.emit('TOKEN_REFRESHED', current); wait.resolve(resultOf(old));
+  assert.equal(await pending, current.access_token);
+  assert.equal(f.calls(), 3); assert.equal(f.adapter.getSnapshot().principalEpoch, 0);
+});
+
+test('repeated refresh during lookup cannot extend its original deadline', async t => {
+  let f;
+  f = fixture(t, async () => {
+    f.emit('TOKEN_REFRESHED', identified());
+    return resultOf(identified());
+  }, {timeoutMs: 20});
+  f.emit('INITIAL_SESSION', identified());
+  await assert.rejects(f.adapter.getAccessToken(), {code: 'REPORTED_AUTH_UNAVAILABLE'});
+  assert.equal(f.adapter.getSnapshot().principalEpoch, 1);
+});
+
+test('a changed session discovered by lookup cancels the old epoch even without an event', async t => {
+  let current = identified(); const f = fixture(t, () => resultOf(current));
+  await f.adapter.getAccessToken(); current = identified('other-account');
+  assert.equal(await f.adapter.getAccessToken(), null);
+  assert.equal(f.adapter.getSnapshot().principalEpoch, 1);
+  assert.equal(await f.adapter.getAccessToken(), current.access_token);
 });

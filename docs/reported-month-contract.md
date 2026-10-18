@@ -1,6 +1,6 @@
 # Reported calendar reader contract
 
-Source-only preparation, X19. No application import, report HTTP request,
+Source-only preparation, X19/X20, continued under H-X55. No application import, report HTTP request,
 visual change, backend activation or production data write is included.
 The approved display is #460. The server reader remains unmerged draft #456.
 The Signal production review remains #459 and is not modified here.
@@ -12,13 +12,23 @@ the existing client's auth events. It does not create a second Supabase client,
 change global `apiCall`, sign anyone in/out, or write auth metadata.
 
 - `getSnapshot()` returns a stable frozen `{principalEpoch, disposed}` object.
-- `subscribe(listener)` returns cleanup. Every auth event increments the epoch,
-  including same-account sign-in and token refresh. This conservative policy
-  intentionally invalidates same-store results even when user identity looks
-  unchanged. No user id, token, timestamp or claims are in the snapshot.
+- `subscribe(listener)` returns cleanup. Account changes, new sessions (even for
+  the same account), sign-out, user/security updates and uncertain identity
+  increment the epoch synchronously. Routine INITIAL_SESSION, SIGNED_IN and
+  TOKEN_REFRESHED notifications preserve it only when the session user matches
+  the token subject and the same UUID session_id was already observed. The first
+  identified notification invalidates unless a completed lookup established it.
+  No user id, session id, token, timestamp or claims enter the public snapshot.
+- The private identity pair is only an invalidation hint decoded from the SDK
+  session, not verified authorization. No bearer or refresh token is cached.
+  Opaque or malformed identity falls back to invalidation. The server still
+  validates every request and its current store membership.
 - `getAccessToken({expectedEpoch, signal})` reads the current SDK session per
   attempt. It returns the access token only to the caller. Missing session is
   null. Abort, epoch change or disposal returns null and ignores late completion.
+  A routine refresh during lookup schedules a new current-session read outside
+  the callback without restarting the original deadline. A different identity
+  discovered by lookup invalidates the epoch before returning any credential.
   SDK failure, malformed session and the bounded five-second auth budget throw
   a fixed `REPORTED_AUTH_UNAVAILABLE` error, with no raw diagnostic or cause.
 - `dispose()` invalidates pending attempts synchronously and unsubscribes once.
@@ -35,8 +45,8 @@ uses `onAuthStateChange` in `onAuthChange`. Neither existing helper changes.
 The SDK session is a credential source only, not an authorization decision.
 The server must validate the bearer session and current active store membership.
 
-Official auth reference checked on 1 October:
-[session access](https://supabase.com/docs/reference/javascript/auth-getsession)
+Official auth reference rechecked on 18 October:
+[session identity](https://supabase.com/docs/guides/auth/sessions)
 and [auth notifications and cleanup](https://supabase.com/docs/reference/javascript/auth-onauthstatechange).
 The skill's Markdown changelog endpoint could not be read by the web tool; the
 [HTML changelog](https://supabase.com/changelog) was checked instead. No SDK or
@@ -70,9 +80,13 @@ business month, not a fixture clock or the browser's UTC month.
 
 401/403 map to denied. Missing route, 503, malformed payload, timeout and network
 failure map to unavailable. Cancellation must not publish an error over the
-next generation. Store, month, session, close/reopen and retry changes invalidate
+next generation. Store, month, session replacement, close/reopen and retry changes invalidate
 the visible values synchronously and advance a monotonic display generation.
 No reuse of values from another principal, including at the same store.
+Routine refresh of the same identifiable session retains ready values and does
+not trigger a report request. Explicit retry reads current credentials. This is
+not a live permission-revocation subscription: server-side membership changes
+without an auth event are observed on the next request, not proactively.
 
 ## Gates
 
@@ -83,3 +97,13 @@ Dot cleared the source-only adapter interface at #462 comment 5937644095.
 Her timestamp-basis clarification is incorporated above. Calendar
 screen changes stay with the sole Manager writer, after #459 is settled.
 Backend activation and historical application remain separate decisions.
+
+## H-X55 local review candidate
+
+Based exactly on #463 `e84e15fba1898263568f4d002b0b01cf1a5e7e28` on new
+`codex/reported-reader-integration`. Original reader branches remain unchanged.
+Safe nonnegative integer counts and optional integer splits match backend #456
+`24439237003167a781e5c78bf676e99d58b68de7`. No backend code is copied into this
+branch. A separate synthetic integration check runs its actual public projector
+against this reader. Independent exact-diff review is required before push.
+No storage implementation, X26 screen work or C113 contract is changed here.
