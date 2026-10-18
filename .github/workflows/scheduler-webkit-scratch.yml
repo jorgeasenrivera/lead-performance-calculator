@@ -1,0 +1,189 @@
+# Scratch only. Runs the scheduler probes in WebKit, one at a time, inside the
+# supported Playwright container, against one exact commit, and keeps the
+# evidence whether they pass or fail. It tests; it fixes nothing.
+#
+# It runs only when pushed to the scratch branch below. The scratch branch is
+# cut from main and holds this file and nothing else, so the code under test is
+# the SOURCE_SHA that is checked out explicitly, not the scratch commit. Both
+# are written to identity.txt.
+#
+# No secrets, no write permission, no deployment. The host-requirements check is
+# left on: this container is the supported host.
+name: scheduler-webkit-scratch
+
+on:
+  push:
+    branches: [claude/scheduler-webkit-ci-scratch]
+
+env:
+  # Head of PR #486 when this was proposed. Change this line to test another commit.
+  SOURCE_SHA: 6e24ee59865d16899881eba72963d847bf6b3f6a
+  # The whole matrix. Both the run step and the completeness check read this one list.
+  PROBES: >-
+    probe-editor probe-guided-recovery probe-history probe-navigation-review
+    probe-editor-embedded probe-embedded-navigation probe-off-day probe-editor-exclusions
+    probe-compatibility probe-editor-focus probe-history-transitions probe-tools-focus
+    probe-editor-readiness
+
+jobs:
+  webkit:
+    runs-on: ubuntu-latest
+    # A hung job should end, not hold the runner. This does not touch any probe's own timeout.
+    timeout-minutes: 90
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Record what is being tested
+        shell: bash
+        run: |
+          mkdir -p evidence
+          tested=$(git rev-parse HEAD)
+          {
+            echo "source_sha_requested=$SOURCE_SHA"
+            echo "tested_checkout_sha=$tested"
+            echo "tested_tree=$(git rev-parse 'HEAD^{tree}')"
+            echo "workflow_commit_sha=$GITHUB_SHA"
+            echo "workflow_ref=$GITHUB_REF"
+            echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+            echo "image=mcr.microsoft.com/playwright:v1.63.0-noble"
+            git log -1 --format='tested_subject=%s'
+          } | tee evidence/identity.txt
+          # A checkout that is not the requested commit would make every result below about the wrong code.
+          test "$tested" = "$SOURCE_SHA"
+
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+
+      # The probes name their tools by absolute path from the machine they were
+      # written on. Point those names at this container's copies; nothing else changes.
+      - name: Resolve the probes' tool paths
+        shell: bash
+        run: |
+          mkdir -p /workspace/cloud-tools/node_modules /workspace/qa-tools
+          ln -sfn "$PWD/node_modules/playwright" /workspace/cloud-tools/node_modules/playwright
+          npm install --prefix /workspace/qa-tools --no-save --no-audit --no-fund axe-core@4.14.0
+          # probe-editor-exclusions also launches Chromium by this path.
+          ln -sf "$(node -e "console.log(require('playwright').chromium.executablePath())")" /usr/bin/chromium
+          {
+            echo "playwright=$(node -e "console.log(require('playwright/package.json').version)")"
+            echo "axe-core=$(node -e "console.log(require('/workspace/qa-tools/node_modules/axe-core/package.json').version)")"
+            echo "webkit=$(node -e "console.log(require('playwright').webkit.executablePath())")"
+          } | tee -a evidence/identity.txt
+
+      - name: Build the isolated preview
+        run: node scripts/scheduler-performance/build.mjs
+
+      # Two ports because probe-embedded-navigation hardcodes 5203.
+      - name: Serve the preview
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/serve.mjs" <<'JS'
+          import {createServer} from 'node:http';import {readFile,stat} from 'node:fs/promises';import {extname,join,normalize} from 'node:path';
+          const [root,port]=process.argv.slice(2);
+          const types={'.html':'text/html; charset=utf-8','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.woff2':'font/woff2'};
+          createServer(async(req,res)=>{try{let p=normalize(decodeURIComponent(new URL(req.url,'http://x').pathname));if(p.includes('..'))throw 0;let f=join(root,p);if((await stat(f)).isDirectory())f=join(f,'index.html');res.writeHead(200,{'content-type':types[extname(f)]||'application/octet-stream'});res.end(await readFile(f));}catch{res.writeHead(404);res.end();}}).listen(+port,'127.0.0.1');
+          JS
+          for port in 5190 5203; do
+            node "$RUNNER_TEMP/serve.mjs" dist-harness/scheduler-performance $port > evidence/serve-$port.log 2>&1 &
+          done
+          for port in 5190 5203; do
+            for i in $(seq 1 100); do curl -sf http://127.0.0.1:$port/planner/ > /dev/null && break; sleep 0.2; done
+            curl -sf http://127.0.0.1:$port/planner/ > /dev/null
+          done
+
+      # One at a time, so the probes do not compete with each other for the runner. That controls
+      # contention; it does not establish the cause of any earlier timeout.
+      # A failure is recorded and the next probe still runs; the last step fails the job.
+      #
+      # probe-editor-readiness ignores EVIDENCE_DIR and writes a JSON and a PNG into
+      # scripts/scheduler-performance/evidence/editor-focus/, where an older copy of both is
+      # committed. Those two are moved aside first, so a probe that dies before writing cannot be
+      # mistaken for a pass by reading the committed files. The probe itself is not changed.
+      - name: Run the scheduler probes in WebKit
+        shell: bash
+        env:
+          BROWSER: webkit
+          BASE_URL: http://127.0.0.1:5190
+        run: |
+          : > evidence/status.txt
+          readiness=scripts/scheduler-performance/evidence/editor-focus
+          mkdir -p evidence/committed-readiness-not-this-run
+          for f in webkit-readiness-diagnostic.json webkit-readiness-diagnostic.png; do
+            if [ -e $readiness/$f ]; then mv $readiness/$f evidence/committed-readiness-not-this-run/; fi
+          done
+          for p in $PROBES; do
+            mkdir -p evidence/$p
+            set +e
+            EVIDENCE_DIR="$PWD/evidence/$p" node scripts/scheduler-performance/$p.mjs 2>&1 | tee evidence/$p.log
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$p $code" | tee -a evidence/status.txt
+            if [ "$p" = probe-editor-readiness ]; then
+              for f in webkit-readiness-diagnostic.json webkit-readiness-diagnostic.png; do
+                if [ -e $readiness/$f ]; then cp $readiness/$f evidence/$p/; fi
+              done
+            fi
+          done
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-webkit-${{ env.SOURCE_SHA }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Green only if every expected record and output exists and every probe exited zero.
+      - name: Check the matrix is complete and passed
+        if: always()
+        shell: bash
+        run: |
+          fail=0
+          note() { echo "FAIL: $*"; fail=1; }
+          set -- $PROBES
+          test $# -eq 13 || note "the probe list holds $# names, expected 13"
+          expected=$(printf '%s\n' "$@" | sort)
+
+          if [ ! -s evidence/status.txt ]; then
+            note "no status records were written"
+          else
+            # Exactly one record per expected probe: two fields, a numeric exit code, no repeats, none missing.
+            if awk 'NF != 2 || $2 !~ /^[0-9]+$/' evidence/status.txt | grep -q .; then note "malformed status record"; fi
+            [ "$(awk '{print $1}' evidence/status.txt | sort)" = "$expected" ] || note "status names are not exactly the 13 expected probes, once each"
+            [ "$(wc -l < evidence/status.txt)" -eq 13 ] || note "status holds $(wc -l < evidence/status.txt) records, expected 13"
+            if awk '$2 != 0' evidence/status.txt | grep -q .; then note "a probe exited non-zero: $(awk '$2 != 0 {print $1 "=" $2}' evidence/status.txt | tr '\n' ' ')"; fi
+          fi
+
+          # Each probe must have left a log and an evidence directory behind.
+          for p in $PROBES; do
+            [ -s evidence/$p.log ] || note "$p wrote no log"
+            [ -d evidence/$p ] || note "$p has no evidence directory"
+          done
+
+          # The readiness probe exits zero even when it was not ready, so read what it wrote.
+          d=evidence/probe-editor-readiness/webkit-readiness-diagnostic
+          if [ -s $d.json ] && [ -s $d.png ]; then
+            node -e '
+              const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              const bad = [];
+              if (r.ready !== true) bad.push("ready is " + r.ready);
+              if (r.error) bad.push("error: " + r.error);
+              if (!Array.isArray(r.errors) || r.errors.length) bad.push("page errors: " + JSON.stringify(r.errors));
+              if (!Array.isArray(r.failed) || r.failed.length) bad.push("failed requests: " + JSON.stringify(r.failed));
+              console.log("readiness: ready=" + r.ready + " elapsed=" + r.elapsed + "ms errors=" + (r.errors || []).length + " failed=" + (r.failed || []).length);
+              if (bad.length) { console.log("FAIL: readiness diagnostic: " + bad.join("; ")); process.exit(1); }
+            ' $d.json || fail=1
+          else
+            note "the readiness probe did not write this run's JSON and PNG"
+          fi
+
+          { echo '### Scheduler WebKit probes'; echo; echo '```'; cat evidence/identity.txt; cat evidence/status.txt 2>/dev/null; echo "fail=$fail"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $fail
