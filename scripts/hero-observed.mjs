@@ -53,6 +53,49 @@ const notCovered=[
   'NaN: JSON cannot carry it, so it is covered by the unit tests of api/_standard-rollup.mjs and not here.',
   'Only the Performance hero is read. The roster rows, the person card and the import log are not.'
 ];
+/* DIAGNOSTIC, read only: it records, it never writes to the page and it changes no read. Installed before the page's own scripts on every
+   phone load. On every animation frame, and straight after every class change on html, body or .lpc, it stores what each of the three video
+   dials shows: innerText and textContent of the ring and of its inner span, computed visibility, display, content-visibility and opacity,
+   box size, node identity, whether the node is still in the document and which animations run on it or around it, plus the class and
+   computed style of the dial's 16 nearest ancestors, the class of html, body and .lpc, the document's visibility state and the font status.
+   The arrival surface (src/arrival-surface.mjs) makes #root inert while it is up and removes sage-flight-lock when it is disposed, so the
+   inert attribute of #root and the arrival overlays are recorded as well as the classes.
+   Identical states are stored once; every frame keeps its own timestamp (the page's clock from the start of the document, and the frame's own
+   timestamp). mark() is called either side of each unchanged ring read, so the read's window is bracketed in the same clock. */
+const RECORDER=`(()=>{
+  if(window.__trace)return;
+  const T0=performance.now(),at=t=>Math.round((t-T0)*10)/10,now=()=>at(performance.now());
+  const ids=new WeakMap();let seq=0;const idOf=n=>n?(ids.get(n)||(ids.set(n,++seq),seq)):0;
+  const label=e=>e.tagName.toLowerCase()+(e.id?'#'+e.id:'')+[...e.classList].map(c=>'.'+c).join('');
+  const style=e=>{const s=getComputedStyle(e);return {v:s.visibility,d:s.display,cv:s.contentVisibility,o:s.opacity};};
+  const box=e=>{const r=e.getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height)};};
+  let running=[];
+  const anims=e=>running.filter(a=>{const t=a.effect&&a.effect.target;return t&&(t.contains(e)||e.contains(t));}).map(a=>(a.animationName||a.transitionProperty||a.id||'?')+':'+a.playState);
+  const node=e=>e?{id:idOf(e),conn:e.isConnected,inner:e.innerText,text:e.textContent,...box(e),...style(e),anim:anims(e)}:null;
+  const states=[],frames=[],muts=[],index=new Map(),watched=new WeakSet();
+  const state=()=>{
+    const root=document.documentElement,body=document.body,lpc=document.querySelector('.lpc'),dials=document.querySelectorAll('.bp-dial');
+    try{running=document.getAnimations();}catch(x){running=[];}
+    const app=document.getElementById('root');
+    const s={html:root?root.className:null,body:body?body.className:null,lpc:lpc?lpc.className:null,inert:app?app.inert:null,overlays:[...document.querySelectorAll('.sage-arrival-scan,.sage-arrival-destination,.sage-arrival-wait')].map(e=>e.className+(e.hidden?' [hidden]':'')),doc:document.visibilityState,fonts:document.fonts&&document.fonts.status,dials:[]};
+    for(const dial of dials){
+      const ring=dial.querySelector('.bp-ring'),name=dial.querySelector('.bp-dl');
+      s.dials.push({label:name?name.textContent:null,dial:{id:idOf(dial),conn:dial.isConnected,parent:idOf(dial.parentElement),...box(dial),...style(dial),anim:anims(dial)},ring:node(ring),span:node(ring&&ring.querySelector('span'))});
+    }
+    if(dials.length){s.chain=[];for(let n=dials[0].parentElement;n&&s.chain.length<16;n=n.parentElement)s.chain.push({n:label(n),id:idOf(n),...style(n),anim:anims(n)});}
+    return s;
+  };
+  const sample=(why,ts)=>{const s=state(),k=JSON.stringify(s);let i=index.get(k);if(i===undefined){i=states.length;states.push(s);index.set(k,i);}const t=now();frames.push([t,i,why,ts==null?null:at(ts)]);return {t,i};};
+  const which=t=>t===document.documentElement?'html':t===document.body?'body':t.id==='root'?'root':'lpc';
+  const watch=new MutationObserver(rs=>{for(const r of rs)muts.push({t:now(),el:which(r.target),attr:r.attributeName,old:r.oldValue,cur:r.attributeName==='class'?r.target.className:r.target.getAttribute(r.attributeName)});sample('attr');});
+  const attach=()=>{for(const t of [document.documentElement,document.body,document.getElementById('root'),document.querySelector('.lpc')])if(t&&!watched.has(t)){watched.add(t);watch.observe(t,{attributes:true,attributeFilter:['class','inert'],attributeOldValue:true});}};
+  let firstDial=null;
+  const loop=ts=>{attach();sample('frame',ts);if(firstDial===null&&document.querySelector('.bp-dial'))firstDial=now();if(now()<20000)requestAnimationFrame(loop);};
+  requestAnimationFrame(loop);
+  window.__trace={mark:why=>sample(why),export:()=>({states,frames,muts,firstDial})};
+})();`;
+const traces=new Map(),reads=[];   // per phone load: the recorder's export; per ring read: the window it was taken in
+const mark=(page,why)=>page.evaluate(w=>window.__trace.mark(w),why);
 const errors=[],failures=[],seen=[];
 const check=(where,what,got,want)=>{try{assert.deepEqual(got,want);}catch{failures.push({where,what,got,want});}};
 
@@ -159,6 +202,7 @@ const open=async(device,c)=>{
   const phone=device==='phone';
   const context=await browser.newContext({viewport:phone?{width:390,height:844}:{width:1440,height:1000},isMobile:phone,hasTouch:phone,reducedMotion:'reduce',serviceWorkers:'block'});
   await route(context);
+  if(phone)await context.addInitScript(RECORDER);
   const page=await context.newPage();
   page.setDefaultTimeout(20000);page.setDefaultNavigationTimeout(30000);
   page.on('pageerror',e=>errors.push(`${c.name}/${device}: ${e.message}`));
@@ -179,7 +223,9 @@ const phoneCase=async c=>{
   try{
     for(const m of VIDEO){
       const dial=page.locator('.bp-dial',{hasText:TINY[m]}).first();
+      const readFrom=await mark(page,'read-from');
       const ring=(await dial.locator('.bp-ring').innerText()).trim();
+      reads.push({case:c.name,metric:m,from:readFrom,to:await mark(page,'read-to'),ring});
       await dial.click();await page.locator('.fr-hd').first().waitFor();
       const pop=await page.locator('.fr-hd').first().evaluate(n=>({
         title:n.querySelector('.fr-nm')?.textContent.trim(),
@@ -193,7 +239,7 @@ const phoneCase=async c=>{
       await page.locator('button.on.drill').click();
     }
     if(c.name==='control')got.tab=(await page.locator('.bp-filt button').first().innerText()).trim();
-  }finally{await context.close();}
+  }finally{traces.set(c.name,await page.evaluate(()=>window.__trace.export()).catch(()=>null));await context.close();}
   seen.push({case:c.name,device:'phone',read:got});
   const stats=build(c);
   for(const m of VIDEO){
@@ -258,5 +304,6 @@ try{
 }finally{
   const fixture={store:STORE,month:monthKey,tabRole,group,held:Object.fromEntries(STANDARDS.map(m=>[m,heldTo[m].length])),bars,cleared:CLEARED};
   await writeFile('hero-observed/evidence.json',JSON.stringify({identity,fixture,cases:seen,failures,errors,notCovered},null,2));
+  await writeFile('hero-observed/trace.json',JSON.stringify({engine:identity.engine,reads,loads:Object.fromEntries(traces)}));
   await browser.close();
 }
