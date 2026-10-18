@@ -13,7 +13,7 @@ import { useId, useMemo, useState } from "react";
 import css from "./scheduler-calendar.css?inline";
 import {
   STORE_TIME_ZONE, calendarCells, cellClass, cellLabel, dayDetail, deliveriesMonth, monthText,
-  scheduleReview, staffingMonth, storeToday, summaryText,
+  scheduleReview, staffingMonth, storeToday, summaryText, validMonth,
 } from "./scheduler-calendar-model.mjs";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
@@ -28,20 +28,21 @@ const when = (iso) => {
 const BASIS = { report_sent: "report sent", report_received: "report received" };
 
 export default function SchedulerCalendar({
-  storeId, month, today, reported, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff,
-  layout = "panel", defaultExpanded = false, selectedDate, onSelectDate, onRetry,
+  storeId, month, today, reported, principalEpoch, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff,
+  staffingReady = true, layout = "panel", defaultExpanded = false, selectedDate, onSelectDate, onRetry,
 }) {
   const todayDate = today || storeToday();
+  const monthOk = validMonth(month);
   const deliveries = useMemo(
-    () => deliveriesMonth(reported, { storeId, month, today: todayDate }),
-    [reported, storeId, month, todayDate],
+    () => deliveriesMonth(reported, { storeId, month, today: todayDate, principalEpoch }),
+    [reported, storeId, month, todayDate, principalEpoch],
   );
   const staffing = useMemo(
-    () => staffingMonth({ month, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff }),
-    [month, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff],
+    () => staffingMonth({ month, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff, ready: staffingReady }),
+    [month, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff, staffingReady],
   );
-  const review = useMemo(() => scheduleReview(scheduleSource, month), [scheduleSource, month]);
-  const cells = useMemo(() => calendarCells(month), [month]);
+  const review = useMemo(() => (staffingReady ? scheduleReview(scheduleSource, month) : { present: false }), [scheduleSource, month, staffingReady]);
+  const cells = useMemo(() => (monthOk ? calendarCells(month) : []), [month, monthOk]);
 
   const [own, setOwn] = useState(null);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -57,7 +58,7 @@ export default function SchedulerCalendar({
   const byDate = new Map(deliveries.days.map((d) => [d.date, d]));
   const panelId = useId();
   const compact = layout === "compact";
-  const title = monthText(month);
+  const title = monthOk ? monthText(month) : "This month";
   const summary = summaryText(deliveries);
 
   const grid = (
@@ -122,6 +123,7 @@ function DaySheet({ detail }) {
       {split && <p className="sc-fine">{`New ${split.new} · Used ${split.used}`}</p>}
       {stamp && <p className="sc-fine">{`As of ${stamp}, ${BASIS[asOf.basis] || "report"}. Not final.`}</p>}
 
+      {!detail.staffingReady ? <p className="sc-fine">{"This store's schedule is not loaded yet."}</p> : <>
       <h4>Off</h4>
       {detail.off.length ? (
         <ul>
@@ -147,6 +149,7 @@ function DaySheet({ detail }) {
           <ul>{detail.notListedOff.map((p) => <li key={p.id}>{p.name}</li>)}</ul>
         </details>
       )}
+      </>}
     </div>
   );
 }
@@ -156,20 +159,34 @@ function DaySheet({ detail }) {
  * toggle on a phone, and the open and closed state for either. It binds the
  * store's own records to the calendar and nothing more.
  *
- * `reported` is the reader's snapshot. Until the reader is wired the entry says
- * the deliveries are not loaded, and the days off still show; it never stands a
- * number in for a missing one. `isOff` is the app's own (data, id, date) rule.
+ * Whose records these are is checked here, on every render, before anything is
+ * drawn: the loaded document must name the selected store (`data.__storeId`). While
+ * the app has selected store B and still holds store A's data, no person, day off
+ * or schedule file from A reaches the screen. The inner body is keyed by store, so
+ * an open sheet or a chosen date never carries over either.
+ *
+ * `reported` is the reader's snapshot and `principalEpoch` the session epoch the
+ * caller holds now; without both the deliveries read "not loaded" and the days off
+ * still show. `isOff` is the app's own (data, id, date) rule.
  */
-export function SchedulerCalendarEntry({ store, data, isOff, layout = "panel", reported = null }) {
+export function SchedulerCalendarEntry(props) {
+  return <EntryBody key={props.store?.id ?? "none"} {...props} />;
+}
+
+function EntryBody({ store, data, isOff, layout = "panel", reported = null, principalEpoch }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const todayDate = storeToday();
-  const rule = useMemo(() => (typeof isOff === "function" ? (id, date) => isOff(data, id, date) : null), [data, isOff]);
-  const snapshot = useMemo(() => reported || { status: "idle", days: [], storeId: store?.id ?? null, month: todayDate.slice(0, 7) }, [reported, store, todayDate]);
+  const month = todayDate.slice(0, 7);
+  const bound = typeof store?.id === "string" && store.id !== "" && data != null && data.__storeId === store.id;
+  const rule = useMemo(() => (bound && typeof isOff === "function" ? (id, date) => isOff(data, id, date) : null), [bound, data, isOff]);
+  const snapshot = useMemo(() => reported || { status: "idle", days: [], storeId: store?.id ?? null, month }, [reported, store, month]);
   const calendar = (
-    <SchedulerCalendar storeId={store?.id} month={todayDate.slice(0, 7)} today={todayDate} reported={snapshot}
-      roster={data?.roster} departed={data?.departed} daysOff={data?.daysOff} forcedOff={data?.forcedOff}
-      presentAnyway={data?.presentAnyway} scheduleSource={data?.scheduleSource} isOff={rule} layout={layout} />
+    <SchedulerCalendar storeId={store?.id} month={month} today={todayDate} reported={snapshot} principalEpoch={principalEpoch}
+      staffingReady={bound} roster={bound ? data.roster : undefined} departed={bound ? data.departed : undefined}
+      daysOff={bound ? data.daysOff : undefined} forcedOff={bound ? data.forcedOff : undefined}
+      presentAnyway={bound ? data.presentAnyway : undefined} scheduleSource={bound ? data.scheduleSource : undefined}
+      isOff={rule} layout={layout} />
   );
   if (layout === "compact") return calendar;
   return (
@@ -177,7 +194,7 @@ export function SchedulerCalendarEntry({ store, data, isOff, layout = "panel", r
       <style>{css}</style>
       <button type="button" className="sc-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)}>
         <span className="sc-toggle-month">Deliveries calendar</span>
-        <span className="sc-note">{monthText(todayDate.slice(0, 7))}</span>
+        <span className="sc-note">{monthText(month)}</span>
       </button>
       <div id={panelId} hidden={!open}>{open ? calendar : null}</div>
     </div>

@@ -6,19 +6,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  monthDays, calendarCells, storeToday, validMonth, deliveriesMonth, deliveredText, deliveredValue,
+  monthDays, calendarCells, storeToday, validMonth, validDate, deliveriesMonth, deliveredText, deliveredValue,
   cellClass, cellLabel, summaryText, staffingMonth, scheduleReview, dayDetail,
 } from "../src/scheduler-calendar-model.mjs";
 import { salesHeat } from "../scripts/scheduler-performance/month-model.mjs";
+import { servedOn } from "../api/_people-status.mjs";
 
-const MONTH = "2026-10", TODAY = "2026-10-14", STORE = "store-a";
+const MONTH = "2026-10", TODAY = "2026-10-14", STORE = "store-a", EPOCH = 3;
 const stamp = { timestamp: "2026-10-13T22:05:00.000Z", basis: "report_sent" };
 const split = (n) => ({ new: n, used: 0 });
+const opts = (over = {}) => ({ storeId: STORE, month: MONTH, today: TODAY, principalEpoch: EPOCH, ...over });
 
 // A full month in the reader's shape. `counts` maps a date to a number (a reported
 // day) or to a status string; anything else is a missing day.
 const reported = (counts = {}, extra = {}) => ({
-  status: "ready", storeId: STORE, month: MONTH,
+  status: "ready", storeId: STORE, month: MONTH, principalEpoch: EPOCH,
   days: monthDays(MONTH).map((date) => {
     const v = counts[date];
     return typeof v === "number"
@@ -27,7 +29,7 @@ const reported = (counts = {}, extra = {}) => ({
   }),
   ...extra,
 });
-const month = (counts, extra) => deliveriesMonth(reported(counts, extra), { storeId: STORE, month: MONTH, today: TODAY });
+const month = (counts, extra) => deliveriesMonth(reported(counts, extra), opts());
 const row = (model, date) => model.days.find((d) => d.date === date);
 
 test("the month grid is Monday first and padded to whole weeks", () => {
@@ -93,61 +95,114 @@ test("no reported day means no total, not a total of zero", () => {
 
 test("a snapshot that is not ready is not read", () => {
   for (const status of ["idle", "loading", "denied", "unavailable"]) {
-    const m = deliveriesMonth({ ...reported({ "2026-10-01": 5 }), status }, { storeId: STORE, month: MONTH, today: TODAY });
+    const m = deliveriesMonth({ ...reported({ "2026-10-01": 5 }), status }, opts());
     assert.equal(m.available, false);
     assert.equal(m.reason, status);
     assert.equal(m.total, null);
     assert.ok(m.days.every((d) => d.state === "unavailable" && d.units === null), status);
   }
-  const none = deliveriesMonth(null, { storeId: STORE, month: MONTH, today: TODAY });
+  const none = deliveriesMonth(null, opts());
   assert.equal(none.available, false);
   assert.match(summaryText(none), /unavailable/i);
-  assert.match(summaryText(deliveriesMonth({ status: "denied" }, { storeId: STORE, month: MONTH, today: TODAY })), /access/i);
+  assert.match(summaryText(deliveriesMonth({ status: "denied" }, opts())), /access/i);
 });
 
-test("another store's or month's answer is no answer", () => {
-  const ask = (snapshot, over = {}) => deliveriesMonth(snapshot, { storeId: STORE, month: MONTH, today: TODAY, ...over });
+test("another store's, month's or session's answer is no answer", () => {
+  const ask = (snapshot, over = {}) => deliveriesMonth(snapshot, opts(over));
   assert.equal(ask(reported({ "2026-10-01": 5 }, { storeId: "store-b" })).reason, "stale");
   assert.equal(ask(reported({ "2026-10-01": 5 }, { month: "2026-09" })).reason, "stale");
   assert.equal(ask(reported({ "2026-10-01": 5 }), { storeId: "store-b" }).reason, "stale");
   assert.equal(ask(reported({ "2026-10-01": 5 }), { storeId: null }).reason, "stale", "no store, no answer");
   assert.equal(ask(reported({ "2026-10-01": 5 }), { month: "2026-11" }).reason, "stale");
+  // The session epoch the reader fetched under must be the one the caller holds now.
+  assert.equal(ask(reported({ "2026-10-01": 5 }, { principalEpoch: EPOCH - 1 })).reason, "stale", "an older session");
+  assert.equal(ask(reported({ "2026-10-01": 5 }, { principalEpoch: undefined })).reason, "stale", "a snapshot with no epoch");
+  assert.equal(ask(reported({ "2026-10-01": 5 }), { principalEpoch: undefined }).reason, "stale", "a caller with no epoch: nothing shows");
+  assert.equal(ask(reported({ "2026-10-01": 5 }), { principalEpoch: "3" }).reason, "stale", "an epoch that is not a number");
+  assert.equal(ask(reported({ "2026-10-01": 5 }), { principalEpoch: EPOCH }).available, true);
 });
 
-test("malformed rows never become a number", () => {
-  const dup = reported({ "2026-10-01": 5 });
-  dup.days.push({ ...dup.days[0] });
-  assert.equal(deliveriesMonth(dup, { storeId: STORE, month: MONTH, today: TODAY }).reason, "malformed");
-  const outside = reported({});
-  outside.days[0] = { ...outside.days[0], date: "2026-09-30" };
-  assert.equal(deliveriesMonth(outside, { storeId: STORE, month: MONTH, today: TODAY }).reason, "malformed");
-
-  const bad = reported({ "2026-10-01": 5 });
-  const at = (date) => bad.days.findIndex((d) => d.date === date);
-  bad.days[at("2026-10-02")] = { date: "2026-10-02", status: "provisional", count: 2.5, vehicles: { new: 2.5, used: 0 }, asOf: stamp };
-  bad.days[at("2026-10-03")] = { date: "2026-10-03", status: "provisional", count: -1, vehicles: { new: -1, used: 0 }, asOf: stamp };
-  bad.days[at("2026-10-04")] = { date: "2026-10-04", status: "provisional", count: "7", vehicles: split(7), asOf: stamp };
-  bad.days[at("2026-10-05")] = { date: "2026-10-05", status: "provisional", count: NaN, vehicles: split(1), asOf: stamp };
-  bad.days[at("2026-10-06")] = { date: "2026-10-06", status: "settled", count: 3, vehicles: split(3), asOf: stamp };
-  bad.days.splice(at("2026-10-07"), 1);
-  const m = deliveriesMonth(bad, { storeId: STORE, month: MONTH, today: TODAY });
-  assert.equal(m.available, true);
-  for (const d of ["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07"]) {
-    assert.equal(row(m, d).state, "unavailable", d);
-    assert.equal(row(m, d).units, null, d);
+test("a forged partial snapshot cannot colour a day or add to a total", () => {
+  const forged = (mutate) => {
+    const r = reported({ "2026-10-01": 7 });
+    mutate(r.days[0], r);
+    return deliveriesMonth(r, opts());
+  };
+  const cases = {
+    "count with no timestamp": (d) => { d.asOf = null; },
+    "count with an empty asOf": (d) => { d.asOf = {}; },
+    "null timestamp": (d) => { d.asOf = { timestamp: null, basis: "report_sent" }; },
+    "not an ISO timestamp": (d) => { d.asOf = { timestamp: "yesterday", basis: "report_sent" }; },
+    "an impossible timestamp": (d) => { d.asOf = { timestamp: "2026-13-45T99:00:00.000Z", basis: "report_sent" }; },
+    "a timestamp without milliseconds": (d) => { d.asOf = { timestamp: "2026-10-13T22:05:00Z", basis: "report_sent" }; },
+    "no basis": (d) => { d.asOf = { timestamp: stamp.timestamp }; },
+    "an unknown basis": (d) => { d.asOf = { timestamp: stamp.timestamp, basis: "fetched" }; },
+    "no vehicles object": (d) => { delete d.vehicles; },
+    "vehicles that do not add up": (d) => { d.vehicles = { new: 2, used: 2 }; },
+    "half a split": (d) => { d.vehicles = { new: 7, used: null }; },
+    "a count that is not whole": (d) => { d.count = 2.5; d.vehicles = { new: 2.5, used: 0 }; },
+    "a negative count": (d) => { d.count = -1; d.vehicles = { new: -1, used: 0 }; },
+    "a text count": (d) => { d.count = "7"; },
+    "NaN": (d) => { d.count = NaN; },
+    "an unknown status": (d) => { d.status = "settled"; },
+    "a missing day carrying a count": (d) => { d.status = "missing"; d.count = 7; },
+    "a conflict carrying a timestamp": (d) => { d.status = "conflict"; d.count = null; d.vehicles = { new: null, used: null }; },
+    "a date outside the month": (d) => { d.date = "2026-09-30"; },
+    "not a date at all": (d) => { d.date = "2026-99-01"; },
+    "a null row": (d, r) => { r.days[0] = null; },
+  };
+  for (const [name, mutate] of Object.entries(cases)) {
+    const m = forged(mutate);
+    assert.equal(m.available, false, name);
+    assert.equal(m.reason, "malformed", name);
+    assert.equal(m.total, null, name);
+    assert.ok(m.days.every((d) => d.state === "unavailable" && d.units === null && d.level === null && !d.best), name);
   }
-  assert.equal(m.total, 5, "only the good day counts");
+  // One bad day anywhere ruins the month, as it does in the reader.
+  const late = reported({ "2026-10-01": 7 });
+  late.days[20].asOf = { timestamp: "x", basis: "report_sent" };
+  late.days[20].status = "provisional"; late.days[20].count = 3; late.days[20].vehicles = { new: 3, used: 0 };
+  assert.equal(deliveriesMonth(late, opts()).reason, "malformed");
+  // Duplicate and missing dates.
+  const dup = reported({}); dup.days[1] = { ...dup.days[0] };
+  assert.equal(deliveriesMonth(dup, opts()).reason, "malformed");
+  const short = reported({}); short.days.pop();
+  assert.equal(deliveriesMonth(short, opts()).reason, "malformed");
+  const long = reported({}); long.days.push({ ...long.days[0] });
+  assert.equal(deliveriesMonth(long, opts()).reason, "malformed");
+  const notArray = reported({}); notArray.days = {};
+  assert.equal(deliveriesMonth(notArray, opts()).available, false);
+});
+
+test("a bad month or date fails closed instead of throwing", () => {
+  assert.equal(validDate("2026-99-01"), false);
+  assert.equal(validDate("2026-10-14"), true);
+  assert.equal(validDate("2026-02-30"), false);
+  assert.equal(validDate("2026-10-14T00:00:00Z"), false);
+  assert.equal(validDate(20261014), false);
+  assert.equal(validDate(null), false);
+  assert.equal(validMonth("2026-00"), false);
+  for (const bad of [{ month: "2026-13" }, { month: "nope" }, { month: undefined }, { today: "2026-99-01" }, { today: "x" }, { today: undefined }]) {
+    let m;
+    assert.doesNotThrow(() => { m = deliveriesMonth(reported({ "2026-10-01": 5 }), opts(bad)); }, JSON.stringify(bad));
+    assert.equal(m.available, false);
+    assert.equal(m.total, null);
+    assert.doesNotThrow(() => summaryText(m));
+  }
+  assert.doesNotThrow(() => deliveriesMonth(undefined));
+  assert.doesNotThrow(() => staffingMonth({ month: "2026-13", roster }));
+  assert.doesNotThrow(() => staffingMonth({ month: undefined }));
+  assert.equal(staffingMonth({ month: "2026-13", roster }).evidence, "unavailable");
+  assert.equal(scheduleReview({}, "2026-13").present, false);
 });
 
 test("New and Used are shown only when they add up to the count", () => {
   const ok = month({ "2026-10-01": 5 });
   assert.deepEqual(row(ok, "2026-10-01").split, { new: 5, used: 0 });
-  const odd = reported({ "2026-10-01": 5 });
-  odd.days[0].vehicles = { new: 2, used: 2 };
-  assert.equal(row(deliveriesMonth(odd, { storeId: STORE, month: MONTH, today: TODAY }), "2026-10-01").split, null);
   const unsplit = reported({ "2026-10-01": 5 });
   unsplit.days[0].vehicles = { new: null, used: null };
-  const m = deliveriesMonth(unsplit, { storeId: STORE, month: MONTH, today: TODAY });
+  const m = deliveriesMonth(unsplit, opts());
+  assert.equal(m.available, true);
   assert.equal(row(m, "2026-10-01").split, null);
   assert.equal(row(m, "2026-10-01").units, 5, "an unsplit count is still a count");
 });
@@ -273,11 +328,55 @@ test("the app's own off rule wins when it is handed in, and the override is visi
   assert.equal(staff().rule, "listed");
 });
 
-test("someone who has left is not counted from the day they left", () => {
-  const s = staff({ departed: [{ id: "p3", at: "2026-10-10T12:00:00.000Z" }] });
-  assert.equal(day(s, "2026-10-09").unknown.some((p) => p.id === "p3"), true);
-  assert.equal(day(s, "2026-10-10").unknown.some((p) => p.id === "p3"), false);
-  assert.equal(day(s, "2026-10-20").unknown.some((p) => p.id === "p3"), false);
+test("employment bounds are the app's own: inclusive at both ends", () => {
+  const crew = [...roster,
+    { id: "h1", name: "Hired Late", roleId: "sales", hiredAt: "2026-10-15" },
+    { id: "d1", name: "Left Early", roleId: "sales" }];
+  const s = staff({ roster: crew, departed: [{ name: "  left   EARLY ", at: "2026-10-10T12:00:00.000Z" }] });
+  const listed = (date, id) => [...day(s, date).off, ...day(s, date).overridden, ...day(s, date).present, ...day(s, date).unknown].some((p) => p.id === id);
+  // Hired on the 15th: not on the 14th, counted on the 15th.
+  assert.equal(listed("2026-10-01", "h1"), false, "not Off or anything else before they started");
+  assert.equal(listed("2026-10-14", "h1"), false, "the day before they started");
+  assert.equal(listed("2026-10-15", "h1"), true, "the day they started");
+  assert.equal(listed("2026-10-31", "h1"), true);
+  // Left on the 10th: counted on the 10th, gone from the 11th. Matched by name as the app does.
+  assert.equal(listed("2026-10-09", "d1"), true);
+  assert.equal(listed("2026-10-10", "d1"), true, "the day they left still counts");
+  assert.equal(listed("2026-10-11", "d1"), false, "the day after");
+  assert.equal(listed("2026-10-31", "d1"), false);
+  // A listed day off before somebody started is not an Off.
+  const early = staff({ roster: crew, daysOff: { h1: ["2026-10-01", "2026-10-15"] } });
+  assert.equal(day(early, "2026-10-01").off.some((p) => p.id === "h1"), false, "a new hire has no days off before they started");
+  assert.equal(day(early, "2026-10-15").off.some((p) => p.id === "h1"), true, "but can be off on the day they start");
+  // The departure can also arrive by id.
+  const byId = staff({ roster: crew, departed: [{ id: "d1", at: "2026-10-10" }] });
+  assert.equal(day(byId, "2026-10-10").unknown.some((p) => p.id === "d1"), true);
+  assert.equal(day(byId, "2026-10-11").unknown.some((p) => p.id === "d1"), false);
+  // An unreadable date is no bound, as no start date has always meant the whole month.
+  const odd = staff({ roster: [{ id: "q", name: "Odd Dates", roleId: "sales", hiredAt: "soon" }], departed: [{ name: "odd dates", at: "never" }] });
+  assert.equal(day(odd, "2026-10-01").unknown.length, 1);
+  assert.equal(day(odd, "2026-10-31").unknown.length, 1);
+});
+
+test("the model agrees with the app's servedOn on every date around both bounds", () => {
+  const person = { id: "x", name: "Edge Case", roleId: "sales", hiredAt: "2026-10-15T09:00:00.000Z" };
+  const leftAt = "2026-10-20";
+  const s = staff({ roster: [person], departed: [{ name: "Edge Case", at: leftAt }] });
+  for (const date of monthDays(MONTH)) {
+    const here = [...day(s, date).off, ...day(s, date).overridden, ...day(s, date).present, ...day(s, date).unknown].length === 1;
+    assert.equal(here, servedOn(person, date, leftAt), date);
+  }
+});
+
+test("another store's records are masked when they are not ready", () => {
+  const s = staff({ ready: false, daysOff: { p1: ["2026-10-14"] }, scheduleSource: source, roster });
+  assert.equal(s.evidence, "unavailable");
+  assert.equal(s.rosterCount, 0);
+  assert.ok(Object.values(s.byDate).every((d) => !d.off.length && !d.unknown.length && !d.present.length));
+  const detail = dayDetail("2026-10-14", month({}), s);
+  assert.equal(detail.staffingReady, false);
+  assert.equal(detail.offText, "schedule not loaded");
+  assert.equal(detail.scheduleKnown, false);
 });
 
 test("a day listed in another month is not this month's", () => {
@@ -315,13 +414,13 @@ test("a day sheet reconciles with the grid it came from", () => {
 
 test("month boundaries: 28, 30 and 31 day months", () => {
   for (const [m, n] of [["2026-02", 28], ["2026-09", 30], ["2026-10", 31], ["2028-02", 29]]) {
-    const r = { status: "ready", storeId: STORE, month: m,
+    const r = { status: "ready", storeId: STORE, month: m, principalEpoch: EPOCH,
       days: monthDays(m).map((date) => ({ date, status: "missing", count: null, vehicles: { new: null, used: null }, asOf: null })) };
-    const out = deliveriesMonth(r, { storeId: STORE, month: m, today: `${m}-${String(n).padStart(2, "0")}` });
+    const out = deliveriesMonth(r, opts({ month: m, today: `${m}-${String(n).padStart(2, "0")}` }));
     assert.equal(out.days.length, n);
     assert.ok(out.days.every((d) => d.state === "missing"));
   }
-  const next = deliveriesMonth({ status: "ready", storeId: STORE, month: "2026-11", days: monthDays("2026-11").map((date) => ({ date, status: "missing", count: null, vehicles: { new: null, used: null }, asOf: null })) },
-    { storeId: STORE, month: "2026-11", today: "2026-10-31" });
+  const next = deliveriesMonth({ status: "ready", storeId: STORE, month: "2026-11", principalEpoch: EPOCH, days: monthDays("2026-11").map((date) => ({ date, status: "missing", count: null, vehicles: { new: null, used: null }, asOf: null })) },
+    opts({ month: "2026-11", today: "2026-10-31" }));
   assert.ok(next.days.every((d) => d.state === "future"), "the day before a month starts, all of it is still to come");
 });

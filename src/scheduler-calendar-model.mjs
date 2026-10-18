@@ -29,8 +29,10 @@ export function validMonth(month) {
   return typeof month === "string" && /^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(month);
 }
 export function validDate(date) {
-  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
-    && new Date(date + "T12:00:00Z").toISOString().slice(0, 10) === date;
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  // 2026-99-01 matches the shape and is not a date; toISOString throws on it.
+  const t = new Date(date + "T12:00:00Z");
+  return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === date;
 }
 export function monthDays(month) {
   if (!validMonth(month)) throw new Error("Choose a month from 2000 to 2100.");
@@ -70,55 +72,75 @@ export function monthText(month) {
 /* ------------------------------------------------------------------ deliveries */
 
 const REPORTER_STATUSES = ["provisional", "missing", "incomplete", "conflict"];
+const BASES = ["report_sent", "report_received"];
+const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const STORE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
 const NONE = Object.freeze({ units: null, split: null, asOf: null, level: null, best: false, bestLabel: "" });
 
 function unavailableMonth(month, reason) {
-  const days = monthDays(month).map((date) => ({ date, state: "unavailable", reason, ...NONE }));
+  const days = validMonth(month) ? monthDays(month).map((date) => ({ date, state: "unavailable", reason, ...NONE })) : [];
   return Object.freeze({ available: false, reason, days, total: null, reportedDays: 0, bestDays: [] });
+}
+
+// One reader row, held to the reader's whole contract (X19 `projectReportedMonth`), not
+// just the field the screen happens to use. A count with no real timestamp and basis is
+// not a report, and a forged row must not be able to colour a day or add to a total.
+function validRow(row, dates) {
+  if (!row || typeof row !== "object" || !dates.includes(row.date) || !REPORTER_STATUSES.includes(row.status)) return false;
+  const v = row.vehicles;
+  if (!v || typeof v !== "object") return false;
+  if (row.status !== "provisional") return row.count === null && v.new === null && v.used === null && row.asOf === null;
+  if (!isCount(row.count)) return false;
+  const a = row.asOf;
+  if (!a || typeof a !== "object" || typeof a.timestamp !== "string" || !STAMP.test(a.timestamp) || !BASES.includes(a.basis)) return false;
+  const t = new Date(a.timestamp);
+  if (Number.isNaN(t.getTime()) || t.toISOString() !== a.timestamp) return false;
+  const unsplit = v.new === null && v.used === null;
+  return unsplit || (isCount(v.new) && isCount(v.used) && v.new + v.used === row.count);
 }
 
 /**
  * One month of daily deliveries, as the screen shows it.
  *
- * `reported` is the reader's snapshot: { status, days, storeId, month }. Only a
- * snapshot that is ready, and for exactly this store and month, is read at all.
+ * `reported` is the reader's snapshot: { status, days, storeId, month, principalEpoch }.
+ * It is read only when it is ready, for exactly this store and month, carries the same
+ * principal epoch the caller holds now, and every row meets the reader's full contract.
+ * Any one bad row, a missing or duplicate date, or an epoch that is not the caller's
+ * makes the whole month unavailable, as the reader itself does. A caller that does not
+ * pass `principalEpoch` gets no answer: nothing shows until a real reader is wired.
  * `today` is the store's date; a date after it is pending whatever the rows say.
  */
-export function deliveriesMonth(reported, { storeId, month, today }) {
-  if (!validMonth(month) || !validDate(today)) throw new Error("A month and today's date are required.");
+export function deliveriesMonth(reported, { storeId, month, today, principalEpoch } = {}) {
+  if (!validMonth(month) || !validDate(today)) return unavailableMonth(month, "malformed");
   const status = reported?.status;
   if (status !== "ready") {
     const known = ["idle", "loading", "denied", "unavailable"];
     return unavailableMonth(month, known.includes(status) ? status : "unavailable");
   }
-  // A snapshot carries the store and month it was fetched for. Both must match
-  // what is on screen now, or this is another store's or another month's answer.
-  if (!storeId || reported.storeId !== storeId || reported.month !== month || !Array.isArray(reported.days)) {
+  // A snapshot carries the store, month and session it was fetched for. All three must
+  // match what is on screen now, or this is another store's, month's or account's answer.
+  if (typeof storeId !== "string" || !STORE_ID.test(storeId) || reported.storeId !== storeId || reported.month !== month
+      || !Number.isSafeInteger(principalEpoch) || reported.principalEpoch !== principalEpoch || !Array.isArray(reported.days)) {
     return unavailableMonth(month, "stale");
   }
   const dates = monthDays(month);
+  if (reported.days.length !== dates.length) return unavailableMonth(month, "malformed");
   const rows = new Map();
   for (const row of reported.days) {
-    if (!row || !dates.includes(row.date) || rows.has(row.date)) return unavailableMonth(month, "malformed");
+    if (!validRow(row, dates) || rows.has(row.date)) return unavailableMonth(month, "malformed");
     rows.set(row.date, row);
   }
 
   const days = dates.map((date) => {
-    if (date > today) return { date, state: "future", reason: null, ...NONE };
     const row = rows.get(date);
-    if (!row || !REPORTER_STATUSES.includes(row.status)) return { date, state: "unavailable", reason: "no row", ...NONE };
+    if (date > today) return { date, state: "future", reason: null, ...NONE };
     if (row.status === "provisional") {
-      // A count that is not a whole number of vehicles is not a count. Drop the day
-      // to unknown rather than round it into something that looks reported.
-      if (!isCount(row.count)) return { date, state: "unavailable", reason: "bad count", ...NONE };
       const v = row.vehicles;
-      const split = v && isCount(v.new) && isCount(v.used) && v.new + v.used === row.count
-        ? Object.freeze({ new: v.new, used: v.used }) : null;
-      const asOf = row.asOf && typeof row.asOf.timestamp === "string" && typeof row.asOf.basis === "string"
-        ? Object.freeze({ timestamp: row.asOf.timestamp, basis: row.asOf.basis }) : null;
-      return { date, state: "reported", reason: null, units: row.count, split, asOf, level: null, best: false, bestLabel: "" };
+      const split = isCount(v.new) && isCount(v.used) ? Object.freeze({ new: v.new, used: v.used }) : null;
+      return { date, state: "reported", reason: null, units: row.count, split,
+        asOf: Object.freeze({ timestamp: row.asOf.timestamp, basis: row.asOf.basis }), level: null, best: false, bestLabel: "" };
     }
     return { date, state: row.status, reason: null, ...NONE };
   });
@@ -194,8 +216,9 @@ const listed = (map, id, date) => Array.isArray(map?.[id]) && map[id].includes(d
  * Who is off on each day of the month, and what is not known.
  *
  * Inputs are the store's own records, by the keys the app already uses:
- *   roster          [{ id, name, roleId }]       people with a role are on the board
- *   departed        [{ id, at }]                 not counted from the day they left
+ *   roster          [{ id, name, roleId, hiredAt? }]  people with a role are on the board
+ *   roster[].hiredAt  a date or timestamp         not counted before the day they started
+ *   departed        [{ name, at }] (or { id })   not counted after the day they left
  *   daysOff         { [id]: [date] }             listed by an uploaded schedule
  *   forcedOff       { [id]: [date] }             marked off by a manager
  *   presentAnyway   { [date]: [id] }             a manager said they were here
@@ -204,22 +227,42 @@ const listed = (map, id, date) => Array.isArray(map?.[id]) && map[id].includes(d
  *                   worked is not off). Without it the raw lists decide, and the
  *                   result says so in `rule`.
  *
- * People are bound by roster id. A name is only ever a label.
+ * People are bound by roster id. A name is only ever a label, except where the app's own
+ * departed records carry only a name; those are matched the way the app matches them.
+ *
+ * Employment bounds are the app's `servedOn`: both ends inclusive, so somebody is counted
+ * on the day they started and on the day they left, and not before or after. A person who
+ * is not employed on a date is not listed at all that day, neither off nor not listed off.
+ *
+ * `ready: false` means the records handed in are not known to belong to this store (the
+ * caller checks), so no person, day off or schedule is shown from them.
  */
+// The app's name match for departure records (`norm` in the parsers).
+const norm = (v) => (typeof v === "string" ? v : "").trim().toLowerCase().replace(/\s+/g, " ");
+const dayOf = (v) => (typeof v === "string" && validDate(v.slice(0, 10)) ? v.slice(0, 10) : null);
+
 export function staffingMonth({ month, roster = [], departed = [], daysOff = {}, forcedOff = {},
-  presentAnyway = {}, scheduleSource = {}, isOff = null }) {
+  presentAnyway = {}, scheduleSource = {}, isOff = null, ready = true }) {
+  if (!validMonth(month)) return Object.freeze({ evidence: "unavailable", rule: "listed", rosterCount: 0, byDate: {} });
   const dates = monthDays(month);
+  if (!ready) {
+    const byDate = Object.fromEntries(dates.map((date) => [date, Object.freeze({ date, off: [], overridden: [], present: [], unknown: [] })]));
+    return Object.freeze({ evidence: "unavailable", rule: "listed", rosterCount: 0, byDate });
+  }
   const people = [];
   const seen = new Set();
-  for (const p of roster) {
+  for (const p of Array.isArray(roster) ? roster : []) {
     if (!p || typeof p.id !== "string" || !p.id || !p.roleId || seen.has(p.id)) continue;
     seen.add(p.id);
-    people.push({ id: p.id, name: typeof p.name === "string" && p.name ? p.name : "Unnamed" });
+    people.push({ id: p.id, name: typeof p.name === "string" && p.name ? p.name : "Unnamed", hired: dayOf(p.hiredAt) });
   }
   people.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 
-  const left = new Map();
-  for (const d of departed) if (d && typeof d.id === "string" && stamp(d.at)) left.set(d.id, d.at.slice(0, 10));
+  const leftOn = (p) => {
+    const rec = (Array.isArray(departed) ? departed : []).find((d) => d && (d.id === p.id || (d.id == null && norm(d.name) === norm(p.name))));
+    return rec ? dayOf(rec.at) : null;
+  };
+  const left = new Map(people.map((p) => [p.id, leftOn(p)]));
   const source = scheduleSource?.[month] || null;
   const anyOff = people.some((p) => dates.some((d) => listed(daysOff, p.id, d) || listed(forcedOff, p.id, d)));
   const evidence = source ? "schedule" : anyOff ? "marks" : "none";
@@ -228,7 +271,8 @@ export function staffingMonth({ month, roster = [], departed = [], daysOff = {},
   for (const date of dates) {
     const off = [], overridden = [], present = [], unknown = [];
     for (const p of people) {
-      if (left.has(p.id) && left.get(p.id) <= date) continue;
+      // servedOn: a day before the start or after the departure is not theirs. Both ends count.
+      if ((p.hired && date < p.hired) || (left.get(p.id) && date > left.get(p.id))) continue;
       const forced = listed(forcedOff, p.id, date);
       const onFile = listed(daysOff, p.id, date);
       const effective = typeof isOff === "function" ? isOff(p.id, date) === true : forced || onFile;
@@ -279,11 +323,14 @@ export function dayDetail(date, deliveries, staffing) {
   const row = deliveries.days.find((d) => d.date === date);
   if (!row) throw new Error("That date is not in this month.");
   const people = staffing.byDate[date];
-  const offText = people.off.length ? `${people.off.length} off` : staffing.evidence === "none" ? "no schedule on file" : "no one listed off";
+  if (!people) throw new Error("That date is not in this month.");
+  const offText = people.off.length ? `${people.off.length} off` : staffing.evidence === "unavailable" ? "schedule not loaded"
+    : staffing.evidence === "none" ? "no schedule on file" : "no one listed off";
   return Object.freeze({
     date, title: dateText(date), delivered: row, deliveredValue: deliveredValue(row),
     asOf: row.asOf, split: row.split, off: people.off, overridden: people.overridden,
     present: people.present, notListedOff: people.unknown, offText,
-    scheduleKnown: staffing.evidence !== "none", durations: "unknown",
+    scheduleKnown: staffing.evidence === "schedule" || staffing.evidence === "marks", staffingReady: staffing.evidence !== "unavailable",
+    durations: "unknown",
   });
 }

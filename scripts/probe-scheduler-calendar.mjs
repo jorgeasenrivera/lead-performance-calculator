@@ -25,7 +25,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const MONTH = "2026-10", TODAY = "2026-10-14", STORE = "store-a";
+const MONTH = "2026-10", TODAY = "2026-10-14", STORE = "store-a", EPOCH = 3;
 
 /* ------------------------------------------------------------------ the build */
 async function build() {
@@ -63,7 +63,7 @@ const stamp = { timestamp: "2026-10-13T22:05:00.000Z", basis: "report_sent" };
 // 1 Oct 4, 2 Oct a reported zero, 3 Oct 8 (best), 5 Oct incomplete, 6 Oct conflict, 7 Oct 2; the rest unknown or future.
 const COUNTS = { "2026-10-01": 4, "2026-10-02": 0, "2026-10-03": 8, "2026-10-05": "incomplete", "2026-10-06": "conflict", "2026-10-07": 2 };
 const snapshot = (counts, extra = {}) => ({
-  status: "ready", storeId: STORE, month: MONTH,
+  status: "ready", storeId: STORE, month: MONTH, principalEpoch: EPOCH,
   days: dates.map((date) => {
     const v = counts[date];
     return typeof v === "number"
@@ -75,14 +75,20 @@ const snapshot = (counts, extra = {}) => ({
 const roster = [
   { id: "p2", name: "Blair Quinn", roleId: "sales" }, { id: "p1", name: "Alex Moss", roleId: "sales" },
   { id: "p3", name: "Casey Lane", roleId: "sales" },
+  { id: "p5", name: "Hired Late", roleId: "sales", hiredAt: "2026-10-15" },
 ];
 const scheduleSource = { [MONTH]: { file: "october.pdf", at: "2026-10-01T13:00:00.000Z", kind: "a team grid", off: { p1: ["2026-10-03"] }, unmatched: ["Dana"] } };
-const base = { storeId: STORE, month: MONTH, today: TODAY, roster, daysOff: { p1: ["2026-10-03"] }, forcedOff: { p2: ["2026-10-03"] }, scheduleSource };
+const base = { storeId: STORE, month: MONTH, today: TODAY, principalEpoch: EPOCH, roster, daysOff: { p1: ["2026-10-03"], p5: ["2026-10-01"] }, forcedOff: { p2: ["2026-10-03"] }, scheduleSource };
 // The dashboard's own records, as the app holds them: store, and data with roster, days off and the applied schedule.
 const NOW = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit" }).format(new Date());
 const ENTRY = { store: { id: STORE, name: "Cedar Motors" },
-  data: { roster: [...roster, { id: "p4", name: "Drew Park", roleId: "sales" }], departed: [], daysOff: { p1: [`${NOW}-03`, `${NOW}-20`], p4: [`${NOW}-20`] }, forcedOff: {}, presentAnyway: {}, scheduleSource: {} },
+  data: { __storeId: STORE, roster: [...roster, { id: "p4", name: "Drew Park", roleId: "sales" }], departed: [], daysOff: { p1: [`${NOW}-03`, `${NOW}-20`], p4: [`${NOW}-20`] }, forcedOff: {}, presentAnyway: {},
+    scheduleSource: { [NOW]: { file: "store-a-schedule.pdf", at: "2026-10-01T13:00:00.000Z", kind: "a team grid", off: { p1: [`${NOW}-20`] }, unmatched: [] } } },
   offRule: true, workedId: "p4" };
+// entry-switched: store B is selected while the app still holds store A's document.
+const entryFor = (scenario) => scenario === "entry-switched"
+  ? { ...ENTRY, store: { id: "store-b", name: "Other Motors" }, layout: "panel" }
+  : { ...ENTRY, layout: scenario === "entry-compact" ? "compact" : "panel" };
 const SCENARIOS = {
   ready: { ...base, reported: snapshot(COUNTS) },
   zeros: { ...base, reported: snapshot({ "2026-10-01": 0, "2026-10-02": 0 }) },
@@ -91,7 +97,10 @@ const SCENARIOS = {
   denied: { ...base, reported: { status: "denied", days: [], storeId: STORE, month: MONTH } },
   stale: { ...base, reported: snapshot(COUNTS, { month: "2026-09" }) },
   otherStore: { ...base, reported: snapshot(COUNTS, { storeId: "store-b" }) },
-  noschedule: { storeId: STORE, month: MONTH, today: TODAY, roster, reported: snapshot(COUNTS) },
+  noschedule: { storeId: STORE, month: MONTH, today: TODAY, principalEpoch: EPOCH, roster, reported: snapshot(COUNTS) },
+  // A reader row with a count and no timestamp or basis is not a report.
+  forged: { ...base, reported: (() => { const r = snapshot(COUNTS); r.days[0] = { ...r.days[0], count: 7, vehicles: { new: 7, used: 0 }, asOf: null }; return r; })() },
+  staleEpoch: { ...base, reported: snapshot(COUNTS, { principalEpoch: EPOCH - 1 }) },
   compact: { ...base, reported: snapshot(COUNTS), layout: "compact" },
 };
 
@@ -141,7 +150,7 @@ async function open(browser, base, vp, scenario, extra = {}) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 200)));
   page.setDefaultTimeout(8000);
-  await page.addInitScript(([props, entry]) => { window.__props = props; window.__entry = entry; }, [SCENARIOS[scenario] || {}, scenario.startsWith("entry") ? { ...ENTRY, layout: scenario === "entry-compact" ? "compact" : "panel" } : null]);
+  await page.addInitScript(([props, entry]) => { window.__props = props; window.__entry = entry; }, [SCENARIOS[scenario] || {}, scenario.startsWith("entry") ? entryFor(scenario) : null]);
   await page.goto(base);
   await page.locator(".sc-calendar, .sc-entry").first().waitFor();
   return { ctx, page, errors };
@@ -188,6 +197,11 @@ try {
       assert.equal(await page.locator(".sc-sheet details").evaluate((d) => d.open), false, `${vp.name}: not-listed-off starts closed`);
       assert.match(await page.locator(".sc-schedule").innerText(), /1 name did not match anyone on the roster\. Review before relying on it\./);
       if (process.env.SC_SHOTS) { fs.mkdirSync(process.env.SC_SHOTS, { recursive: true }); await page.locator(".sc-calendar").screenshot({ path: path.join(process.env.SC_SHOTS, `${engine}-${vp.name}-day-3-oct.png`) }); }
+      // Somebody hired on the 15th is not on the board before then, Off or otherwise, even with a day listed.
+      await page.locator('.sc-day[data-date="2026-10-01"]').click();
+      assert.doesNotMatch(await page.locator(".sc-sheet").textContent(), /Hired Late/, `${vp.name}: not before they started`);
+      await page.locator('.sc-day[data-date="2026-10-20"]').click();
+      assert.match(await page.locator(".sc-sheet").textContent(), /Hired Late/, `${vp.name}: counted once they have started`);
       // A reported day also shows the report's own time and basis.
       await page.locator('.sc-day[data-date="2026-10-01"]').click();
       assert.match(await page.locator(".sc-sheet").innerText(), /New 4 · Used 0/);
@@ -203,6 +217,7 @@ try {
     for (const [scenario, summary] of [
       ["unavailable", "Deliveries are unavailable right now."], ["denied", "You do not have access to deliveries for this store."],
       ["stale", "Deliveries are unavailable right now."], ["otherStore", "Deliveries are unavailable right now."],
+      ["forged", "Deliveries are unavailable right now."], ["staleEpoch", "Deliveries are unavailable right now."],
       ["none", "No recorded deliveries yet this month."],
     ]) {
       const { ctx, page, errors } = await open(browser, url, vp, scenario);
@@ -291,12 +306,35 @@ try {
     // p1 is listed off on the 20th. p4 is listed too, but the app's own rule says they worked.
     await page.locator(`.sc-day[data-date="${month}-20"]`).click();
     const sheet = await page.locator(".sc-sheet").innerText();
-    assert.match(sheet, /Off\s+Alex Moss · On file/, `${vp.name}: bound by roster id from the app's days off`);
+    assert.match(sheet, /Off\s+Alex Moss · From the schedule, store-a-schedule\.pdf/, `${vp.name}: bound by roster id from the app's days off`);
     assert.match(sheet, /Listed off but worked: Drew Park\./, `${vp.name}: the app's own off rule is used`);
     assert.match(sheet, /Delivered\s+Unavailable|Delivered\s+Pending|Delivered\s+Unknown/, `${vp.name}: never a number`);
-    assert.equal(await page.locator(".sc-schedule").count(), 0, "no schedule file on record, none shown");
+    assert.match(await page.locator(".sc-schedule").innerText(), /store-a-schedule\.pdf/, "the schedule file on record is shown back");
     assert.deepEqual(errors, []);
     results[`entry-${vp.name}`] = "ok";
+    await ctx.close();
+  }
+
+  /* ---- store B selected while store A's document is still loaded: nothing of A's shows */
+  for (const vp of VIEWPORTS.filter((v) => !v.touch)) {
+    const { ctx, page, errors } = await open(browser, url, vp, "entry-switched");
+    await page.getByRole("button", { name: /Deliveries calendar/ }).click();
+    const month = await page.evaluate(() => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit" }).format(new Date()));
+    await page.locator(`.sc-day[data-date="${month}-20"]`).click();
+    const text = await page.locator(".sc-calendar").textContent();
+    assert.match(text, /This store's schedule is not loaded yet\./);
+    assert.doesNotMatch(text, /store-a-schedule\.pdf|Alex Moss|Blair Quinn|Casey Lane|Drew Park|Schedule from/, "no person or file from the other store");
+    assert.equal(await page.locator(".sc-schedule").count(), 0);
+    assert.deepEqual(errors, []);
+    results[`switched-${vp.name}`] = "ok";
+    await ctx.close();
+  }
+  // The same data for the store it belongs to does show its schedule file and people.
+  {
+    const { ctx, page } = await open(browser, url, VIEWPORTS[2], "entry-panel");
+    await page.getByRole("button", { name: /Deliveries calendar/ }).click();
+    assert.match(await page.locator(".sc-schedule").innerText(), /store-a-schedule\.pdf/);
+    results["matched-1440"] = "ok";
     await ctx.close();
   }
 
