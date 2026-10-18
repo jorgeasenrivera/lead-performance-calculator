@@ -30,16 +30,19 @@ export function patchManager(source) {
     const month=today.slice(0,7),cells=previewCalendarCells(month);
     const mobile=className.includes('bp-r1'),[expanded,setExpanded]=useState(()=>previewHeroState.expanded);
     useEffect(()=>{if(mobile&&expanded){const frame=requestAnimationFrame(()=>document.querySelector('.sp-mobile-calendar')?.scrollIntoView({block:'nearest',behavior:'instant'}));return()=>cancelAnimationFrame(frame);}},[mobile,expanded]);
-    const historical=previewHistoricalCalendar(previewCalendarStore.history,month),byDay=new Map(historical.days.map(r=>[r.day,r]));
+    const heat=previewSalesHeat(previewCalendarStore,month,today),byDay=new Map(heat.map(r=>[r.day,r])),summary=previewMonthSales(previewCalendarStore,month,today);
+    // Observed deliveries for each date of this month. Zero is a count; unknown, closed and future days stay neutral, never zero.
+    const cellClass=(r,day)=>(r.state==='known'?'heat-'+r.level:'sales-'+r.state)+(r.best?' best':'')+(day===today?' today':'');
+    const deliveredText=r=>r.state==='known'?r.units+' delivered':r.state==='closed'?'closed':r.state==='future'?'sales not yet available':'delivered unknown';
     const title=new Date(month+'-01T12:00:00Z').toLocaleDateString('en-US',{month:'long',year:'numeric',timeZone:'UTC'});
-    const historyText='Recent weekday pattern · quieter to busier';
+    const historyText='Delivered this month';
     const openCalendar=(e,day)=>window.dispatchEvent(new CustomEvent('scheduler-open',{detail:{opener:e.currentTarget,day,input:e.nativeEvent?.pointerType||(e.nativeEvent?.sourceCapabilities?.firesTouchEvents?'touch':e.detail===0?'keyboard':'mouse'),store:previewCalendarStore.id}}));
-    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule. Historical weekday averages from before this month, darker green is busier. Unknown history is neutral. Open a day for samples."} onClick={e=>openCalendar(e)}>
+    const calendar=<button type="button" className={(mobile?'':className)+' sp-plan-entry sp-calendar-entry'} aria-label={title+", open Schedule. "+(summary.known?summary.total+' delivered on '+summary.known+(summary.known===1?' recorded day':' recorded days')+' so far, brighter green means more delivered. ':'No recorded deliveries yet this month. ')+'Days without a recorded count, closed days and future days are neutral.'} onClick={e=>openCalendar(e)}>
       {!mobile && <strong className="sp-entry-month">{title}</strong>}
-      <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':('history-'+(byDay.get(day).level??'unknown')+(day===today?' today':''))}>{day?Number(day.slice(-2)):''}</i>)}</span>
+      <span className="sp-mini-grid" aria-hidden="true">{cells.map((day,i)=><i key={day||'blank'+i} className={!day?'blank':cellClass(byDay.get(day),day)}>{day?Number(day.slice(-2)):''}</i>)}</span>
       <span className="sp-heat-note">{historyText}</span>
     </button>;
-    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-toggle sp-compact-entry" aria-label={title+', calendar'} aria-expanded={expanded} aria-controls="sp-mobile-calendar-panel" onClick={()=>setExpanded(value=>{previewHeroState.expanded=!value;return !value;})}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong></button><div id="sp-mobile-calendar-panel" hidden={!expanded}><div className="sp-mini-grid sp-date-buttons" aria-label={title}>{cells.map((day,i)=>day?<button type="button" key={day} className={'sp-hero-day history-'+(byDay.get(day).level??'unknown')+(day===today?' today':'')} data-hero-day={day} aria-label={new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'})+(byDay.get(day).average===null?', weekday history unavailable':', recent weekday average '+byDay.get(day).average.toFixed(1)+' delivered')+', open day details'} aria-current={day===today?'date':undefined} onClick={e=>openCalendar(e,day)}>{Number(day.slice(-2))}</button>:<span key={'blank'+i} aria-hidden="true"/>)}</div></div></div>:calendar;
+    return mobile?<div className={className+' sp-mobile-calendar'}><button type="button" className="sp-plan-entry sp-calendar-toggle sp-compact-entry" aria-label={title+', calendar'} aria-expanded={expanded} aria-controls="sp-mobile-calendar-panel" onClick={()=>setExpanded(value=>{previewHeroState.expanded=!value;return !value;})}><PixIcon glyph="calendar" size={20}/><strong className="sp-entry-month">{title}</strong></button><div id="sp-mobile-calendar-panel" hidden={!expanded}><div className="sp-mini-grid sp-date-buttons" aria-label={title}>{cells.map((day,i)=>day?<button type="button" key={day} className={'sp-hero-day '+cellClass(byDay.get(day),day)} data-hero-day={day} aria-label={new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'})+', '+deliveredText(byDay.get(day))+(byDay.get(day).bestLabel?', '+byDay.get(day).bestLabel.toLowerCase():'')+', open day details'} aria-current={day===today?'date':undefined} onClick={e=>openCalendar(e,day)}>{Number(day.slice(-2))}</button>:<span key={'blank'+i} aria-hidden="true"/>)}</div></div></div>:calendar;
   }
   function SignalSchedule({children}) {
     const signal=useSignal();
@@ -87,8 +90,7 @@ export function patchManager(source) {
     source.slice(0, onoffBegin) + source.slice(onoffEnd + "</button>".length);
   source = deliveryRoutes(source);
   return (
-    'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells,monthSales as previewMonthSales,createPlanner as previewCreatePlanner} from "/scripts/scheduler-performance/month-model.mjs";\n' +
-    'import {historicalCalendar as previewHistoricalCalendar} from "/scripts/scheduler-performance/demand-context.mjs";\n' +
+    'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells,monthSales as previewMonthSales,salesHeat as previewSalesHeat,createPlanner as previewCreatePlanner} from "/scripts/scheduler-performance/month-model.mjs";\n' +
     'import {fixtureAssignments as previewFixtureAssignments,assignmentSummary as previewAssignmentSummary} from "/scripts/scheduler-performance/assignment-view.mjs";\n' +
     'import {fixtures as previewFixtures} from "/scripts/scheduler-proposal/model.mjs"; const previewCalendarStore=previewFixtures()[0],previewHeroPlanner=previewCreatePlanner([previewCalendarStore],{assignmentForDay:previewFixtureAssignments}),previewHeroState={expanded:false,warnings:{}};\n' + source
   );

@@ -18,7 +18,7 @@ export function openGeneration({host,planner,index,month,mode,onMonth,onApply,on
  host.querySelector('form').addEventListener('change',()=>{if(!disposed)onAnswers(answers());});
  const detour=callback=>{const saved=answers();dispose();callback(saved);};
  host.querySelector('#generation-hours').onclick=()=>detour(onRules);host.querySelector('#generation-people').onclick=()=>detour(onPeople);
- host.querySelector('#generation-month').onchange=e=>{if(validMonth(e.target.value)&&e.target.value!==month){dispose();onMonth(e.target.value);}else if(!validMonth(e.target.value))e.target.setCustomValidity('Choose a month from January 2014 through December 2100.');else e.target.setCustomValidity('');};
+ host.querySelector('#generation-month').onchange=e=>{if(validMonth(e.target.value)&&e.target.value!==month){const saved=answers();dispose();onMonth(e.target.value,saved);}else if(!validMonth(e.target.value))e.target.setCustomValidity('Choose a month from January 2014 through December 2100.');else e.target.setCustomValidity('');};
  const full=host.querySelector('[name=fullDay]'),sync=()=>{for(const n of ['start','end'])host.querySelector(`[name=${n}]`).disabled=full.checked;};full.onchange=sync;
  if(initialAnswers){
   for(const field of initialAnswers.fields){const input=host.querySelector('form').elements.namedItem(field.name);if(!input)continue;if(input.type==='checkbox')input.checked=field.checked;else input.value=field.value;}
