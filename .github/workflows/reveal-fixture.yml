@@ -1,0 +1,51 @@
+name: reveal-fixture
+# Proposal for review. Not published.
+#
+# A controlled experiment, not a check. When the boot gate comes off after the dashboard is already mounted, and the app's reduced-motion rule
+# is in force, how does each engine reveal the nested content? scripts/reveal-fixture.mjs mounts a bare copy of the Performance hero's nesting,
+# takes the app's two rules verbatim from src/LeadPerformanceCalculator.jsx at run time, lifts the gate, and records every animation frame.
+# It changes no app code and no production CSS, and it asserts nothing about either engine: it fails only when it cannot say what it measured.
+# Whatever branch it runs on is the tree under test; the evidence records the commit and the hash of the source the rules came from.
+# Reveal times are counted from a recorded gate-off instant and every sampled frame is kept. The results are written after each variant and on the
+# way out, the browser is closed on every path, and the artifact is uploaded if: always(), so a failing fixture still hands over what it saw.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/reveal-fixture]
+permissions:
+  contents: read
+jobs:
+  reveal:
+    name: reveal (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Reveal nested content under the app's reduced-motion rule
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          TESTED_SHA=$(git rev-parse HEAD)
+          test "$TESTED_SHA" = "${{ github.sha }}"
+          export TESTED_SHA
+          echo "tree under test: $TESTED_SHA"
+          node scripts/reveal-fixture.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reveal-fixture-${{ matrix.engine }}
+          path: reveal/
+          if-no-files-found: warn
+          retention-days: 14
