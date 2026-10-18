@@ -619,6 +619,31 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X54 · Parallel infrastructure work, exact files and unchanged owners.**
+
+The coordinator authorized the split recorded on the board. Existing X26 Claude
+may reconcile only the Manager pin/entry anchors in scheduler `build.mjs` and add
+negative/isolation coverage in `isolation.test.mjs`. Keep source and anchor guards
+fail-closed, prove transformed JSX and single-entry behavior, and provide the
+exact frozen Manager plus three scheduler runtime-file hashes.
+
+The original Codex parent owns spacing infrastructure. Its delegated implementer
+prepares `.github/workflows/manager-spacing.yml` and new
+`scripts/search-runtime.scheduler-v1.sha256` locally on
+`codex/scheduler-runtime-qa`, for review before push. Preserve v1's 106 entries and
+bytes against #469. Declare exactly three scheduler additions and only reviewed
+core/Manager rehashes; report actual checkout identity. Pending candidate hashes
+must stop execution. Synthetic deletion, duplicate, undeclared-addition and
+unexpected-hash mutations must fail before browser work.
+
+These file sets can proceed independently; final candidate hashes depend on
+X26's frozen runtime. No owner transfer, X25 renewal, #485 unfreeze, product edit,
+merge or production deployment. Do not bring #485's rollup or Manager baseline
+into this candidate. New desktop-dialog behavior remains subject to preview
+review. This record is docs-only; it is not a claim that infrastructure changes
+or final hashes have passed review.
+
+
 **H-X53 · X14/X15 may add the two approved branch-only deployment stops.**
 
 Jorge approved the automatic-deployment safeguard on 18 October at 23:12:17 UTC
