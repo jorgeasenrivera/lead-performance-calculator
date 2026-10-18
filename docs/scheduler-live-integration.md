@@ -16,8 +16,10 @@ is the first of the live pieces. **Nothing imports it. Nothing is activated.**
 
 ## What is not here
 
-- **`src/Manager.jsx` is untouched.** It is held until the owner of #485 acknowledges a
-  serialized handoff. No import, no entry button, no open and close state.
+- **`src/Manager.jsx` is untouched on this branch.** #485's owner has frozen its branch
+  (H-X52), so the bounded Manager patch is written and checked, but it is not pushed: it
+  would turn the preview's Manager pin and the frozen runtime manifest red. See "The
+  Manager patch" below.
 - **No parser, endpoint, auth adapter, month transport or projector.** X14 #455, X15 #456,
   X19 #462 and X20 #463 keep their files. This code takes the reader's snapshot as a prop
   and does not import the reader.
@@ -27,7 +29,34 @@ is the first of the live pieces. **Nothing imports it. Nothing is activated.**
 - **No backend, database, schema, credential, permission or deployment change, and no live
   data query.** Every row in the tests and the probe is synthetic.
 
-## The three rules
+## The dashboard entry
+
+`SchedulerCalendarEntry({ store, data, isOff, layout, reported })` in
+`src/scheduler-calendar.jsx` is the one thing the dashboard places. It owns the open and
+closed state (a button on a wide screen, the calendar's own toggle on a phone) and binds
+the store's own records to the calendar: `store.id`, `data.roster`, `data.departed`,
+`data.daysOff`, `data.forcedOff`, `data.presentAnyway`, `data.scheduleSource`, and the
+app's own `isOff(data, id, date)`. The month is the real Eastern business month. Until the
+reader is wired it passes an `idle` snapshot, so the screen says "Deliveries are not
+loaded." and still shows days off; it never stands a number in for a missing one.
+
+## The Manager patch
+
+Eleven added lines in `src/Manager.jsx`, and nothing else: a build-time flag
+`SCHEDULER_CALENDAR` (`import.meta.env.VITE_SCHEDULER_CALENDAR === "1"`, which no deploy
+sets), a lazy import of the entry in the same style as `FenceEditor`, and the entry placed
+twice behind the flag, after `</SignalSchedule>` in `StoreHero` and after the goal card in
+`BoardRoomPhone`. With the flag off nothing renders and the component is a separate chunk
+that is never fetched. Held, not pushed, for two reasons that need their own review:
+
+1. The preview build pins `Manager.jsx` by hash and refuses a changed file. I ran the
+   preview's `patchManager` on the edited file with only the pin changed: every anchor still
+   applies, and its output differs from the old output by exactly those eleven lines.
+   Re-pinning is a change to `build.mjs`, outside the recorded build exception.
+2. `scripts/search-runtime.sha256` lists `Manager.jsx`. Against this base it already
+   reports `LeadPerformanceCalculator.jsx` as a mismatch; the patch adds a second. That manifest is not
+   touched here.
+
 
 1. **Delivered is only a count somebody reported.** A reported zero is a zero. A day with
    no report is `Unknown`, a day still to come is `Pending`, and neither is ever a zero. A
