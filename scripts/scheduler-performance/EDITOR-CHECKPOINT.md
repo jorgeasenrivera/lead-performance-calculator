@@ -57,7 +57,9 @@ a Chromium. For WebKit, `PLAYWRIGHT_BROWSERS_PATH=/workspace/pw-browsers
 PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` as in `HANDOFF-WIP.md`.
 
 Run one probe at a time, in this order, once per engine (`BROWSER=chromium`,
-then `BROWSER=webkit`). Parallel runs caused a false timeout in this environment.
+then `BROWSER=webkit`). One at a time keeps the probes from competing for the machine. An
+earlier timeout seen while five ran in parallel was first attributed to that load; that
+explanation was not established (see the next section).
 
 ```
 for p in probe-editor probe-guided-recovery probe-history probe-navigation-review \
@@ -92,3 +94,18 @@ is not installed here. `npm test`: 1,143 pass. Isolated build passes.
   tools buttons directly (`probe-teams`, `probe-manager`, `probe-mobile-toggle`,
   `probe-import`, `probe-generation` and others) and would need the same setup
   step before they could be used.
+
+## WebKit run in the supported container (added after the results above)
+
+Scratch workflow commit `7c72b81705276a03ae89a39bb961fc9fcbaf6928` ran the 13 probes in WebKit
+one at a time against exactly `6e24ee59865d16899881eba72963d847bf6b3f6a` (run 39087192813, tree
+`5aa3c0ae9e0a9dbead879963c42fedae1fe22296`, Playwright 1.63.0 on the `v1.63.0-noble` image). Twelve
+probes exited 0. `probe-editor-readiness` read `ready: true` with no page errors or failed requests.
+
+**`probe-editor-exclusions` exited 1 in WebKit.** Its Chromium case passed. In WebKit, the click on
+`#day-2026-11-04` right after the viewport goes from 390x900 to 844x390 and back timed out at 15
+seconds, with `#mobile-day-dialog` reported as intercepting pointer events. That is the same
+interception signature as the earlier Chromium timeout, so the sequential run does not support the
+explanation that parallel load caused it. **The cause has not been established.** The failure is
+preserved in the run's artifact and is not being treated as flaky.
+
