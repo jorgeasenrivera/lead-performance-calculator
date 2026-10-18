@@ -11,7 +11,7 @@ is the first of the live pieces. **Nothing imports it. Nothing is activated.**
 | `src/scheduler-calendar-model.mjs` | Pure data contract. No React, no network, no clock of its own. |
 | `src/scheduler-calendar.jsx` | The screen: a month of actual daily deliveries, and for a chosen date who is listed off. Draws what the model returns. |
 | `src/scheduler-calendar.css` | Scoped under `.sc-calendar`, so it cannot reach another screen. The heat scale, cell shapes and colors are the approved calendar's. |
-| `test/scheduler-calendar-model.test.mjs` | 30 synthetic guards for the contract. Part of `npm test`. |
+| `test/scheduler-calendar-model.test.mjs` | 32 synthetic guards for the contract. Part of `npm test`. |
 | `scripts/probe-scheduler-calendar.mjs` | Builds the component alone and checks it in a real browser (Chromium, or WebKit with `FEEL_BROWSER=webkit`). Not part of `npm test`. |
 
 ## What is not here
@@ -40,36 +40,32 @@ app's own `isOff(data, id, date)`. The month is the real Eastern business month.
 reader is wired it passes an `idle` snapshot (and the records are masked whenever `data.__storeId` is not the selected store's id), so the screen says "Deliveries are not
 loaded." and still shows days off; it never stands a number in for a missing one.
 
-## The Manager patch
+## The Manager patch (proposed replacement, held, not pushed)
 
-Eleven added lines in `src/Manager.jsx`, and nothing else: a build-time flag
-`SCHEDULER_CALENDAR` (`import.meta.env.VITE_SCHEDULER_CALENDAR === "1"`, which no deploy
-sets), a lazy import of the entry in the same style as `FenceEditor`, and the entry placed
-twice behind the flag, after `</SignalSchedule>` in `StoreHero` and after the goal card in
-`BoardRoomPhone`. With the flag off nothing renders and the component is a separate chunk
-that is never fetched. Held, not pushed, for two reasons that need their own review:
+The approved experience replaces the old calendar surface instead of sitting beside it, and
+the new view carries no inferred staffing. Under the build-time flag `SCHEDULER_CALENDAR`
+(`import.meta.env.VITE_SCHEDULER_CALENDAR === "1"`, which no deploy sets) the patch:
 
-1. The preview build pins `Manager.jsx` by hash and refuses a changed file. I ran the
-   preview's `patchManager` on the edited file with only the pin changed: every anchor still
-   applies, and its output differs from the old output by exactly those eleven lines.
-   Re-pinning is a change to `build.mjs`, outside the recorded build exception.
-2. `scripts/search-runtime.sha256` lists `Manager.jsx`. Against this base it already
-   reports `LeadPerformanceCalculator.jsx` as a mismatch; the patch adds a second. That manifest is not
+- **Desktop (`StoreHero`):** renders the entry in place of `SignalSchedule`, which removes the
+  "N working today" chip and the old month grid together. The entry is one button in the
+  side rail; the calendar opens as a dialog because the rail is too narrow for full-size
+  dates.
+- **Phone (`BoardRoomPhone`):** hides the old month button (`bp-r1`) and the "N on" button
+  (`bp-r3`, which counts everyone not listed off as working), and adds the compact calendar
+  as the last row of the hero.
+- **Flag off:** every legacy element renders exactly as before. The patch is 15 added lines
+  and no removed or reindented line, plus the lazy import in the style of `FenceEditor`.
+
+It is not pushed, for reasons that need their own review:
+
+1. The preview build pins `Manager.jsx` by hash and refuses a changed file, and its transform
+   removes the same `bp-r1` and `bp-r3` buttons by their text, so the wrapped versions break
+   it. Reconciling that is a `build.mjs` change, outside the recorded build exception.
+2. `scripts/search-runtime.sha256` lists `Manager.jsx`. Against this base it already reports
+   `LeadPerformanceCalculator.jsx` as a mismatch; the patch adds a second. That manifest is not
    touched here.
-
-
-1. **Delivered is only a count somebody reported.** A reported zero is a zero. A day with
-   no report is `Unknown`, a day still to come is `Pending`, and neither is ever a zero. A
-   month with no reported day has no total (`null`), not a total of zero.
-2. **Off is only a day somebody listed.** Not being listed off does not make a person On.
-   Everyone else is "Not listed off", in a closed list, with a line saying so. A person
-   is called Present only when a manager said so (`presentAnyway`).
-3. **Another store's, month's or session's answer is no answer.** The snapshot carries the
-   store, month and principal epoch it was fetched for, and all three must match what is
-   on screen and what the caller holds now, or the month shows as unavailable. A caller
-   that passes no epoch gets no deliveries at all, so nothing shows until a real reader is
-   wired. The records are checked the same way: the loaded document must name the selected
-   store (`data.__storeId`), or no person, day off or schedule file from it is shown.
+3. Hiding the on/off surfaces and replacing the desktop schedule chip are visible changes on
+   the dashboard, so they need Jorge's approval and a look on a phone (Rule 5).
 
 ## Inputs, by the keys the app already uses
 
@@ -102,7 +98,8 @@ timestamp and a known basis, and a New and Used split that is either both null o
 the count. The other statuses need a null count, null split and null `asOf`. One bad row, a
 duplicate or missing date, or a date outside the month makes the whole month unavailable,
 as the reader's own projection does. A count with no timestamp is never coloured and never
-added to a total. A date or month that cannot be read fails closed and does not throw.
+added to a total. A date or month that cannot be read fails closed and does not throw. A month whose days
+each fit a safe integer but whose sum does not is unavailable, never a rounded total.
 
 ### How the states read
 
