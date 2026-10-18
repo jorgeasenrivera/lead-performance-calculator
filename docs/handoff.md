@@ -619,6 +619,45 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X53 · X14/X15 may add the two approved branch-only deployment stops.**
+
+Jorge approved the automatic-deployment safeguard on 18 October at 23:12:17 UTC
+(message `Sentinel_7d2b706966e081918ef113793b98498b`). The board now excepts exactly
+two `vercel.json` entries from C93 for the existing X14/X15 owner, Codex thread
+`01a0f2e1-c445-749c-90b3-7c08aa06e0df`:
+
+```json
+"git": {
+  "deploymentEnabled": {
+    "codex/report-delivery-foundation": false,
+    "codex/delivery-server-path": false
+  }
+}
+```
+
+Merge these entries into existing configuration rather than replacing unrelated
+settings. No wildcard, global switch, main/production change or access/security
+change. Apply on the two named development branches before publishing backend
+changes, then verify that automatic deployment is suppressed and GitHub checks
+still run. This record changes docs only; it does not claim the safeguard has
+already been installed or verified. No backend activation or production release.
+
+Verified C93 owner: Claude session
+`https://claude.ai/code/session_01WCb22Cxr3GgkEa8u4GWumF`, from signed privacy/support
+merge `c1be17d` (#420). C93 keeps all other configuration, privacy/support, native
+and service-worker scope, and its App Review/demo protections. No owner transfer
+or claim renewal. The explicit approval supplies this bounded exception; no
+separate owner acknowledgment is required by the recorded C93 scope. This does
+not claim the Claude session has acknowledged this handoff.
+
+Last verified dependency heads remain #455 `2f537e5f1e1602cb18404cdebeb812dbf41991c9`
+and #456 `f3af0e0159e42c2de4737041e31f106dbc40f27a`. The same owner is preparing
+source-only count fixes for independent review. Preserve fractional employee
+credits, known zero, unknown null and optional splits; this configuration scope
+does not broaden that work or clear its release gates. No unrelated merge is
+needed to obtain this safeguard. Re-enabling deployment needs a later decision.
+
+
 **H-X52 · #485 owner freeze acknowledged; bounded X26 Manager work may start.**
 
 On 18 October the parent coordinator verified the latest response from Claude
