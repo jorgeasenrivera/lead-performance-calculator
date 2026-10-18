@@ -329,3 +329,349 @@ test("the helper reads no clock, store, network or file, and imports nothing", (
     assert.equal(bad.test(src), false, String(bad));
   for (const name of ["Audi", "Daytona", "ECCCO"]) assert.equal(new RegExp(name, "i").test(src), false, `${name} is not named in the helper`);
 });
+
+/* =========================================================================
+   Second review (R1 to R3). These were written before the helper was changed
+   and failed against c367f3c; the failing run is kept with the review packet.
+   ========================================================================= */
+
+const ALL_DAYS = { sun: "09:00", mon: "09:00", tue: "09:00", wed: "09:00", thu: "09:00", fri: "09:00", sat: "09:00" };
+const POLICY_SETS = [
+  {}, { offsetPolicy: "wall" }, { offsetPolicy: "elapsed" },
+  { offsetPolicy: "elapsed", gapPolicy: "later" }, { offsetPolicy: "wall", gapPolicy: "earlier" },
+  { gapPolicy: "later", foldPolicy: "second" }, { offsetPolicy: "wall", foldPolicy: "first" },
+];
+const ZONES = ["UTC", NY, "Pacific/Kiritimati"];
+
+/* ---- R1: a day has to be on the calendar ---- */
+
+test("R1: a day that is not on the calendar is invalid-day under every policy and zone, before any zone work", () => {
+  const impossible = ["2026-02-30", "2026-02-29", "2100-02-29", "1900-02-29", "2026-04-31", "2026-06-31", "2026-09-31", "2026-11-31",
+    "2026-00-10", "2026-13-01", "2026-01-00", "2026-01-32", "2026-12-99", "2026-99-99", "0000-00-00", "0026-02-30"];
+  for (const day of impossible) for (const tz of ZONES) for (const p of POLICY_SETS) {
+    const r = openingInstant({ day, openingHm: "09:00", tz, ...p });
+    assert.equal(r.ok, false, `${day} ${tz} ${JSON.stringify(p)}`);
+    assert.equal(r.reason, "invalid-day", `${day} ${tz} ${JSON.stringify(p)}`);
+  }
+  /* The day is looked at first: a bad zone or a bad time does not hide it. */
+  assert.equal(openingInstant({ day: "2026-02-30", openingHm: "09:00", tz: "Mars/Base" }).reason, "invalid-day");
+  assert.equal(openingInstant({ day: "2026-02-30", openingHm: "nine", tz: NY }).reason, "invalid-day");
+  assert.equal(openingInstant({ day: "2026-02-30", openingHm: "09:00", tz: "UTC", offsetMinutes: -5 }).reason, "invalid-day");
+  for (const day of ["2026-2-3", "2026/02/03", "", " 2026-02-03", "2026-02-03 ", "2026-02-03T00:00", null, undefined, 20260203, {}, [], true])
+    assert.equal(openingInstant({ day, openingHm: "09:00", tz: "UTC" }).reason, "invalid-day", String(day));
+});
+
+test("R1: leap days are valid when the year is a leap year, and the day before and after are right", () => {
+  for (const [day, want] of [["2024-02-29", "2024-02-29T08:00:00.000Z"], ["2028-02-29", "2028-02-29T08:00:00.000Z"],
+    ["2000-02-29", "2000-02-29T08:00:00.000Z"], ["2400-02-29", "2400-02-29T08:00:00.000Z"], ["2026-04-30", "2026-04-30T08:00:00.000Z"],
+    ["2026-12-31", "2026-12-31T08:00:00.000Z"]]) {
+    for (const p of POLICY_SETS) assert.equal(openingInstant({ day, openingHm: "09:00", tz: "UTC", ...p }).opensAt, want, `${day} ${JSON.stringify(p)}`);
+  }
+  assert.equal(openingInstant({ day: "2024-02-29", openingHm: "09:00", tz: NY }).opensAt, "2024-02-29T13:00:00.000Z"); // 08:00 EST
+  assert.equal(openingInstant({ day: "2024-03-01", openingHm: "00:30", tz: "UTC" }).opensAt, "2024-02-29T23:30:00.000Z");
+  assert.equal(openingInstant({ day: "2100-03-01", openingHm: "00:30", tz: "UTC" }).opensAt, "2100-02-28T23:30:00.000Z"); // 2100 is not a leap year
+});
+
+test("R1: years before 1000 are an explicit unsupported result, never remapped to the 1900s", () => {
+  for (const day of ["0000-01-01", "0001-01-01", "0026-02-28", "0099-12-31", "0100-01-01", "0400-02-29", "0999-12-31"])
+    for (const tz of ZONES) for (const p of POLICY_SETS) {
+      const r = openingInstant({ day, openingHm: "09:00", tz, ...p });
+      assert.deepEqual([r.ok, r.reason], [false, "day-out-of-range"], `${day} ${tz} ${JSON.stringify(p)}`);
+    }
+  /* 0100-02-29 is not a real day (a century year, not divisible by 400), so it is invalid-day, not out of range. */
+  assert.equal(openingInstant({ day: "0100-02-29", openingHm: "09:00", tz: "UTC" }).reason, "invalid-day");
+  assert.equal(openingInstant({ day: "10000-01-01", openingHm: "09:00", tz: "UTC" }).reason, "invalid-day");
+});
+
+/* ---- R2: moments and days have to be representable and in range ---- */
+
+const UTC_ALL = (o = {}) => base({ tz: "UTC", openingHours: ALL_DAYS, ...o });
+const MIN_OK = Date.UTC(1000, 0, 1);              // 1000-01-01T00:00:00.000Z
+const MAX_OK = 253402300799999;                   // 9999-12-31T23:59:59.999Z
+
+test("R2: moments that cannot be a date, or are outside 1000 to 9999, are invalid-now with no plan", () => {
+  const bad = [Number.MAX_VALUE, -Number.MAX_VALUE, 8640000000000000, -8640000000000000, 8640000000000001, Infinity, NaN,
+    new Date("0001-10-19T12:00:00Z"), new Date(8640000000000000), new Date(-8640000000000000), new Date(NaN),
+    MIN_OK - 1, MAX_OK + 1, new Date(MIN_OK - 1), new Date(MAX_OK + 1), "2026-10-19T12:00:00Z", 10n];
+  for (const now of bad) {
+    const r = decideRoomNow(UTC_ALL({ now }));
+    assert.deepEqual([r.status, r.reason, r.plan], ["unresolved", "invalid-now", null], String(now));
+  }
+});
+
+test("R2: the first and last accepted moments, as a Date and as a number, decide the same way", () => {
+  const first = decideRoomNow(UTC_ALL({ now: MIN_OK }));
+  assert.equal(first.status, "pending"); assert.equal(first.day, "1000-01-01"); assert.equal(first.opensAt, "1000-01-01T08:00:00.000Z");
+  assert.deepEqual(first, decideRoomNow(UTC_ALL({ now: new Date(MIN_OK) })));
+  const last = decideRoomNow(UTC_ALL({ now: MAX_OK }));
+  assert.equal(last.status, "open"); assert.equal(last.day, "9999-12-31"); assert.equal(last.rowKey, "s1:9999-12-31");
+  assert.equal(last.early, null); assert.equal(last.earlyReason, "day-out-of-range"); // there is no next day to look at
+  assert.deepEqual(last, decideRoomNow(UTC_ALL({ now: new Date(MAX_OK) })));
+  const noon = decideRoomNow(UTC_ALL({ now: new Date("9999-12-31T12:00:00Z") }));
+  assert.equal(noon.status, "open"); assert.equal(noon.opensAt, "9999-12-31T08:00:00.000Z"); assert.equal(noon.early, null);
+  assert.equal(decideRoomNow(UTC_ALL({ now: at("2026-10-19T14:00:00Z") })).earlyReason, null);
+});
+
+test("R2: the store's own day has to be in range too, not only the instant", () => {
+  /* In New York the instant 1000-01-01T00:00Z is still 31 December 999 (and the zone then ran on local mean time). */
+  assert.equal(decideRoomNow(base({ openingHours: ALL_DAYS, now: MIN_OK })).reason, "invalid-now");
+  const ny = decideRoomNow(base({ openingHours: ALL_DAYS, now: Date.UTC(1000, 0, 2) }));
+  assert.equal(ny.day, "1000-01-01"); assert.notEqual(ny.reason, "invalid-now"); assert.equal(ny.status, "open");
+  /* In Kiritimati (UTC+14) the last UTC moment is already 1 January 10000. */
+  assert.equal(decideRoomNow(base({ tz: "Pacific/Kiritimati", openingHours: ALL_DAYS, now: new Date("9999-12-31T12:00:00Z") })).reason, "invalid-now");
+  /* 9999-12-30T12:00Z is 02:00 on the 31st there: accepted, and not yet 08:00, so pending. */
+  const kir = decideRoomNow(base({ tz: "Pacific/Kiritimati", openingHours: ALL_DAYS, now: new Date("9999-12-30T12:00:00Z") }));
+  assert.deepEqual([kir.status, kir.day, kir.opensAt], ["pending", "9999-12-31", "9999-12-30T18:00:00.000Z"]);
+});
+
+test("R2: an opening that would fall on a day outside the range is named, under every policy", () => {
+  for (const p of POLICY_SETS) for (const hm of ["00:00", "00:30", "00:59"]) {
+    const r = openingInstant({ day: "1000-01-01", openingHm: hm, tz: "UTC", ...p });
+    assert.deepEqual([r.ok, r.reason], [false, "day-out-of-range"], `${hm} ${JSON.stringify(p)}`);
+  }
+  assert.equal(openingInstant({ day: "1000-01-01", openingHm: "00:00", tz: "UTC", offsetMinutes: 0 }).opensAt, "1000-01-01T00:00:00.000Z");
+  assert.equal(openingInstant({ day: "1000-01-01", openingHm: "01:00", tz: "UTC" }).opensAt, "1000-01-01T00:00:00.000Z");
+  assert.equal(openingInstant({ day: "9999-12-31", openingHm: "23:30", tz: "UTC" }).opensAt, "9999-12-31T22:30:00.000Z");
+  assert.equal(openingInstant({ day: "9999-12-31", openingHm: "09:00", tz: NY }).opensAt, "9999-12-31T13:00:00.000Z");
+  assert.equal(openingInstant({ day: "9999-12-31", openingHm: "23:30", tz: "Pacific/Kiritimati" }).opensAt, "9999-12-31T08:30:00.000Z");
+  /* Through the decision: the day itself is reported unresolved, with no plan. */
+  const d = decideRoomNow(UTC_ALL({ openingHours: { ...ALL_DAYS, ...Object.fromEntries(Object.keys(ALL_DAYS).map((k) => [k, "00:30"])) }, now: MIN_OK }));
+  assert.deepEqual([d.status, d.reason, d.plan], ["unresolved", "day-out-of-range", null]);
+});
+
+test("R2: an old year in a zone that then kept local mean time is one instant, not a false gap", () => {
+  const a = openingInstant({ day: "1800-06-15", openingHm: "09:00", tz: NY });
+  assert.equal(a.ok, true);
+  assert.equal(a.opensAt, "1800-06-15T12:56:02.000Z"); // 08:00 at UTC-4:56:02
+  assert.equal(openingInstant({ day: "1000-06-15", openingHm: "09:00", tz: NY }).ok, true);
+});
+
+test("R2: no public entry point throws, whatever it is given", () => {
+  const weird = [undefined, null, NaN, Infinity, -Infinity, Number.MAX_VALUE, -Number.MAX_VALUE, 8.64e15, 8.64e15 + 1, -8.64e15, 0, -0, 1.5, -1,
+    "", "x", "2026-02-30", "0001-01-01", "9999-12-31", "10000-01-01", true, false, [], {}, [1], () => 1, new Date(NaN), new Date(8.64e15),
+    new Date(-8.64e15), new Date("0001-10-19T12:00:00Z"), new Date("9999-12-31T12:00:00Z"), 10n, Symbol("s"),
+    { toString() { throw new Error("no"); } }, { valueOf() { throw new Error("no"); } }];
+  const okInstant = { day: "2026-10-19", openingHm: "09:00", tz: "UTC" };
+  const okRoom = { config: cfgOf({ floor: true, line: true, online: true }), storeId: "s1", room: "floor", tz: "UTC", openingHours: ALL_DAYS, now: 1760875200000 };
+  let calls = 0;
+  for (const v of weird) {
+    const out = [
+      roomEnabled(v, v, v), enabledRooms(v, v), rowKeyFor(v, v, v), openingInstant(v), decideRoomNow(v),
+      ...Object.keys(okInstant).concat(["offsetMinutes", "offsetPolicy", "gapPolicy", "foldPolicy"]).map((k) => openingInstant({ ...okInstant, [k]: v })),
+      ...Object.keys(okRoom).concat(["closedDates", "offsetMinutes", "offsetPolicy", "gapPolicy", "foldPolicy"]).map((k) => decideRoomNow({ ...okRoom, [k]: v })),
+    ];
+    calls += out.length;
+    assert.equal(typeof out[0].on, "boolean"); assert.ok(Array.isArray(out[1]));
+    assert.ok(out[2] === null || typeof out[2] === "string");
+    for (const r of out.slice(3)) assert.ok(r && typeof r === "object" && (typeof r.ok === "boolean" || typeof r.status === "string"));
+    for (const r of out.slice(3)) if (r.status) assert.ok(r.plan === null || (r.plan && r.plan.kind === "ensure-row"));
+  }
+  assert.equal(calls, weird.length * 23); // 5 direct calls, 7 openingInstant fields, 11 decideRoomNow fields, for every value
+  assert.equal(rowKeyFor("floor", "s1", "2026-02-30"), null);
+  assert.equal(rowKeyFor("floor", "s1", "0026-02-28"), null);
+  assert.equal(rowKeyFor("floor", "bad id", "2026-10-19"), null);
+  assert.equal(rowKeyFor("kitchen", "s1", "2026-10-19"), null);
+});
+
+/* ---- R3: candidates are the instants the named outcomes would be ---- */
+
+const iso = (ms) => new Date(ms).toISOString();
+
+test("R3: explicit elapsed, spring forward 02:30: the candidates are the room-opening instants, an hour earlier than the store's", () => {
+  const o = { day: "2026-03-08", openingHm: "02:30", tz: NY, offsetPolicy: "elapsed" };
+  const none = openingInstant(o);
+  assert.deepEqual([none.ok, none.reason], [false, "gap-policy-required"]);
+  assert.deepEqual(none.candidates, { earlier: "2026-03-08T05:30:00.000Z", later: "2026-03-08T06:30:00.000Z" });
+  assert.equal(openingInstant({ ...o, gapPolicy: "earlier" }).opensAt, none.candidates.earlier);
+  assert.equal(openingInstant({ ...o, gapPolicy: "later" }).opensAt, none.candidates.later);
+  assert.equal(none.candidatesFor, "room-opening");
+});
+
+test("R3: explicit elapsed, fall back 01:30: the same", () => {
+  const o = { day: "2026-11-01", openingHm: "01:30", tz: NY, offsetPolicy: "elapsed" };
+  const none = openingInstant(o);
+  assert.deepEqual([none.ok, none.reason], [false, "fold-policy-required"]);
+  assert.deepEqual(none.candidates, { first: "2026-11-01T04:30:00.000Z", second: "2026-11-01T05:30:00.000Z" });
+  assert.equal(openingInstant({ ...o, foldPolicy: "first" }).opensAt, none.candidates.first);
+  assert.equal(openingInstant({ ...o, foldPolicy: "second" }).opensAt, none.candidates.second);
+});
+
+test("R3: for every offset, zone and gap or fold time, each elapsed candidate equals the outcome of choosing it", () => {
+  const cases = [
+    [NY, "2026-03-08", ["02:00", "02:15", "02:30", "02:59"], "gap"], [NY, "2026-11-01", ["01:00", "01:30", "01:59"], "fold"],
+    ["Europe/London", "2026-03-29", ["01:00", "01:30", "01:59"], "gap"], ["Europe/London", "2026-10-25", ["01:00", "01:30", "01:59"], "fold"],
+    ["Australia/Lord_Howe", "2026-10-04", ["02:00", "02:10", "02:29"], "gap"],   // a 30 minute gap
+    ["Australia/Lord_Howe", "2026-04-05", ["01:30", "01:45", "01:59"], "fold"],  // a 30 minute fold
+  ];
+  let checked = 0;
+  for (const [tz, day, times, kind] of cases) for (const hm of times) for (const offsetMinutes of [0, 15, 30, 60, 90, 180]) {
+    const o = { day, openingHm: hm, tz, offsetMinutes, offsetPolicy: "elapsed" };
+    const none = openingInstant(o);
+    const label = `${tz} ${day} ${hm} -${offsetMinutes}`;
+    assert.equal(none.ok, false, label);
+    const [a, b] = kind === "gap" ? ["earlier", "later"] : ["first", "second"];
+    assert.equal(none.reason, kind === "gap" ? "gap-policy-required" : "fold-policy-required", label);
+    assert.deepEqual(Object.keys(none.candidates), [a, b], label);
+    const pol = kind === "gap" ? "gapPolicy" : "foldPolicy";
+    assert.equal(openingInstant({ ...o, [pol]: a }).opensAt, none.candidates[a], label);
+    assert.equal(openingInstant({ ...o, [pol]: b }).opensAt, none.candidates[b], label);
+    checked += 2;
+  }
+  assert.equal(checked, 19 * 6 * 2); // 19 clock times in six cases, six offsets, two choices each
+});
+
+test("R3: a zero offset means the candidates are the store's own opening instants", () => {
+  const spring = openingInstant({ day: "2026-03-08", openingHm: "02:30", tz: NY, offsetMinutes: 0, offsetPolicy: "elapsed" });
+  assert.deepEqual(spring.candidates, { earlier: "2026-03-08T06:30:00.000Z", later: "2026-03-08T07:30:00.000Z" });
+  const fall = openingInstant({ day: "2026-11-01", openingHm: "01:30", tz: NY, offsetMinutes: 0, offsetPolicy: "elapsed" });
+  assert.deepEqual(fall.candidates, { first: "2026-11-01T05:30:00.000Z", second: "2026-11-01T06:30:00.000Z" });
+});
+
+test("R3: non-60 offsets, spring forward and fall back", () => {
+  const s = (offsetMinutes) => openingInstant({ day: "2026-03-08", openingHm: "02:30", tz: NY, offsetMinutes, offsetPolicy: "elapsed" }).candidates;
+  assert.deepEqual(s(30), { earlier: "2026-03-08T06:00:00.000Z", later: "2026-03-08T07:00:00.000Z" });
+  assert.deepEqual(s(90), { earlier: "2026-03-08T05:00:00.000Z", later: "2026-03-08T06:00:00.000Z" });
+  const f = (offsetMinutes) => openingInstant({ day: "2026-11-01", openingHm: "01:30", tz: NY, offsetMinutes, offsetPolicy: "elapsed" }).candidates;
+  assert.deepEqual(f(30), { first: "2026-11-01T05:00:00.000Z", second: "2026-11-01T06:00:00.000Z" });
+  assert.deepEqual(f(90), { first: "2026-11-01T04:00:00.000Z", second: "2026-11-01T05:00:00.000Z" });
+});
+
+test("R3: explicit wall candidates were already room-opening instants, and still equal their outcomes", () => {
+  const w = { day: "2026-03-08", openingHm: "03:30", tz: NY, offsetPolicy: "wall" };
+  const none = openingInstant(w);
+  assert.deepEqual(none.candidates, { earlier: "2026-03-08T06:30:00.000Z", later: "2026-03-08T07:30:00.000Z" });
+  assert.equal(openingInstant({ ...w, gapPolicy: "earlier" }).opensAt, none.candidates.earlier);
+  assert.equal(openingInstant({ ...w, gapPolicy: "later" }).opensAt, none.candidates.later);
+  const f = { day: "2026-11-01", openingHm: "02:30", tz: NY, offsetPolicy: "wall" };
+  const fold = openingInstant(f);
+  assert.equal(openingInstant({ ...f, foldPolicy: "first" }).opensAt, fold.candidates.first);
+  assert.equal(openingInstant({ ...f, foldPolicy: "second" }).opensAt, fold.candidates.second);
+  assert.equal(fold.candidatesFor, "room-opening");
+});
+
+test("R3: with no offset policy, both branches are kept with their own requirements", () => {
+  /* The opening itself is in the gap: elapsed needs a gap policy; wall resolves (01:30 EST). */
+  const a = openingInstant({ day: "2026-03-08", openingHm: "02:30", tz: NY });
+  assert.deepEqual([a.ok, a.reason], [false, "gap-policy-required"]);
+  assert.deepEqual(a.branches.elapsed, { ok: false, reason: "gap-policy-required", candidates: { earlier: "2026-03-08T05:30:00.000Z", later: "2026-03-08T06:30:00.000Z" } });
+  assert.deepEqual(a.branches.wall, { ok: true, opensAt: "2026-03-08T06:30:00.000Z" });
+  assert.deepEqual(a.candidates, a.branches.elapsed.candidates);
+  assert.equal(a.candidatesFor, "room-opening");
+  /* The hour before lands in the gap: elapsed resolves; wall needs a gap policy. */
+  const b = openingInstant({ day: "2026-03-08", openingHm: "03:00", tz: NY });
+  assert.deepEqual(b.branches.elapsed, { ok: true, opensAt: "2026-03-08T06:00:00.000Z" });
+  assert.deepEqual(b.branches.wall, { ok: false, reason: "gap-policy-required", candidates: { earlier: "2026-03-08T06:00:00.000Z", later: "2026-03-08T07:00:00.000Z" } });
+  assert.deepEqual(b.candidates, b.branches.wall.candidates);
+  /* Both resolve and disagree: said so, with both. */
+  const c = openingInstant({ day: "2026-03-08", openingHm: "03:00", tz: NY, gapPolicy: "later" });
+  assert.equal(c.reason, "offset-policy-required");
+  assert.equal(c.candidatesFor, "room-opening");
+  assert.deepEqual(c.candidates, { wall: "2026-03-08T07:00:00.000Z", elapsed: "2026-03-08T06:00:00.000Z" });
+  assert.deepEqual(c.branches, { wall: { ok: true, opensAt: "2026-03-08T07:00:00.000Z" }, elapsed: { ok: true, opensAt: "2026-03-08T06:00:00.000Z" } });
+  /* Both need a policy: both are shown, in their own terms. */
+  const d = openingInstant({ day: "2026-11-01", openingHm: "02:00", tz: NY, offsetMinutes: 30 });
+  assert.equal(d.ok, false);
+  assert.deepEqual(Object.keys(d.branches).sort(), ["elapsed", "wall"]);
+  /* Both branches need a policy for the same time of day, and they name the same room-opening instants,
+     so whichever is reported first, the candidates are the same ones. */
+  const both = openingInstant({ day: "2026-03-08", openingHm: "02:45", tz: NY, offsetMinutes: 30 });
+  assert.deepEqual([both.ok, both.reason], [false, "gap-policy-required"]);
+  assert.deepEqual(both.branches.elapsed.candidates, { earlier: "2026-03-08T06:15:00.000Z", later: "2026-03-08T07:15:00.000Z" });
+  assert.deepEqual(both.branches.wall.candidates, both.branches.elapsed.candidates);
+  assert.deepEqual(both.candidates, both.branches.elapsed.candidates);
+  assert.equal(openingInstant({ day: "2026-03-08", openingHm: "02:45", tz: NY, offsetMinutes: 30, offsetPolicy: "wall", gapPolicy: "earlier" }).opensAt, both.candidates.earlier);
+  assert.equal(openingInstant({ day: "2026-03-08", openingHm: "02:45", tz: NY, offsetMinutes: 30, offsetPolicy: "elapsed", gapPolicy: "later" }).opensAt, both.candidates.later);
+  /* An explicit policy has one branch and no branches block. */
+  assert.equal("branches" in openingInstant({ day: "2026-03-08", openingHm: "02:30", tz: NY, offsetPolicy: "elapsed" }), false);
+});
+
+test("R3: the decision carries the same candidates and branches", () => {
+  const d = decideRoomNow(base({ openingHours: { ...WEEK, sun: "02:30" }, now: at("2026-03-08T12:00:00Z") }));
+  assert.equal(d.status, "unresolved"); assert.equal(d.reason, "gap-policy-required");
+  assert.deepEqual(d.candidates, { earlier: "2026-03-08T05:30:00.000Z", later: "2026-03-08T06:30:00.000Z" });
+  assert.equal(d.branches.wall.ok, true); assert.equal(d.plan, null);
+});
+
+/* =========================================================================
+   Third review (R4). Written before the helper was changed; it failed against
+   revision 2 and the failing run is kept with the review packet.
+
+   With no offset policy the result shows both branches. Each branch has to be
+   exactly what choosing that policy would have returned, range check included.
+   ========================================================================= */
+
+/* The outcome of each branch, as the omitted-policy result shows it, against the
+   outcome of asking for that policy explicitly with everything else the same. */
+function checkBranchesAgree(a, label) {
+  const r = openingInstant(a);
+  if (!r.branches) return { branches: 0 };
+  assert.deepEqual(Object.keys(r.branches).sort(), ["elapsed", "wall"], label);
+  for (const name of ["wall", "elapsed"]) {
+    const b = r.branches[name], x = openingInstant({ ...a, offsetPolicy: name });
+    assert.equal(b.ok, x.ok, `${label} ${name}: ok`);
+    if (x.ok) assert.equal(b.opensAt, x.opensAt, `${label} ${name}: opensAt`);
+    else { assert.equal(b.reason, x.reason, `${label} ${name}: reason`); assert.deepEqual(b.candidates, x.candidates, `${label} ${name}: candidates`); }
+  }
+  /* And the top level says what the branches say: the first that cannot be used is the reason. */
+  const first = !r.branches.elapsed.ok ? r.branches.elapsed : !r.branches.wall.ok ? r.branches.wall : null;
+  if (first) { assert.equal(r.ok, false, label); assert.equal(r.reason, first.reason, `${label}: top-level reason`); assert.deepEqual(r.candidates, first.candidates, `${label}: top-level candidates`); }
+  return { branches: 2 };
+}
+
+test("R4: the lower boundary, the reviewer's own example, branch by branch", () => {
+  const a = { day: "1000-01-01", openingHm: "00:30", tz: "UTC" };
+  const r = openingInstant(a);
+  assert.deepEqual([r.ok, r.reason], [false, "day-out-of-range"]);
+  assert.deepEqual(r.branches.wall, { ok: false, reason: "day-out-of-range" });
+  assert.deepEqual(r.branches.elapsed, { ok: false, reason: "day-out-of-range" }, "an instant on 31 December 999 is not a successful branch");
+  assert.deepEqual(openingInstant({ ...a, offsetPolicy: "elapsed" }), { ok: false, reason: "day-out-of-range" });
+  assert.deepEqual(openingInstant({ ...a, offsetPolicy: "wall" }), { ok: false, reason: "day-out-of-range" });
+});
+
+test("R4: every branch of every omitted-policy result equals the explicit policy's result, at both ends of the range and at modern clock changes", () => {
+  let results = 0, branches = 0, boundary = 0;
+  const zones = ["UTC", NY, "Asia/Kolkata", "Europe/London", "Pacific/Kiritimati"];
+  for (const tz of zones) for (const [day, hms] of [["1000-01-01", ["00:00", "00:30", "00:59", "01:00", "01:30", "09:00"]], ["1000-01-02", ["00:00", "00:30", "01:00"]],
+    ["9999-12-31", ["00:00", "00:30", "09:00", "23:30"]], ["9999-12-30", ["23:30"]]])
+    for (const openingHm of hms) for (const offsetMinutes of [0, 15, 30, 60, 90, 1440]) {
+      const out = checkBranchesAgree({ day, openingHm, tz, offsetMinutes }, `${tz} ${day} ${openingHm} -${offsetMinutes}`);
+      results++; branches += out.branches; if (day === "1000-01-01" && out.branches) boundary++;
+    }
+  /* Modern gap and fold behaviour is untouched: ambiguous branches keep their candidates, with and without a gap or fold policy. */
+  let modern = 0;
+  for (const [tz, day, hms] of [[NY, "2026-03-08", ["02:30", "02:45", "03:00", "03:30"]], [NY, "2026-11-01", ["01:30", "02:00", "02:30"]],
+    ["Europe/London", "2026-03-29", ["01:30", "02:00"]], ["Europe/London", "2026-10-25", ["01:30", "02:00"]], ["Australia/Lord_Howe", "2026-10-04", ["02:10", "02:40"]]])
+    for (const openingHm of hms) for (const offsetMinutes of [0, 30, 60, 90]) for (const p of [{}, { gapPolicy: "later" }, { gapPolicy: "earlier" }, { foldPolicy: "first" }, { foldPolicy: "second" }]) {
+      const out = checkBranchesAgree({ day, openingHm, tz, offsetMinutes, ...p }, `${tz} ${day} ${openingHm} -${offsetMinutes} ${JSON.stringify(p)}`);
+      results++; branches += out.branches; modern += out.branches;
+    }
+  assert.ok(boundary > 0, "some boundary results carried branches");
+  assert.ok(modern > 0, "some modern gap or fold results carried branches");
+  assert.ok(branches % 2 === 0 && results > branches / 2, "and some results carried none, because both branches agreed");
+});
+
+test("R4: when both branches are usable and agree there is no branches block and no change in the answer", () => {
+  const r = openingInstant({ day: "1000-01-02", openingHm: "09:00", tz: "UTC" });
+  assert.deepEqual([r.ok, r.opensAt, r.policyIndependent, "branches" in r], [true, "1000-01-02T08:00:00.000Z", true, false]);
+  assert.equal(openingInstant({ day: "2026-10-19", openingHm: "09:00", tz: NY }).opensAt, "2026-10-19T12:00:00.000Z");
+});
+
+/* =========================================================================
+   Fourth review: two fixed-offset boundary assertions from the independent
+   reviewer. The UTC range applies to the instant that comes out, not only to
+   the store's own opening day. Etc/GMT-5 is UTC+5 all year and Etc/GMT+5 is
+   UTC-5, so there is no clock change here to blame.
+
+   1000-01-01 01:00 less an hour is 00:00 local, which is 19:00Z on
+   31 December 999: the local day is in range and the instant is not.
+   9999-12-31 23:30 less an hour is 22:30 local, which is 03:30Z on
+   1 January 10000: the same at the other end.
+   ========================================================================= */
+
+test("wall result must respect UTC lower bound even when local opening day stays in range", () => {
+  assert.deepEqual(openingInstant({ day: "1000-01-01", openingHm: "01:00", tz: "Etc/GMT-5", offsetPolicy: "wall" }), { ok: false, reason: "day-out-of-range" });
+});
+
+test("wall result must respect UTC upper bound even when local opening day stays in range", () => {
+  assert.deepEqual(openingInstant({ day: "9999-12-31", openingHm: "23:30", tz: "Etc/GMT+5", offsetPolicy: "wall" }), { ok: false, reason: "day-out-of-range" });
+});
