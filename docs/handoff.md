@@ -619,6 +619,32 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X55 · Approved reader completion handoff and local schedule-storage boundary.**
+
+Jorge approved both workstreams at 23:32:51 UTC on 18 October, message
+`Sentinel_503a59435f488191949c30b0bffff151`. Parent Codex thread
+`01a118c8-416c-7086-a222-eef156b1403d` now owns X19/X20 completion on new
+`codex/reported-reader-integration` from #463
+`e84e15fba1898263568f4d002b0b01cf1a5e7e28`. Keep original branches/history intact.
+The delegated reader implementer may edit only the two reported modules, their
+two tests and existing contract documents listed on the board. Local review
+candidate first, no push before independent review, no screen wiring or live call.
+
+The parent may prepare local `codex/scheduler-storage-boundary` with exactly
+`api/_scheduler-store.mjs`, `api/scheduler.mjs`, `test/scheduler-store.test.mjs`,
+`test/scheduler-api.test.mjs`, and `docs/scheduler-publication.md`. Preserve C113's
+owner/files and request its exact artifacts before adaptation. Synthetic injected
+ports only; no live database/security action. This new API branch has no approved
+automatic-deployment suppression yet. Keep its patch local until a separately
+approved safeguard is installed and verified before branch publication. The
+existing two-branch Vercel approval cannot be reused for it.
+
+All release gates remain. No backend activation, merge, deployment, schema/policy,
+credentials/access/security change or live-data write/query. Original X14/X15
+owner retains backend count work; X26 retains UI work. Runtime-QA stays intact,
+and #485 remains frozen. This commit records scope only, not product code.
+
+
 **H-X54 · Parallel infrastructure work, exact files and unchanged owners.**
 
 The coordinator authorized the split recorded on the board. Existing X26 Claude
