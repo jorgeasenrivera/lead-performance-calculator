@@ -76,6 +76,8 @@ const BASES = ["report_sent", "report_received"];
 const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const STORE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+// A session epoch is a counter: whole and never negative, as the reader's own check has it.
+const isEpoch = (n) => Number.isSafeInteger(n) && n >= 0;
 
 const NONE = Object.freeze({ units: null, split: null, asOf: null, level: null, best: false, bestLabel: "" });
 
@@ -122,7 +124,7 @@ export function deliveriesMonth(reported, { storeId, month, today, principalEpoc
   // A snapshot carries the store, month and session it was fetched for. All three must
   // match what is on screen now, or this is another store's, month's or account's answer.
   if (typeof storeId !== "string" || !STORE_ID.test(storeId) || reported.storeId !== storeId || reported.month !== month
-      || !Number.isSafeInteger(principalEpoch) || reported.principalEpoch !== principalEpoch || !Array.isArray(reported.days)) {
+      || !isEpoch(principalEpoch) || reported.principalEpoch !== principalEpoch || !Array.isArray(reported.days)) {
     return unavailableMonth(month, "stale");
   }
   const dates = monthDays(month);
@@ -146,6 +148,13 @@ export function deliveriesMonth(reported, { storeId, month, today, principalEpoc
   });
 
   const reportedRows = days.filter((d) => d.state === "reported");
+  // Every day is a safe integer, but their sum need not be. Past 2^53 a total is a rounded
+  // guess, so there is no total: the month shows as unavailable.
+  let total = 0;
+  for (const d of reportedRows) {
+    if (total > Number.MAX_SAFE_INTEGER - d.units) return unavailableMonth(month, "overflow");
+    total += d.units;
+  }
   const maximum = reportedRows.length ? Math.max(...reportedRows.map((d) => d.units)) : null;
   const bestDays = maximum > 0 ? reportedRows.filter((d) => d.units === maximum).map((d) => d.date) : [];
   const tied = bestDays.length > 1;
@@ -159,7 +168,7 @@ export function deliveriesMonth(reported, { storeId, month, today, principalEpoc
   }
   return Object.freeze({
     available: true, reason: null, days: days.map(Object.freeze),
-    total: reportedRows.length ? reportedRows.reduce((n, d) => n + d.units, 0) : null,
+    total: reportedRows.length ? total : null,
     reportedDays: reportedRows.length, bestDays,
   });
 }
@@ -200,7 +209,7 @@ export function summaryText(model) {
       idle: "Deliveries are not loaded.", loading: "Loading deliveries.",
       denied: "You do not have access to deliveries for this store.",
       unavailable: "Deliveries are unavailable right now.",
-      stale: "Deliveries are unavailable right now.", malformed: "Deliveries are unavailable right now.",
+      stale: "Deliveries are unavailable right now.", malformed: "Deliveries are unavailable right now.", overflow: "Deliveries are unavailable right now.",
     }[model.reason] || "Deliveries are unavailable right now.";
   }
   if (model.total === null) return "No recorded deliveries yet this month.";

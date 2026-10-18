@@ -174,6 +174,37 @@ test("a forged partial snapshot cannot colour a day or add to a total", () => {
   assert.equal(deliveriesMonth(notArray, opts()).available, false);
 });
 
+test("a negative or fractional epoch never matches, even when both sides agree", () => {
+  for (const bad of [-1, -3, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "3", null]) {
+    const m = deliveriesMonth(reported({ "2026-10-01": 5 }, { principalEpoch: bad }), opts({ principalEpoch: bad }));
+    assert.equal(m.available, false, String(bad));
+    assert.equal(m.reason, "stale", String(bad));
+    assert.equal(m.total, null, String(bad));
+  }
+  assert.equal(deliveriesMonth(reported({ "2026-10-01": 5 }, { principalEpoch: 0 }), opts({ principalEpoch: 0 })).available, true, "zero is a valid epoch");
+  assert.equal(deliveriesMonth(reported({ "2026-10-01": 5 }, { principalEpoch: Number.MAX_SAFE_INTEGER }), opts({ principalEpoch: Number.MAX_SAFE_INTEGER })).available, true);
+});
+
+test("a monthly total past the safe integers is unavailable, never rounded", () => {
+  const big = Number.MAX_SAFE_INTEGER;
+  const huge = reported({ "2026-10-01": big, "2026-10-02": big });
+  const m = deliveriesMonth(huge, opts());
+  assert.equal(m.available, false);
+  assert.equal(m.reason, "overflow");
+  assert.equal(m.total, null);
+  assert.ok(m.days.every((d) => d.units === null && d.level === null && !d.best));
+  assert.equal(summaryText(m), "Deliveries are unavailable right now.");
+  // One more than safe by a single vehicle, and spread over many days.
+  const edge = deliveriesMonth(reported({ "2026-10-01": big, "2026-10-02": 1 }), opts());
+  assert.equal(edge.available, false, "2^53 is not a total");
+  const spread = {}; for (let i = 1; i <= 14; i++) spread[`2026-10-${String(i).padStart(2, "0")}`] = Math.floor(big / 7);
+  assert.equal(deliveriesMonth(reported(spread), opts()).available, false, "each day safe, the month not");
+  // Exactly the largest safe total is still exact.
+  const exact = deliveriesMonth(reported({ "2026-10-01": big - 5, "2026-10-02": 5 }), opts());
+  assert.equal(exact.available, true);
+  assert.equal(exact.total, big);
+});
+
 test("a bad month or date fails closed instead of throwing", () => {
   assert.equal(validDate("2026-99-01"), false);
   assert.equal(validDate("2026-10-14"), true);
