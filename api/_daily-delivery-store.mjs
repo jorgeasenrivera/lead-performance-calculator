@@ -110,11 +110,11 @@ export function publicDailyMonth({ storeId, month, records }) {
   return { storeId, month, days: ledger.days.map((day) => {
     if (unresolved.some(({ value }) => !value.businessDate || value.businessDate === day.date))
       return { date: day.date, status: "incomplete", count: null, vehicles: { new: null, used: null }, asOf: null };
-    const known = day.status === "provisional" && Number.isFinite(day.count) && day.count >= 0
+    const known = day.status === "provisional" && Number.isSafeInteger(day.count) && day.count >= 0
       && !!canonicalTimestamp(day.asOf?.timestamp) && canonicalTimestamp(day.asOf.timestamp) === day.asOf.timestamp;
     const split = day.vehicles;
-    const validSplit = known && Number.isFinite(split?.new) && split.new >= 0
-      && Number.isFinite(split?.used) && split.used >= 0 && split.new + split.used === day.count;
+    const validSplit = known && Number.isSafeInteger(split?.new) && split.new >= 0
+      && Number.isSafeInteger(split?.used) && split.used >= 0 && split.new + split.used === day.count;
     return { date: day.date, status: known ? "provisional" : day.status === "provisional" ? "incomplete" : day.status,
       count: known ? day.count : null,
       vehicles: { new: validSplit ? split.new : null, used: validSplit ? split.used : null },

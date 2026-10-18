@@ -492,7 +492,10 @@ function readDailyActivityStoreTotals(lines) {
         return number.test(numeric) && Number.isFinite(Number(numeric.replace(/,/g, "")));
       });
       malformed[tag] ||= !valid;
-      observations[tag].push(valid ? dailyActivityValue(cells[17]) : null);
+      // Store deliveries are whole vehicles; employee credit parsing stays separate.
+      const count = valid ? dailyActivityValue(cells[17]) : null;
+      const wholeToken = /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.0+)?$/.test(cells[17] || "");
+      observations[tag].push(wholeToken && Number.isSafeInteger(count) && count >= 0 ? count : null);
     }
   }
   const counts = {}, conflicts = {}, incomplete = {};

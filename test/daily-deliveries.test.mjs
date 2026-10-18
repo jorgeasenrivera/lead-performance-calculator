@@ -47,7 +47,7 @@ test("printed store must resolve uniquely and agree with the selected store",()=
 test("exact printed totals, including zero, are provisional evidence with raw provenance",()=>{
   const c=candidate();assert.equal(c.status,"provisional");assert.equal(c.count,7);assert.equal(c.isFinal,false);
   assert.equal(c.publicationEligible,false);assert.equal(c.source.sha256.length,64);
-  assert.equal(candidate(0).count,0);assert.equal(candidate(7.5).count,7.5);
+  assert.equal(candidate(0).count,0);assert.equal(candidate(7.5).count,null);
   const without=buildDailyDeliveryEvidence({lines:lines(),metadata,stores,storeId:"fictional-a"});
   assert.equal(without.count,null);assert.equal(without.reason,"raw_source_bytes_required");
   assert.equal(candidate(7,{reportType:"delivery-summary"}).reason,"not_daily_activity");
@@ -185,4 +185,22 @@ test("partial serialized receipts are held, never accepted or dereferenced blind
     const d=deliveryLedger({storeId:"fictional-a",month:"2026-09",candidates:[c]}).days[29];
     assert.equal(d.count,null);assert.equal(d.reason,"raw_source_provenance_required");
   }
+});
+
+
+test("whole-unit evidence and ledger reject invalid totals but retain supported All with unknown split", () => {
+  for (const count of [2.5, Number.MAX_SAFE_INTEGER + 1, 1e308, -1, NaN, Infinity]) {
+    assert.notEqual(candidate(count).status, "provisional");
+    const forged = {...candidate(), count};
+    const day = deliveryLedger({storeId:"fictional-a", month:"2026-09", candidates:[forged]}).days[29];
+    assert.equal(day.count, null);
+    assert.equal(day.status, "incomplete");
+  }
+  for (const value of [2.5, Number.MAX_SAFE_INTEGER + 1, -1]) {
+    const forged = {...candidate(), vehicles:{new:value, used:0}};
+    const day = deliveryLedger({storeId:"fictional-a", month:"2026-09", candidates:[forged]}).days[29];
+    assert.equal(day.count, 7);
+    assert.deepEqual(day.vehicles, {new:null, used:0});
+  }
+  assert.equal(candidate(Number.MAX_SAFE_INTEGER).count, Number.MAX_SAFE_INTEGER);
 });

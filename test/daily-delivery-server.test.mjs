@@ -32,6 +32,30 @@ function response() {
 const request = (change = {}) => ({ method: "GET", query: { store: "fictional-a", month: "2026-09" },
   headers: { authorization: "Bearer token" }, ...change });
 
+test("invalid whole-unit totals hold coverage and cannot leak through persisted projection", async () => {
+  for (const count of [2.5, Number.MAX_SAFE_INTEGER + 1, 1e308, -1]) {
+    const storage = memory();
+    await acceptDailyReport(input(7), {storage, extractLines});
+    const invalid = input(count, {sentAt:"2026-10-01T01:01:00Z", receivedAt:"2026-10-01T01:02:00Z"});
+    assert.equal((await acceptDailyReport(invalid, {storage, extractLines})).status, "held");
+    assert.equal(acceptedOf(storage).length, 1);
+    assert.equal(monthOf(storage).days[29].status, "incomplete");
+    assert.equal(monthOf(storage).days[29].count, null);
+    const records = acceptedOf(storage); records[0].value.count = count;
+    const day = publicDailyMonth({storeId:"fictional-a", month:"2026-09", records}).days[29];
+    assert.equal(day.count, null); assert.equal(day.status, "incomplete");
+  }
+});
+test("fractional or unsafe persisted vehicle splits stay unknown without erasing a valid total", async () => {
+  const storage = memory(); await acceptDailyReport(input(7), {storage, extractLines});
+  for (const vehicles of [{new:2.5,used:4.5}, {new:Number.MAX_SAFE_INTEGER + 1,used:0}, {new:7,used:null}]) {
+    const records = acceptedOf(storage); records[0].value.vehicles = vehicles;
+    const day = publicDailyMonth({storeId:"fictional-a", month:"2026-09", records}).days[29];
+    assert.equal(day.count, 7); assert.deepEqual(day.vehicles, {new:null,used:null});
+  }
+});
+
+
 test("archive is inserted and read back before evidence, with no client-writable keys", async () => {
   const storage = memory(); assert.equal((await acceptDailyReport(input(), { storage, extractLines })).status, "accepted");
   assert.deepEqual(storage.calls.map(([op]) => op), ["insert", "get", "insert", "get", "insert", "get"]);
