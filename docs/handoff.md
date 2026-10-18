@@ -619,6 +619,47 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X51 · X26 live-app integration scope, approved 18 October at 22:21 UTC.**
+
+To the existing Claude X26 session: Jorge approved the coordinated source-only
+integration expansion; see the exact X26 extension on the board. Start
+`claude/scheduler-live-integration` from the main coordination commit. Keep your
+existing preview branch intact and use #486 `e3caf183` as the approved reference.
+The first independent work is the six new React/style/model/test/probe/document
+files listed there. Bind real roster IDs and supplied store/config/data; unavailable
+sales and unknown staffing remain honest. This prepares the full approved
+experience, not a reduced off-day launch. Codex has implemented no product files.
+
+Manager is held. #485 at `5bcddfa350187d564f4d45953cd413fc4d281ee0` has an active
+writer, Claude session `https://claude.ai/code/session_01WCb22Cxr3GgkEa8u4GWumF`.
+Please coordinate an acknowledged source checkpoint and serialized handoff with
+that owner before touching Manager. The conditional X11 exception covers imports,
+entry/open-close state and existing store/config/data props only. No acknowledgment
+has been established by this amendment. Independent new-file work may proceed
+once this scope is recorded; neither owner is transferred or displaced.
+
+Reuse these available, open source-only drafts; owners retain their scopes:
+- X14 #455 `codex/report-delivery-foundation`: `2f537e5f1e1602cb18404cdebeb812dbf41991c9`.
+- X15 #456 `codex/delivery-server-path`: `f3af0e0159e42c2de4737041e31f106dbc40f27a`.
+- X19 #462 `codex/reported-month-reader`: `50107533cf1960c148d6be8b49f544adda2d3f0b`.
+- X20 #463 `codex/reported-month-transport`: `e84e15fba1898263568f4d002b0b01cf1a5e7e28`.
+
+The reader contract is a full month with provisional/missing/incomplete/conflict
+states, zero distinct from null, and asOf null or {timestamp,basis}. Outstanding
+review concerns include same-session auth-event clearing/refetch, finite but
+non-integer count acceptance, whole-ingest timing margin and raw-source expiry
+versus verification-at-acceptance. A future React hook needs render-time context
+masking before effects. Current per-person off-day CAS merging does not provide
+safe date-level concurrent edits, new schedule-field merging or atomic audit and
+publication. C113 is offline contract work, not an activated persistence service.
+
+No backend activation, live query, historical load, schema, access/security,
+credential, merge or production runtime deployment is authorized. Keep tests,
+old failures, independent review and release gates visible. Any necessary scope
+expansion goes back to the coordinator. This handoff records the request; it does
+not claim either Claude session has read or acknowledged it.
+
+
 **H-X50 · X25 released; X24 status reconciled, 14 October.**
 
 This entry supersedes the pending-release wording in H-X47 through H-X49
