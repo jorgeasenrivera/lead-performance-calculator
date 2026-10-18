@@ -17,7 +17,7 @@ on:
 
 env:
   # Head of PR #486 when this was proposed. Change this line to test another commit.
-  SOURCE_SHA: 6e24ee59865d16899881eba72963d847bf6b3f6a
+  SOURCE_SHA: 97d125e2941c42febc98d3876e5ac9eb444cd047
   # The whole matrix. Both the run step and the completeness check read this one list.
   PROBES: >-
     probe-editor probe-guided-recovery probe-history probe-navigation-review
