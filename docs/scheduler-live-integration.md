@@ -11,7 +11,7 @@ is the first of the live pieces. **Nothing imports it. Nothing is activated.**
 | `src/scheduler-calendar-model.mjs` | Pure data contract. No React, no network, no clock of its own. |
 | `src/scheduler-calendar.jsx` | The screen: a month of actual daily deliveries, and for a chosen date who is listed off. Draws what the model returns. |
 | `src/scheduler-calendar.css` | Scoped under `.sc-calendar`, so it cannot reach another screen. The heat scale, cell shapes and colors are the approved calendar's. |
-| `test/scheduler-calendar-model.test.mjs` | 27 synthetic guards for the contract. Part of `npm test`. |
+| `test/scheduler-calendar-model.test.mjs` | 30 synthetic guards for the contract. Part of `npm test`. |
 | `scripts/probe-scheduler-calendar.mjs` | Builds the component alone and checks it in a real browser (Chromium, or WebKit with `FEEL_BROWSER=webkit`). Not part of `npm test`. |
 
 ## What is not here
@@ -31,13 +31,13 @@ is the first of the live pieces. **Nothing imports it. Nothing is activated.**
 
 ## The dashboard entry
 
-`SchedulerCalendarEntry({ store, data, isOff, layout, reported })` in
+`SchedulerCalendarEntry({ store, data, isOff, layout, reported, principalEpoch })` in
 `src/scheduler-calendar.jsx` is the one thing the dashboard places. It owns the open and
 closed state (a button on a wide screen, the calendar's own toggle on a phone) and binds
 the store's own records to the calendar: `store.id`, `data.roster`, `data.departed`,
 `data.daysOff`, `data.forcedOff`, `data.presentAnyway`, `data.scheduleSource`, and the
 app's own `isOff(data, id, date)`. The month is the real Eastern business month. Until the
-reader is wired it passes an `idle` snapshot, so the screen says "Deliveries are not
+reader is wired it passes an `idle` snapshot (and the records are masked whenever `data.__storeId` is not the selected store's id), so the screen says "Deliveries are not
 loaded." and still shows days off; it never stands a number in for a missing one.
 
 ## The Manager patch
@@ -64,9 +64,12 @@ that is never fetched. Held, not pushed, for two reasons that need their own rev
 2. **Off is only a day somebody listed.** Not being listed off does not make a person On.
    Everyone else is "Not listed off", in a closed list, with a line saying so. A person
    is called Present only when a manager said so (`presentAnyway`).
-3. **Another store's or month's answer is no answer.** The snapshot carries the store and
-   month it was fetched for, and both must match what is on screen, or the month shows as
-   unavailable.
+3. **Another store's, month's or session's answer is no answer.** The snapshot carries the
+   store, month and principal epoch it was fetched for, and all three must match what is
+   on screen and what the caller holds now, or the month shows as unavailable. A caller
+   that passes no epoch gets no deliveries at all, so nothing shows until a real reader is
+   wired. The records are checked the same way: the loaded document must name the selected
+   store (`data.__storeId`), or no person, day off or schedule file from it is shown.
 
 ## Inputs, by the keys the app already uses
 
@@ -74,15 +77,32 @@ that is never fetched. Held, not pushed, for two reasons that need their own rev
 |---|---|---|
 | `storeId`, `month` | the caller | The screen never picks a month. The month is the real Eastern business month unless the caller moves it. |
 | `today` | optional | Defaults to the dealership's date (`America/New_York`), not the browser's. |
-| `reported` | the reader's snapshot `{status, days, storeId, month}` | `days` are `{date, status, count, vehicles, asOf}` with status `provisional`, `missing`, `incomplete` or `conflict`. Only `status: "ready"` is read. |
-| `roster` | `data.roster` | People with a `roleId`. Bound by `id`; a name is only a label. First record of an id wins. |
-| `departed` | `data.departed` | `[{id, at}]`. Not counted from the day they left. |
+| `reported`, `principalEpoch` | the reader's snapshot `{status, days, storeId, month, principalEpoch}`, and the epoch the caller holds now | `days` are `{date, status, count, vehicles, asOf}` with status `provisional`, `missing`, `incomplete` or `conflict`. Only `status: "ready"` is read, and only when every row meets the reader's whole contract (see below). |
+| `roster` | `data.roster` | People with a `roleId`. Bound by `id`; a name is only a label. First record of an id wins. `hiredAt` is the start date. |
+| `departed` | `data.departed` | `[{name, at}]` as the app keeps it, matched by name the way the app does (`id` is accepted too). |
 | `daysOff`, `forcedOff` | `data.daysOff`, `data.forcedOff` | `{[id]: [date]}`. Dated membership, one date at a time. |
 | `presentAnyway` | `data.presentAnyway` | `{[date]: [id]}`. |
 | `scheduleSource` | `data.scheduleSource` | `{[month]: {file, at, kind, off, unmatched}}`. Shown back so a month read wrong is visible next to what the file said. Unmatched names ask for review. |
 | `isOff(id, date)` | optional | The app's own rule (`isOff` in `LeadPerformanceCalculator.jsx`), so a listed day somebody plainly worked is not off. Without it the raw lists decide, and the model says so (`rule: "listed"`). |
 | `layout` | the caller | `"panel"` (desktop, tablet) or `"compact"` (phone: a toggle, closed until asked). |
 | `selectedDate`, `onSelectDate`, `onRetry` | the caller | Controlled or uncontrolled selection. A retry button shows only for `unavailable`, never for `denied`. |
+
+### Employment bounds
+
+The app's own `servedOn`: both ends inclusive. Somebody is counted on the day they started
+and on the day they left, and not before or after. Outside those days they are not listed at
+all, neither Off nor Not listed off, so a hire on the 15th has no days off on the 1st. A
+date that cannot be read is no bound, as no start date has always meant the whole month. A
+test compares the model with `servedOn` on every date of a month around both bounds.
+
+### The reader's whole contract
+
+A `provisional` row needs a whole-number count, an `asOf` with a real millisecond ISO
+timestamp and a known basis, and a New and Used split that is either both null or adds up to
+the count. The other statuses need a null count, null split and null `asOf`. One bad row, a
+duplicate or missing date, or a date outside the month makes the whole month unavailable,
+as the reader's own projection does. A count with no timestamp is never coloured and never
+added to a total. A date or month that cannot be read fails closed and does not throw.
 
 ### How the states read
 
@@ -93,8 +113,7 @@ that is never fetched. Held, not pushed, for two reasons that need their own rev
 | `incomplete` | `Incomplete`, its own mark |
 | `conflict` | `Conflict`, its own mark |
 | a date after today | `Pending`, whatever the rows say |
-| a bad count (not whole, negative, text) or a status the contract does not know | that day is unavailable, never rounded into a number |
-| `idle`, `loading`, `denied`, `unavailable`, or a store or month mismatch, or duplicate or out-of-month rows | the whole month is unavailable; the grid stays, every date neutral |
+| `idle`, `loading`, `denied`, `unavailable`, a store, month or epoch mismatch, or any row that breaks the contract | the whole month is unavailable; the grid stays, every date neutral |
 
 ## Differences from the preview, on purpose
 
