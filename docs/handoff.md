@@ -619,6 +619,31 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X56 · Exact two-branch reader/storage deployment safeguard approved.**
+
+Jorge approved at 23:43:48 UTC, message
+`Sentinel_11a9028a69688191ac8c41faa0ae3217`, after the coordinator asked to apply
+the same deployment safeguard to the two new reader and schedule-storage branches,
+keeping GitHub checks enabled and production unchanged.
+
+C93 gives way only for branch-local `vercel.json` entries under
+`git.deploymentEnabled`: `codex/reported-reader-integration: false` and
+`codex/scheduler-storage-boundary: false`. Preserve all existing entries and
+other configuration; no global disable or main runtime configuration edit.
+The reader's independently cleared exact patch is
+`fbcb095a77a691e4687e0a84bb22d9b64ea1c8282be9507444ca197ac67b7db1`, based on
+`e84e15fba1898263568f4d002b0b01cf1a5e7e28`. Validate the two-entry guard before
+publishing that new branch, then check exact remote SHA, fresh CI and no automatic
+deployment. Do not rewrite original #462/#463 branches or history.
+
+The storage owner may apply its branch guard when ready; its source implementation
+stays local until independent review. This approves only the additional safeguard
+previously pending in H-X55. All other H-X55 gates, C113/X26 ownership and the
+separate runtime-QA draft remain unchanged. No merge, activation, deployment,
+live auth/endpoint/database testing, credential/access or production change.
+This commit changes coordination docs only.
+
+
 **H-X55 · Approved reader completion handoff and local schedule-storage boundary.**
 
 Jorge approved both workstreams at 23:32:51 UTC on 18 October, message
