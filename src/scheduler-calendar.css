@@ -85,3 +85,14 @@
 .sc-entry { min-width:0; margin-top:12px; }
 .sc-entry > .sc-toggle { --sc-forest:#183c2f; --sc-ink:#fffdf4; --sc-line:#bfd0b473; --sc-gold:#e4c98d; }
 .sc-entry > [id] { margin-top:8px; }
+
+/* The wide-screen calendar is a dialog on the approved light surface, over a scrim. */
+.sc-scrim { position:fixed; inset:0; z-index:400; display:flex; align-items:flex-start; justify-content:center; overflow:auto; padding:16px; background:rgba(23,61,43,.55); }
+.sc-dialog { width:100%; max-width:40rem; margin:auto; border:1px solid #3c5f49; border-radius:10px; background:#f5f5ee; overflow:hidden; }
+.sc-dialog-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; background:#234939; color:#fffdf4; }
+.sc-dialog-bar h2 { margin:0; font:600 1.125rem/1.4 var(--font-ui, system-ui, sans-serif); color:#fffdf4; }
+.sc-close { min-height:44px; padding:0 16px; border:1px solid #bfd0b473; border-radius:7px; background:#183c2f; color:#fffdf4; font:500 .875rem/1.4 var(--font-ui, system-ui, sans-serif); cursor:pointer; }
+.sc-close:focus-visible { outline:3px solid #e4c98d; outline-offset:2px; }
+.sc-dialog .sc-calendar { max-width:none; border-radius:0; box-shadow:none; }
+.sc-dialog .sc-head h2 { font-size:1rem; }
+@media (max-height:400px) { .sc-scrim { padding:8px; } .sc-dialog-bar { padding:8px 12px; } }

@@ -9,7 +9,8 @@
  * Month and store are the caller's. This surface never picks a month for itself,
  * so the delivery snapshot and the grid cannot disagree about which one is shown.
  */
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import css from "./scheduler-calendar.css?inline";
 import {
   STORE_TIME_ZONE, calendarCells, cellClass, cellLabel, dayDetail, deliveriesMonth, monthText,
@@ -175,6 +176,7 @@ export function SchedulerCalendarEntry(props) {
 
 function EntryBody({ store, data, isOff, layout = "panel", reported = null, principalEpoch }) {
   const [open, setOpen] = useState(false);
+  const opener = useRef(null);
   const panelId = useId();
   const todayDate = storeToday();
   const month = todayDate.slice(0, 7);
@@ -189,14 +191,54 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
       isOff={rule} layout={layout} />
   );
   if (layout === "compact") return calendar;
+  // The side rail is too narrow for a month of full-size dates, so on a wide screen the
+  // calendar opens as a dialog, the way the approved calendar does.
+  const close = () => { setOpen(false); if (opener.current) opener.current.focus(); };
   return (
     <div className="sc-entry">
       <style>{css}</style>
-      <button type="button" className="sc-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)}>
+      <button type="button" ref={opener} className="sc-toggle" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen((v) => !v)}>
         <span className="sc-toggle-month">Deliveries calendar</span>
         <span className="sc-note">{monthText(month)}</span>
       </button>
-      <div id={panelId} hidden={!open}>{open ? calendar : null}</div>
+      {open ? <CalendarDialog id={panelId} label={`Deliveries calendar, ${monthText(month)}`} onClose={close}>{calendar}</CalendarDialog> : null}
     </div>
+  );
+}
+
+// A modal over the dashboard: focus moves in, Tab stays in, Escape or the scrim or Close
+// gives focus back to the button that opened it, and the page behind does not scroll.
+function CalendarDialog({ id, label, onClose, children }) {
+  const box = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const el = box.current;
+    el.querySelector(".sc-close").focus();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); closeRef.current(); return; }
+      if (e.key !== "Tab") return;
+      const tabbable = [...el.querySelectorAll("button, summary, [tabindex]:not([tabindex='-1'])")].filter((n) => !n.disabled && n.getClientRects().length);
+      if (!tabbable.length) return;
+      const first = tabbable[0], last = tabbable[tabbable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("keydown", onKey, true); document.body.style.overflow = overflow; };
+  }, []);
+  return createPortal(
+    <div className="sc-scrim" onClick={(e) => { if (e.target === e.currentTarget) closeRef.current(); }}>
+      <div className="sc-dialog" id={id} ref={box} role="dialog" aria-modal="true" aria-label={label}>
+        <div className="sc-dialog-bar">
+          <h2>Deliveries calendar</h2>
+          <button type="button" className="sc-close" onClick={() => closeRef.current()}>Close</button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body,
   );
 }

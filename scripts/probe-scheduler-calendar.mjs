@@ -290,13 +290,38 @@ try {
     const month = await page.evaluate(() => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit" }).format(new Date()));
     if (layout === "entry-panel") {
       const toggle = page.getByRole("button", { name: /Deliveries calendar/ });
+      const dialog = page.getByRole("dialog", { name: /Deliveries calendar/ });
       assert.equal(await toggle.getAttribute("aria-expanded"), "false");
       assert.equal(await page.locator(".sc-calendar").count(), 0, "closed until asked");
       await toggle.click();
+      await dialog.waitFor();
       assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+      assert.equal(await page.evaluate(() => document.activeElement.className), "sc-close", "focus moves into the dialog");
+      assert.equal(await page.evaluate(() => getComputedStyle(document.body).overflow), "hidden", "the page behind does not scroll");
+      await page.keyboard.press("Shift+Tab");
+      assert.equal(await page.evaluate(() => !!document.activeElement.closest(".sc-dialog")), true, "Shift+Tab from the first control stays inside");
+      for (let i = 0; i < 60; i++) {
+        await page.keyboard.press("Tab");
+        assert.equal(await page.evaluate(() => !!document.activeElement.closest(".sc-dialog")), true, "Tab never leaves the dialog");
+      }
+      await page.keyboard.press("Escape");
+      assert.equal(await dialog.count(), 0, "Escape closes");
+      assert.equal(await page.evaluate(() => document.activeElement.classList.contains("sc-toggle")), true, "focus goes back to the button");
+      assert.equal(await page.evaluate(() => getComputedStyle(document.body).overflow), "visible", "scroll is given back");
       await toggle.click();
-      assert.equal(await page.locator(".sc-calendar").count(), 0, "closes again");
+      await page.getByRole("button", { name: "Close", exact: true }).click();
+      assert.equal(await dialog.count(), 0, "Close closes");
       await toggle.click();
+      await page.mouse.click(2, 2);
+      assert.equal(await dialog.count(), 0, "the scrim closes");
+      await toggle.click();
+      await dialog.waitFor();
+      if (axe) {
+        await page.addScriptTag({ content: axe });
+        const violations = await page.evaluate(async () => (await axe.run(".sc-dialog", { runOnly: ["wcag2a", "wcag2aa", "wcag21aa"] })).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(" | ")}`));
+        assert.deepEqual(violations, [], "axe on the dialog");
+        results["axe-dialog"] = "ok";
+      }
     } else {
       await page.locator(".sc-toggle").click();
     }
