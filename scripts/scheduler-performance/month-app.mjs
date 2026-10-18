@@ -167,6 +167,12 @@ new MutationObserver(syncCalendarLayout).observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["style"],
 });
+// render() recreates Schedule tools closed, so a tool must reopen its disclosure before it can take focus back.
+function focusControl(el, options) {
+  const tools = el?.closest?.(".schedule-tools");
+  if (tools) tools.open = true;
+  el?.focus(options);
+}
 function render(focusId, announcement = "") {
   if(generationDetour && !returningToGeneration())generationDetour=null;
   closeOffDay();
@@ -264,7 +270,7 @@ function render(focusId, announcement = "") {
     document.querySelector("#generate-month").onclick=startGeneration;
     const setup=document.querySelector('#editor-setup'),trigger=document.querySelector('#setup');
     trigger.onclick=()=>{closeGeneration();closeImport();setup.hidden=!setup.hidden;trigger.setAttribute('aria-expanded',String(!setup.hidden));if(!setup.hidden)setup.querySelector('h2').focus();};
-    document.querySelector('#close-setup').onclick=()=>{setup.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();};
+    document.querySelector('#close-setup').onclick=()=>{setup.hidden=true;trigger.setAttribute('aria-expanded','false');focusControl(trigger);};
     setup.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();document.querySelector('#close-setup').click();}};
   }
   document.querySelector("#selected-roster").onclick = () => daySheet(selectedDay);
@@ -272,7 +278,7 @@ function render(focusId, announcement = "") {
     closeImport();
     document.querySelector('#editor-setup').hidden=true;document.querySelector('#setup').setAttribute('aria-expanded','false');
     if([...pendingAssignments.keys()].some(k=>k.startsWith(selected+':'))||[...pendingSettings.keys()].some(k=>k.startsWith(selected+':'))){document.querySelector('#message').textContent='Apply or cancel pending edits before changing teams.';return;}
-    openTeamEditor({host:document.querySelector('#settings-sheet'),planner,index:selected,month,onDone:()=>render('teams','Dated membership saved. Existing assignment teams remain until reviewed.'),onCancel:()=>{document.querySelector('#settings-sheet').hidden=true;document.querySelector('#setup').focus();}});
+    openTeamEditor({host:document.querySelector('#settings-sheet'),planner,index:selected,month,onDone:()=>render('teams','Dated membership saved. Existing assignment teams remain until reviewed.'),onCancel:()=>{document.querySelector('#settings-sheet').hidden=true;focusControl(document.querySelector('#setup'));}});
   };
 
   if (editing) document.querySelector("#people").onclick = () => personSheet();
@@ -311,7 +317,7 @@ function render(focusId, announcement = "") {
   if (focusId) {
     if(editing&&["teams","people","rules"].includes(focusId))focusId="setup";
     const target = document.getElementById(focusId);
-    (target?.disabled ? document.getElementById("period-heading") : target)?.focus({
+    focusControl(target?.disabled ? document.getElementById("period-heading") : target, {
       preventScroll: true,
     });
   }
@@ -319,7 +325,10 @@ function render(focusId, announcement = "") {
 const hasPendingChoices=()=>[...pendingAssignments.keys(),...pendingSettings.keys()].some(k=>k.startsWith(selected+':'));
 function pulseOffDay(id){const row=[...document.querySelectorAll('[data-edit-person]')].find(e=>e.dataset.editPerson===id);if(row&&!matchMedia('(prefers-reduced-motion: reduce)').matches)row.animate([{opacity:.65},{opacity:1}],{duration:160,easing:'ease-out'});document.querySelector('.day-heading')?.focus();}
 function startOffDay(from,personId){
- if(hasPendingChoices()){const local=document.querySelector('#day-error'),message=local?.getClientRects().length?local:document.querySelector('#message');message.textContent='Apply or cancel pending day and settings choices first.';message.tabIndex=-1;message.focus();return;}
+ if(hasPendingChoices()){
+  // The day editor's alert is empty, and so hidden by CSS, until it has text: judge the editor, not the alert's current box.
+  const local=document.querySelector('#day-error'),inEditor=local&&!local.closest('[inert],[hidden],dialog:not([open])'),message=inEditor?local:document.querySelector('#message');
+  message.textContent='Apply or cancel pending day and settings choices first.';message.tabIndex=-1;message.focus();message.scrollIntoView({block:'nearest'});return;}
  closeMobileDay(false);closeImport();closeGeneration();closeOffDay();
  closeOffDay=openOffDayCommand({host:document.querySelector('#off-day-sheet'),planner,index:selected,from,personId,hasPending:hasPendingChoices,onClose:()=>{render('off-day-tools');if(personId){daySheet(from);[...document.querySelectorAll('[data-off-person]')].find(e=>e.dataset.offPerson===personId)?.focus();}},onApply:undo=>{lastOffDayUndo=undo;month=undo.to.slice(0,7);selectedDay=undo.to;render(undefined,`${undo.mode==='move'?'Moved':'Copied'} ${undo.personName}'s off-day. ${undo.mode==='move'?'Source is Unknown. ':''}Undo is available until another edit.`);daySheet(undo.to);pulseOffDay(undo.personId);}});
 }
@@ -399,7 +408,7 @@ function openSheet(html, openerId, isDay = false, focus = true, settingsId = "")
   sheet.querySelector("[data-close]").onclick = () => {
     if(isDay&&mobileDaySession){requestCloseMobileDay();return;}
     if (!isDay) { pendingSettings.delete(sheet.dataset.pendingKey); sheet.hidden = true; if(returnToGeneration())return; }
-    document.getElementById(!isDay&&editing?"setup":openerId || `day-${selectedDay}`)?.focus();
+    focusControl(document.getElementById(!isDay&&editing?"setup":openerId || `day-${selectedDay}`));
   };
   sheet.onkeydown = e => {
     if(mobileDaySession&&e.key==='Tab'){
