@@ -1,0 +1,347 @@
+name: webkit-mock-causality
+# Proposal for exact-patch review. Not published: nothing here runs until the file is on a branch the repository watches.
+#
+# One question. With the same builds, the same probe and fresh state, does the old mock or the repaired one decide
+# whether scripts/hero-bars.mjs finds page errors on WebKit? The only thing that differs between two cells of the
+# matrix is scripts/mock-supabase.mjs: the file at fe5fc6e (old) or at 8a8eaf3 (new).
+#
+# Held constant: the container (by digest), Playwright 1.63.0, the three app builds (made once, one tarball, checked by
+# sha256 in every cell), the probes (scripts/hero-bars.mjs is the same bytes at both refs, asserted below), the
+# environment variables of the manager-spacing step, and the ports. Fresh: every repeat starts its own mock, its own
+# previews and its own browser, and every cell is its own job on its own runner.
+#
+# Not touched: the probe, its thresholds, its assertions, the pageerror guard, CORS, the app, the runtime baselines.
+# A failing probe makes its cell red and its artifacts are kept. Nothing here suppresses or retries an error.
+# One thing is added, and only to observe: a preload that counts the requests the mock is asked. It answers nothing, and
+# the mock file runs as it is. The missing, zero and invalid presentation coverage is a different question and is not
+# in this file.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: Fresh-state repeats of the probe in each cell, 1 to 5
+        type: string
+        default: "3"
+  push:
+    branches: [claude/webkit-mock-causality]
+permissions:
+  contents: read
+env:
+  CANDIDATE_REF: 8a8eaf36af1cd6ece737f3c7e53661af7df263ed
+  OLD_MOCK_REF: fe5fc6e81635ad8eba80b861c699a6ec77bdc4ae
+  NEW_MOCK_REF: 8a8eaf36af1cd6ece737f3c7e53661af7df263ed
+  HERO_BASELINE_REF: 57c381c4e07c8d815819bb5e2feed00d104ba4f8
+  FRESHNESS_BASELINE_REF: e6d087c203bb88685159efbc272e04ce868e4c89
+  OLD_MOCK_SHA256: 5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3
+  NEW_MOCK_SHA256: 1d2740cad3c1208b107e0fab9e6090a559c04355dd1ff8e083d183aa345115d5
+  HERO_BARS_SHA256: 1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972
+  HERO_FRESHNESS_SHA256: fc388e99fe40a410b2115d3fd559edd3e400a09b6a147596ba04aa8fad719504
+jobs:
+  build:
+    name: builds, once
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_REF }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HERO_BASELINE_REF }}
+          path: .hero-baseline
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.FRESHNESS_BASELINE_REF }}
+          path: .freshness-baseline
+          persist-credentials: false
+      - run: npm ci
+      - name: Build the candidate and the two before builds, once
+        run: |
+          set -eu
+          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          npm run build
+          ln -s "$PWD/node_modules" .hero-baseline/node_modules
+          ln -s "$PWD/node_modules" .freshness-baseline/node_modules
+          (cd .hero-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
+          (cd .freshness-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
+          tar -czf builds.tgz dist .hero-baseline/dist .freshness-baseline/dist
+          sha256sum builds.tgz | tee builds.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: builds
+          path: |
+            builds.tgz
+            builds.sha256
+          retention-days: 7
+  compare:
+    name: ${{ matrix.engine }}, ${{ matrix.mock }} mock, ${{ matrix.shape }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [webkit, chromium]
+        mock: [old, new]
+        # fresh: the probe alone on a new mock. after-freshness: the two hero-freshness steps first, on the same
+        # mock, as manager-spacing.yml orders them, because that is the state the failing run had. Chromium is the
+        # control for the state the mock ends up in, so it runs the short shape only.
+        shape: [fresh, after-freshness]
+        exclude:
+          - engine: chromium
+            shape: after-freshness
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_REF }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.OLD_MOCK_REF }}
+          path: .mock-old
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.NEW_MOCK_REF }}
+          path: .mock-new
+          persist-credentials: false
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: builds
+      - name: The builds are the ones the build job made
+        run: |
+          set -eu
+          sha256sum --check builds.sha256
+          tar -xzf builds.tgz
+          test -f dist/index.html
+          test -f .hero-baseline/dist/index.html
+          test -f .freshness-baseline/dist/index.html
+      - name: Put the mock under test beside the files it imports, and check what is being compared
+        env:
+          MOCK: ${{ matrix.mock }}
+        run: |
+          set -eu
+          case "$MOCK" in
+            old) want="$OLD_MOCK_SHA256" ;;
+            new) want="$NEW_MOCK_SHA256" ;;
+            *) echo "unknown mock $MOCK"; exit 2 ;;
+          esac
+          cp ".mock-$MOCK/scripts/mock-supabase.mjs" scripts/mock-under-test.mjs
+          echo "$want  scripts/mock-under-test.mjs" | sha256sum --check
+          echo "$HERO_BARS_SHA256  scripts/hero-bars.mjs" | sha256sum --check
+          echo "$HERO_FRESHNESS_SHA256  scripts/hero-freshness.mjs" | sha256sum --check
+          cmp ".mock-old/scripts/hero-bars.mjs" scripts/hero-bars.mjs
+      - name: Write the request counter
+        # An observer, not a change. It counts what the mock is asked, from a preload, and answers nothing: the mock
+        # file under test is the one checked above and runs as it is. SIGUSR2 writes the counts to INGRESS_OUT.
+        run: |
+          cat > ingress-count.mjs <<'EOF'
+          import http from 'node:http';
+          import fs from 'node:fs';
+          const out = process.env.INGRESS_OUT;
+          const s = { requests: 0, get: 0, post: 0, patch: 0, options: 0, other: 0, postNull: 0, postDayRow: 0, postDayRowNull: 0, aborted: 0, abortedPost: 0 };
+          const emit = http.Server.prototype.emit;
+          http.Server.prototype.emit = function (name, req, res) {
+            if (name === 'request') {
+              const m = { GET: 'get', POST: 'post', PATCH: 'patch', OPTIONS: 'options' }[req.method] || 'other';
+              s.requests++; s[m]++;
+              let body = '';
+              if (m === 'post') req.on('data', (c) => { body += c; });
+              res.on('close', () => {
+                if (!res.writableFinished) { s.aborted++; if (m === 'post') s.abortedPost++; }
+                if (m !== 'post') return;
+                try {
+                  for (const row of [].concat(JSON.parse(body))) {
+                    const day = typeof row.key === 'string' && row.key.includes(':act:');
+                    if (row.value === null) s.postNull++;
+                    if (day) { s.postDayRow++; if (row.value === null) s.postDayRowNull++; }
+                  }
+                } catch {}
+              });
+            }
+            return emit.apply(this, arguments);
+          };
+          process.on('SIGUSR2', () => { if (out) fs.writeFileSync(out, JSON.stringify(s)); });
+          EOF
+      - name: Record the environment
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+          MOCK: ${{ matrix.mock }}
+          SHAPE: ${{ matrix.shape }}
+        run: |
+          mkdir -p out
+          # The browser launch is last on purpose: the group's status is its status, so an engine that cannot start
+          # fails this step here with everything else already recorded, instead of showing up later as a probe failure.
+          {
+            echo "engine=$FEEL_BROWSER mock=$MOCK shape=$SHAPE candidate=$CANDIDATE_REF"
+            node --version
+            npx playwright --version
+            uname -a
+            nproc
+            sha256sum builds.tgz scripts/mock-under-test.mjs scripts/hero-bars.mjs scripts/hero-freshness.mjs
+            node -e "import('playwright').then(async (p) => { const b = await p[process.env.FEEL_BROWSER].launch(); console.log(process.env.FEEL_BROWSER, b.version()); await b.close(); })"
+          } > out/env.txt 2>&1 || { cat out/env.txt; echo "the engine did not start"; exit 1; }
+          cat out/env.txt
+      - name: Run the unchanged hero-bars probe on fresh state, repeated
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+          SHAPE: ${{ matrix.shape }}
+          REPEATS: ${{ inputs.repeats }}
+          HERO_BASELINE_URL: http://127.0.0.1:5181/
+          SEARCH_TEST_SHA: ${{ env.CANDIDATE_REF }}
+          SEARCH_RUNTIME_SHA: ${{ env.CANDIDATE_REF }}
+        run: |
+          # GitHub runs a step that names no shell as `bash -e {0}`, so a failing command would end the step on the spot,
+          # before the status, the snapshots, the cleanup and the later repeats. Here a command whose status is wanted sits
+          # in an `if` and its status is kept, and a command that may harmlessly fail ends in `|| true`. Nothing is
+          # swallowed: a repeat whose probe failed, or whose freshness setup failed, is counted, and the step ends
+          # failing if any repeat was counted.
+          case "${REPEATS:-3}" in
+            1|2|3|4|5) total="${REPEATS:-3}" ;;
+            *) echo "repeats must be 1 to 5, got '$REPEATS'"; exit 2 ;;
+          esac
+          # key -> null, or the size of the value, read from the mock's own REST API
+          snapshot() {
+            curl -s 'http://127.0.0.1:5433/rest/v1/app_data?select=key,value' | node -e '
+              let s = "";
+              process.stdin.on("data", (d) => (s += d)).on("end", () => {
+                const out = {};
+                for (const r of JSON.parse(s)) out[r.key] = r.value === null ? null : JSON.stringify(r.value).length;
+                process.stdout.write(JSON.stringify(out));
+              });' > "$1" || echo "no snapshot at $1"
+          }
+          # the mock's request counts at this moment, written by the observer on SIGUSR2
+          counts() {
+            kill -USR2 "$mock" 2>/dev/null || true
+            sleep 0.3
+            cp "$run/ingress.json" "$run/ingress-$1.json" 2>/dev/null || true
+          }
+          ports="5433 5178 5181"
+          if [ "$SHAPE" = after-freshness ]; then ports="$ports 5185"; fi
+          fails=0
+          mkdir -p out
+          for n in $(seq 1 "$total"); do
+            run="out/run-$n"
+            mkdir -p "$run"
+            for port in $ports; do
+              if curl -s -o /dev/null "http://127.0.0.1:$port/"; then echo "port $port is already in use before run $n"; exit 2; fi
+            done
+            INGRESS_OUT="$run/ingress.json" SALESPERSON=1 node --import ./ingress-count.mjs scripts/mock-under-test.mjs > "$run/mock.log" 2>&1 &
+            mock="$!"
+            pids="$mock"
+            node node_modules/vite/bin/vite.js preview --port 5178 --host 127.0.0.1 > "$run/preview.log" 2>&1 &
+            pids="$pids $!"
+            node node_modules/vite/bin/vite.js preview --outDir .hero-baseline/dist --port 5181 --host 127.0.0.1 > "$run/hero-baseline.log" 2>&1 &
+            pids="$pids $!"
+            if [ "$SHAPE" = after-freshness ]; then
+              node node_modules/vite/bin/vite.js preview --outDir .freshness-baseline/dist --port 5185 --host 127.0.0.1 > "$run/freshness-baseline.log" 2>&1 &
+              pids="$pids $!"
+            fi
+            for port in $ports; do
+              up=0
+              for i in $(seq 1 100); do
+                if curl -sf -o /dev/null "http://127.0.0.1:$port/"; then up=1; break; fi
+                sleep 0.2
+              done
+              if [ "$up" -ne 1 ]; then echo "port $port never came up in run $n"; kill $pids 2>/dev/null || true; exit 2; fi
+            done
+            snapshot "$run/state-0.json"
+            counts 0
+            # In the after-freshness shape the two freshness steps come first, as in manager-spacing.yml. If either one
+            # fails, this repeat did not start from the state the shape names: it is invalid and counted as failed, even
+            # when hero-bars alone then passes. hero-bars still runs, so what it did is kept.
+            setup="n/a"
+            if [ "$SHAPE" = after-freshness ]; then
+              if SEARCH_RUNTIME_SHA="$FRESHNESS_BASELINE_REF" FEEL_URL=http://127.0.0.1:5185/ FRESH_OUT=hero-freshness-before node scripts/hero-freshness.mjs > "$run/freshness-before.out" 2>&1; then before=0; else before=$?; fi
+              echo "$before" > "$run/freshness-before.exit"
+              if FRESH_ASSERT=1 FRESH_BASELINE_FILE=hero-freshness-before/evidence.json node scripts/hero-freshness.mjs > "$run/freshness-assert.out" 2>&1; then asserted=0; else asserted=$?; fi
+              echo "$asserted" > "$run/freshness-assert.exit"
+              mv hero-freshness-before hero-freshness "$run/" 2>/dev/null || true
+              setup=valid
+              if [ "$before" -ne 0 ] || [ "$asserted" -ne 0 ]; then setup=invalid; fi
+            fi
+            echo "$setup" > "$run/setup"
+            snapshot "$run/state-1.json"
+            counts 1
+            if node scripts/hero-bars.mjs > "$run/hero-bars.out" 2>&1; then code=0; else code=$?; fi
+            echo "$code" > "$run/hero-bars.exit"
+            snapshot "$run/state-2.json"
+            counts 2
+            mv hero-bars "$run/hero-bars" 2>/dev/null || true
+            kill $pids 2>/dev/null || true
+            sleep 1
+            kill -9 $pids 2>/dev/null || true
+            wait 2>/dev/null || true
+            verdict=""
+            if [ "$code" -ne 0 ] || [ "$setup" = invalid ]; then fails=$((fails + 1)); verdict=" (counted as failed)"; fi
+            echo "run $n of $total: freshness setup $setup, hero-bars exit $code$verdict"
+          done
+          echo "$fails of $total repeats failed: the probe exited non-zero, or the freshness setup was invalid" | tee out/summary.txt
+          [ "$fails" -eq 0 ]
+      - name: Summarise the cell
+        if: always()
+        env:
+          ENGINE: ${{ matrix.engine }}
+          MOCK: ${{ matrix.mock }}
+          SHAPE: ${{ matrix.shape }}
+        run: |
+          node --input-type=module - <<'EOF'
+          import fs from 'node:fs';
+          const text = (p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return null; } };
+          const json = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+          // Rows that held a value in `a` and hold null in `b`; the app's backup pruning is what writes those.
+          const nulled = (a, b) => (a && b ? Object.keys(a).filter((k) => a[k] !== null && b[k] === null) : null);
+          const days = (keys) => (keys ? keys.filter((k) => /:act:/.test(k)).length : 'n/a');
+          // What the mock was asked between two moments, from the observer's running totals.
+          const asked = (a, b, field) => (a && b ? b[field] - a[field] : 'n/a');
+          const dirs = fs.existsSync('out') ? fs.readdirSync('out').filter((d) => d.startsWith('run-')).sort() : [];
+          const lines = [
+            `### ${process.env.ENGINE}, ${process.env.MOCK} mock, ${process.env.SHAPE}`,
+            '',
+            'Null POSTs are writes of `value: null`, counted at the mock whether or not the row was already null. Day rows nulled counts rows that held a value and hold null afterwards.',
+            '',
+            '| run | probe exit | page errors | null POSTs, before the probe | null POSTs, during it | aborted requests, during it | day rows nulled, before | day rows nulled, during | freshness setup (exits before, assert) |',
+            '|---|---|---|---|---|---|---|---|---|',
+          ];
+          let failed = 0, invalid = 0, counted = 0, errorTotal = 0;
+          const seen = new Map();
+          for (const d of dirs) {
+            const r = `out/${d}`;
+            const code = text(`${r}/hero-bars.exit`);
+            const ev = json(`${r}/hero-bars/evidence.json`);
+            const errors = ev && Array.isArray(ev.errors) ? ev.errors : null;
+            const setup = text(`${r}/setup`);
+            if (code !== '0') failed++;
+            if (setup === 'invalid') invalid++;
+            if (code !== '0' || setup === 'invalid') counted++;
+            if (errors) { errorTotal += errors.length; for (const e of errors) seen.set(e, (seen.get(e) || 0) + 1); }
+            const s0 = json(`${r}/state-0.json`), s1 = json(`${r}/state-1.json`), s2 = json(`${r}/state-2.json`);
+            const c0 = json(`${r}/ingress-0.json`), c1 = json(`${r}/ingress-1.json`), c2 = json(`${r}/ingress-2.json`);
+            const exits = `${text(`${r}/freshness-before.exit`)}, ${text(`${r}/freshness-assert.exit`)}`;
+            const fresh = process.env.SHAPE !== 'after-freshness' ? 'not run' : setup === 'valid' ? `valid (${exits})` : `INVALID (${exits})`;
+            lines.push(`| ${d.slice(4)} | ${code ?? 'no result'} | ${errors ? errors.length : 'no evidence'} | ${asked(c0, c1, 'postNull')} | ${asked(c1, c2, 'postNull')} | ${asked(c1, c2, 'aborted')} | ${days(nulled(s0, s1))} | ${days(nulled(s1, s2))} | ${fresh} |`);
+          }
+          lines.push('', `${counted} of ${dirs.length} repeats failed: ${failed} with a probe exit other than 0, ${invalid} with an invalid freshness setup (an invalid setup counts even when hero-bars passes). ${errorTotal} page errors in all.`);
+          if (seen.size) {
+            lines.push('', 'Distinct page errors, with how many times each was reported:', '');
+            for (const [e, n] of seen) lines.push(`- ${n} x \`${e.slice(0, 200)}\``);
+          }
+          const md = lines.join('\n') + '\n';
+          process.stdout.write(md);
+          if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hero-bars-${{ matrix.engine }}-${{ matrix.mock }}-mock-${{ matrix.shape }}
+          path: out/
+          if-no-files-found: warn
+          retention-days: 14
