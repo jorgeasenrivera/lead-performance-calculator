@@ -33,10 +33,12 @@ async function build() {
   fs.symlinkSync(path.join(ROOT, "node_modules"), path.join(dir, "node_modules"));
   fs.writeFileSync(path.join(dir, "index.html"), '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>probe</title></head><body style="margin:0;background:#f5f5ee"><div id="root"></div><script type="module" src="./main.jsx"></script></body></html>');
   fs.writeFileSync(path.join(dir, "main.jsx"), `import { createRoot } from "react-dom/client";
-import SchedulerCalendar from ${JSON.stringify(path.join(ROOT, "src/scheduler-calendar.jsx"))};
+import SchedulerCalendar, { SchedulerCalendarEntry } from ${JSON.stringify(path.join(ROOT, "src/scheduler-calendar.jsx"))};
 window.__retries = 0;
 const props = { ...window.__props, onRetry: () => { window.__retries += 1; } };
-createRoot(document.getElementById("root")).render(<SchedulerCalendar {...props} />);
+window.__isOffCalls = 0;
+const entry = window.__entry && { ...window.__entry, isOff: (data, id, date) => { window.__isOffCalls += 1; return window.__entry.offRule ? data.daysOff?.[id]?.includes(date) && id !== window.__entry.workedId : false; } };
+createRoot(document.getElementById("root")).render(entry ? <SchedulerCalendarEntry {...entry} /> : <SchedulerCalendar {...props} />);
 `);
   const { build: viteBuild } = await import("vite");
   const react = (await import("@vitejs/plugin-react")).default;
@@ -76,6 +78,11 @@ const roster = [
 ];
 const scheduleSource = { [MONTH]: { file: "october.pdf", at: "2026-10-01T13:00:00.000Z", kind: "a team grid", off: { p1: ["2026-10-03"] }, unmatched: ["Dana"] } };
 const base = { storeId: STORE, month: MONTH, today: TODAY, roster, daysOff: { p1: ["2026-10-03"] }, forcedOff: { p2: ["2026-10-03"] }, scheduleSource };
+// The dashboard's own records, as the app holds them: store, and data with roster, days off and the applied schedule.
+const NOW = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit" }).format(new Date());
+const ENTRY = { store: { id: STORE, name: "Cedar Motors" },
+  data: { roster: [...roster, { id: "p4", name: "Drew Park", roleId: "sales" }], departed: [], daysOff: { p1: [`${NOW}-03`, `${NOW}-20`], p4: [`${NOW}-20`] }, forcedOff: {}, presentAnyway: {}, scheduleSource: {} },
+  offRule: true, workedId: "p4" };
 const SCENARIOS = {
   ready: { ...base, reported: snapshot(COUNTS) },
   zeros: { ...base, reported: snapshot({ "2026-10-01": 0, "2026-10-02": 0 }) },
@@ -134,9 +141,9 @@ async function open(browser, base, vp, scenario, extra = {}) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 200)));
   page.setDefaultTimeout(8000);
-  await page.addInitScript((props) => { window.__props = props; }, SCENARIOS[scenario]);
+  await page.addInitScript(([props, entry]) => { window.__props = props; window.__entry = entry; }, [SCENARIOS[scenario] || {}, scenario.startsWith("entry") ? { ...ENTRY, layout: scenario === "entry-compact" ? "compact" : "panel" } : null]);
   await page.goto(base);
-  await page.locator(".sc-calendar").waitFor();
+  await page.locator(".sc-calendar, .sc-entry").first().waitFor();
   return { ctx, page, errors };
 }
 
@@ -257,6 +264,39 @@ try {
     assert.equal(await page.locator(".sc-day").count(), 31);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
     results[`compact-${vp.name}`] = "ok";
+    await ctx.close();
+  }
+
+  /* ---- the dashboard entry binds the app's own records: nothing is fetched, deliveries say not loaded */
+  for (const vp of VIEWPORTS) {
+    const layout = vp.touch ? "entry-compact" : "entry-panel";
+    const { ctx, page, errors } = await open(browser, url, vp, layout);
+    // The month is the real Eastern one, so the grid is today's month; pick a date from it.
+    const month = await page.evaluate(() => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit" }).format(new Date()));
+    if (layout === "entry-panel") {
+      const toggle = page.getByRole("button", { name: /Deliveries calendar/ });
+      assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+      assert.equal(await page.locator(".sc-calendar").count(), 0, "closed until asked");
+      await toggle.click();
+      assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+      await toggle.click();
+      assert.equal(await page.locator(".sc-calendar").count(), 0, "closes again");
+      await toggle.click();
+    } else {
+      await page.locator(".sc-toggle").click();
+    }
+    assert.equal(await page.locator(".sc-summary").innerText(), "Deliveries are not loaded.", `${vp.name}: no reader, no numbers`);
+    assert.equal(await page.locator(".sc-day").count(), new Date(Date.UTC(+month.slice(0, 4), +month.slice(5), 0)).getUTCDate());
+    assert.ok((await page.$$eval(".sc-day", (els) => els.map((e) => e.className))).every((c) => !/heat-/.test(c)));
+    // p1 is listed off on the 20th. p4 is listed too, but the app's own rule says they worked.
+    await page.locator(`.sc-day[data-date="${month}-20"]`).click();
+    const sheet = await page.locator(".sc-sheet").innerText();
+    assert.match(sheet, /Off\s+Alex Moss · On file/, `${vp.name}: bound by roster id from the app's days off`);
+    assert.match(sheet, /Listed off but worked: Drew Park\./, `${vp.name}: the app's own off rule is used`);
+    assert.match(sheet, /Delivered\s+Unavailable|Delivered\s+Pending|Delivered\s+Unknown/, `${vp.name}: never a number`);
+    assert.equal(await page.locator(".sc-schedule").count(), 0, "no schedule file on record, none shown");
+    assert.deepEqual(errors, []);
+    results[`entry-${vp.name}`] = "ok";
     await ctx.close();
   }
 

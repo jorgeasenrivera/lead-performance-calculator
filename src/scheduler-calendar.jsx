@@ -150,3 +150,36 @@ function DaySheet({ detail }) {
     </div>
   );
 }
+
+/**
+ * The entry the dashboard places: one button on a wide screen, the calendar's own
+ * toggle on a phone, and the open and closed state for either. It binds the
+ * store's own records to the calendar and nothing more.
+ *
+ * `reported` is the reader's snapshot. Until the reader is wired the entry says
+ * the deliveries are not loaded, and the days off still show; it never stands a
+ * number in for a missing one. `isOff` is the app's own (data, id, date) rule.
+ */
+export function SchedulerCalendarEntry({ store, data, isOff, layout = "panel", reported = null }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const todayDate = storeToday();
+  const rule = useMemo(() => (typeof isOff === "function" ? (id, date) => isOff(data, id, date) : null), [data, isOff]);
+  const snapshot = useMemo(() => reported || { status: "idle", days: [], storeId: store?.id ?? null, month: todayDate.slice(0, 7) }, [reported, store, todayDate]);
+  const calendar = (
+    <SchedulerCalendar storeId={store?.id} month={todayDate.slice(0, 7)} today={todayDate} reported={snapshot}
+      roster={data?.roster} departed={data?.departed} daysOff={data?.daysOff} forcedOff={data?.forcedOff}
+      presentAnyway={data?.presentAnyway} scheduleSource={data?.scheduleSource} isOff={rule} layout={layout} />
+  );
+  if (layout === "compact") return calendar;
+  return (
+    <div className="sc-entry">
+      <style>{css}</style>
+      <button type="button" className="sc-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)}>
+        <span className="sc-toggle-month">Deliveries calendar</span>
+        <span className="sc-note">{monthText(todayDate.slice(0, 7))}</span>
+      </button>
+      <div id={panelId} hidden={!open}>{open ? calendar : null}</div>
+    </div>
+  );
+}
