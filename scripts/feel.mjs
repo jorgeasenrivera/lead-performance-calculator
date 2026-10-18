@@ -167,7 +167,26 @@ async function prepFloor() {
   const me = R.find((r) => r.id === link.person_id);
   const rest = R.filter((r) => r.id !== me.id);
   const rows = await j(MOCK + "/rest/v1/floor_public?select=*");
-  const id = `${STORE}:${day()}`;
+  const date = day();
+  const id = `${STORE}:${date}`;
+  /* This measurement needs an open Phone Line, even on Sunday. The ordinary
+     demo keeps Sunday closed and seeds the last trading day's line instead.
+     Copy that fictional line into this run's day, here in feel only. Never
+     replace a current row or borrow another store's or the Online room's row. */
+  const phoneRows = await j(MOCK + "/rest/v1/queue_public?select=*");
+  const phoneToday = phoneRows.find((r) => r.id === id);
+  const phoneSeed = phoneToday || phoneRows.filter((r) => r.store === STORE
+    && r.id === `${STORE}:${r.qdate}` && r.qdate < date)
+    .sort((a, b) => b.qdate.localeCompare(a.qdate))[0];
+  if (!phoneSeed || phoneSeed.store !== STORE || !phoneSeed.data?.token
+    || !Array.isArray(phoneSeed.data?.line) || !phoneSeed.data.line.some((p) => p.id === me.id)) {
+    throw new Error("the feel fixture has no Phone Line for its demo associate");
+  }
+  if (!phoneToday) {
+    const opened = await fetch(MOCK + "/rest/v1/queue_public", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ ...phoneSeed, id, store: STORE, qdate: date, updated_at: new Date().toISOString() }]) });
+    if (!opened.ok) throw new Error(`the feel Phone Line fixture could not be prepared (${opened.status})`);
+  }
   const cur = rows.find((r) => r.id === id) || rows[0] || { store: STORE, data: {} };
   const d = { ...(cur.data || {}) };
   const mins = (m) => new Date(Date.now() - m * 60000).toISOString();
@@ -176,7 +195,7 @@ async function prepFloor() {
   d.line = [at(rest[0], 52), at(rest[1], 31), at(me, 18)];
   d.assists = []; d.checkouts = d.checkouts || []; d.history = d.history || [];
   await fetch(MOCK + "/rest/v1/floor_public", { method: "POST", headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify([{ ...cur, id, store: STORE, fdate: day(), data: d, updated_at: new Date().toISOString() }]) });
+    body: JSON.stringify([{ ...cur, id, store: STORE, fdate: date, data: d, updated_at: new Date().toISOString() }]) });
   return { me, id };
 }
 
