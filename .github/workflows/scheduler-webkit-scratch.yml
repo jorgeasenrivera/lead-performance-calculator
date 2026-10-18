@@ -43,6 +43,11 @@ jobs:
       - name: Record what is being tested
         shell: bash
         run: |
+          # actions/checkout marks the directory safe only for itself and removes that again, and this
+          # container runs as a different user than the one that owns the mounted workspace. Without
+          # this, git refuses to read the checkout ("dubious ownership"). It is git's ownership check
+          # for this one directory; Playwright's host checks are not touched.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           mkdir -p evidence
           tested=$(git rev-parse HEAD)
           {
