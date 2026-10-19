@@ -152,6 +152,8 @@ async function openApp(browser, base, { width = 1280, height = 900, touch = fals
     socket.close();
   });
   const page = await ctx.newPage();
+  states.push({ name, state });
+  page.on("console", (m) => { if (consoleLog.length < 40) consoleLog.push(`${name}: ${m.type()} ${m.text().slice(0, 240)}`); });
   page.on("pageerror", (e) => errors.push(`${name}: ${String(e).slice(0, 300)}`));
   page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
   await page.route("**/api/daily-deliveries**", (route) => {
@@ -192,7 +194,7 @@ async function announce(ctx, base, event, sid, jti = "first") {
 }
 
 /* ------------------------------------------------------------------ the run */
-const results = {}, blocked = [], errors = [], seen = [];
+const results = {}, blocked = [], errors = [], seen = [], consoleLog = [], states = [];
 let failure = null;
 const mock = await startMock();
 const dist = await buildApp();
@@ -615,8 +617,20 @@ try {
       if (failure) for (const context of browser.contexts()) for (const open of context.pages()) {
         try { await open.screenshot({ path: path.join(evidenceDir, `failure-${engine}-${++shot}.png`), timeout: 5000 }); } catch { /* the page may be gone */ }
       }
+      // What the reader's own request does in this engine, asked the same way it asks, so a failure says why.
+      const diagnosis = [];
+      if (failure) for (const context of browser.contexts()) for (const open of context.pages()) {
+        try {
+          diagnosis.push(await open.evaluate(async () => {
+            try {
+              const r = await fetch("/api/daily-deliveries?store=sage-demo&month=2026-10", { method: "GET", cache: "no-store", credentials: "same-origin", redirect: "error", headers: { Authorization: "Bearer a.b.c" } });
+              return { status: r.status, redirected: r.redirected, json: typeof r.json, body: (await r.text()).slice(0, 80) };
+            } catch (e) { return { error: String(e) }; }
+          }));
+        } catch (e) { diagnosis.push({ evaluate: String(e).slice(0, 120) }); }
+      }
       fs.writeFileSync(path.join(evidenceDir, `result-${engine}.json`), JSON.stringify({
-        engine, passed: !failure, results, blocked, errors,
+        engine, passed: !failure, results, blocked, errors, console: consoleLog, deliveriesSeen: states.map((x) => [x.name, x.state.deliveries.length]), diagnosis,
         failure: failure ? { message: String(failure.message || failure).slice(0, 2000), stack: String(failure.stack || "").slice(0, 4000) } : null,
       }, null, 2));
     } catch { /* evidence is best effort */ }
