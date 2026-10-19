@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
+import {watchFeelReloads} from './feel-navigation.mjs';
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
@@ -39,6 +40,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
   await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
 });
 const page = await context.newPage(), errors = [];
+const settleBeforeReload = watchFeelReloads(page);
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
 await page.addInitScript(() => localStorage.setItem('lpc:last-view','sage-demo'));
@@ -51,6 +53,7 @@ try{
  for(const phase of ['before','after'])for(const width of [320,360,390,393,412]){
   await page.setViewportSize({width,height:844});
   for(const [name,values,states] of scenarios){
+   await settleBeforeReload();
    rates=Object.fromEntries(Object.keys(thresholds).map((id,i)=>[id,values[i]]));
    await page.goto(phase==='before'?(process.env.HERO_BASELINE_URL||'http://127.0.0.1:5180/'):url);
    await page.locator('input[type="password"],.bp-t5').first().waitFor();
