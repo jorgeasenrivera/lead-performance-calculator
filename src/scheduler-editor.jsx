@@ -28,7 +28,7 @@ const FRAME = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta 
 
 export default function SchedulerEditor({
   store, data, isOff, timezone, now, principalEpoch, dataEpoch, day, title = "Plan the month",
-  onClose, onSummary, onError, confirm,
+  onClose, onSummary, onError, confirm, guardRef,
 }) {
   const frame = useRef(null);
   const [loaded, setLoaded] = useState(null);
@@ -69,13 +69,18 @@ export default function SchedulerEditor({
         onClose: () => latest.current.onClose?.(),
         onError: (error) => latest.current.onError?.(error),
       });
+      // The parent asks this before it closes the editor for the person: is there anything unsaved here?
+      if (guardRef) guardRef.current = { hasDraft: () => handle.hasDraft() };
       if (latest.current.day) handle.view({ day: latest.current.day, store: built.stores[0].id });
     } catch (error) {
       // The editor has already told onError; this only swaps the frame for the message.
       setFailed(true);
     }
-    return () => handle?.dispose();
-  }, [built, loaded, identity]);
+    return () => {
+      if (guardRef && handle && guardRef.current && guardRef.current.hasDraft) guardRef.current = null;
+      handle?.dispose();
+    };
+  }, [built, loaded, identity, guardRef]);
 
   if (!built.ok) return <p role="status">{REASONS[built.reason] || "The editor is not available."}</p>;
   if (failed) return <p role="alert">The editor could not open. Close it and try again.</p>;

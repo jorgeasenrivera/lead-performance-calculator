@@ -9,13 +9,26 @@
  * Month and store are the caller's. This surface never picks a month for itself,
  * so the delivery snapshot and the grid cannot disagree about which one is shown.
  */
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import css from "./scheduler-calendar.css?inline";
 import {
   STORE_TIME_ZONE, calendarCells, cellClass, cellLabel, dayDetail, deliveriesMonth, monthText,
   scheduleReview, staffingMonth, storeToday, summaryText, validMonth,
 } from "./scheduler-calendar-model.mjs";
+import { useReportedMonth } from "./use-reported-month.mjs";
+import { currentReportedAuth, loadedUnder } from "./scheduler-load-context.mjs";
+
+// The approved month editor, fetched only when somebody asks to plan the month.
+const SchedulerEditor = lazy(() => import("./scheduler-editor.jsx"));
+// With no backend there is no sign-in to follow: the entry reads as it did, with nothing delivered.
+const NO_AUTH = Object.freeze({
+  subscribe: () => () => {},
+  getSnapshot: () => NO_AUTH_SNAPSHOT,
+  getAccessToken: () => Promise.resolve(null),
+});
+const NO_AUTH_SNAPSHOT = Object.freeze({ principalEpoch: null, disposed: true });
+const DISCARD = "Close the editor and discard this page’s unsaved changes?";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 const SOURCE_WORDS = { manager: "Marked off by a manager", schedule: "From the schedule", "on file": "On file" };
@@ -30,7 +43,7 @@ const BASIS = { report_sent: "report sent", report_received: "report received" }
 
 export default function SchedulerCalendar({
   storeId, month, today, reported, principalEpoch, roster, departed, daysOff, forcedOff, presentAnyway, scheduleSource, isOff,
-  staffingReady = true, layout = "panel", defaultExpanded = false, selectedDate, onSelectDate, onRetry,
+  staffingReady = true, layout = "panel", defaultExpanded = false, selectedDate, onSelectDate, onRetry, onExpandedChange,
 }) {
   const todayDate = today || storeToday();
   const monthOk = validMonth(month);
@@ -94,7 +107,7 @@ export default function SchedulerCalendar({
       <style>{css}</style>
       {compact ? (
         <button type="button" className="sc-toggle" aria-expanded={expanded} aria-controls={panelId}
-          aria-label={`${title}, calendar. ${summary}`} onClick={() => setExpanded((v) => !v)}>
+          aria-label={`${title}, calendar. ${summary}`} onClick={() => { const next = !expanded; setExpanded(next); if (onExpandedChange) onExpandedChange(next); }}>
           <span className="sc-toggle-month">{title}</span>
           <span className="sc-note">Delivered this month</span>
         </button>
@@ -176,21 +189,72 @@ export function SchedulerCalendarEntry(props) {
 
 function EntryBody({ store, data, isOff, layout = "panel", reported = null, principalEpoch }) {
   const [open, setOpen] = useState(false);
+  const [compactOpen, setCompactOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [planning, setPlanning] = useState(false);
   const opener = useRef(null);
+  const planner = useRef(null);
+  const guard = useRef(null);
   const panelId = useId();
   const todayDate = storeToday();
   const month = todayDate.slice(0, 7);
-  const bound = typeof store?.id === "string" && store.id !== "" && data != null && data.__storeId === store.id;
+  const auth = currentReportedAuth() || NO_AUTH;
+  // The sign-in, read in the same render as everything drawn from it.
+  const identity = useSyncExternalStore(auth.subscribe, auth.getSnapshot, auth.getSnapshot);
+  const marked = typeof store?.id === "string" && store.id !== "" && data != null && data.__storeId === store.id;
+  // Records count only if they were loaded for this store under the sign-in that is current now. Where there
+  // is no sign-in to follow (no backend) the store mark alone decides, as it always did.
+  const stamp = loadedUnder(data);
+  const followed = auth !== NO_AUTH;
+  const fresh = marked && stamp !== null && stamp.storeId === store.id && stamp.epoch === identity.principalEpoch && identity.disposed !== true;
+  const bound = followed ? fresh : marked;
   const rule = useMemo(() => (bound && typeof isOff === "function" ? (id, date) => isOff(data, id, date) : null), [bound, data, isOff]);
-  const snapshot = useMemo(() => reported || { status: "idle", days: [], storeId: store?.id ?? null, month }, [reported, store, month]);
+  // The reader is told what is loaded for this store; for any other state it answers idle or loading, so what is
+  // drawn can only be the answer for this store, this month and this sign-in, never an earlier one relabelled.
+  const active = layout === "compact" ? compactOpen : open;
+  const view = useReportedMonth({ auth, storeId: store?.id ?? null, loadedStoreId: followed && fresh ? data.__storeId : null, month, active });
+  const snapshot = useMemo(() => reported || { status: view.status, days: view.days, storeId: store?.id ?? null, month, principalEpoch: identity.principalEpoch },
+    [reported, view.status, view.days, store, month, identity.principalEpoch]);
+  const epoch = principalEpoch ?? identity.principalEpoch;
+
+  // A change of store or sign-in takes the editor away at once; there is no question to ask about records that are no longer this person's.
+  useEffect(() => { if (planning && !(followed && fresh)) setPlanning(false); }, [planning, followed, fresh]);
+  // Leaving the page with changes in the editor asks first.
+  useEffect(() => {
+    if (!planning) return undefined;
+    const leaving = (e) => { if (guard.current && guard.current.hasDraft()) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", leaving);
+    return () => window.removeEventListener("beforeunload", leaving);
+  }, [planning]);
+  // Close, the scrim and Escape all come here; the editor's own Escape has asked already and closes directly.
+  const requestClose = () => {
+    if (guard.current && guard.current.hasDraft() && !window.confirm(DISCARD)) return false;
+    setPlanning(false);
+    if (planner.current) planner.current.focus();
+    return true;
+  };
+  const canPlan = followed && fresh;
+  const plan = canPlan ? (
+    <button type="button" ref={planner} className="sc-retry" aria-haspopup="dialog" onClick={() => setPlanning(true)}>Plan the month</button>
+  ) : null;
+  const editor = planning ? (
+    <EditorDialog id={panelId + "-plan"} label={`Plan the month, ${monthText(month)}`} onRequestClose={requestClose}>
+      <Suspense fallback={<p role="status">Opening the planner.</p>}>
+        <SchedulerEditor store={store} data={data} isOff={isOff} timezone={STORE_TIME_ZONE}
+          principalEpoch={identity.principalEpoch} dataEpoch={stamp ? stamp.epoch : undefined}
+          guardRef={guard} onClose={() => { setPlanning(false); if (planner.current) planner.current.focus(); }} />
+      </Suspense>
+    </EditorDialog>
+  ) : null;
   const calendar = (
-    <SchedulerCalendar storeId={store?.id} month={month} today={todayDate} reported={snapshot} principalEpoch={principalEpoch}
+    <SchedulerCalendar storeId={store?.id} month={month} today={todayDate} reported={snapshot} principalEpoch={epoch}
       staffingReady={bound} roster={bound ? data.roster : undefined} departed={bound ? data.departed : undefined}
       daysOff={bound ? data.daysOff : undefined} forcedOff={bound ? data.forcedOff : undefined}
       presentAnyway={bound ? data.presentAnyway : undefined} scheduleSource={bound ? data.scheduleSource : undefined}
-      isOff={rule} layout={layout} />
+      isOff={rule} layout={layout} selectedDate={selectedDate} onSelectDate={setSelectedDate}
+      onRetry={view.retry} onExpandedChange={setCompactOpen} />
   );
-  if (layout === "compact") return calendar;
+  if (layout === "compact") return <>{calendar}{compactOpen ? plan : null}{editor}</>;
   // The side rail is too narrow for a month of full-size dates, so on a wide screen the
   // calendar opens as a dialog, the way the approved calendar does.
   const close = () => { setOpen(false); if (opener.current) opener.current.focus(); };
@@ -201,7 +265,8 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
         <span className="sc-toggle-month">Deliveries calendar</span>
         <span className="sc-note">{monthText(month)}</span>
       </button>
-      {open ? <CalendarDialog id={panelId} label={`Deliveries calendar, ${monthText(month)}`} onClose={close}>{calendar}</CalendarDialog> : null}
+      {open ? <CalendarDialog id={panelId} label={`Deliveries calendar, ${monthText(month)}`} onClose={close}>{calendar}{plan}</CalendarDialog> : null}
+      {editor}
     </div>
   );
 }
@@ -234,6 +299,35 @@ function CalendarDialog({ id, label, onClose, children }) {
       <div className="sc-dialog" id={id} ref={box} role="dialog" aria-modal="true" aria-label={label}>
         <div className="sc-dialog-bar">
           <h2>Deliveries calendar</h2>
+          <button type="button" className="sc-close" onClick={() => closeRef.current()}>Close</button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// The planner in a modal of its own. Close, the scrim and Escape ask the entry, which asks about unsaved changes
+// before it lets go; the page behind does not scroll while it is open.
+function EditorDialog({ id, label, onRequestClose, children }) {
+  const box = useRef(null);
+  const closeRef = useRef(onRequestClose);
+  closeRef.current = onRequestClose;
+  useEffect(() => {
+    const el = box.current;
+    el.querySelector(".sc-close").focus();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeRef.current(); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("keydown", onKey, true); document.body.style.overflow = overflow; };
+  }, []);
+  return createPortal(
+    <div className="sc-scrim" onClick={(e) => { if (e.target === e.currentTarget) closeRef.current(); }}>
+      <div className="sc-dialog" id={id} ref={box} role="dialog" aria-modal="true" aria-label={label}>
+        <div className="sc-dialog-bar">
+          <h2>Plan the month</h2>
           <button type="button" className="sc-close" onClick={() => closeRef.current()}>Close</button>
         </div>
         {children}
