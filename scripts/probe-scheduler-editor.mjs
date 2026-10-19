@@ -5,7 +5,11 @@
  * synthetic records, and checks what a person would meet: the store's own people and no fixture
  * ones, the injected store date, the masked and switched store, callbacks, and a clean unmount
  * (no listener, frame or page class left behind) across repeated mounts. It opens no connection
- * but the local page server, and says so by counting what the page requested.
+ * but the local page server: every request to anywhere else is blocked in the browser, counted, and
+ * fails the run (counting what the local server saw could not show an attempt that never reached it).
+ *
+ * PROBE_EVIDENCE_DIR keeps a machine-readable result, the blocked and page-error lists and, on a
+ * failure, a screenshot of every open page, whether the run passed or not.
  *
  *   node scripts/probe-scheduler-editor.mjs
  *   FEEL_BROWSER=webkit node scripts/probe-scheduler-editor.mjs
@@ -84,12 +88,21 @@ const requests = [];
 const { server, url } = await serve(dist, requests);
 const { name: engine, browser } = await launch();
 const results = {};
+const blocked = [], pageErrors = [], evidenceDir = process.env.PROBE_EVIDENCE_DIR || null;
+let failure = null;
 try {
   for (const vp of [{ name: "phone", width: 393, height: 852, touch: true }, { name: "desktop", width: 1280, height: 900, touch: false }]) {
     const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch, isMobile: vp.touch });
+    // Only the probe's own page server may be reached. Anything else is refused here, before it leaves the browser.
+    await ctx.route("**/*", (route) => {
+      const target = route.request().url();
+      if (new URL(target).origin === new URL(url).origin) return route.continue();
+      blocked.push(`${vp.name}: ${route.request().method()} ${target}`);
+      return route.abort("blockedbyclient");
+    });
     const page = await ctx.newPage();
     const errors = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("pageerror", (e) => { errors.push(String(e)); pageErrors.push(`${vp.name}: ${String(e)}`); });
     page.on("console", (m) => { if (m.type() === "error" && !/404/.test(m.text())) errors.push(m.text()); });
     // Count what the editor leaves attached to the page it sits in.
     await page.addInitScript(() => {
@@ -248,11 +261,29 @@ try {
     assert.deepEqual(errors, [], `${vp.name}: page errors`);
     await ctx.close();
   }
+  assert.deepEqual(blocked, [], "no request left the probe's own page server");
   const outside = requests.filter((r) => !/^\/(assets\/|fonts\/|index\.html|$|favicon)/.test(r));
   assert.deepEqual(outside, [], "nothing was requested but the probe's own page");
   results.requests = `${requests.length} local`;
+  results.blocked = `${blocked.length} external`;
   console.log(JSON.stringify({ engine, results }, null, 2));
+} catch (e) {
+  failure = e;
+  throw e;
 } finally {
+  if (evidenceDir) {
+    try {
+      fs.mkdirSync(evidenceDir, { recursive: true });
+      let shot = 0;
+      if (failure) for (const context of browser.contexts()) for (const open of context.pages()) {
+        try { await open.screenshot({ path: path.join(evidenceDir, `failure-${engine}-${++shot}.png`), timeout: 5000 }); } catch { /* the page may already be gone */ }
+      }
+      fs.writeFileSync(path.join(evidenceDir, `result-${engine}.json`), JSON.stringify({
+        engine, passed: !failure, results, requests, blocked, pageErrors,
+        failure: failure ? { message: String(failure.message || failure).slice(0, 2000), stack: String(failure.stack || "").slice(0, 4000) } : null,
+      }, null, 2));
+    } catch { /* evidence is best effort; the run's own result stands */ }
+  }
   await browser.close();
   server.close();
 }

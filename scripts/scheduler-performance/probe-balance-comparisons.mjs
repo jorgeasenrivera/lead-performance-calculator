@@ -2,13 +2,17 @@ import {createRequire} from 'node:module';
 import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const {chromium,webkit}=createRequire(import.meta.url)('/workspace/cloud-tools/node_modules/playwright');
+// The editor now lives in month-app-core.mjs and its planner is private to the mount. For this test response only,
+// wrap the imported factory so the one real instance is exposed to the page. Never a second planner, never a production seam.
+const capturePlanner=(page,name)=>page.route('**/planner/month-app-core.mjs',async route=>{const response=await route.fetch(),source=await response.text();const imp='  createPlanner,\n',anchor='import { icon } from "./sage-icons.mjs";\n';assert.equal(source.split(imp).length,2,'createPlanner import anchor must be unique');assert.equal(source.split(anchor).length,2,'icon import anchor must be unique');await route.fulfill({response,body:source.replace(imp,'  createPlanner as createPlannerFactory,\n').replace(anchor,anchor+`const createPlanner=(...args)=>{const planner=createPlannerFactory(...args);(window.__plannerCaptures=window.__plannerCaptures||[]).push(planner);window.${name}=planner;return planner;};\n`)});});
+const capturedOnce=async(page,name)=>{assert.equal(await page.evaluate(()=>window.__plannerCaptures?.length),1,'exactly one planner instance was captured');assert.ok(await page.evaluate(n=>window[n]===window.__plannerCaptures[0],name),'the exposed planner is the captured instance');};
 const engine=process.env.BROWSER||'chromium',out=process.env.EVIDENCE_DIR||'/tmp/balance-comparisons';mkdirSync(out,{recursive:true});
 const browser=await {chromium,webkit}[engine].launch(engine==='chromium'?{executablePath:'/usr/bin/chromium',args:['--no-sandbox']}:{}),results=[];
 try{for(const width of [1440,390,320])for(const scale of [1,2]){
  const p=await browser.newPage({viewport:{width,height:900},hasTouch:width<700,reducedMotion:'reduce'});p.setDefaultTimeout(15000);const errors=[];p.on('pageerror',e=>errors.push(e.message));await p.clock.install({time:new Date('2026-10-14T16:00:00Z')});
- await p.route('**/planner/app.mjs',async r=>{const response=await r.fetch(),source=await response.text();assert.ok(source.includes('let quickEdit = false;'));await r.fulfill({response,body:source.replace('let quickEdit = false;','window.auditFixture = planner; let quickEdit = false;')});});
+ await capturePlanner(p,'auditFixture');
  await p.route('**/__axe.js',r=>r.fulfill({contentType:'application/javascript',body:readFileSync('/workspace/qa-tools/node_modules/axe-core/axe.min.js','utf8')}));
- await p.goto('http://127.0.0.1:5190/planner/');await p.locator('.day-heading').waitFor();await p.evaluate(()=>document.fonts.ready);await p.evaluate(s=>document.documentElement.style.fontSize=`${s*100}%`,scale);
+ await p.goto('http://127.0.0.1:5190/planner/');await p.locator('.day-heading').waitFor();await capturedOnce(p,'auditFixture');await p.evaluate(()=>document.fonts.ready);await p.evaluate(s=>document.documentElement.style.fontSize=`${s*100}%`,scale);
  const populate=async incomplete=>p.evaluate(async incomplete=>{
   const {monthDays}=await import('/planner/month-model.mjs'),{teamSnapshot}=await import('/planner/team-model.mjs'),s=auditFixture.get(0,'2026-11').store;
   s.rules=[{...s.rules[0],effective:'2014-01-01',closedDays:[],holidays:{},open:9,close:17}];for(const person of s.people){person.off=[];person.start=9;person.end=17;person.maxHours=168;}

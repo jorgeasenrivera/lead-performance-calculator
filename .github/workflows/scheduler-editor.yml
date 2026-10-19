@@ -1,0 +1,186 @@
+# The hosted scheduler editor, in a real browser, in both engines.
+#
+# Restricted on purpose: this repository's own editor-runtime branch (and pull
+# requests from it into the integration branch), read-only token, no secrets, no
+# deployment, nothing but a local page server and synthetic fixtures. The probe
+# blocks every request that is not to that server and fails if one is attempted.
+# Nothing here is a release check; it exists so the editor is looked at in WebKit
+# as well as Chromium before anything is wired to it.
+name: scheduler-editor
+
+on:
+  push:
+    branches: [claude/scheduler-editor-runtime]
+  pull_request:
+    branches: [claude/scheduler-live-integration]
+    paths:
+      - src/scheduler-editor.jsx
+      - src/scheduler-editor-adapter.mjs
+      - test/scheduler-editor-adapter.test.mjs
+      - scripts/probe-scheduler-editor.mjs
+      - scripts/scheduler-performance/**
+      - .github/workflows/scheduler-editor.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduler-editor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The hosted editor and the core mounted straight into a page: dispose, store date,
+  # month rosters, sign-in, masking, wording, no listener left behind, no external request.
+  hosted:
+    if: >-
+      github.repository == 'jorgeasenrivera/lead-performance-calculator' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'claude/scheduler-editor-runtime'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: npm ci
+      # The browsers are in the image; only the package that drives them is needed,
+      # and it is not a dependency of the app.
+      - run: npm i --no-save playwright@1.63.0
+      - name: Unit tests for the adapter
+        run: node --test test/scheduler-editor-adapter.test.mjs
+      - name: Hosted editor probe
+        shell: bash
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+          PROBE_EVIDENCE_DIR: editor-evidence
+        run: node scripts/probe-scheduler-editor.mjs 2>&1 | tee editor-evidence.log; exit "${PIPESTATUS[0]}"
+      - name: Keep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-editor-${{ matrix.engine }}
+          path: |
+            editor-evidence/
+            editor-evidence.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  # The preview's own probes against the extracted editor. Four of them now capture the
+  # planner through a test-response wrapper around the imported factory, and three are
+  # frozen-baseline checks that are only run, never rewritten.
+  #
+  # Known and recorded, not repaired here: six of the seven fail identically on the
+  # preview as it was before the editor was extracted (stale expectations: a moved
+  # "Schedule tools" disclosure, an old `let quickEdit = false;` anchor, an `Off 6`
+  # count, a geometry and an accessible-name check). Only probe-editor-embedded passes.
+  # So this job gates on what the extraction could break: probe-editor-embedded must
+  # pass, and none of the four capture probes may fail on the capture itself (no
+  # unique anchor, not exactly one planner). Every probe's result is kept and listed.
+  preview:
+    if: >-
+      github.repository == 'jorgeasenrivera/lead-performance-calculator' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'claude/scheduler-editor-runtime'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: npm ci
+      # The probes name their tools by fixed path; provide those, pinned, outside the repository.
+      - name: Tools the probes expect
+        shell: bash
+        run: |
+          mkdir -p /workspace/cloud-tools /workspace/qa-tools
+          npm i --prefix /workspace/cloud-tools playwright@1.63.0
+          npm i --prefix /workspace/qa-tools axe-core@4.14.0
+          ln -sf "$(node -e "console.log(require('/workspace/cloud-tools/node_modules/playwright').chromium.executablePath())")" /usr/bin/chromium
+      - name: Build the preview
+        run: node scripts/scheduler-performance/build.mjs
+      - name: Serve it locally
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/serve.cjs" <<'EOF'
+          const http = require("http"), fs = require("fs"), path = require("path");
+          const root = path.resolve("dist-harness/scheduler-performance");
+          const types = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json" };
+          http.createServer((req, res) => {
+            let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+            if (p.endsWith("/")) p += "index.html";
+            const f = path.join(root, p);
+            if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404).end(); return; }
+            res.writeHead(200, { "content-type": types[path.extname(f)] || "application/octet-stream" }).end(fs.readFileSync(f));
+          }).listen(5190, "127.0.0.1");
+          EOF
+          node "$RUNNER_TEMP/serve.cjs" > serve.log 2>&1 &
+          for i in $(seq 1 50); do curl -sf http://127.0.0.1:5190/planner/ > /dev/null && break; sleep 0.2; done
+      - name: Run the preview probes
+        shell: bash
+        env:
+          BROWSER: ${{ matrix.engine }}
+        run: |
+          mkdir -p preview-evidence
+          gate=0
+          run() {
+            name="$1"; shift
+            set +e
+            env EVIDENCE_DIR="preview-evidence/$name-$BROWSER" "$@" timeout 600 node "scripts/scheduler-performance/$name.mjs" > "preview-evidence/$name-$BROWSER.log" 2>&1
+            code=$?
+            set -e
+            echo "$name exit=$code" >> preview-evidence/summary.txt
+            echo "::group::$name (exit $code)"; tail -n 12 "preview-evidence/$name-$BROWSER.log"; echo "::endgroup::"
+            return 0
+          }
+          # Capture probes: fail the job only if the capture itself broke.
+          for name in probe-audit-corrections probe-balance-comparisons probe-generation; do
+            run "$name"
+            if grep -qE "exactly one planner instance|planner import anchor|icon import anchor|bootstrap fixture anchor|exposed planner is the captured" "preview-evidence/$name-$BROWSER.log"; then
+              echo "::error::$name: the planner capture failed"; gate=1
+            fi
+          done
+          if [ "$BROWSER" = chromium ]; then
+            # Runs both engines itself.
+            run probe-mobile-sheet
+            if grep -qE "exactly one planner instance|planner import anchor|icon import anchor|exposed planner is the captured" preview-evidence/probe-mobile-sheet-chromium.log; then
+              echo "::error::probe-mobile-sheet: the planner capture failed"; gate=1
+            fi
+          fi
+          # Frozen-baseline probes: run as they are.
+          run probe-editor-embedded AFTER_ONLY=1
+          if ! grep -q "passed" "preview-evidence/probe-editor-embedded-$BROWSER.log"; then
+            echo "::error::probe-editor-embedded did not pass"; gate=1
+          fi
+          run probe-embedded-sheet
+          run probe-polish
+          cat preview-evidence/summary.txt
+          exit $gate
+      - name: Keep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-editor-preview-${{ matrix.engine }}
+          path: |
+            preview-evidence/
+            serve.log
+          if-no-files-found: warn
+          retention-days: 7
