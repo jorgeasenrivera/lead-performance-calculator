@@ -619,6 +619,11 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X68 · WT8 source-only per-month editor draft bridge.**
+
+The board records four exact implementation paths and conditional final-reviewed candidate hashes for existing WT8, preserving qualified PR494 `0a3219d70a5df29c16d023e6552923d14ca3addd`. Export/hydrate detached per-month persistable state, notify change tokens and acknowledge only submitted state in each month's saved baseline. Inject and verify the codec; no copied C113 serialization. Preserve saved availability through first insertion, protect another dirty month's shared teams and never claim a cross-month move saved/atomic from one-month success. The separate four-new-file transport/state/test worker remains excluded. No Save UI, network, backend/publish wiring or durable-save claim; API/application core/calendar/SQL and all other scope remain untouched. Independent review, synthetic edge-case coverage, full applicable checks and exact-head/zero-deployment verification precede qualification. No transfer/renewal or production action. This handoff commit changes coordination only.
+
+
 **H-X67 follow-through · Drain selector fixture handlers before teardown.**
 
 The board permits WT8 only `await context.unrouteAll({behavior:'wait'});` immediately before the selector finalizer's `await browser.close();`, after original file hash verification (`5b01fe0b143a3f90ea6a26b2e0bdeb4f3971da2ced34a03a652a7e2529888573`). Preserve assertions, fixtures, evidence and error exits; no ignoreErrors or blanket catch. Failed Chromium run `39228222402` remains evidence, with fresh supported checks still required. No WT8 branch edit in this docs-only amendment, ownership change or production action.
