@@ -619,6 +619,14 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X64 · Independent scheduler contract adapter, source only.**
+
+The parent assigns existing storage child `01a0f2e1-c445-749c-90b3-7c08aa06e0df` only new `api/_scheduler-contract.mjs`, new `test/scheduler-contract.test.mjs` and bounded `docs/scheduler-publication.md` updates on deployment-blocked `codex/scheduler-storage-boundary`, verified expected `781225ab4004b86c39a1bf303a0cda57a0d63cf2`, under launch-preparation approval. Inject exact provider `5be1a1a` and C113 r1 interfaces; no branch wholesale copy, C113 edits or existing wrapper/API activation. No ownership transfer or renewal.
+
+Use authoritative snapshot and trusted server SHA-256 with provider verification/computed issues, then unchanged C113 planning. Retain both neighbor guards and intersecting shape/limit checks. legacyFingerprint remains compatibility-only; FNV audit data is not cryptographic provenance. Missing input-version/revision manifests or commit-time context guarantees must fail closed. Persisted full digest/context, non-draft guards, schema/auth/roles and real transactions remain separate dependencies, not completed by this slice.
+
+Synthetic tests must exercise the actual injected modules. Independent review and applicable protected source checks/build precede expected-head non-force publication; preserve the deployment stop and verify exact SHA/CI and zero deployments. No live changes, production merge/deploy, activation, credentials or permissions changes. Do not retry or route around the prior denied C113 security review; stop/report any new denial. All existing owners and unrelated scope remain unchanged. Implementation stays with the storage child; this commit changes coordination docs only.
+
 **H-X63 · X26 Scope B isolated editor runtime, no entry wiring.**
 
 The parent assigns existing X26 Claude WT8 owner the bounded editor extraction on `claude/scheduler-editor-runtime` under launch-preparation approval. Compose verified PR491 `6e2e159f9bfe53599f68d7c4225f31558bea2cac` with approved preview `e3caf183ada1c4ce2b555e224f9a5f5056c3119d`; clean merge-tree `3cb82aab07e9daa234da1ba22dd5784365b54f29` retains parent workflow repairs and adds only 98 preview-directory changes. The board lists the exact bootstrap/core/build-copy, new runtime/adapter/test/probe files and branch-only deployment-stop exception. Originals remain unchanged. No ownership transfer/renewal; implementation stays with X26.
