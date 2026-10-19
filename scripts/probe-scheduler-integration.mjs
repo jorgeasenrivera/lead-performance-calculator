@@ -173,7 +173,7 @@ async function openApp(browser, base, { width = 1280, height = 900, touch = fals
   const page = await ctx.newPage();
   states.push({ name, state });
   page.on("console", (m) => { if (consoleLog.length < 40) consoleLog.push(`${name}: ${m.type()} ${m.text().slice(0, 240)}`); });
-  page.on("pageerror", (e) => errors.push(`${name}: ${String(e).slice(0, 300)}`));
+  page.on("pageerror", (e) => errors.push(`${name} [${currentStep}]: ${String(e).slice(0, 300)}`));
   page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
   return { ctx, page, state };
 }
@@ -213,7 +213,11 @@ const mock = await startMock();
 const dist = await buildApp();
 const entry = await serve(dist, seen);
 const { name: engine, browser } = await launch();
-const step = async (label, fn) => { await fn(); results[label] = "ok"; };
+let currentStep = "";
+const step = async (label, fn) => { currentStep = label; await fn(); results[label] = "ok"; };
+// A page that is reloaded while one of its own requests is still in flight can have that request reported as a page
+// error by WebKit ("due to access control checks"). Let the page go quiet first, so a reload never cuts one off.
+const quiet = (page) => page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
 
 try {
   /* ---- desktop: the reader, the retry, a new sign-in, a rotated token */
@@ -629,6 +633,7 @@ try {
         assert.equal(asks(), before + 2, "asked again, and with yes it goes");
         page.removeAllListeners("dialog");
         // Back to where the next step expects to start: the page as it opens, which a reload gives.
+        await quiet(page);
         await page.reload();
         await settle(page, ".sc-entry .sc-toggle");
         page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
