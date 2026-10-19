@@ -619,6 +619,11 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X69 · WT8 CSV producer omits only undefined optional keys.**
+
+Existing X26/H-X68 ownership and WT8-signed checkpoint `8262dd05ba28279a5aba647ea33fece2f98ef096` confirm the same writer; no transfer/renewal. The board authorizes only schedule-import.mjs and its existing test, plus the conditional final-reviewed import hash. Fix acceptedTeam/membershipBasis construction by omitting undefined optional source/unknown keys while preserving explicit false/true/null and all defined provenance, including spread cases. Keep codec strict and do not use JSON trimming. Require lossless-state/membership regressions, full scheduler suite and independent review before serialized publication. C113's separate local legacy-off enum work remains with its owner; depth and all C113 bytes are outside this handoff. No other import behavior, UI/API/SQL/deployment or worker changes. This commit changes coordination only.
+
+
 **H-X68 · WT8 source-only per-month editor draft bridge.**
 
 The board records four exact implementation paths and conditional final-reviewed candidate hashes for existing WT8, preserving qualified PR494 `0a3219d70a5df29c16d023e6552923d14ca3addd`. Export/hydrate detached per-month persistable state, notify change tokens and acknowledge only submitted state in each month's saved baseline. Inject and verify the codec; no copied C113 serialization. Preserve saved availability through first insertion, protect another dirty month's shared teams and never claim a cross-month move saved/atomic from one-month success. The separate four-new-file transport/state/test worker remains excluded. No Save UI, network, backend/publish wiring or durable-save claim; API/application core/calendar/SQL and all other scope remain untouched. Independent review, synthetic edge-case coverage, full applicable checks and exact-head/zero-deployment verification precede qualification. No transfer/renewal or production action. This handoff commit changes coordination only.
