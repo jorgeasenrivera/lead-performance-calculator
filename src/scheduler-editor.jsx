@@ -33,7 +33,7 @@ const FRAME = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta 
 
 export default function SchedulerEditor({
   store, data, isOff, timezone, now, principalEpoch, dataEpoch, day, title = "Plan the month",
-  onClose, onSummary, onError, confirm, guardRef, draftCodec, onDraftChange,
+  onClose, onSummary, onError, confirm, guardRef, draftCodec, onDraftChange, draftSaveControls = false,
 }) {
   const frame = useRef(null);
   const [loaded, setLoaded] = useState(null);
@@ -66,6 +66,8 @@ export default function SchedulerEditor({
         index: built.index,
         peopleForMonth: built.peopleForMonth,
         embedded: true,
+        // Opt-in host save controls. Other callers retain the existing local editor.
+        draftSaveControls,
         // Live stores: no copy that calls the data fictional or synthetic.
         preview: false,
         keyTarget: doc,
@@ -97,7 +99,7 @@ export default function SchedulerEditor({
       try { stopDraftEvents?.(); } catch { /* the editor is going */ }
       handle?.dispose();
     };
-  }, [built, loaded, identity, guardRef]);
+  }, [built, loaded, identity, guardRef, draftSaveControls]);
 
   if (!built.ok) return <p role="status">{REASONS[built.reason] || "The editor is not available."}</p>;
   if (failed) return <p role="alert">The editor could not open. Close it and try again.</p>;
