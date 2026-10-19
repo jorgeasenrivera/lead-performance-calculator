@@ -319,9 +319,17 @@ function EditorDialog({ id, label, onRequestClose, children }) {
     el.querySelector(".sc-close").focus();
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // Everything else on the page is out of reach while the planner is open: no click, tap, key or screen reader can
+    // take the person to another tab or room from behind it. The only way out is the dialog, which asks about unsaved changes.
+    const rest = [...document.body.children].filter((n) => n !== el.parentElement && !n.hasAttribute("inert"));
+    for (const n of rest) n.setAttribute("inert", "");
     const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeRef.current(); } };
     document.addEventListener("keydown", onKey, true);
-    return () => { document.removeEventListener("keydown", onKey, true); document.body.style.overflow = overflow; };
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.body.style.overflow = overflow;
+      for (const n of rest) n.removeAttribute("inert");
+    };
   }, []);
   return createPortal(
     <div className="sc-scrim" onClick={(e) => { if (e.target === e.currentTarget) closeRef.current(); }}>
