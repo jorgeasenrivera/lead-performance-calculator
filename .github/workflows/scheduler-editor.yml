@@ -127,6 +127,13 @@ jobs:
           npm i --prefix /workspace/cloud-tools playwright@1.63.0
           npm i --prefix /workspace/qa-tools axe-core@4.14.0
           ln -sf "$(node -e "console.log(require('/workspace/cloud-tools/node_modules/playwright').chromium.executablePath())")" /usr/bin/chromium
+      # Some probes read historic files with `git show`. The container user does not own the checkout, so git
+      # refuses it until it is told these two directories are fine (this was the one difference between the runs).
+      - name: Let git read the checkouts
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/.old"
       - name: Build both previews
         shell: bash
         run: |
