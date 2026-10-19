@@ -153,3 +153,51 @@ The probe needs Playwright (`FEEL_PLAYWRIGHT` or the project's own) and runs axe
 `AXE_CORE` points at its package directory; it says so when axe was not run.
 `npm test` and `npm run build` are unchanged by this branch: the build does not reach these
 files because nothing imports them.
+
+## The month review provider (source only, not wired)
+
+`scripts/scheduler-performance/month-review.mjs` makes "reviewed" something an editor and a
+server can both compute from the same explicit input. It adds no algorithm. It builds a
+planner from the input through the planner's public API (`createPlanner`, `get`, `rows`) and
+returns the rows that planner returns, so issues, coverage, forecast, eligibility and
+neighbouring weeks are the planner's own. `month-model.mjs` is not changed.
+
+**What a month's rows depend on, all carried in the input.** The store the planner started
+with (people, rules, history, planning policy, timezone, and the teams and memberships that
+seed team snapshots); the current ordered teams and memberships; the month's own draft and
+the draft of every neighbouring month in its Monday to Sunday span, each with its own store
+copy and overrides; and a base assignment for every span day, written out and null where
+there is none. A month with no draft resolves to the base store with no overrides, as the
+planner does today. There is no fallback to a function or a fixture, and a store that does not
+carry its teams and memberships is refused, because the planner would otherwise seed
+placeholders.
+
+**Two fingerprints, kept apart.**
+
+| Value | What it is | Use |
+|---|---|---|
+| `legacyFingerprint` | exactly `JSON.stringify(rows)`, the value the editor compares today | compatibility only; depends on key order, so a server cannot rely on it |
+| `digest` | SHA-256 of key-sorted `{definition, scope, span, rows}`, definition `month-review/1` | what a server recomputes and compares |
+
+The rows are whole rows, so forecasts, pinned history and policy, and neighbouring weeks are all
+in both. A change to the canonical form is a new definition string, and a pinned test fails
+until that is done on purpose. Hashing is never this file's own: the caller supplies `sha256`,
+and it is checked against two known answers on every use.
+
+**Trusted recomputation.** `verifyReview(input, {definition, digest}, {sha256})` recomputes and
+compares. A claim that carries its own rows, issue count or fingerprint is refused, and so is
+input that carries a caller's `openIssues` or `recomputedFingerprint`.
+
+**Input is strict.** Plain JSON only, bounded in depth, size and counts, copied and frozen.
+Unknown keys, missing span days, a missing scope month draft, a store id that is not the scope's,
+non-finite numbers, accessors and `__proto__` are all refused with a named error code.
+
+**Known limits.**
+- `month-model.mjs` imports `scripts/scheduler-proposal/model.mjs`, which holds the pure date and
+  rule helpers and also the synthetic `fixtures()`. The provider never calls `fixtures()` (a test
+  reads its source), but a server importing it loads that module. Splitting the pure helpers out
+  needs that file's owner.
+- The planner's forecast text currently ends "Fictional illustration, not a calibrated forecast."
+  That string is part of the rows, so it is in the fingerprint. It is the planner's wording, not
+  changed here.
+- Nothing calls this yet: no editor, server, storage or database wiring.
