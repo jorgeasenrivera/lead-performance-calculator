@@ -41,8 +41,8 @@ window.__direct = (id) => {
   const el = document.createElement("main");
   el.id = "direct"; el.className = "keep-me";
   document.body.append(el);
-  const p = editorProps({ store: { id }, data: { __storeId: id, roster: [{ id: "x", name: "Xan", roleId: "r" }], daysOff: { x: ["2026-10-05"] } }, timezone: "America/New_York", now: new Date("${NOW}") });
-  window.__handle = mountMonthApp({ root: el, stores: p.stores, assignmentForDay: p.assignmentForDay, today: p.today, embedded: true, onSummary: () => {}, onClose: () => {} });
+  const p = editorProps({ store: { id }, data: { __storeId: id, roster: [{ id: "x", name: "Xan", roleId: "r" }], daysOff: { x: ["2026-10-05"] } }, timezone: "America/New_York", principalEpoch: 1, dataEpoch: 1, now: new Date("${NOW}") });
+  window.__handle = mountMonthApp({ root: el, stores: p.stores, assignmentForDay: p.assignmentForDay, peopleForMonth: p.peopleForMonth, today: p.today, embedded: true, onSummary: () => {}, onClose: () => {} });
 };
 window.__undirect = () => { window.__handle.dispose(); window.__handle.dispose(); document.getElementById("direct").remove(); };
 `);
@@ -75,7 +75,7 @@ const data = (id, names) => ({
   roster: names.map((n, i) => ({ id: `${id}-${i}`, name: n, roleId: "sales" })),
   departed: [], daysOff: { [`${id}-0`]: ["2026-10-05"] }, forcedOff: {}, presentAnyway: {}, scheduleSource: {},
 });
-const props = (id, names, extra = {}) => ({ store: { id, name: id }, data: data(id, names), timezone: "America/New_York", now: NOW, principalEpoch: 1, ...extra });
+const props = (id, names, extra = {}) => ({ store: { id, name: id }, data: data(id, names), timezone: "America/New_York", now: NOW, principalEpoch: 1, dataEpoch: 1, ...extra });
 const FIXTURE_WORDS = /Oak|Pine|Person \d|fictional/i;
 const PLACEHOLDER = /synthetic|fictional|fixture|illustrative|\bpreview\b|in-memory|\bOak\b|\bPine\b/i;
 
@@ -184,6 +184,40 @@ try {
     assert.match(await page.frameLocator("iframe").locator("#message").textContent(), /No people are on this store/);
     assert.deepEqual(errors, [], `${vp.name}: empty roster, no error`);
     results[`${vp.name}-empty-roster`] = "ok";
+
+    /* ---- moving between months gives the roster that opening there would */
+    const moving = { ...props("store-m", ["Al Park"]), data: { ...data("store-m", []), roster: [
+      { id: "m-al", name: "Al Park", roleId: "sales" },
+      { id: "m-leaver", name: "Lee Leaver", roleId: "sales" },
+      { id: "m-newbie", name: "Nia Newbie", roleId: "sales", hiredAt: "2026-11-05" },
+    ], departed: [{ id: "m-leaver", at: "2026-10-20" }], daysOff: { "m-newbie": ["2026-11-10"] } } };
+    await page.evaluate((p) => window.__render(p), moving);
+    const f = page.frameLocator("iframe");
+    await f.locator("#day-2026-10-12").click();
+    let roster = await f.locator("#app").evaluate((el) => el.textContent);
+    assert.match(roster, /Lee Leaver/, `${vp.name}: October has the person who left on the 20th`);
+    assert.doesNotMatch(roster, /Nia Newbie/, `${vp.name}: October does not have the person who starts in November`);
+    if (await f.locator("#mobile-day-dialog").isVisible()) await f.getByRole("button", { name: /back to calendar|back/i }).first().click();
+    await f.locator("#next").click();
+    await f.locator("#day-2026-11-10").click();
+    roster = await f.locator("#app").evaluate((el) => el.textContent);
+    assert.match(roster, /Nia Newbie/, `${vp.name}: November has the new person, after moving there from October`);
+    assert.doesNotMatch(roster, /Lee Leaver/, `${vp.name}: November does not have the person who left`);
+    assert.match(roster, /Nia Newbie[^]{0,200}(Off|off)|(Off|off)[^]{0,200}Nia Newbie/, `${vp.name}: her recorded day off on the 10th is kept`);
+    results[`${vp.name}-month-roster`] = "ok";
+
+    /* ---- a new sign-in with the old sign-in's records fails closed */
+    await page.evaluate((p) => window.__render(p), props("store-p", ["Pat Dune"]));
+    await page.frameLocator("iframe").locator("#app [data-day]").first().waitFor();
+    await page.evaluate((p) => window.__render(p), { ...props("store-p", ["Pat Dune"]), principalEpoch: 2 });
+    await page.waitForFunction(() => !document.querySelector("iframe"));
+    assert.match(await page.locator("#root").innerText(), /Signing in again/);
+    assert.doesNotMatch(await page.locator("#root").innerText(), /Pat Dune/, `${vp.name}: the old sign-in's people are not shown`);
+    await page.evaluate((p) => window.__render(p), { ...props("store-p", ["Pat Dune"]), principalEpoch: 2, dataEpoch: 2 });
+    await page.frameLocator("iframe").locator("#app [data-day]").first().waitFor();
+    await page.evaluate((p) => window.__render(p), { ...props("store-p", ["Pat Dune"]), dataEpoch: undefined });
+    await page.waitForFunction(() => !document.querySelector("iframe"));
+    results[`${vp.name}-principal`] = "ok";
 
     /* ---- a masked store shows nothing of the last one */
     await page.evaluate((p) => window.__render(p), { ...props("store-b", ["Zed Cole"]), data: data("store-a", ["Rae Alder"]) });

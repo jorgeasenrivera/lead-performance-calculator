@@ -38,42 +38,45 @@ export function zonedToday(timezone, now = new Date()) {
   }
 }
 
+const dayOf = (v) => (typeof v === "string" && validDate(v.slice(0, 10)) ? v.slice(0, 10) : null);
+
 /**
- * The planner's store for one real store. People are the roster's, bound by id (first record of an
- * id wins, as in the calendar). Availability and hours are null: nothing the app holds says them.
- * Given the day the editor opens (`today`), someone who left before this month began, or who starts after
- * it ends, is left out: they could only ever show as an unknown person on days that are not theirs.
- * `teams` and `memberships` are given outright, even empty, so the editor never seeds placeholder
- * teams or people.
+ * Everyone on the roster with the dates they were employed, bound by id (first record of an id wins, as in
+ * the calendar). The editor writes ids into its markup as they are, so an id that is not a plain token is
+ * refused outright, not dropped: a person quietly missing from the roster would be worse than an editor
+ * that says it cannot open.
  */
-export function editorStore(store, data, timezone, today) {
-  if (!store || typeof store.id !== "string" || !ID.test(store.id)) refuse("store", "id");
+function rosterWithBounds(data) {
   const roster = Array.isArray(data?.roster) ? data.roster : [];
+  const departed = Array.isArray(data?.departed) ? data.departed : [];
   const seen = new Set();
-  const people = [];
-  const monthStart = validDate(today) ? `${today.slice(0, 7)}-01` : null;
-  const monthEnd = monthStart ? monthDays(today.slice(0, 7)).at(-1) : null;
-  const dayOf = (v) => (typeof v === "string" && validDate(v.slice(0, 10)) ? v.slice(0, 10) : null);
-  const left = (p) => {
-    const rec = (Array.isArray(data?.departed) ? data.departed : []).find((d) => d && (d.id === p.id || (d.id == null && typeof d.name === "string" && norm(d.name) === norm(p.name))));
-    return rec ? dayOf(rec.at) : null;
-  };
+  const out = [];
   for (const p of roster) {
     if (!p || typeof p.id !== "string" || !p.id || !p.roleId || seen.has(p.id)) continue;
-    // The editor writes ids into its markup as they are, so an id that is not a plain token is refused outright,
-    // not dropped: a person quietly missing from the roster would be worse than an editor that says it cannot open.
     if (!ID.test(p.id)) refuse("roster", "person id");
     seen.add(p.id);
-    if (monthStart && ((left(p) && left(p) < monthStart) || (dayOf(p.hiredAt) && dayOf(p.hiredAt) > monthEnd))) continue;
-    people.push({ id: p.id, name: typeof p.name === "string" && p.name ? p.name : "Unnamed", off: null, start: null, end: null, maxHours: null });
+    const name = typeof p.name === "string" && p.name ? p.name : "Unnamed";
+    const rec = departed.find((d) => d && (d.id === p.id || (d.id == null && norm(d.name) === norm(name))));
+    out.push({ person: { id: p.id, name, off: null, start: null, end: null, maxHours: null }, hired: dayOf(p.hiredAt), left: rec ? dayOf(rec.at) : null });
   }
-  if (people.length > MAX_PEOPLE) refuse("roster", "too many people");
+  if (out.length > MAX_PEOPLE) refuse("roster", "too many people");
+  return out;
+}
+
+/**
+ * The planner's store for one real store. People are the whole roster, so a month the editor has not been
+ * opened in can still be reached; each month's own people come from `monthPeople`. Availability and hours are
+ * null: nothing the app holds says them. `teams` and `memberships` are given outright, even empty, so the
+ * editor never seeds placeholder teams or people.
+ */
+export function editorStore(store, data, timezone) {
+  if (!store || typeof store.id !== "string" || !ID.test(store.id)) refuse("store", "id");
   return {
     id: store.id,
     name: typeof store.name === "string" && store.name ? store.name : store.id,
-    // The store's own zone: the planner reads it for shift times, and the clock above uses the same one.
+    // The store's own zone: the planner reads it for shift times, and the clock uses the same one.
     ...(typeof timezone === "string" && timezone ? { timezone } : {}),
-    people,
+    people: rosterWithBounds(data).map((r) => r.person),
     rules: [],
     history: [],
     teams: [],
@@ -82,11 +85,30 @@ export function editorStore(store, data, timezone, today) {
 }
 
 /**
+ * Who is on a month's roster: everyone employed on at least one day of it (both ends inclusive, as the app's
+ * `servedOn`). Somebody who left before the month, or starts after it, would only be an unknown person on days
+ * that are not theirs. Asked for any month the editor reaches, so opening in October and moving to November
+ * gives the roster that opening in November would.
+ */
+export function monthPeople(data) {
+  const bounds = rosterWithBounds(data);
+  return (month) => {
+    if (!validMonth(month)) return [];
+    const days = monthDays(month);
+    const first = days[0], last = days.at(-1);
+    return bounds
+      .filter((r) => !(r.left && r.left < first) && !(r.hired && r.hired > last))
+      .map((r) => structuredClone(r.person));
+  };
+}
+
+/**
  * The editor's `assignmentForDay(day, index)`: who is listed off on a day, by the app's own rule,
  * inside each person's employment (the calendar's `staffingMonth`). Who is working is not known, so
  * `on` is empty and the editor shows the day as needing a schedule. A day with nobody listed off is null.
+ * Only people on that month's roster are named: an id the planner was not given would be a stranger to it.
  */
-export function assignmentResolver(data, { isOff, only } = {}) {
+export function assignmentResolver(data, { isOff, peopleFor } = {}) {
   const cache = new Map();
   const month = (m) => {
     if (!cache.has(m)) {
@@ -101,30 +123,37 @@ export function assignmentResolver(data, { isOff, only } = {}) {
   };
   return (day, index = 0) => {
     if (index !== 0 || typeof day !== "string" || !validDate(day) || !validMonth(day.slice(0, 7))) return null;
-    const off = month(day.slice(0, 7)).byDate[day]?.off ?? [];
-    // Only people the editor knows: an id it was not given would be a stranger to the planner.
-    const ids = off.map((p) => p.id).filter((id) => !only || only.has(id));
+    const known = typeof peopleFor === "function" ? new Set(peopleFor(day.slice(0, 7)).map((p) => p.id)) : null;
+    const ids = (month(day.slice(0, 7)).byDate[day]?.off ?? []).map((p) => p.id).filter((id) => !known || known.has(id));
     return ids.length ? { on: [], off: ids } : null;
   };
 }
 
+const isEpoch = (n) => Number.isSafeInteger(n) && n >= 0;
+
 /**
- * Everything `mountMonthApp` needs, or a named reason it cannot be had. `ready` is the caller's
- * proof that `data` belongs to `store` (the dashboard's `data.__storeId` matches the selected store):
- * without it nothing from `data` is shown, because a store switch would otherwise show the last store's people.
+ * Everything `mountMonthApp` needs, or a named reason it cannot be had.
+ *
+ * The records must be provably this store's and this sign-in's: `data.__storeId` is the store they were loaded
+ * for, and `dataEpoch` is the principal epoch they were loaded under (taken from the same auth snapshot as
+ * `principalEpoch`, the one the caller holds now). Missing or different, nothing from `data` is shown: a store
+ * switch would otherwise show the last store's people, and a new sign-in the last person's.
  */
-export function editorProps({ store, data, isOff, timezone, now, ready } = {}) {
+export function editorProps({ store, data, isOff, timezone, now, principalEpoch, dataEpoch } = {}) {
   try {
     if (!store || typeof store.id !== "string" || !ID.test(store.id)) return { ok: false, reason: "store" };
-    if (ready === undefined ? data?.__storeId !== store.id : ready !== true) return { ok: false, reason: "not-ready" };
+    if (data?.__storeId !== store.id) return { ok: false, reason: "not-ready" };
+    if (!isEpoch(principalEpoch) || principalEpoch !== dataEpoch) return { ok: false, reason: "principal" };
     // `now` is an instant or a function giving one, so the date is asked again on every use.
     const instant = typeof now === "function" ? now : () => now ?? new Date();
     try { if (zonedToday(timezone, instant()) === null) return { ok: false, reason: "timezone" }; } catch { return { ok: false, reason: "timezone" }; }
-    const stores = [editorStore(store, data, timezone, zonedToday(timezone, instant()))];
+    const stores = [editorStore(store, data, timezone)];
+    const peopleFor = monthPeople(data);
     return {
       ok: true,
       stores,
-      assignmentForDay: assignmentResolver(data, { isOff, only: new Set(stores[0].people.map((p) => p.id)) }),
+      assignmentForDay: assignmentResolver(data, { isOff, peopleFor }),
+      peopleForMonth: (index, month) => (index === 0 ? peopleFor(month) : []),
       today: () => {
         let day = null;
         try { day = zonedToday(timezone, instant()); } catch { /* an unreadable clock is no date */ }

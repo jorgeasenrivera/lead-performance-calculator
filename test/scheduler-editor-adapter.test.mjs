@@ -5,11 +5,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { zonedToday, editorStore, assignmentResolver, editorProps, EditorInputError } from "../src/scheduler-editor-adapter.mjs";
+import { monthPeople, zonedToday, editorStore, assignmentResolver, editorProps, EditorInputError } from "../src/scheduler-editor-adapter.mjs";
 import { mountMonthApp } from "../scripts/scheduler-performance/month-app-core.mjs";
 import { createPlanner } from "../scripts/scheduler-performance/month-model.mjs";
 
 const NY = "America/New_York";
+const EP = { principalEpoch: 4, dataEpoch: 4 };
 const store = { id: "store-a", name: "Store A" };
 const data = (extra = {}) => ({
   __storeId: "store-a",
@@ -46,17 +47,38 @@ test("people are the roster's real ids, first record wins, nothing about them is
   assert.deepEqual(editorStore(store, undefined).people, []);
 });
 
-test("people who are not employed in the month the editor opens are left out, and never reach the planner as strangers", () => {
-  const d = data({ departed: [{ id: "r3", at: "2026-09-20" }], roster: [...data().roster, { id: "late", name: "Late", roleId: "sales", hiredAt: "2026-11-02" }], daysOff: { r3: ["2026-10-13"], r1: ["2026-10-05"] } });
-  const oct = editorStore(store, d, NY, "2026-10-14");
-  assert.deepEqual(oct.people.map((p) => p.id), ["r1", "r2"], "r3 left in September; Late starts in November");
-  const props = editorProps({ store, data: d, timezone: NY, now: new Date("2026-10-14T16:00:00Z") });
-  assert.deepEqual(props.stores[0].people.map((p) => p.id), ["r1", "r2"]);
+test("every month has its own roster, so moving between months gives what opening there would", () => {
+  const d = data({ departed: [{ id: "r3", at: "2026-09-20" }], roster: [...data().roster, { id: "late", name: "Late", roleId: "sales", hiredAt: "2026-11-02" }], daysOff: { r3: ["2026-10-13"], r1: ["2026-10-05"], late: ["2026-11-10"] } });
+  const props = editorProps({ ...EP, store, data: d, timezone: NY, now: new Date("2026-10-14T16:00:00Z") });
+  const ids = (m) => props.peopleForMonth(0, m).map((p) => p.id);
+  assert.deepEqual(ids("2026-08"), ["r1", "r3"], "r2 starts on 10 October and Late in November");
+  assert.deepEqual(ids("2026-09"), ["r1", "r3"], "r3 was still there in September");
+  assert.deepEqual(ids("2026-10"), ["r1", "r2"], "r3 left in September; Late starts in November");
+  assert.deepEqual(ids("2026-11"), ["r1", "r2", "late"]);
+  assert.deepEqual(props.peopleForMonth(1, "2026-10"), [], "only the one store is known");
+  assert.deepEqual(props.peopleForMonth(0, "nope"), []);
+  assert.deepEqual(props.stores[0].people.map((p) => p.id), ["r1", "r2", "r3", "late"], "the store carries everyone, so any month can be reached");
+  // Days off follow the same rosters: Late's November day is named, r3's October day is not.
+  assert.deepEqual(props.assignmentForDay("2026-11-10", 0), { on: [], off: ["late"] });
   assert.deepEqual(props.assignmentForDay("2026-10-05", 0), { on: [], off: ["r1"] });
-  assert.equal(props.assignmentForDay("2026-09-15", 0), null);
-  const nov = editorStore(store, d, NY, "2026-11-03");
-  assert.deepEqual(nov.people.map((p) => p.id), ["r1", "r2", "late"]);
-  assert.deepEqual(editorStore(store, d, NY).people.map((p) => p.id), ["r1", "r2", "r3", "late"], "with no date nothing is judged");
+  assert.equal(props.assignmentForDay("2026-10-13", 0), null);
+  // Same answer however the month is reached, and a returned list is a copy.
+  props.peopleForMonth(0, "2026-10")[0].name = "changed";
+  assert.equal(props.peopleForMonth(0, "2026-10")[0].name, "Rae");
+  assert.deepEqual(editorStore(store, d, NY).people.map((p) => p.id), ["r1", "r2", "r3", "late"]);
+});
+
+test("a new sign-in fails closed: records not stamped with the epoch they were loaded under are never shown", () => {
+  const base = { store, data: data(), timezone: NY };
+  assert.equal(editorProps({ ...base, principalEpoch: 4, dataEpoch: 4 }).ok, true);
+  assert.equal(editorProps({ ...base, principalEpoch: 5, dataEpoch: 4 }).reason, "principal", "the old sign-in's records under a new epoch");
+  assert.equal(editorProps({ ...base, principalEpoch: 4, dataEpoch: 5 }).reason, "principal");
+  assert.equal(editorProps({ ...base, principalEpoch: 4 }).reason, "principal", "no stamp on the records is no proof");
+  assert.equal(editorProps({ ...base, dataEpoch: 4 }).reason, "principal");
+  assert.equal(editorProps({ ...base }).reason, "principal");
+  for (const bad of [-1, 1.5, NaN, "4", null, Infinity, 2 ** 53]) assert.equal(editorProps({ ...base, principalEpoch: bad, dataEpoch: bad }).reason, "principal", String(bad));
+  assert.equal(editorProps({ ...base, data: data({ __storeId: "store-b" }), principalEpoch: 4, dataEpoch: 4 }).reason, "not-ready");
+  assert.equal(editorProps({ ...base, principalEpoch: 0, dataEpoch: 0 }).ok, true, "epoch zero is a real epoch");
 });
 
 test("the planner takes the store as given: no Oak, no Pine, no fixture people, even with nothing in the roster", () => {
@@ -84,24 +106,23 @@ test("who is off follows the app's rule and each person's employment, and a day 
 });
 
 test("props are refused by name when the data is not this store's or the clock cannot be read", () => {
-  const ok = editorProps({ store, data: data(), timezone: NY, now: new Date("2026-10-14T16:00:00Z") });
+  const ok = editorProps({ ...EP, store, data: data(), timezone: NY, now: new Date("2026-10-14T16:00:00Z") });
   assert.equal(ok.ok, true);
   assert.equal(ok.today(), "2026-10-14");
   assert.equal(ok.index, 0);
-  assert.equal(editorProps({ store, data: data({ __storeId: "store-b" }), timezone: NY }).reason, "not-ready", "the last store's people are never shown");
-  assert.equal(editorProps({ store, data: { roster: [] }, timezone: NY }).reason, "not-ready");
-  assert.equal(editorProps({ store, data: data(), timezone: NY, ready: false }).reason, "not-ready");
-  assert.equal(editorProps({ store, data: { roster: [] }, timezone: NY, ready: true }).ok, true, "the caller's own proof stands in for the mask");
-  assert.equal(editorProps({ store, data: data() }).reason, "timezone");
-  assert.equal(editorProps({ store, data: data(), timezone: "Bad/Zone" }).reason, "timezone");
-  assert.equal(editorProps({ store: null, data: data(), timezone: NY }).reason, "store");
-  assert.equal(editorProps({ store: { id: "has space" }, data: data(), timezone: NY }).reason, "store");
+  assert.equal(editorProps({ ...EP, store, data: data({ __storeId: "store-b" }), timezone: NY }).reason, "not-ready", "the last store's people are never shown");
+  assert.equal(editorProps({ ...EP, store, data: { roster: [] }, timezone: NY }).reason, "not-ready");
+  assert.equal(editorProps({ ...EP, store, data: { roster: [] }, timezone: NY }).reason, "not-ready", "no caller flag can stand in for the data's own store mark");
+  assert.equal(editorProps({ ...EP, store, data: data() }).reason, "timezone");
+  assert.equal(editorProps({ ...EP, store, data: data(), timezone: "Bad/Zone" }).reason, "timezone");
+  assert.equal(editorProps({ ...EP, store: null, data: data(), timezone: NY }).reason, "store");
+  assert.equal(editorProps({ ...EP, store: { id: "has space" }, data: data(), timezone: NY }).reason, "store");
   assert.equal(editorProps().reason, "store");
 });
 
 test("the clock is asked again each time and for the store on screen", () => {
   let now = new Date("2026-10-14T03:00:00Z");
-  const props = editorProps({ store, data: data(), timezone: NY, now: () => now });
+  const props = editorProps({ ...EP, store, data: data(), timezone: NY, now: () => now });
   assert.equal(props.today(), "2026-10-13");
   now = new Date("2026-10-14T05:00:00Z");
   assert.equal(props.today(), "2026-10-14");
@@ -109,7 +130,7 @@ test("the clock is asked again each time and for the store on screen", () => {
 
 test("mounting refuses what it cannot bind, before it touches the page", () => {
   const root = { nodeType: 1 };
-  const good = editorProps({ store, data: data(), timezone: NY });
+  const good = editorProps({ ...EP, store, data: data(), timezone: NY });
   const base = { root, stores: good.stores, assignmentForDay: good.assignmentForDay };
   const bad = (o, pattern) => assert.throws(() => mountMonthApp(o), pattern);
   bad(undefined, /options/);
@@ -127,12 +148,12 @@ test("mounting refuses what it cannot bind, before it touches the page", () => {
 
 test("an id the editor could not write safely is refused, a throwing clock is no date, and a spaced name still matches its departure", () => {
   const odd = data({ roster: [...data().roster, { id: 'x" data-pwn="1', name: "Odd", roleId: "sales" }] });
-  assert.equal(editorProps({ store, data: odd, timezone: NY }).reason, "roster");
+  assert.equal(editorProps({ ...EP, store, data: odd, timezone: NY }).reason, "roster");
   assert.throws(() => editorStore(store, odd, NY), (e) => e instanceof EditorInputError && e.code === "roster");
-  assert.equal(editorProps({ store, data: data(), timezone: NY, now: () => { throw new RangeError("boom"); } }).reason, "timezone");
-  const props = editorProps({ store, data: data(), timezone: NY, now: (() => { let n = 0; return () => { if (++n > 2) throw new Error("late"); return new Date("2026-10-14T16:00:00Z"); }; })() });
+  assert.equal(editorProps({ ...EP, store, data: data(), timezone: NY, now: () => { throw new RangeError("boom"); } }).reason, "timezone");
+  const props = editorProps({ ...EP, store, data: data(), timezone: NY, now: (() => { let n = 0; return () => { if (++n > 1) throw new Error("late"); return new Date("2026-10-14T16:00:00Z"); }; })() });
   assert.equal(props.ok, true);
   assert.throws(() => props.today(), (e) => e instanceof EditorInputError && e.code === "timezone");
   const spaced = data({ roster: [{ id: "q1", name: "Rae  Alder", roleId: "sales" }], departed: [{ name: "rae alder", at: "2026-09-01" }], daysOff: {} });
-  assert.deepEqual(editorStore(store, spaced, NY, "2026-10-14").people, [], "the calendar's name match also collapses inner spaces");
+  assert.deepEqual(monthPeople(spaced)("2026-10"), [], "the calendar's name match also collapses inner spaces");
 });

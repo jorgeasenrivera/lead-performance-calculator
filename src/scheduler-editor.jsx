@@ -18,6 +18,7 @@ import { editorProps } from "./scheduler-editor-adapter.mjs";
 
 const REASONS = {
   "not-ready": "This store’s people are still loading.",
+  principal: "Signing in again. This store’s people are loading.",
   timezone: "The store’s time zone is not available.",
   store: "This store cannot be opened.",
 };
@@ -26,7 +27,7 @@ const REASONS = {
 const FRAME = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>${shared}</style></head><body><main id="app"></main></body></html>`;
 
 export default function SchedulerEditor({
-  store, data, isOff, timezone, now, principalEpoch = 0, day, title = "Plan the month",
+  store, data, isOff, timezone, now, principalEpoch, dataEpoch, day, title = "Plan the month",
   onClose, onSummary, onError, confirm,
 }) {
   const frame = useRef(null);
@@ -35,11 +36,13 @@ export default function SchedulerEditor({
   // Latest callbacks without remounting the editor when a parent re-renders.
   const latest = useRef({});
   latest.current = { onClose, onSummary, onError, confirm, day, now };
-  const ready = Boolean(store) && data?.__storeId === store.id;
   const identity = `${store?.id}|${principalEpoch}`;
   // One snapshot per store and sign-in. A later change to `data` is not applied to an open editor.
+  // The records count only while they were loaded for this store (`data.__storeId`) and under this sign-in
+  // (`dataEpoch` equals `principalEpoch`): when either changes the editor closes and says why, it does not
+  // keep showing the last person's roster.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const built = useMemo(() => editorProps({ store, data, isOff, timezone, ready, now: () => { const n = latest.current.now; return typeof n === "function" ? n() : n ?? new Date(); } }), [identity, ready, timezone]);
+  const built = useMemo(() => editorProps({ store, data, isOff, timezone, principalEpoch, dataEpoch, now: () => { const n = latest.current.now; return typeof n === "function" ? n() : n ?? new Date(); } }), [identity, dataEpoch, data?.__storeId, timezone]);
 
   useEffect(() => { setFailed(false); }, [identity]);
 
@@ -56,6 +59,7 @@ export default function SchedulerEditor({
         assignmentForDay: built.assignmentForDay,
         today: built.today,
         index: built.index,
+        peopleForMonth: built.peopleForMonth,
         embedded: true,
         // Live stores: no copy that calls the data fictional or synthetic.
         preview: false,

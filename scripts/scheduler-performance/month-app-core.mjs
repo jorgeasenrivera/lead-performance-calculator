@@ -37,6 +37,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
  * the page's own memory, as in the preview.
  *
  * opts: root, stores (each with explicit teams and memberships, which may be empty), assignmentForDay,
+ * peopleForMonth(index, month) -> that month's people, for each new month draft (default: the store's people),
  * today(store) -> YYYY-MM-DD in that store's own time, index, embedded, keyTarget (where Escape is heard,
  * default the root), confirm(message), onSummary(detail), onClose(), onExit(), onError(error).
  */
@@ -123,6 +124,19 @@ export function mountMonthApp(opts) {
   try {
 const planner = createPlanner(stores, { assignmentForDay: opts.assignmentForDay }),
   app = root;
+// A month's draft takes its people when it is first made. Given `peopleForMonth`, each new draft gets that month's
+// roster, whichever way it is reached (this screen, the off-day, import or team tools), so opening in one month
+// and moving to another gives what opening in the other would. A draft that exists is never touched.
+if (typeof opts.peopleForMonth === "function") {
+  const setDraft = planner.drafts.set.bind(planner.drafts);
+  planner.drafts.set = (key, draft) => {
+    if (!planner.drafts.has(key)) {
+      const at = key.indexOf(":");
+      draft.store.people = structuredClone(opts.peopleForMonth(Number(key.slice(0, at)), key.slice(at + 1)));
+    }
+    return setDraft(key, draft);
+  };
+}
 // team-ui.mjs is shared and read-only here; its one fictional-data sentence is dropped for real stores,
 // and the probe fails if the wording ever changes and this stops matching.
 const balancePanel = () => { const html = balanceMarkup(planner, selected, month); if (PREVIEW) return html;
