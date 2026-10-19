@@ -199,11 +199,10 @@ jobs:
             await page.getByRole('button', { name: 'Sign in', exact: true }).click();
             await page.locator('.bp-row').first().waitFor({ timeout: 40000 });
             await page.evaluate(() => document.fonts.ready);
-            const roundUp = page.getByRole('dialog', { name: 'Your round-up', exact: true });
-            await roundUp.waitFor({ state: 'visible' });
-            await roundUp.getByRole('button', { name: 'Close the round-up', exact: true }).click();
-            await roundUp.waitFor({ state: 'hidden' });
-            await page.locator('.ru-scrim').waitFor({ state: 'hidden' });
+            await page.locator('.signin-over').waitFor({ state: 'hidden' });
+            await page.locator('html.sage-flight-owned').waitFor({ state: 'hidden' });
+            // The phone board does not mount RoundUp, regardless of the scheduler flag.
+            assert.equal(await page.locator('.ru-scrim').count(), 0, 'phone board has no round-up');
             return { context, page };
           }
           async function requireEntry(page, selector) {
@@ -230,6 +229,12 @@ jobs:
             const desktop = await login(5186);
             await desktop.page.setViewportSize({ width: 1440, height: 1000 });
             await requireEntry(desktop.page, '.sc-entry');
+            // Resizing mounts the desktop Board and its due round-up, possibly after arrival.
+            const roundUp = desktop.page.getByRole('dialog', { name: 'Your round-up', exact: true });
+            await roundUp.waitFor({ state: 'visible' });
+            await roundUp.getByRole('button', { name: 'Close the round-up', exact: true }).click();
+            await roundUp.waitFor({ state: 'hidden' });
+            await desktop.page.locator('.ru-scrim').waitFor({ state: 'hidden' });
             await desktop.page.locator('.sc-entry .sc-toggle').click();
             await desktop.page.locator('.sc-dialog[role="dialog"]').waitFor();
             await desktop.page.locator('.sc-dialog .sc-day').first().waitFor();
