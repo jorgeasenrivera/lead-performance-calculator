@@ -34,7 +34,7 @@ function nullWrappedButton(source, open, name) {
   return source.slice(0, start) + "null" + source.slice(end + "</button>".length);
 }
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "b117da4fe40732be8b534c8a8cd1be547cc150bf7673ef47409161e0b905afc0") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "4a390efc38cc6bee542b2d60fadcdf8d331c72027dd86cda4f6a7bca8d203d4a") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');

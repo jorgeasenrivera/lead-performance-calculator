@@ -13,6 +13,8 @@ import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArri
 let _papa = null;
 const loadPapa = async () => (_papa || (_papa = import("papaparse").then((m) => m.default || m)));
 import { createClient } from "@supabase/supabase-js";
+import { createReportedAuthAdapter } from "./reported-auth.mjs";
+import { acceptLoad, adoptCached, beginLoad, inheritLoadedUnder, reportedAuthFor } from "./scheduler-load-context.mjs";
 /* The mark. One drawing on the same 9x9 grid PixIcon uses, so the identity and
    the app's iconography come off one ruler. Its own file because it is shipped
    artwork rather than a screen: every size, plate and print form is generated
@@ -897,6 +899,13 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
         storageKey: "lpc-auth",
       },
     })
+  : null;
+
+/* Which sign-in a store document was loaded under. Kept in memory beside the document (never on it, so a
+   save cannot carry it) for the scheduler to check before it shows a roster. Only with the scheduler's
+   build flag: without it nothing here listens to anything and every load goes through exactly as before. */
+const reportedAuth = (import.meta.env.VITE_SCHEDULER_CALENDAR === "1" && supabase)
+  ? reportedAuthFor(supabase, createReportedAuthAdapter)
   : null;
 
 const AUTH_ENABLED = true;
@@ -2032,9 +2041,11 @@ export default function LeadPerformanceCalculator() {
         // First load: pull every accessible store, cache it, pick a starting view.
         const all = {};
         for (const s of accessible) {
+          const ticket = beginLoad(reportedAuth, s.id);
           const got = await withTimeout(loadStrict(storeKey(s.id)));
           const r = got.value || { ok: false };
           let d = r.ok ? r.value : undefined;
+          let fromNetwork = r.ok;   // a copy the phone remembers was not loaded under any sign-in of today's
           if (!r.ok) {
             /* Never let a failed read look like an empty store. The copy the
                phone remembers stands in where there is one; a salesperson's
@@ -2050,6 +2061,7 @@ export default function LeadPerformanceCalculator() {
             const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
+            fromNetwork = true;
           }
           // Same check as the single-store load: a document that says it belongs
           // to another store never enters the cache, because the cache is read
@@ -2057,6 +2069,10 @@ export default function LeadPerformanceCalculator() {
           if (d.__storeId && d.__storeId !== s.id) {
             console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
             continue;
+          }
+          if (fromNetwork && reportedAuth) {
+            const took = acceptLoad(ticket, reportedAuth, d);
+            if (!took.ok) { console.warn("store load not accepted", { key: s.id, reason: took.reason }); continue; }
           }
           if (!d.__storeId) d.__storeId = s.id;   // only ever stamps a document that arrived without one
           all[s.id] = d;
@@ -2098,6 +2114,7 @@ export default function LeadPerformanceCalculator() {
       if (!missing.length) return;
       const add = {};
       for (const s of missing) {
+        const ticket = beginLoad(reportedAuth, s.id);
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
@@ -2105,6 +2122,10 @@ export default function LeadPerformanceCalculator() {
         if (d.__storeId && d.__storeId !== s.id) {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
+        }
+        if (reportedAuth) {
+          const took = acceptLoad(ticket, reportedAuth, d);
+          if (!took.ok) { console.warn("store load not accepted", { key: s.id, reason: took.reason }); continue; }
         }
         if (!d.__storeId) d.__storeId = s.id;
         add[s.id] = d;
@@ -2218,7 +2239,11 @@ export default function LeadPerformanceCalculator() {
           setStoreData(null); setStoreLoadFailed(true);
           return;
         }
-        setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setTab("board"); return;
+        /* A copy in hand is shown only if it was loaded for this store under the sign-in that is current.
+           Otherwise it is read again, and never given today's sign-in just because it is to hand. */
+        if (!reportedAuth || adoptCached(cached, view, reportedAuth).ok) {
+          setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setTab("board"); return;
+        }
       }
       /* Drop the store we were showing BEFORE fetching the next one. Without this
          the board keeps rendering the previous store's roster under the new
@@ -2230,6 +2255,7 @@ export default function LeadPerformanceCalculator() {
       setStoreLoadFailed(false);
       setStoreMismatch(null);
       setStoreLoadError("");
+      const ticket = beginLoad(reportedAuth, want);
       try {
         /* A request that never answers used to leave this screen loading for ever:
            there was no failure to catch, so nothing downstream ever ran. Twelve
@@ -2261,6 +2287,15 @@ export default function LeadPerformanceCalculator() {
           setStoreMismatch({ want, claims: d.__storeId, found: describeDoc(d) });
           setStoreData(null); setStoreLoadFailed(true);
           return;
+        }
+        if (reportedAuth) {
+          const took = acceptLoad(ticket, reportedAuth, d);
+          if (!took.ok) {
+            console.warn("store load not accepted", { key: want, reason: took.reason });
+            setStoreLoadError("The account changed while this store was loading. Reload to continue.");
+            setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+            return;
+          }
         }
         setStoreMismatch(null);
         d.__storeId = want;   // only ever stamps a document that arrived without one
@@ -2327,8 +2362,12 @@ export default function LeadPerformanceCalculator() {
       try {
         const stamp = await loadStoreStamp(storeKey(view));
         if (!stamp || dead || stamp === storeStampRef.current) return;
+        const ticket = beginLoad(reportedAuth, view, "refresh");
         const fresh = await loadStore(view, null, true);
         if (!fresh || dead || savingRef.current) return;
+        // Another store's document is never relabelled as this one's, and an answer for a sign-in that has ended is dropped.
+        if (fresh.__storeId && fresh.__storeId !== view) return;
+        if (reportedAuth && !acceptLoad(ticket, reportedAuth, fresh).ok) return;
         fresh.__storeId = view;
         storeStampRef.current = stamp;
         setStoreData(fresh);
@@ -2399,6 +2438,7 @@ export default function LeadPerformanceCalculator() {
        would have meant reading and rewriting every store to save a snapshot
        that is superseded the next time a report lands. */
     if (next && next.snapshots) delete next.snapshots;
+    inheritLoadedUnder(adminData[storeId] || storeData, next);   // a local change keeps where the document came from
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
 
@@ -2417,6 +2457,7 @@ export default function LeadPerformanceCalculator() {
     const ok = res.ok;
     if (ok) {
       const merged = res.value || next;
+      inheritLoadedUnder(next, merged);
       if (seq === saveSeq.current) {
         setStoreData(merged);
         setAdminData((p) => ({ ...p, [storeId]: merged }));
@@ -2451,13 +2492,13 @@ export default function LeadPerformanceCalculator() {
          is; anything else is not ours to write to. */
       if (prev.__storeId && prev.__storeId !== storeId) return prev;
       if (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry)) return prev;
-      return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
+      return inheritLoadedUnder(prev, { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] });
     });
     setAdminData((p) => {
       const cur = p[storeId];
       if (!cur || (cur.__storeId && cur.__storeId !== storeId)) return p;
       if (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry)) return p;
-      return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
+      return { ...p, [storeId]: inheritLoadedUnder(cur, { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] }) };
     });
   }, []);
 
