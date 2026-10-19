@@ -19,6 +19,8 @@ export class EditorInputError extends Error {
 }
 const refuse = (code, detail) => { throw new EditorInputError(code, detail); };
 
+// The app's name match for departure records, as the calendar does it.
+const norm = (v) => (typeof v === "string" ? v : "").trim().toLowerCase().replace(/\s+/g, " ");
 const ID = /^[A-Za-z0-9_.:-]{1,80}$/;
 const MAX_PEOPLE = 500;
 
@@ -53,11 +55,14 @@ export function editorStore(store, data, timezone, today) {
   const monthEnd = monthStart ? monthDays(today.slice(0, 7)).at(-1) : null;
   const dayOf = (v) => (typeof v === "string" && validDate(v.slice(0, 10)) ? v.slice(0, 10) : null);
   const left = (p) => {
-    const rec = (Array.isArray(data?.departed) ? data.departed : []).find((d) => d && (d.id === p.id || (d.id == null && typeof d.name === "string" && d.name.trim().toLowerCase() === String(p.name).trim().toLowerCase())));
+    const rec = (Array.isArray(data?.departed) ? data.departed : []).find((d) => d && (d.id === p.id || (d.id == null && typeof d.name === "string" && norm(d.name) === norm(p.name))));
     return rec ? dayOf(rec.at) : null;
   };
   for (const p of roster) {
     if (!p || typeof p.id !== "string" || !p.id || !p.roleId || seen.has(p.id)) continue;
+    // The editor writes ids into its markup as they are, so an id that is not a plain token is refused outright,
+    // not dropped: a person quietly missing from the roster would be worse than an editor that says it cannot open.
+    if (!ID.test(p.id)) refuse("roster", "person id");
     seen.add(p.id);
     if (monthStart && ((left(p) && left(p) < monthStart) || (dayOf(p.hiredAt) && dayOf(p.hiredAt) > monthEnd))) continue;
     people.push({ id: p.id, name: typeof p.name === "string" && p.name ? p.name : "Unnamed", off: null, start: null, end: null, maxHours: null });
@@ -114,14 +119,15 @@ export function editorProps({ store, data, isOff, timezone, now, ready } = {}) {
     if (ready === undefined ? data?.__storeId !== store.id : ready !== true) return { ok: false, reason: "not-ready" };
     // `now` is an instant or a function giving one, so the date is asked again on every use.
     const instant = typeof now === "function" ? now : () => now ?? new Date();
-    if (zonedToday(timezone, instant()) === null) return { ok: false, reason: "timezone" };
+    try { if (zonedToday(timezone, instant()) === null) return { ok: false, reason: "timezone" }; } catch { return { ok: false, reason: "timezone" }; }
     const stores = [editorStore(store, data, timezone, zonedToday(timezone, instant()))];
     return {
       ok: true,
       stores,
       assignmentForDay: assignmentResolver(data, { isOff, only: new Set(stores[0].people.map((p) => p.id)) }),
       today: () => {
-        const day = zonedToday(timezone, instant());
+        let day = null;
+        try { day = zonedToday(timezone, instant()); } catch { /* an unreadable clock is no date */ }
         if (day === null) throw new EditorInputError("timezone", "today");
         return day;
       },

@@ -77,6 +77,7 @@ const data = (id, names) => ({
 });
 const props = (id, names, extra = {}) => ({ store: { id, name: id }, data: data(id, names), timezone: "America/New_York", now: NOW, principalEpoch: 1, ...extra });
 const FIXTURE_WORDS = /Oak|Pine|Person \d|fictional/i;
+const PLACEHOLDER = /synthetic|fictional|fixture|illustrative|\bpreview\b|in-memory|\bOak\b|\bPine\b/i;
 
 const dist = await build();
 const requests = [];
@@ -137,12 +138,23 @@ try {
     assert.doesNotMatch(all, /synthetic|fictional|\bOak\b|\bPine\b/i, `${vp.name}: no placeholder wording anywhere in the editor`);
     await page.frameLocator("iframe").locator("#workspace").click();
     const editing = await page.frameLocator("iframe").locator("#app").evaluate((el) => el.textContent);
-    assert.doesNotMatch(editing, /synthetic|fictional|\bOak\b|\bPine\b/i, `${vp.name}: none while editing either`);
+    assert.doesNotMatch(editing, PLACEHOLDER, `${vp.name}: none while editing either`);
+    assert.match(editing, /Nothing here is saved to the schedule/, `${vp.name}: the editor says plainly that nothing is saved`);
+    // Making a monthly draft rests on invented eligibility and demand, so it says it is not available.
+    await page.frameLocator("iframe").locator("summary", { hasText: "Schedule tools" }).click();
+    await page.frameLocator("iframe").locator("#generate-month").click();
+    assert.match(await page.frameLocator("iframe").locator("#message").textContent(), /not available yet/, `${vp.name}: generation says it is not available`);
+    assert.equal(await page.frameLocator("iframe").locator("#generation-sheet").getAttribute("hidden") !== null || (await page.frameLocator("iframe").locator("#generation-sheet").innerHTML()) === "", true, `${vp.name}: no generation sheet opened`);
+    // A day opened and the tools used: the wording that appears there is checked too.
+    await page.frameLocator("iframe").locator("#day-2026-10-15").click();
+    const dayText = await page.frameLocator("iframe").locator("#app").evaluate((el) => el.textContent);
+    assert.doesNotMatch(dayText, PLACEHOLDER, `${vp.name}: none on a day sheet`);
     assert.match(editing, /Monday–Sunday · America\/New_York/, `${vp.name}: the store's own zone is named`);
     assert.equal(await page.evaluate(() => window.__haptics), 0, `${vp.name}: no haptic event reached the outer page`);
 
     /* ---- People opens for real ids */
-    await page.frameLocator("iframe").locator("summary", { hasText: "Schedule tools" }).click();
+    if (await page.frameLocator("iframe").locator("#mobile-day-dialog").isVisible()) await page.frameLocator("iframe").getByRole("button", { name: /back to calendar|back/i }).first().click();
+    await page.frameLocator("iframe").locator("details.schedule-tools").evaluate((d) => { d.open = true; });
     await page.frameLocator("iframe").locator("#setup").click();
     await page.frameLocator("iframe").locator("#people").click();
     await page.frameLocator("iframe").locator("#settings-sheet #person").waitFor();

@@ -5,7 +5,7 @@
  * of its own, so its stylesheet, which styles `body` and `:root`, cannot reach this page and nothing
  * on this page reaches it. It reads the records it is handed through src/scheduler-editor-adapter.mjs,
  * and it writes nothing: no request, no storage. What a person changes lives in the frame until it
- * closes, and the screen says so. Nothing imports this file yet.
+ * closes, and the screen says so ("About this draft"); closing with Escape while there are changes asks first. Nothing imports this file yet.
  *
  * The records are taken when the editor opens for a store. A different store, or a new sign-in
  * (`principalEpoch`), opens a fresh editor and drops the old one with whatever was unapplied.

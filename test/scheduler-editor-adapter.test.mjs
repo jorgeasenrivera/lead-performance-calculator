@@ -124,3 +124,15 @@ test("mounting refuses what it cannot bind, before it touches the page", () => {
   bad({ ...base, index: 3 }, /not a store/);
   bad({ ...base, index: 0.5 }, /not a store/);
 });
+
+test("an id the editor could not write safely is refused, a throwing clock is no date, and a spaced name still matches its departure", () => {
+  const odd = data({ roster: [...data().roster, { id: 'x" data-pwn="1', name: "Odd", roleId: "sales" }] });
+  assert.equal(editorProps({ store, data: odd, timezone: NY }).reason, "roster");
+  assert.throws(() => editorStore(store, odd, NY), (e) => e instanceof EditorInputError && e.code === "roster");
+  assert.equal(editorProps({ store, data: data(), timezone: NY, now: () => { throw new RangeError("boom"); } }).reason, "timezone");
+  const props = editorProps({ store, data: data(), timezone: NY, now: (() => { let n = 0; return () => { if (++n > 2) throw new Error("late"); return new Date("2026-10-14T16:00:00Z"); }; })() });
+  assert.equal(props.ok, true);
+  assert.throws(() => props.today(), (e) => e instanceof EditorInputError && e.code === "timezone");
+  const spaced = data({ roster: [{ id: "q1", name: "Rae  Alder", roleId: "sales" }], departed: [{ name: "rae alder", at: "2026-09-01" }], daysOff: {} });
+  assert.deepEqual(editorStore(store, spaced, NY, "2026-10-14").people, [], "the calendar's name match also collapses inner spaces");
+});
