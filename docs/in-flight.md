@@ -60,6 +60,51 @@ The core exception is only actual dashboard-load provenance for initial load, ca
 
 Manager only threads the adapter and provenance through the existing phone/desktop entry paths. Calendar composes the verified hook with one controlled month/date, masks stale store/principal data at render time, adapts only its scoped status/days output, forwards retry and opens the existing editor. Editor adds only a narrow parent close contract using the mounted handle's existing draft check. User Close, scrim, Escape and navigation must share the unsaved-state decision; auth/store invalidation immediately removes stale content without a confirmation veto. Apply stays in-memory, never a persistence claim. Preserve desktop side panel/larger calendar, one-row Delivered areas, mobile behavior, unknowns and existing data rules.
 
+**H-X67 candidate qualification addendum, 19 October.** The parent authorizes existing X26 WT8, after its fixes and serialized exact-head review, to reconcile only `.github/workflows/manager-spacing.yml` and the already conditionally scoped `scripts/search-runtime.scheduler-v1.sha256`. No branch edit by the recording agent, ownership transfer/renewal, `vercel.json` edit, deployment enablement, original immutable-manifest edit, merge or production action. This is CI qualification scope, not approval of unfinished runtime fixes or provisional hashes.
+
+For same-repository pull requests whose head is exactly `claude/scheduler-editor-runtime`, selected through trusted workflow event metadata, require the exact existing two-false-entry deployment guard and SHA-256 `662cf0e4955ad4cff2b47ce966a05e41ceb0379651937060fee0eb741702627d`. Preserve the existing one-false-entry guard/hash and three-addition/109-entry contract on every other workflow branch. Compare the entire config against the frozen config plus the exact approved insertion; no generic allowance for extra keys. Do not remove either deployment stop.
+
+For that editor-runtime PR case only, the candidate manifest retains all 106 original paths and the existing three calendar additions, and adds exactly the following 34 consumed source/style paths. The resulting exact added-path set relative to the original is 37 and total entry count is 143. Enumeration follows imports, including the lazy editor, its transitive modules and planner CSS import, at published diagnostic checkpoint `3c6c866f38d41c98f11cd9af88d43961fb10b8c9`:
+
+- `scripts/scheduler-performance/assignment-view.mjs`
+- `scripts/scheduler-performance/calendar-key.mjs`
+- `scripts/scheduler-performance/calendar-tokens.css`
+- `scripts/scheduler-performance/day-edit-state.mjs`
+- `scripts/scheduler-performance/day-motion.mjs`
+- `scripts/scheduler-performance/demand-context.mjs`
+- `scripts/scheduler-performance/generation-ui.mjs`
+- `scripts/scheduler-performance/generation.mjs`
+- `scripts/scheduler-performance/haptics.mjs`
+- `scripts/scheduler-performance/import-compatibility.mjs`
+- `scripts/scheduler-performance/import-ui.mjs`
+- `scripts/scheduler-performance/mobile-roster.mjs`
+- `scripts/scheduler-performance/month-app-core.mjs`
+- `scripts/scheduler-performance/month-model.mjs`
+- `scripts/scheduler-performance/name-key.mjs`
+- `scripts/scheduler-performance/off-day-command.mjs`
+- `scripts/scheduler-performance/off-day-ui.mjs`
+- `scripts/scheduler-performance/planner.css`
+- `scripts/scheduler-performance/sage-icons.mjs`
+- `scripts/scheduler-performance/schedule-import.mjs`
+- `scripts/scheduler-performance/shared-system.css`
+- `scripts/scheduler-performance/shift-intervals.mjs`
+- `scripts/scheduler-performance/store-editor.mjs`
+- `scripts/scheduler-performance/team-balance.mjs`
+- `scripts/scheduler-performance/team-model.mjs`
+- `scripts/scheduler-performance/team-ui.mjs`
+- `scripts/scheduler-performance/weekly-hours.mjs`
+- `scripts/scheduler-proposal/model.mjs`
+- `src/reported-auth.mjs`
+- `src/reported-month.mjs`
+- `src/scheduler-editor-adapter.mjs`
+- `src/scheduler-editor.jsx`
+- `src/scheduler-load-context.mjs`
+- `src/use-reported-month.mjs`
+
+Listing a path qualifies its existing reviewed bytes; it grants no new runtime edit permission. After independent review of final scoped source and dependency closure, record only exact final reviewed hashes, including changed core/calendar and the exact existing config. Preserve byte-identical reader files from `2ab0db62b8e619cd4a7dd5efa8d9693d7dc8d868`; no provisional hash is approved here. If WT8's final fixes change the import closure, reconcile the exact path list before publication rather than accepting arbitrary additions. The preview bootstrap, fixtures, tests/probes and build script are not consumed runtime additions.
+
+Keep frozen checkout `d9320e253b603260f6a7355d4bc1c77a59fefa5b`, immutable-manifest byte comparison and all 106 baseline checks unchanged. Preserve manifest syntax/duplicate/unsafe-path/PENDING rejection, zero dropped entries, exact changed-original-path allowlist (core, Manager, config), and `sha256sum --check` of every candidate entry. Only the editor case receives the exact expanded additions/count; update its truthful summary without relaxing assertions. Preserve all existing browser scenarios, thresholds, measurements, negative controls and failed evidence. Qualification must prove rejection of either false guard missing/enabled, an extra guard, unrelated config edits, wrong config checksum, altered immutable baseline, missing/extra/duplicate manifest entries and candidate source/checksum mismatch. Independently review the workflow/manifest diff and run applicable tests/build, then existing Chromium/WebKit checks to terminal at exact source/merge SHAs with retained evidence and zero deployment verification. Existing WebKit integration and other failures remain open until separately resolved; this record supplies no cause or waiver.
+
 **H-X67 conditional preview-build pin addendum, 19 October.** The parent identified the existing core SHA-256 pin at `scripts/scheduler-performance/build.mjs:37` as a dependency of the approved load-provenance edit. Existing X26 owner may change only that single core-hash constant, and only to the final core bytes cleared by independent exact-diff review under H-X67. Candidate `4a390efc38cc6bee542b2d60fadcdf8d331c72027dd86cda4f6a7bca8d203d4a` is provisional, not approved by this record. Preserve every transform, exact-source/anchor check, isolation assertion and negative control; no other build-script edit, relaxed guard or blind rehash. Preserve the original immutable manifest; the conditional reviewed-candidate manifest scope below remains unchanged. No transfer/renewal, production merge, deployment or expansion of core behavior.
 
 The coordinator reports H-X66 completed at `b69cb4e298fa9ad7a86ffb09951980e23372c3b7`, with hosted Chromium/WebKit and differential preview checks passing while legacy failures remain retained. The unrelated shots WebKit page crash remains failed and unattributed, not waived or assigned a cause. H-X67 local checkpoint `a284a76` has no core edit yet; the held core patch awaits this conditional pin scope and independent review. These are parent-relayed checkpoints, not new verification by this recording agent; all other serialization, test and release gates remain.

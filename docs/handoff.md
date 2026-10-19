@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X67 qualification addendum · Exact branch guard and consumed runtime closure.**
+
+The board enumerates 34 additional consumed runtime/style paths for WT8's candidate manifest, bringing the editor-runtime case to 37 additions over 106 immutable paths, 143 entries total. Only `.github/workflows/manager-spacing.yml` and conditional `scripts/search-runtime.scheduler-v1.sha256` qualification are added here. Select the same-repository editor PR case from event metadata; require the exact existing two-false-entry guard/hash, preserve the old one-guard/109-entry contract for other branches, all immutable/source checks and enumerated negative cases. Final hashes require independent source review; listing dependencies grants no edits to them. No `vercel.json` or original-manifest change, deployment enablement, ownership transfer/renewal or production action. Preserve failures. This commit changes coordination only; the parent hands off to the existing WT8 writer after exact-head serialization.
+
 **H-X67 addendum · One reviewed core-hash constant in the preview builder.**
 
 The board now permits existing X26 to update only the core SHA-256 constant in `scripts/scheduler-performance/build.mjs`, after independent exact-diff review of the final H-X67 core bytes. Supplied hash `4a390efc38cc6bee542b2d60fadcdf8d331c72027dd86cda4f6a7bca8d203d4a` remains provisional. Every transform, source/anchor guard, isolation negative control and original immutable manifest stays unchanged; the existing conditional candidate-manifest scope remains. Parent reports H-X66 completed at `b69cb4e298fa9ad7a86ffb09951980e23372c3b7`; retained legacy failures and the failed/unattributed shots WebKit crash remain visible. Local H-X67 `a284a76` has no core edit yet. No ownership change or production merge/deployment. This addendum changes coordination only.
