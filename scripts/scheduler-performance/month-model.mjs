@@ -163,13 +163,22 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     };
   };
   const canonOf = (k) => stable(projectionFor(k));
-  const unresolved = () => groups.filter((g) => [...g.keys].some((x) => !((acked.get(x)?.revision ?? -1) >= g.revision)));
+  // A month made by a tool that writes the draft map itself (an off-day move) has no recorded start. It began as it is
+  // now without the days that tool wrote, so that is what it is measured against; read right after the change, before
+  // anything else can alter its teams or people.
+  const baselineOf = (k) => { if (!baselines.has(k)) baselines.set(k, stable({ ...projectionFor(k), overrides: {} })); return baselines.get(k); };
+  // A change that reached several months is open for as long as any of those months still differs from what was saved.
+  const groupOpen = (g) => g.keys.size > 1 && [...g.keys].some((x) => canonOf(x) !== baselineOf(x));
+  const unresolved = () => groups.filter(groupOpen);
   const touch = (kind) => {
     const changed = [];
     for (const k of drafts.keys()) {
+      baselineOf(k);
       const c = canonOf(k);
       if (seen.get(k) !== c) { seen.set(k, c); changed.push(k); }
     }
+    // A change that reached a month that began unchanged is a change of that month, whatever else it reached.
+    for (let i = groups.length - 1; i >= 0; i--) if (!groupOpen(groups[i])) groups.splice(i, 1);
     if (!changed.length) return;
     // A change that reached more than one month is one change: no month's success can stand for the others.
     if (changed.length > 1) groups.push({ keys: new Set(changed), reason: kind === "teams" ? "shared-teams" : kind === "off-day" ? "cross-month-move" : "multi-month", revision });
@@ -201,7 +210,7 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     const open = unresolved().filter((g) => g.keys.has(k));
     return Object.freeze({ ok: true, clean: canonOf(k) === meta.canonical && canonOf(k) === baselines.get(k), stillLinked: Object.freeze([...new Set(open.flatMap((g) => [...g.keys]).filter((x) => x !== k).map(monthOf))].sort()) });
   };
-  const dirtyKeys = () => [...drafts.keys()].filter((k) => canonOf(k) !== baselines.get(k));
+  const dirtyKeys = () => [...drafts.keys()].filter((k) => canonOf(k) !== baselineOf(k));
   const draftStatus = (index) => {
     const mine = (k) => indexOf(k) === index;
     const open = unresolved().filter((g) => [...g.keys].some(mine));
@@ -225,6 +234,11 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     if (![people, rules, teams, memberships].every(Array.isArray) || people.length > 500 || rules.length > 400 || teams.length > 200 || memberships.length > 5000) return "shape";
     const ids = new Set();
     for (const p of people) { if (!plain(p) || typeof p.id !== "string" || !p.id || ids.has(p.id)) return "shape"; ids.add(p.id); }
+    // The planner reads inside these on its next draw, so what is inside is checked here, not left to the caller's codec.
+    if (!rules.every((r) => plain(r) && typeof r.effective === "string")) return "shape";
+    const teamIds = new Set();
+    for (const t of teams) { if (!plain(t) || typeof t.id !== "string" || !t.id || typeof t.name !== "string" || teamIds.has(t.id)) return "shape"; teamIds.add(t.id); }
+    if (!memberships.every((m) => plain(m) && m.storeId === c.storeId && ids.has(m.personId) && Array.isArray(m.teamIds) && m.teamIds.every((id) => teamIds.has(id)) && typeof m.from === "string" && typeof m.to === "string")) return "shape";
     if (typeof timezone !== "string" || !timezone) return "shape";
     try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }); } catch { return "shape"; }
     if (!plain(c.overrides)) return "shape";
@@ -246,12 +260,12 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     const bad = shapeProblem(candidate, index);
     if (bad) return refuse(bad);
     const k = key(index, candidate.month);
-    if (drafts.has(k) && canonOf(k) !== baselines.get(k)) return refuse("unsaved-changes");
+    if (drafts.has(k) && canonOf(k) !== baselineOf(k)) return refuse("unsaved-changes");
     const others = [...drafts.keys()].filter((x) => x !== k && indexOf(x) === index);
     const sameTeams = stable({ teams: candidate.store.teams, memberships: candidate.store.memberships }) === stable({ teams: teamState[index].teams, memberships: teamState[index].memberships });
     // Teams and memberships belong to the store, not the month: another month that is unsaved, or has been saved or
     // loaded, depends on the ones in place now, so different ones are refused rather than rewritten under it.
-    const dependent = others.filter((x) => canonOf(x) !== baselines.get(x) || acked.has(x));
+    const dependent = others.filter((x) => canonOf(x) !== baselineOf(x) || acked.has(x));
     if (!sameTeams && dependent.length) return refuse("shared-teams");
     // Everything is checked; from here on nothing can fail.
     if (!sameTeams) {

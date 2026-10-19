@@ -241,6 +241,7 @@ test("saved teams from one month are not written under another month that is uns
   p.setAssignment(0, "2026-11-10", EDIT);                       // November is unsaved
   const different = structuredClone(decExport);
   different.store.teams = [{ id: "old", name: "Old" }, { id: "other", name: "Other" }];
+  different.store.memberships = different.store.memberships.map((m) => ({ ...m, teamIds: ["old"] }));
   const before = JSON.stringify([p.teamState[0], p.draftStatus(0)]);
   assert.equal(p.hydrateMonth(0, different, allow).reason, "shared-teams");
   assert.equal(JSON.stringify([p.teamState[0], p.draftStatus(0)]), before);
@@ -270,4 +271,34 @@ test("the editor refuses a codec that cannot verify, and takes no default", () =
   const root = { nodeType: 1 };
   const base = { root, stores: [baseStore()], assignmentForDay: () => null };
   for (const bad of [null, 5, {}, { verify: "x" }]) assert.throws(() => mountMonthApp({ ...base, draftCodec: bad }), /draftCodec needs a verify function/);
+});
+
+test("what is inside the lists is checked here too, so a lax codec cannot poison the planner", () => {
+  const p = make();
+  const { projection } = p.exportMonth(0, "2026-12");
+  const lax = () => true;
+  const before = JSON.stringify([p.teamState[0], p.exportMonth(0, "2026-12").projection]);
+  const bad = (change, why) => assert.equal(p.hydrateMonth(0, change(structuredClone(projection)), lax).reason, "shape", why);
+  bad((x) => { x.store.rules = [null]; return x; }, "a rule that is not an object");
+  bad((x) => { x.store.rules = [{ open: 9 }]; return x; }, "a rule with no effective date");
+  bad((x) => { x.store.memberships = [7]; return x; }, "a membership that is not an object");
+  bad((x) => { x.store.teams = [{ id: "x" }]; return x; }, "a team with no name");
+  bad((x) => { x.store.teams.push({ ...x.store.teams[0] }); return x; }, "a duplicate team");
+  bad((x) => { x.store.memberships[0].personId = "nobody"; return x; }, "a membership for someone not in the month");
+  bad((x) => { x.store.memberships[0].teamIds = ["unknown"]; return x; }, "a membership in a team that is not there");
+  bad((x) => { x.store.memberships[0].storeId = "store-b"; return x; }, "a membership for another store");
+  assert.equal(JSON.stringify([p.teamState[0], p.exportMonth(0, "2026-12").projection]), before, "nothing was taken in");
+  assert.doesNotThrow(() => p.rows(0, "2026-12"));
+});
+
+test("a move that made its own months is clean again once it is undone, and notices the changes it made", () => {
+  const p = make();
+  const heard = [];
+  p.subscribe((e) => heard.push(e.months.map((m) => m.month).sort().join()));
+  const undo = p.applyOffDay(p.reviewOffDay({ index: 0, personId: "a", from: "2026-11-30", to: "2026-12-01", mode: "move" }));
+  assert.deepEqual(heard, ["2026-11,2026-12"]);
+  assert.equal(p.unsaved, true);
+  p.undoOffDay(undo);
+  assert.equal(p.unsaved, false, "the months began without those days");
+  assert.deepEqual(p.draftStatus(0).unresolved, []);
 });
