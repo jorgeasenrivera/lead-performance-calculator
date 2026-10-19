@@ -362,3 +362,7 @@ Browser evidence and unresolved test failures for this increment are retained un
 ## Shared controls preview
 
 The next isolated increment applies the approved shared control, motion and visual proposal to Performance, Coaching and the scheduler. Its source pins, browser matrix, preserved failures and limitations are recorded in [the shared-system checkpoint](evidence/shared-system/CHECKPOINT.md). Production application files remain unchanged. This does not make the preview a live application or a fair schedule generator.
+
+## Legacy off-days and team-grid compatibility
+
+The isolated preview now accepts scoped saved off-days JSON and a bounded date-row team-grid CSV through the existing review/apply flow. Valid off-days do not require working hours. Legacy OFF/VAC stays an unknown absence reason, unlisted work stays unknown, and historical membership is never borrowed from current People defaults. See [the compatibility contract](IMPORT-COMPATIBILITY.md) for supported shapes, provenance, additive imports, explicit conflict handling and pending original-workbook gaps. Only synthetic equivalent fixtures are included.
