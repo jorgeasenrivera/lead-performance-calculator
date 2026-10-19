@@ -165,6 +165,7 @@ export async function buildPreview() {
   await writeFile(planner+"/generation.mjs",(await readFile("scripts/scheduler-performance/generation.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await writeFile(planner+"/weekly-hours.mjs",(await readFile("scripts/scheduler-performance/weekly-hours.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
+  await writeFile(planner + "/month-app-core.mjs", (await readFile("scripts/scheduler-performance/month-app-core.mjs", "utf8")).replace("../scheduler-proposal/model.mjs", "./model.mjs"));
   await cp("scripts/scheduler-performance/sage-icons.mjs", planner + "/sage-icons.mjs");
   await cp("scripts/scheduler-performance/assignment-view.mjs", planner + "/assignment-view.mjs");
   await writeFile(planner + "/demand-context.mjs", (await readFile("scripts/scheduler-performance/demand-context.mjs", "utf8")).replace("../scheduler-proposal/model.mjs", "./model.mjs"));
