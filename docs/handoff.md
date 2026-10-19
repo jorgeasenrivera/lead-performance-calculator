@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X70 · Protected synthetic manager showcase, separate from WT8.**
+
+The parent requested a full showcase and assigned Codex separate assembly. X27 names the new-file boundary. Read existing source without changing WT8 or any other owner files. Keep the normal Vercel environment out of the build, blank backend settings and restrictive connection policy. Publish only isolated static synthetic artifacts to protected non-production preview. Verify routes, coherent sample records, keyboard/reduced motion and desktop/mobile browser layouts; no physical-device claim. Existing preview e3caf183 remains available while this work proceeds. No ownership transfer or renewal, production merge/deploy, live persistence, data, credentials or permissions change.
+
 **H-X69 · WT8 CSV producer omits only undefined optional keys.**
 
 Existing X26/H-X68 ownership and WT8-signed checkpoint `8262dd05ba28279a5aba647ea33fece2f98ef096` confirm the same writer; no transfer/renewal. The board authorizes only schedule-import.mjs and its existing test, plus the conditional final-reviewed import hash. Fix acceptedTeam/membershipBasis construction by omitting undefined optional source/unknown keys while preserving explicit false/true/null and all defined provenance, including spread cases. Keep codec strict and do not use JSON trimming. Require lossless-state/membership regressions, full scheduler suite and independent review before serialized publication. C113's separate local legacy-off enum work remains with its owner; depth and all C113 bytes are outside this handoff. No other import behavior, UI/API/SQL/deployment or worker changes. This commit changes coordination only.
