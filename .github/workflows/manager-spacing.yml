@@ -1,14 +1,19 @@
 name: manager-spacing
 on:
   push:
-    branches: [codex/signal-phone-spacing]
+    branches: [codex/signal-phone-spacing, codex/scheduler-runtime-qa]
   pull_request:
     paths:
       - src/Manager.jsx
+      - src/LeadPerformanceCalculator.jsx
+      - src/scheduler-calendar.jsx
+      - src/scheduler-calendar.css
+      - src/scheduler-calendar-model.mjs
       - src/manager-signal.css
       - scripts/manager-selector.mjs
       - scripts/manager-spacing.mjs
       - scripts/search-runtime.sha256
+      - scripts/search-runtime.scheduler-v1.sha256
       - scripts/hero-bars.mjs
       - scripts/manager-viewports.mjs
       - scripts/room-hero-colors.mjs
@@ -71,14 +76,79 @@ jobs:
           ref: e6d087c203bb88685159efbc272e04ce868e4c89
           path: .freshness-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: d9320e253b603260f6a7355d4bc1c77a59fefa5b
+          path: .frozen-runtime
+          persist-credentials: false
+      - name: Record the actual checkout identity
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          under_test=$(git rev-parse HEAD)
+          test "$under_test" = "${{ github.sha }}"
+          echo "SEARCH_RUNTIME_SHA=$under_test" >> "$GITHUB_ENV"
+          echo "Runtime under test: $under_test"
+          echo "PR head: ${{ github.event.pull_request.head.sha || 'not a pull request' }}"
+      - name: Verify the immutable released baseline
+        run: |
+          set -eu
+          cmp scripts/search-runtime.sha256 .frozen-runtime/scripts/search-runtime.sha256
+          cd .frozen-runtime
+          sha256sum --check scripts/search-runtime.sha256
+      - name: Verify the scheduler candidate manifest contract
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const parse = (file) => {
+            const entries = new Map();
+            for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+              if (!line || line.startsWith('#')) continue;
+              assert(!line.startsWith('PENDING'), `${file}: candidate hashes are pending review`);
+              const match = /^([a-f0-9]{64})  ([^\s]+)$/.exec(line);
+              assert(match, `${file}: malformed checksum entry`);
+              const [, hash, path] = match;
+              assert(!path.startsWith('/') && !path.split('/').includes('..'), `${file}: unsafe path`);
+              assert(!entries.has(path), `${file}: duplicate path ${path}`);
+              entries.set(path, hash);
+            }
+            return entries;
+          };
+          const frozen = parse('scripts/search-runtime.sha256');
+          const candidate = parse('scripts/search-runtime.scheduler-v1.sha256');
+          assert.equal(frozen.size, 106, 'released manifest must retain all 106 paths');
+          const added = [...candidate.keys()].filter(path => !frozen.has(path)).sort();
+          const dropped = [...frozen.keys()].filter(path => !candidate.has(path)).sort();
+          assert.deepEqual(dropped, [], 'candidate dropped frozen paths');
+          assert.deepEqual(added, [
+            'src/scheduler-calendar-model.mjs',
+            'src/scheduler-calendar.css',
+            'src/scheduler-calendar.jsx',
+          ], 'candidate additions must be exactly the three scheduler runtime files');
+          const changed = [...frozen.keys()].filter(path => candidate.get(path) !== frozen.get(path)).sort();
+          assert.deepEqual(changed, ['src/LeadPerformanceCalculator.jsx', 'src/Manager.jsx', 'vercel.json'],
+            'only the reviewed core, Manager and exact branch guard hashes may differ');
+          const originalConfig = readFileSync('.frozen-runtime/vercel.json', 'utf8');
+          assert.equal(frozen.get('vercel.json'), '4ae9575bf5380fc1231df7f3ae7e111ea43a22a70daea02da74e087d7d8b9cda');
+          assert(originalConfig.startsWith('{\n'), 'frozen config opening must match');
+          assert(!Object.hasOwn(JSON.parse(originalConfig), 'git'), 'frozen config must not have Git settings');
+          const exactGuard = '  "git": {\n    "deploymentEnabled": {\n      "claude/scheduler-live-integration": false\n    }\n  },\n';
+          const expectedConfig = originalConfig.slice(0, 2) + exactGuard + originalConfig.slice(2);
+          assert.equal(readFileSync('vercel.json', 'utf8'), expectedConfig, 'only the exact approved branch guard may change config');
+          assert.equal(candidate.get('vercel.json'), 'd1bcea9d06773cb061253fffaa84fa6aadee3fff13bd8a8b706232c3f0d9ab5d', 'config hash must match the reviewed branch guard');
+          assert.equal(candidate.size, 109, 'candidate must cover all retained and added paths');
+          console.log('Manifest contract passed: 106 retained paths, 3 declared additions, 3 declared rehashes including the exact branch guard.');
+          NODE
+      - name: Verify the exact candidate runtime
+        run: sha256sum --check scripts/search-runtime.scheduler-v1.sha256
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
-      - name: Verify frozen preview runtime
-        run: sha256sum --check scripts/search-runtime.sha256
       - name: Build fictional app
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
-          npm run build
+          VITE_SCHEDULER_CALENDAR=0 npm run build
+          VITE_SCHEDULER_CALENDAR=1 npm run build -- --outDir dist-scheduler
           ln -s "$PWD/node_modules" .color-baseline/node_modules
           ln -s "$PWD/node_modules" .hero-baseline/node_modules
           ln -s "$PWD/node_modules" .freshness-baseline/node_modules
@@ -86,11 +156,92 @@ jobs:
           (cd .hero-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
           cd .color-baseline
           VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build
+      - name: Verify scheduler-enabled Manager entries and negative controls
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -eu
+          SALESPERSON=1 node scripts/mock-supabase.mjs > scheduler-mock.log 2>&1 &
+          mock_pid=$!
+          node node_modules/vite/bin/vite.js preview --outDir dist-scheduler --port 5186 --host 127.0.0.1 > scheduler-preview.log 2>&1 &
+          enabled_pid=$!
+          node node_modules/vite/bin/vite.js preview --outDir dist --port 5187 --host 127.0.0.1 > scheduler-legacy.log 2>&1 &
+          legacy_pid=$!
+          trap 'kill "$mock_pid" "$enabled_pid" "$legacy_pid" 2>/dev/null || true' EXIT
+          for port in 5186 5187; do
+            for i in $(seq 1 100); do curl -sf "http://127.0.0.1:$port/" > /dev/null && break; sleep 0.2; done
+            curl -sf "http://127.0.0.1:$port/" > /dev/null
+          done
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { mkdir, writeFile } from 'node:fs/promises';
+          import { chromium, webkit } from 'playwright';
+          const browser = await ({ chromium, webkit }[process.env.FEEL_BROWSER]).launch({ headless: true });
+          const evidence = { checkout: process.env.SEARCH_RUNTIME_SHA, engine: process.env.FEEL_BROWSER, checks: [] };
+          await mkdir('scheduler-entry', { recursive: true });
+          async function login(port) {
+            const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', serviceWorkers: 'block' });
+            await context.route('**/*', route => {
+              const u = new URL(route.request().url());
+              return u.hostname === '127.0.0.1' && [String(port), '5433'].includes(u.port) ? route.continue() : route.abort();
+            });
+            await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
+              const response = await route.fetch(), data = await response.json();
+              const manager = p => ({ ...p, role: 'admin', wants: 'manager', onboarded: true, stores: ['sage-demo'] });
+              await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
+            });
+            const page = await context.newPage();
+            page.setDefaultTimeout(20000);
+            await page.addInitScript(() => localStorage.setItem('lpc:last-view', 'sage-demo'));
+            await page.goto(`http://127.0.0.1:${port}/`);
+            await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');
+            await page.locator('input[type="password"]').fill('x');
+            await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+            await page.locator('.bp-row').first().waitFor({ timeout: 40000 });
+            await page.evaluate(() => document.fonts.ready);
+            if (await page.locator('.ru-scrim').isVisible()) await page.locator('.ru-scrim').click({ position: { x: 2, y: 2 } });
+            return { context, page };
+          }
+          async function requireEntry(page, selector) {
+            await page.locator(selector).waitFor({ state: 'visible', timeout: 5000 });
+            assert.equal(await page.locator(selector).count(), 1, 'scheduler entry must render exactly once');
+            assert.ok(await page.locator(selector).isVisible(), 'scheduler entry must be visible');
+          }
+          try {
+            const legacy = await login(5187);
+            await assert.rejects(() => requireEntry(legacy.page, '.sc-calendar[data-layout="compact"]'), { name: 'TimeoutError' });
+            evidence.checks.push({ name: 'flag-off rejected by enabled coverage', flag: 0, pass: true });
+            await legacy.context.close();
+            const { context, page } = await login(5186);
+            const compact = '.sc-calendar[data-layout="compact"]';
+            await requireEntry(page, compact);
+            await page.locator(`${compact} .sc-toggle`).click();
+            await page.locator(`${compact} .sc-day`).first().waitFor();
+            await page.screenshot({ path: 'scheduler-entry/enabled-phone.png', fullPage: true });
+            evidence.checks.push({ name: 'phone entry opens real calendar', flag: 1, pass: true });
+            await page.locator(compact).evaluate(n => n.remove());
+            await assert.rejects(() => requireEntry(page, compact), { name: 'TimeoutError' });
+            evidence.checks.push({ name: 'missing entry rejected by enabled coverage', flag: 1, pass: true });
+            await context.close();
+            const desktop = await login(5186);
+            await desktop.page.setViewportSize({ width: 1440, height: 1000 });
+            await requireEntry(desktop.page, '.sc-entry');
+            if (await desktop.page.locator('.ru-scrim').isVisible()) await desktop.page.locator('.ru-scrim').click({ position: { x: 2, y: 2 } });
+            await desktop.page.locator('.sc-entry .sc-toggle').click();
+            await desktop.page.locator('.sc-dialog[role="dialog"]').waitFor();
+            await desktop.page.locator('.sc-dialog .sc-day').first().waitFor();
+            await desktop.page.screenshot({ path: 'scheduler-entry/enabled-desktop.png', fullPage: true });
+            evidence.checks.push({ name: 'desktop entry opens real calendar', flag: 1, pass: true });
+            await desktop.context.close();
+          } finally {
+            await writeFile('scheduler-entry/evidence.json', JSON.stringify(evidence, null, 2));
+            await browser.close();
+          }
+          NODE
       - name: Measure before and after
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: 710cc8d78d0363856df2f9000162923859434b73
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
@@ -116,6 +267,10 @@ jobs:
         with:
           name: manager-spacing-${{ matrix.engine }}
           path: |
+            scheduler-entry/
+            scheduler-mock.log
+            scheduler-preview.log
+            scheduler-legacy.log
             manager-spacing/
             manager-selector/
             search-keyboard/
