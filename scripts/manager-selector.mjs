@@ -148,4 +148,4 @@ try{
  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
  for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();const action=page.locator('.manager-context-action');assert.match(await action.getAttribute('aria-label'),new RegExp(`${mode.done} of 2`));await shot(`import-${mode.done}`);await action.click();await page.waitForFunction(()=>!document.querySelector('.bp-row'));});
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
-}finally{await writeFile('manager-selector/evidence.json',JSON.stringify({engine,evidence,failures,errors},null,2));console.log('SELECTOR_RESULT '+JSON.stringify({engine,evidence,failures,errors}));await browser.close();}
+}finally{await writeFile('manager-selector/evidence.json',JSON.stringify({engine,evidence,failures,errors},null,2));console.log('SELECTOR_RESULT '+JSON.stringify({engine,evidence,failures,errors}));await context.unrouteAll({behavior:'wait'});await browser.close();}
