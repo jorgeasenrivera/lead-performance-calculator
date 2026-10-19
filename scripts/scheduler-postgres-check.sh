@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  printf '%s\n' 'Usage: scheduler-postgres-check.sh --run-local [--bin-dir /approved/postgres/bin] --c113-root /verified/extracted --c113-archive /verified/source.tar.gz' \
+  printf '%s\n' 'Usage: scheduler-postgres-check.sh --run-local [--bin-dir /approved/postgres/bin] [--browser-probe /approved/playwright/index.mjs] --c113-root /verified/extracted --c113-archive /verified/source.tar.gz' \
     '       scheduler-postgres-check.sh --check-artifacts --c113-root /verified/extracted --c113-archive /verified/source.tar.gz' \
     'Creates a disposable fictional Unix-socket-only cluster. No remote target, download or installation.' \
     'Only run after the test environment and binary source have been separately approved.'
@@ -11,10 +11,11 @@ if [[ $# -eq 0 || ${1:-} == --help ]]; then usage; exit 0; fi
 [[ $1 == --run-local || $1 == --check-artifacts ]] || { usage >&2; exit 2; }
 mode=$1
 shift
-bin=''; c113_root=''; c113_archive=''
+bin=''; c113_root=''; c113_archive=''; browser_probe=''
 while [[ $# -gt 0 ]]; do
   [[ $# -ge 2 && $2 == /* ]] || { usage >&2; exit 2; }
   case "$1" in
+    --browser-probe) [[ -z $browser_probe ]] || exit 2; browser_probe=$2 ;;
     --bin-dir) [[ -z $bin ]] || exit 2; bin=$2 ;;
     --c113-root) [[ -z $c113_root ]] || exit 2; c113_root=$2 ;;
     --c113-archive) [[ -z $c113_archive ]] || exit 2; c113_archive=$2 ;;
@@ -86,4 +87,7 @@ psql=("${clean[@]}" "$bin/psql" -X -w -At -v ON_ERROR_STOP=1 -h "$root/socket" -
 # Local socket-only test connections. No login or credential is added by proposal.
 "${psql[@]}" -d scheduler_fixture -c 'ALTER ROLE scheduler_runtime LOGIN; ALTER ROLE authenticated LOGIN; ALTER ROLE anon LOGIN; ALTER ROLE service_role LOGIN; REVOKE CREATE, TEMPORARY ON DATABASE scheduler_fixture FROM PUBLIC; REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT CONNECT ON DATABASE scheduler_fixture TO scheduler_runtime,authenticated,anon,service_role'
 "${clean[@]}" "${artifacts[@]}" SCHEDULER_POSTGRES_ROOT="$root" SCHEDULER_POSTGRES_BIN="$bin" "$node" --test "$repo/scripts/scheduler-verification/matching-schema-sql.mjs"
+if [[ -n $browser_probe ]]; then
+  "${clean[@]}" SCHEDULER_POSTGRES_ROOT="$root" SCHEDULER_POSTGRES_BIN="$bin" FEEL_PLAYWRIGHT="$browser_probe" "$node" "$repo/scripts/scheduler-verification/desktop.mjs"
+fi
 echo 'Matching verified profile-shape checks complete; no production or real-credential evidence.'

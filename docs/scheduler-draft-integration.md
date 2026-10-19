@@ -1,4 +1,6 @@
-# Local scheduler draft integration
+# Backend-only integration record
+
+This records the earlier backend-only candidate. See [the combined integration](scheduler-combined-integration.md) for the successor frontend adapter and current verification.
 
 This local-only branch integrates the reviewed draft backend and pg transport. The default `/api/scheduler` remains a dormant 503 response. No frontend, endpoint activation, production connection, pilot grant or deployment is included in this integration.
 
