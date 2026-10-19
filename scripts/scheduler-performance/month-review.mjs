@@ -160,7 +160,8 @@ function validateStore(store, storeId, where, { timezoneOptional }) {
   const ids = new Set();
   store.people.forEach((p, i) => {
     const w = `${where}.people[${i}]`;
-    keysOnly(p, ["id", "name", "off", "start", "end", "maxHours"], ["id", "name", "off", "start", "end", "maxHours"], w);
+    keysOnly(p, ["id", "name", "off", "start", "end", "maxHours", "teamIds"], ["id", "name", "off", "start", "end", "maxHours"], w);
+    if (Object.hasOwn(p, "teamIds")) stringArray(p.teamIds, LIMITS.teams, `${w}.teamIds`);
     need(typeof p.id === "string" && p.id && !ids.has(p.id) && typeof p.name === "string", "shape", w);
     ids.add(p.id);
     // Unknown availability is carried as null, never filled in.
@@ -202,7 +203,7 @@ function validateStore(store, storeId, where, { timezoneOptional }) {
 }
 
 const RECORD_KEYS = ["on", "off", "shifts", "teamSnapshot", "absences", "unknownNotes", "generation", "generationLocks"];
-const SHIFT_KEYS = ["storeId", "personId", "date", "endDate", "startMinute", "endMinute", "timezone", "role", "source"];
+const SHIFT_KEYS = ["storeId", "personId", "date", "endDate", "startMinute", "endMinute", "timezone", "role", "source", "teamIds", "teamSource"];
 // A day's record is the planner's own value. Every key is named, and each key the planner reads
 // has the type it reads: an unknown key or a wrong type is refused here, not left to fail inside the planner.
 function validateRecord(record, where) {
@@ -215,7 +216,10 @@ function validateRecord(record, where) {
       const w = `${where}.shifts[${i}]`;
       keysOnly(s, SHIFT_KEYS, ["personId"], w);
       for (const k of ["storeId", "personId", "date", "endDate", "timezone", "role"]) if (Object.hasOwn(s, k)) need(typeof s[k] === "string", "shape", `${w}.${k}`);
-      for (const k of ["startMinute", "endMinute"]) if (Object.hasOwn(s, k)) need(num(s[k]), "shape", `${w}.${k}`);
+      // An imported shift with a time that could not be read carries null, and the planner reports it as an issue.
+      for (const k of ["startMinute", "endMinute"]) if (Object.hasOwn(s, k)) need(s[k] === null || num(s[k]), "shape", `${w}.${k}`);
+      if (Object.hasOwn(s, "teamIds")) stringArray(s.teamIds, LIMITS.teams, `${w}.teamIds`);
+      if (Object.hasOwn(s, "teamSource")) need(isObj(s.teamSource), "shape", `${w}.teamSource`);
       if (Object.hasOwn(s, "source")) need(isObj(s.source), "shape", `${w}.source`);
     });
   }
@@ -325,10 +329,12 @@ const HEX = /^[0-9a-f]{64}$/;
 // must be 64 lowercase hex and the same on a second ask.
 function trusted(sha256) {
   if (typeof sha256 !== "function") refuse("hash", "a sha256 implementation is required");
-  for (const [text, want] of VECTORS) if (sha256(text) !== want) refuse("hash", "the supplied sha256 gave a wrong answer");
+  // A hash that throws is the caller's fault and is reported the same way as a wrong one.
+  const ask = (text) => { try { return sha256(text); } catch { refuse("hash", "the supplied sha256 threw"); } };
+  for (const [text, want] of VECTORS) if (ask(text) !== want) refuse("hash", "the supplied sha256 gave a wrong answer");
   return (text) => {
-    const a = sha256(text);
-    if (typeof a !== "string" || !HEX.test(a) || sha256(text) !== a) refuse("hash", "the supplied sha256 gave an unusable or unstable answer");
+    const a = ask(text);
+    if (typeof a !== "string" || !HEX.test(a) || ask(text) !== a) refuse("hash", "the supplied sha256 gave an unusable or unstable answer");
     return a;
   };
 }

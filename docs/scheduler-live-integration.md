@@ -182,7 +182,7 @@ placeholders.
 The rows are whole rows, so forecasts, pinned history and policy, and neighbouring weeks are all
 in both. A change to the canonical form is a new definition string, and a pinned test fails
 until that is done on purpose. Hashing is never this file's own: the caller supplies `sha256`,
-and it is checked against two known answers on every use.
+and it is checked against nine known answers on every use.
 
 **Trusted recomputation.** `verifyReview(input, {definition, digest}, {sha256})` recomputes and
 compares, and on a match returns only `{ok, digest, openIssues}`, never the rows. A claim that
@@ -192,7 +192,7 @@ caller's `openIssues` or `recomputedFingerprint`. Every answer from the supplied
 include non-ASCII text, a 1000 character input and both sides of the 56 and 64 byte block edges.
 
 **Input is strict.** Plain JSON only, copied and frozen: plain objects, and plain dense arrays with
-no extra properties or holes (a subclass, getter or proxy array is refused, and an array's length is
+no extra properties or holes (a subclass, getter or holey array is refused; a proxy is copied by descriptors, so nothing of it survives, and an array's length is
 checked before it is walked). It is bounded in depth, nodes, characters, key length and per-record
 counts, and in time: assignments times memberships is capped, because the planner looks up
 memberships per person per day. Every key of a day record is named and the keys the planner reads

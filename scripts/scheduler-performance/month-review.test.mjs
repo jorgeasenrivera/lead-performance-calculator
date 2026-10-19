@@ -457,3 +457,31 @@ test("export proves itself against the live planner, and a verified match return
   input(bare, "2026-10");
   assert.ok(bare.planner.drafts.size >= 1);
 });
+
+test("real imported shifts, unreadable times and people with teamIds export and review", () => {
+  const ctx = make();
+  const store = ctx.stores[0];
+  const who = store.people[0].id;
+  const shift = { storeId: store.id, personId: who, date: "2026-10-14", startMinute: 540, endMinute: 1020, teamIds: [store.teams[0].id], teamSource: { kind: "CSV retained membership" } };
+  const bad = { storeId: store.id, personId: store.people[1].id, date: "2026-10-14", startMinute: null, endMinute: null };
+  ctx.planner.setAssignment(0, "2026-10-14", { on: [who], off: [], shifts: [shift, bad] });
+  const i = input(ctx, "2026-10");
+  assert.equal(reviewMonth(i).legacyFingerprint, JSON.stringify(ctx.planner.rows(0, "2026-10")));
+  // a malformed teamIds is still refused by name
+  const worse = plain(i);
+  worse.months["2026-10"].overrides["2026-10-14"].shifts[0].teamIds = "oak";
+  throwsCode(() => reviewMonth(worse), "shape");
+  // a person carrying teamIds is accepted when it is a string array
+  const withTeams = plain(i);
+  withTeams.baseStore.people[0].teamIds = ["oak"];
+  assert.doesNotThrow(() => reviewMonth(withTeams));
+  withTeams.baseStore.people[0].teamIds = [1];
+  throwsCode(() => reviewMonth(withTeams), "shape");
+});
+
+test("a hash that throws is refused as a hash, not rethrown", () => {
+  const i = input(make(), "2026-10");
+  const boom = () => { throw new RangeError("boom"); };
+  throwsCode(() => reviewMonth(i, { sha256: boom }), "hash");
+  assert.deepEqual(verifyReview(i, { definition: REVIEW_DEFINITION, digest: "0".repeat(64) }, { sha256: boom }), { ok: false, reason: "hash" });
+});
