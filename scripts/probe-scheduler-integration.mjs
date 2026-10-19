@@ -523,6 +523,37 @@ try {
       page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
     });
 
+    /* The app's own navigation, driven the way a native action or any code does it: a click dispatched on a control
+       that the inert backdrop keeps a person from reaching. Each asks, no keeps the planner and the page, yes goes. */
+    const routes = [
+      ["a tab", () => page.locator(".seg-wrap button", { hasText: /^Summary$/ }).first(), async () => (await page.locator(".seg-wrap button.on, .seg-wrap button[aria-pressed=true], .seg-wrap [aria-selected=true]").first().innerText().catch(() => "")).trim()],
+      ["the import button", () => page.locator(".manager-context-action").first(), null],
+    ];
+    for (const [label, target, current] of routes) {
+      await step(`the app's own navigation asks before discarding: ${label}`, async () => {
+        const live = await planner().count();
+        if (!live) { await openPlanner(); await makeDraft(); }
+        const before = asks();
+        const was = current ? await current() : null;
+        page.removeAllListeners("dialog");
+        let answer = false;
+        page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); if (answer) await d.accept(); else await d.dismiss(); });
+        await target().evaluate((el) => el.click());
+        await page.waitForTimeout(500);
+        assert.equal(asks(), before + 1, "asked once");
+        assert.equal(await planner().count(), 1, "and with no the planner stays");
+        if (current) assert.equal(await current(), was, "and so does the page");
+        answer = true;
+        await target().evaluate((el) => el.click());
+        await planner().waitFor({ state: "detached", timeout: 5000 });
+        assert.equal(asks(), before + 2, "asked again, and with yes it goes");
+        page.removeAllListeners("dialog");
+        // Back to where the next step expects to start: the page as it opens, which a reload gives.
+        await page.reload();
+        await settle(page, ".sc-entry .sc-toggle");
+        page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
+      });
+    }
     await step("a change of sign-in removes the planner with no question", async () => {
       const before = state.dialogs.length;
       await announce(ctx, entry.url, "SIGNED_IN", SID_B);

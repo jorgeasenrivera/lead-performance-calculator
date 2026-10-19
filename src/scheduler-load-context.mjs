@@ -45,8 +45,25 @@ export function reportedAuthFor(client, create) {
 }
 /** The adapter the dashboard made, for the screens that borrow it. Null when there is none. */
 export function currentReportedAuth() { return current ? current.auth : null; }
-/** For tests: forget the adapter and every generation. */
-export function resetLoadContext() { current = null; generations.clear(); }
+/** For tests: forget the adapter, every generation and any leave guard. */
+export function resetLoadContext() { current = null; generations.clear(); leaveGuard = null; }
+
+/**
+ * Leaving the page the planner is open on, by the app's own navigation (a tool, a tab, the import button, a store
+ * switch). The planner registers one question while it is open; the dashboard asks it before it moves. `false`
+ * means stay. It is for choices a person makes: a sign-in or store change that ends the records never asks (the
+ * planner is taken away without a question), and a guard that throws is no guard. One at a time, the last wins.
+ */
+let leaveGuard = null;
+export function registerLeaveGuard(fn) {
+  if (typeof fn !== "function") return () => {};
+  leaveGuard = fn;
+  return () => { if (leaveGuard === fn) leaveGuard = null; };
+}
+export function mayLeave() {
+  if (!leaveGuard) return true;
+  try { return leaveGuard() !== false; } catch { return true; }
+}
 
 /**
  * Start a load of `storeId`: the epoch it begins under, and its place in line. A newer `beginLoad` for

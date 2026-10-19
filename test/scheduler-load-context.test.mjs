@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  acceptLoad, adoptCached, beginLoad, currentReportedAuth, inheritLoadedUnder, loadedUnder, reportedAuthFor,
+  acceptLoad, adoptCached, beginLoad, currentReportedAuth, inheritLoadedUnder, loadedUnder, mayLeave, registerLeaveGuard, reportedAuthFor,
   resetLoadContext, trustedFor,
 } from "../src/scheduler-load-context.mjs";
 
@@ -153,4 +153,31 @@ test("one adapter per client for the life of the page, made once however often i
   fresh();
   assert.equal(reportedAuthFor({}, () => { throw new Error("boom"); }), null);
   assert.equal(currentReportedAuth(), null);
+});
+
+test("the leave guard: free with none, stays on false, goes on true, and a broken one is no guard", () => {
+  resetLoadContext();
+  assert.equal(mayLeave(), true);
+  let asked = 0, answer = false;
+  const off = registerLeaveGuard(() => { asked++; return answer; });
+  assert.equal(mayLeave(), false);
+  answer = true;
+  assert.equal(mayLeave(), true);
+  assert.equal(asked, 2);
+  off();
+  answer = false;
+  assert.equal(mayLeave(), true, "an unregistered guard is not asked");
+  registerLeaveGuard(() => { throw new Error("broken"); });
+  assert.equal(mayLeave(), true);
+  assert.equal(registerLeaveGuard(null)(), undefined);
+});
+
+test("an old guard's cleanup does not remove the one that replaced it", () => {
+  resetLoadContext();
+  const offOld = registerLeaveGuard(() => false);
+  const offNew = registerLeaveGuard(() => false);
+  offOld();
+  assert.equal(mayLeave(), false);
+  offNew();
+  assert.equal(mayLeave(), true);
 });

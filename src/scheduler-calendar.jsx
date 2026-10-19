@@ -17,7 +17,7 @@ import {
   scheduleReview, staffingMonth, storeToday, summaryText, validMonth,
 } from "./scheduler-calendar-model.mjs";
 import { useReportedMonth } from "./use-reported-month.mjs";
-import { currentReportedAuth, loadedUnder } from "./scheduler-load-context.mjs";
+import { currentReportedAuth, loadedUnder, registerLeaveGuard } from "./scheduler-load-context.mjs";
 
 // The approved month editor, fetched only when somebody asks to plan the month.
 const SchedulerEditor = lazy(() => import("./scheduler-editor.jsx"));
@@ -29,6 +29,7 @@ const NO_AUTH = Object.freeze({
 });
 const NO_AUTH_SNAPSHOT = Object.freeze({ principalEpoch: null, disposed: true });
 const DISCARD = "Close the editor and discard this page’s unsaved changes?";
+const LEAVE = "Leave this page and discard its unsaved changes?";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 const SOURCE_WORDS = { manager: "Marked off by a manager", schedule: "From the schedule", "on file": "On file" };
@@ -225,6 +226,16 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
     const leaving = (e) => { if (guard.current && guard.current.hasDraft()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", leaving);
     return () => window.removeEventListener("beforeunload", leaving);
+  }, [planning]);
+  // The app's own navigation (a tool, a tab, import, a store switch) asks the same question while the planner is open.
+  // Staying keeps the page as it is; leaving closes the planner, which is what discards the changes.
+  useEffect(() => {
+    if (!planning) return undefined;
+    return registerLeaveGuard(() => {
+      if (guard.current && guard.current.hasDraft() && !window.confirm(LEAVE)) return false;
+      setPlanning(false);
+      return true;
+    });
   }, [planning]);
   // Close, the scrim and Escape all come here; the editor's own Escape has asked already and closes directly.
   const requestClose = () => {
