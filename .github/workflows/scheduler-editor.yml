@@ -92,7 +92,7 @@ jobs:
        (github.event.pull_request.head.repo.full_name == github.repository &&
         github.head_ref == 'claude/scheduler-editor-runtime'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     permissions:
@@ -138,40 +138,47 @@ jobs:
         shell: bash
         env:
           BROWSER: ${{ matrix.engine }}
+          BROWSERS: ${{ matrix.engine }}
         run: |
           mkdir -p preview-evidence
           gate=0
+          last_code=0
           run() {
             name="$1"; shift
             set +e
-            env EVIDENCE_DIR="preview-evidence/$name-$BROWSER" "$@" timeout 600 node "scripts/scheduler-performance/$name.mjs" > "preview-evidence/$name-$BROWSER.log" 2>&1
+            env EVIDENCE_DIR="preview-evidence/$name-$BROWSER" "$@" timeout 240 node "scripts/scheduler-performance/$name.mjs" > "preview-evidence/$name-$BROWSER.log" 2>&1
             code=$?
+            last_code=$code
             set -e
             echo "$name exit=$code" >> preview-evidence/summary.txt
             echo "::group::$name (exit $code)"; tail -n 12 "preview-evidence/$name-$BROWSER.log"; echo "::endgroup::"
             return 0
           }
-          # Capture probes: fail the job only if the capture itself broke.
+          # Capture probes: the planner must have been captured (the probe says so once it has checked
+          # that exactly one real instance exists), and the capture must not have failed. Whether the
+          # probe's own later, older steps still pass is recorded above and not gated.
+          captured() {
+            log="preview-evidence/$1-$2.log"
+            if grep -qE "exactly one planner instance|planner import anchor|icon import anchor|bootstrap fixture anchor|exposed planner is the captured" "$log" || ! grep -q "planner captured" "$log"; then
+              echo "::error::$1: the planner capture did not complete"; gate=1
+            fi
+          }
           for name in probe-audit-corrections probe-balance-comparisons probe-generation; do
             run "$name"
-            if grep -qE "exactly one planner instance|planner import anchor|icon import anchor|bootstrap fixture anchor|exposed planner is the captured" "preview-evidence/$name-$BROWSER.log"; then
-              echo "::error::$name: the planner capture failed"; gate=1
-            fi
+            captured "$name" "$BROWSER"
           done
+          # The rest run both engines themselves, so once, in the chromium leg.
           if [ "$BROWSER" = chromium ]; then
-            # Runs both engines itself.
             run probe-mobile-sheet
-            if grep -qE "exactly one planner instance|planner import anchor|icon import anchor|exposed planner is the captured" preview-evidence/probe-mobile-sheet-chromium.log; then
-              echo "::error::probe-mobile-sheet: the planner capture failed"; gate=1
-            fi
+            captured probe-mobile-sheet chromium
+            run probe-embedded-sheet
+            run probe-polish
           fi
-          # Frozen-baseline probes: run as they are.
+          # Frozen-baseline probe: run as it is, and it must pass.
           run probe-editor-embedded AFTER_ONLY=1
-          if ! grep -q "passed" "preview-evidence/probe-editor-embedded-$BROWSER.log"; then
-            echo "::error::probe-editor-embedded did not pass"; gate=1
+          if [ "$last_code" -ne 0 ]; then
+            echo "::error::probe-editor-embedded did not pass (exit $last_code)"; gate=1
           fi
-          run probe-embedded-sheet
-          run probe-polish
           cat preview-evidence/summary.txt
           exit $gate
       - name: Keep evidence

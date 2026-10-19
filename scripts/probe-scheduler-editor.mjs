@@ -5,7 +5,7 @@
  * synthetic records, and checks what a person would meet: the store's own people and no fixture
  * ones, the injected store date, the masked and switched store, callbacks, and a clean unmount
  * (no listener, frame or page class left behind) across repeated mounts. It opens no connection
- * but the local page server: every request to anywhere else is blocked in the browser, counted, and
+ * but the local page server: every HTTP request and WebSocket to anywhere else is blocked in the browser, counted, and
  * fails the run (counting what the local server saw could not show an attempt that never reached it).
  *
  * PROBE_EVIDENCE_DIR keeps a machine-readable result, the blocked and page-error lists and, on a
@@ -99,6 +99,13 @@ try {
       if (new URL(target).origin === new URL(url).origin) return route.continue();
       blocked.push(`${vp.name}: ${route.request().method()} ${target}`);
       return route.abort("blockedbyclient");
+    });
+    // A WebSocket is not an HTTP route: it needs its own guard.
+    await ctx.routeWebSocket(/.*/, (socket) => {
+      const target = socket.url();
+      if (new URL(target).host === new URL(url).host) { socket.connectToServer(); return; }
+      blocked.push(`${vp.name}: WEBSOCKET ${target}`);
+      socket.close();
     });
     const page = await ctx.newPage();
     const errors = [];
