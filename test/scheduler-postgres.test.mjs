@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -42,10 +43,18 @@ let c113 = {
   planDraftSave: () => { throw new Error("read-only fixture"); }, planPublication: () => { throw new Error("publication forbidden"); },
 };
 const artifactMode = process.env.SCHEDULER_POSTGRES_ARTIFACTS || "ports";
+const artifactCheck = process.env.SCHEDULER_POSTGRES_VERIFY_ARTIFACTS;
+const sqlMode = process.env.SCHEDULER_POSTGRES_MODE || "ports";
+if (!["ports", "local"].includes(sqlMode)) throw new Error("Unknown SQL mode");
+if (sqlMode === "local" && artifactMode !== "original-r1") throw new Error("Real SQL composition requires pinned original-r1 artifacts; no fallback");
+if (sqlMode === "local" && artifactCheck !== undefined) throw new Error("Artifact-only preflight cannot claim SQL execution");
+if (artifactCheck !== undefined && artifactCheck !== "1") throw new Error("Unknown artifact-check mode");
+if (artifactCheck === "1" && artifactMode !== "original-r1") throw new Error("Artifact preflight requires original-r1");
 if (!["ports", "original-r1"].includes(artifactMode)) throw new Error("Unknown artifact mode");
 if (artifactMode === "original-r1") {
   const root = process.env.SCHEDULER_C113_ROOT, archive = process.env.SCHEDULER_C113_ARCHIVE;
-  if (!root || !archive) throw new Error("Original C113 paths are required; no fallback");
+  if (!root || !archive || !path.isAbsolute(root) || !path.isAbsolute(archive)) throw new Error("Absolute original C113 paths are required; no fallback");
+  assert.equal(fs.statSync(archive).size, 59973, "Original archive byte count");
   assert.equal(hash(fs.readFileSync(archive)), "909b442cebe6c9dec1c870b9cde96baf1f40582b97cfc0744a3fac127c58b622");
   const pins = {
     "audit-entry.mjs": "4955fe594bb3736c0525f3c9975dfd43f53b4bc14394b6ced1a9dd0cc1b06300",
@@ -62,6 +71,9 @@ if (artifactMode === "original-r1") {
   c113 = Object.assign({}, ...await Promise.all(Object.keys(pins).map((name) => import(pathToFileURL(path.join(dir, name))))));
 }
 console.info(`scheduler Postgres adapter: ${artifactMode}; real SQL only in explicit local runner mode`);
+if (artifactCheck === "1") console.info("PINNED_C113_ARTIFACTS_VERIFIED: no SQL executed");
+
+if (artifactCheck !== "1") {
 
 function makePlan(snapshot = empty()) {
   const head = snapshot.head || { draftRev: 0, publishedRev: 0 }, rev = head.draftRev + 1;
@@ -267,75 +279,422 @@ test("pending SQL is invoker-only, revokes default exposure and never grants acc
   assert.ok(sql.indexOf("IF FOUND THEN") < sql.indexOf("p_expected->'head' IS DISTINCT"));
 });
 
-// This separate mode is intentionally absent from normal unit coverage. It
-// requires the isolated runner's private marker and a real psql executable.
-const sqlMode = process.env.SCHEDULER_POSTGRES_MODE || "ports";
-if (!["ports", "local"].includes(sqlMode)) throw new Error("Unknown SQL mode");
+// Full-chain composition uses the unchanged contract. Review methods throw:
+// save/read must never fabricate provider success or publication context.
+function exactBoundary(transport, selectedScope, action = "save", readKind = null) {
+  const rejectReview = () => { throw new Error("review is outside save/read tests"); };
+  const contract = createSchedulerContract({ c113, sha256: hash, reviewProvider: {
+    REVIEW_DEFINITION: "month-review/1", validateReviewInput: rejectReview, verifyReview: rejectReview,
+    reviewMonth: rejectReview, reviewSpan: rejectReview, canonicalJson: rejectReview,
+  } });
+  const persistence = createSchedulerPostgres({ transport, c113,
+    authority: { actorId: actor.id, ...selectedScope, action, readKind } });
+  return createSchedulerBoundary({ contract, persistence, authorize: persistence.authorize,
+    now: () => "2026-10-19T11:30:00.000Z" });
+}
+function scopedDraft(selectedScope, name = "Fictional Person") {
+  const value = draft(); value.storeId = selectedScope.storeId; value.month = selectedScope.month;
+  value.store.people[0].name = name;
+  for (const membership of value.store.memberships) membership.storeId = selectedScope.storeId;
+  return value;
+}
+const saveRequest = (selectedScope, requestId, baseRev = 0, name = requestId) => ({
+  op: "save", ...selectedScope, requestId, input: { baseRev, draft: scopedDraft(selectedScope, name) },
+});
+const readRequest = (selectedScope, kind = "draft") => ({ op: "read", ...selectedScope, input: { kind } });
+const textLiteral = (value) => value === null ? "NULL" : `E'${String(value).replaceAll("\\", "\\\\").replaceAll("'", "''")}'`;
+const jsonLiteral = (value) => `${textLiteral(JSON.stringify(value))}::jsonb`;
+function rpcStatement(name, args) {
+  if (name === "scheduler_snapshot") return `SELECT scheduler_private.scheduler_snapshot(${jsonLiteral(args.p_authority)},${textLiteral(args.p_key)})`;
+  if (name === "scheduler_commit") return `SELECT scheduler_private.scheduler_commit(${jsonLiteral(args.p_authority)},${jsonLiteral(args.p_expected)},${jsonLiteral(args.p_plan)},${jsonLiteral(args.p_receipt)})`;
+  throw new Error("Unknown fixture RPC");
+}
+function sqlFailure(stderr) {
+  const match = /\bERROR:\s+P0001:\s+(scheduler:(?:conflict|idempotency-conflict|forbidden))(?=\r?\n|$)/.exec(stderr || "");
+  return match ? { code: "P0001", message: match[1] } : { code: "LOCAL_TEST_FAILURE", message: "local-sql-failure" };
+}
+test("SQL transport names and exact known error messages fail closed", () => {
+  assert.throws(() => rpcStatement("anything_else", {}), /Unknown fixture RPC/);
+  assert.equal(textLiteral("a'\\b"), "E'a''\\\\b'");
+  for (const name of ["conflict", "idempotency-conflict", "forbidden"]) {
+    assert.deepEqual(sqlFailure(`ERROR:  P0001: scheduler:${name}\nCONTEXT: private detail`), { code: "P0001", message: `scheduler:${name}` });
+  }
+  for (const message of ["scheduler:conflict", "ERROR: XX000: scheduler:conflict", "ERROR: P0001: scheduler:conflict private detail"]) {
+    assert.deepEqual(sqlFailure(message), { code: "LOCAL_TEST_FAILURE", message: "local-sql-failure" });
+  }
+});
+const childExec = promisify(execFile);
+const testFile = fileURLToPath(import.meta.url);
+const runnerFile = fileURLToPath(new URL("../scripts/scheduler-postgres-check.sh", import.meta.url));
+const childEnv = { PATH: process.env.PATH, LANG: "C" };
+test("runner requires explicit artifact paths before any database setup", async () => {
+  for (const mode of ["--check-artifacts", "--run-local"]) {
+    await assert.rejects(childExec("bash", [runnerFile, mode], { env: childEnv, timeout: 10000 }),
+      e => e.code === 2 && /pinned original artifact paths are required/.test(e.stderr));
+  }
+});
+test("SQL mode refuses port fixtures and conflicting preflight flags before connection", async () => {
+  for (const settings of [
+    { SCHEDULER_POSTGRES_MODE: "local", SCHEDULER_POSTGRES_ARTIFACTS: "ports" },
+    { SCHEDULER_POSTGRES_MODE: "local", SCHEDULER_POSTGRES_ARTIFACTS: "original-r1", SCHEDULER_POSTGRES_VERIFY_ARTIFACTS: "1" },
+  ]) {
+    await assert.rejects(childExec(process.execPath, [testFile], { env: { ...childEnv, ...settings }, timeout: 10000 }),
+      e => e.code === 1 && /requires pinned original-r1|preflight cannot claim SQL/.test(e.stderr));
+  }
+});
+if (artifactMode === "original-r1") {
+  const inputs = ["--c113-root", process.env.SCHEDULER_C113_ROOT, "--c113-archive", process.env.SCHEDULER_C113_ARCHIVE];
+  test("PINNED runner preflight forwards only explicit paths and starts no SQL", async () => {
+    const result = await childExec("bash", [runnerFile, "--check-artifacts", ...inputs], { env: { ...childEnv,
+      NODE_OPTIONS: "--deliberately-invalid-option", PGHOST: "UNUSED", DATABASE_URL: "UNUSED",
+      SCHEDULER_POSTGRES_MODE: "local", SCHEDULER_C113_ROOT: "/must-not-use-ambient-path" }, timeout: 10000 });
+    assert.match(result.stdout, /PINNED_C113_ARTIFACTS_VERIFIED: no SQL executed/);
+    assert.doesNotMatch(result.stdout, /REAL SQL COMPOSITION MODE|Subtest|initdb|server started/);
+  });
+  test("PINNED runner rejects altered module or archive before importing or creating a cluster", async () => {
+    const temporary = fs.mkdtempSync(path.join(tmpdir(), "scheduler-artifact-negative-"));
+    try {
+      const dir = path.join(temporary, "scripts/scheduler-performance/persistence"); fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "audit-entry.mjs"), "throw new Error('MUST_NOT_IMPORT');\n");
+      await assert.rejects(childExec("bash", [runnerFile, "--check-artifacts", "--c113-root", temporary,
+        "--c113-archive", process.env.SCHEDULER_C113_ARCHIVE], { env: childEnv, timeout: 10000 }),
+      e => e.code === 1 && /audit-entry\.mjs/.test(e.stderr) && !/Error: MUST_NOT_IMPORT/.test(e.stderr));
+      const wrongArchive = path.join(temporary, "wrong.tar.gz"); fs.writeFileSync(wrongArchive, "invalid");
+      await assert.rejects(childExec("bash", [runnerFile, "--check-artifacts", "--c113-root", process.env.SCHEDULER_C113_ROOT,
+        "--c113-archive", wrongArchive], { env: childEnv, timeout: 10000 }), e => e.code === 1 && /Original archive byte count/.test(e.stderr));
+    } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
+  });
+}
+if (artifactMode === "original-r1") test("PINNED composition: actual wrapper, contract, original plan and adapter use an injected RPC double", async () => {
+  const request = saveRequest(scope, "actual-composition"), f = double();
+  const boundary = exactBoundary(f.transport, scope);
+  await assert.rejects(boundary.execute({ op: "publish", ...scope, requestId: "forbidden-publication",
+    input: { draftRev: 1, review: { definition: "month-review/1", digest: "a".repeat(64) } } }, actor), code("forbidden"));
+  assert.equal(f.calls.length, 0);
+  const result = await boundary.execute(request, actor);
+  assert.deepEqual(result, { result: { head: { draftRev: 1, publishedRev: 0 } }, replayed: false });
+  const actual = c113.planDraftSave({ ...scope, head: null, baseRev: 0, draft: request.input.draft,
+    actor, at: "2026-10-19T11:30:00.000Z", prevAuditHash: null });
+  assert.equal(actual.ok, true); assert.deepEqual(f.calls[1].args.p_plan, actual.plan);
+  assert.equal(c113.verifyEntry(actual.plan.auditEntry).ok, true);
+});
+
+// Explicit integration mode cannot fall back to opaque plans. Nothing below
+// executes in the ordinary suite or artifact-only preflight. SQL execution in
+// this executor remains unavailable; these are prepared tests, not evidence.
 if (sqlMode === "local") {
   const root = process.env.SCHEDULER_POSTGRES_ROOT, bin = process.env.SCHEDULER_POSTGRES_BIN;
-  if (!root || !bin || !path.isAbsolute(root) || !path.basename(root).startsWith("sage-scheduler-pg.")) throw new Error("Use the isolated local runner");
+  if (!root || !bin || !path.isAbsolute(root) || !path.isAbsolute(bin) || !path.basename(root).startsWith("sage-scheduler-pg.")) throw new Error("Use the isolated local runner");
   assert.equal(fs.statSync(root).uid, process.getuid());
   assert.equal(fs.statSync(root).mode & 0o777, 0o700);
   assert.equal(fs.readFileSync(path.join(root, "runner-marker"), "utf8"), root);
   const socket = path.join(root, "socket"), psql = path.join(bin, "psql");
-  const args = ["-X", "-w", "-At", "-v", "ON_ERROR_STOP=1", "-h", socket, "-p", "5432", "-U", "scheduler_fixture", "-d", "scheduler_fixture"];
+  const args = ["-X", "-w", "-qAt", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", "-h", socket, "-p", "5432", "-U", "scheduler_fixture", "-d", "scheduler_fixture"];
   const env = { PATH: process.env.PATH, HOME: path.join(root, "home"), LANG: "C", PGCONNECT_TIMEOUT: "5" };
   const exec = promisify(execFile);
-  const sql = async (query, app = "scheduler-check") => (await exec(psql, [...args, "-c", query], { env: { ...env, PGAPPNAME: app }, timeout: 15000, maxBuffer: 16_777_216 })).stdout.trim();
-  assert.equal(await sql("SHOW data_directory"), path.join(root, "data"));
-  assert.equal(await sql("SHOW listen_addresses"), "");
-  const literal = (v) => `'${JSON.stringify(v).replaceAll("'", "''")}'::jsonb`;
-  const snapshotSql = () => `SELECT scheduler_private.scheduler_snapshot(${literal(authority())},'${key.replaceAll("'", "''")}')`;
-  const snapshot = async () => JSON.parse(await sql(snapshotSql())).snapshot;
-  const command = (s, p = makePlan(s), r = makeReceipt(p)) => `SELECT scheduler_private.scheduler_commit(${literal(authority())},${literal({ head: s.head, prevAuditHash: s.prevAuditHash, auditRevision: s.auditRevision })},${literal(p)},${literal(r)})`;
-  const state = () => sql("SELECT jsonb_build_array((SELECT jsonb_agg(t ORDER BY store_id,month) FROM scheduler_private.heads t),(SELECT jsonb_agg(t ORDER BY store_id,month,kind,rev) FROM scheduler_private.versions t),(SELECT jsonb_agg(t ORDER BY store_id,month,revision) FROM scheduler_private.audit t),(SELECT jsonb_agg(t ORDER BY store_id,month,actor_id,key_digest) FROM scheduler_private.receipts t))");
-  test("REAL SQL: absent-month duplicate race, durable replay and immutable history", async () => {
-    const s = await snapshot(), query = command(s);
-    const control = spawn(psql, args, { env, stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    const locked = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("lock barrier timed out")), 10000);
-      control.stdout.on("data", chunk => { out += chunk; if (out.includes("LOCKED")) { clearTimeout(timeout); resolve(); } });
-      control.on("error", reject);
+  const activeProcesses = new Set();
+  function run(file, argv, options = {}) {
+    const promise = exec(file, argv, { env, timeout: 20000, maxBuffer: 16_777_216, ...options });
+    activeProcesses.add(promise);
+    promise.then(() => activeProcesses.delete(promise), () => activeProcesses.delete(promise));
+    return promise;
+  }
+  const sql = async (query, app = "scheduler-check") => (await run(psql, [...args, "-c", query], { env: { ...env, PGAPPNAME: app } })).stdout.trim();
+  async function verifiedCluster() {
+    assert.equal(await sql("SHOW data_directory"), path.join(root, "data"));
+    assert.equal(await sql("SHOW listen_addresses"), "");
+    assert.equal(await sql("SHOW unix_socket_directories"), socket);
+    assert.equal(await sql("SHOW fsync"), "on");
+    assert.equal(await sql("SHOW synchronous_commit"), "on");
+  }
+  await verifiedCluster();
+  console.info("REAL SQL COMPOSITION MODE: pinned original C113; no protocol-double fallback");
+  let serial = 0;
+  const appName = (prefix) => `scheduler-${prefix}-${++serial}`;
+  const localScope = (name) => ({ storeId: `sql-${name}`, month: "2026-10" });
+  const observe = (promise) => promise.then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+  async function bounded(promise, milliseconds, label) {
+    let timer;
+    try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label)), milliseconds); })]); }
+    finally { clearTimeout(timer); }
+  }
+  async function until(predicate, label) {
+    const deadline = Date.now() + 10000;
+    do {
+      if (await predicate()) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    } while (Date.now() < deadline);
+    assert.fail(label);
+  }
+  const controllers = new Set();
+  async function holdLock(lockText) {
+    const app = appName("control"), child = spawn(psql, args, { env: { ...env, PGAPPNAME: app }, stdio: ["pipe", "pipe", "pipe"] });
+    let stderr = "", exited = false, released = false;
+    child.stdout.resume(); child.stderr.on("data", part => { stderr = (stderr + part).slice(-4000); });
+    child.stdin.on("error", () => {});
+    const done = new Promise(resolve => {
+      child.once("error", error => { exited = true; resolve({ error }); });
+      child.once("close", status => { exited = true; resolve({ status }); });
     });
-    control.stdin.write(`BEGIN; SELECT pg_advisory_xact_lock(hashtextextended('sage-scheduler:${scope.storeId}',0)); SELECT 'LOCKED';\n`);
+    const controller = { child, done };
+    controllers.add(controller);
+    async function release() {
+      if (released) return; released = true;
+      if (!child.stdin.destroyed) child.stdin.end("ROLLBACK;\n");
+      let outcome;
+      try { outcome = await bounded(done, 5000, "controller did not exit"); }
+      catch (error) {
+        child.kill("SIGTERM");
+        await bounded(done, 5000, "controller termination did not settle");
+        throw error;
+      } finally { controllers.delete(controller); }
+      assert.equal(outcome.status, 0, `controller failed: ${outcome.error?.message || stderr}`);
+    }
+    controller.release = release;
+    child.stdin.write(`BEGIN; SELECT pg_advisory_xact_lock(hashtextextended(${textLiteral(lockText)},0));\n`);
     try {
-      await locked;
-      const a = sql(query, "scheduler-race-a"), b = sql(query, "scheduler-race-b");
-      let waiting = false;
-      for (let i = 0; i < 100; i++) {
-        waiting = await sql("SELECT count(*) FROM pg_stat_activity WHERE application_name IN ('scheduler-race-a','scheduler-race-b') AND wait_event='advisory'") === "2";
-        if (waiting) break;
-        await new Promise(resolve => setTimeout(resolve, 50));
+      await until(async () => {
+        assert.equal(exited, false, `controller exited: ${stderr}`);
+        return await sql(`SELECT EXISTS(SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid WHERE a.application_name=${textLiteral(app)} AND l.locktype='advisory' AND l.granted)`) === "t";
+      }, "controller never acquired its lock");
+      const pid = Number(await sql(`SELECT pid FROM pg_stat_activity WHERE application_name=${textLiteral(app)}`));
+      assert.ok(Number.isSafeInteger(pid) && pid > 0);
+      return { pid, release, async waitFor(apps) {
+        let rows;
+        await until(async () => {
+          rows = JSON.parse(await sql(`SELECT COALESCE(jsonb_agg(jsonb_build_object('pid',pid,'app',application_name,'wait',wait_event,'blockers',pg_blocking_pids(pid))),'[]'::jsonb) FROM pg_stat_activity WHERE application_name IN (${apps.map(textLiteral).join(",")})`));
+          return rows.length === apps.length && rows.every(r => r.wait === "advisory" && r.blockers.length > 0);
+        }, "contenders did not all reach the lock barrier");
+        const reachesController = (candidate, seen = new Set()) => candidate === pid || (!seen.has(candidate) &&
+          (seen.add(candidate), rows.find(r => r.pid === candidate)?.blockers.some(blocker => reachesController(blocker, seen))));
+        assert.ok(rows.every(r => reachesController(r.pid)), "each blocked backend must lead to this controller");
+        return rows;
+      } };
+    } catch (error) { await release(); throw error; }
+  }
+  function client(selectedScope, { beforeCommit, afterCommit, app = appName("request") } = {}) {
+    const events = [];
+    const transport = { capabilities: { [SCHEDULER_POSTGRES_RPC_CAPABILITY]: true }, rpc: async (name, rawArgs) => {
+      const dispatched = clone(rawArgs), event = { name, original: clone(rawArgs), args: dispatched }; events.push(event);
+      if (name === "scheduler_commit" && beforeCommit) await beforeCommit(dispatched, event);
+      let data;
+      try { data = JSON.parse(await sql(rpcStatement(name, dispatched), app)); }
+      catch (error) { return { data: null, error: sqlFailure(error.stderr) }; }
+      event.data = clone(data);
+      if (name === "scheduler_commit" && afterCommit) data = await afterCommit(data, event);
+      return { data, error: null };
+    } };
+    return { app, events, execute(request) {
+      // Always a fresh request-bound adapter, including reads and retries.
+      return exactBoundary(transport, selectedScope, request.op === "read" ? "read" : "save",
+        request.op === "read" ? request.input.kind : null).execute(request, actor);
+    } };
+  }
+  const fullState = async () => JSON.parse(await sql("SELECT jsonb_build_object('heads',COALESCE((SELECT jsonb_agg(t ORDER BY store_id,month) FROM scheduler_private.heads t),'[]'::jsonb),'versions',COALESCE((SELECT jsonb_agg(t ORDER BY store_id,month,kind,rev) FROM scheduler_private.versions t),'[]'::jsonb),'audit',COALESCE((SELECT jsonb_agg(t ORDER BY store_id,month,revision) FROM scheduler_private.audit t),'[]'::jsonb),'receipts',COALESCE((SELECT jsonb_agg(t ORDER BY store_id,month,actor_id,key_digest) FROM scheduler_private.receipts t),'[]'::jsonb))"));
+  function selectedState(state, selectedScope) {
+    return Object.fromEntries(Object.entries(state).map(([table, rows]) => [table,
+      rows.filter(row => row.store_id === selectedScope.storeId && row.month === selectedScope.month)]));
+  }
+  function assertCounts(state, selectedScope, { versions, audit, receipts, draftRev, publishedRev = 0 }) {
+    const rows = selectedState(state, selectedScope);
+    assert.equal(rows.heads.length, 1); assert.equal(rows.versions.length, versions);
+    assert.equal(rows.audit.length, audit); assert.equal(rows.receipts.length, receipts);
+    assert.equal(rows.heads[0].draft_rev, draftRev); assert.equal(rows.heads[0].published_rev, publishedRev);
+    return rows;
+  }
+  const snapshotEvent = (c) => c.events.find(e => e.name === "scheduler_snapshot").data.snapshot;
+  const commitEvent = (c) => c.events.find(e => e.name === "scheduler_commit");
+  async function fixtureTrigger(table, operation, selectedScope, body) {
+    assert.ok(["versions", "audit", "heads", "receipts"].includes(table));
+    assert.ok(["INSERT", "UPDATE"].includes(operation));
+    const name = `fixture_${++serial}`;
+    await sql(`CREATE FUNCTION scheduler_private.${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.store_id=${textLiteral(selectedScope.storeId)} AND NEW.month=${textLiteral(selectedScope.month)} THEN ${body} END IF; RETURN NEW; END $$; CREATE TRIGGER ${name} AFTER ${operation} ON scheduler_private.${table} FOR EACH ROW EXECUTE FUNCTION scheduler_private.${name}();`);
+    return async () => sql(`DROP TRIGGER ${name} ON scheduler_private.${table}; DROP FUNCTION scheduler_private.${name}();`);
+  }
+  async function seededPublished(selectedScope) {
+    await client(selectedScope).execute(saveRequest(selectedScope, "seed-draft", 0, "DRAFT-ONLY-MARKER"));
+    const prior = selectedState(await fullState(), selectedScope), head = prior.heads[0];
+    const encoded = c113.serializeVersion({ ...selectedScope, kind: "published", rev: 1,
+      draft: scopedDraft(selectedScope, "Published Fixture"), meta: { sourceDraftRev: 1, supersedes: 0,
+        reviewDigest: "0".repeat(16), adjacent: { prev: 0, next: 0 } } });
+    assert.equal(encoded.ok, true);
+    const audit = c113.buildAuditEntry({ action: "publish", ...selectedScope, actor, at: "2026-10-19T11:30:00.000Z",
+      fromRev: 1, toRev: 1, subject: { kind: "published", rev: 1, digest: encoded.envelope.hash.value }, prevHash: head.last_audit_hash });
+    assert.equal(audit.ok, true);
+    // Fixture-only historical published state. This is not a publication API
+    // exercise; the adapter still rejects every publish request.
+    await sql(`BEGIN; INSERT INTO scheduler_private.versions VALUES (${textLiteral(selectedScope.storeId)},${textLiteral(selectedScope.month)},'published',1,${textLiteral(encoded.text)}); INSERT INTO scheduler_private.audit VALUES (${textLiteral(selectedScope.storeId)},${textLiteral(selectedScope.month)},2,${jsonLiteral(audit.entry)}); UPDATE scheduler_private.heads SET published_rev=1,audit_revision=2,last_audit_hash=${textLiteral(audit.entry.hash)} WHERE store_id=${textLiteral(selectedScope.storeId)} AND month=${textLiteral(selectedScope.month)}; COMMIT;`);
+    return encoded.text;
+  }
+  const realTest = (name, fn) => test(`REAL SQL COMPOSITION: ${name}`, { concurrency: false, timeout: 90000 }, fn);
+
+  realTest("distinct request IDs contend for an absent month without loser fragments", async () => {
+    const selectedScope = localScope("distinct-first"), lock = await holdLock(`sage-scheduler:${selectedScope.storeId}`);
+    const a = client(selectedScope), b = client(selectedScope);
+    const requests = [saveRequest(selectedScope, "first-a"), saveRequest(selectedScope, "first-b")];
+    const pending = [observe(a.execute(requests[0])), observe(b.execute(requests[1]))];
+    let outcomes;
+    try {
+      await lock.waitFor([a.app, b.app]);
+      assert.equal(snapshotEvent(a).head, null); assert.equal(snapshotEvent(b).head, null);
+      await lock.release(); outcomes = await Promise.all(pending);
+    } finally { await lock.release(); await Promise.all(pending); }
+    assert.equal(outcomes.filter(o => o.ok).length, 1);
+    assert.ok(code("conflict")(outcomes.find(o => !o.ok).error));
+    const winner = outcomes.findIndex(o => o.ok), before = await fullState();
+    const rows = assertCounts(before, selectedScope, { versions: 1, audit: 1, receipts: 1, draftRev: 1 });
+    assert.equal(JSON.parse(rows.receipts[0].request_key)[3], requests[winner].requestId);
+    const retry = client(selectedScope);
+    assert.deepEqual(await retry.execute(requests[winner]), { ...outcomes[winner].value, replayed: true });
+    assert.equal(commitEvent(retry).args.p_plan, null); assert.deepEqual(await fullState(), before);
+  });
+  for (const changed of [false, true]) realTest(`same-ID ${changed ? "changed-fingerprint conflict" : "duplicate replay"} race`, async () => {
+    const selectedScope = localScope(changed ? "changed-race" : "duplicate-race");
+    const lock = await holdLock(`sage-scheduler:${selectedScope.storeId}`), a = client(selectedScope), b = client(selectedScope);
+    const request = saveRequest(selectedScope, "same-request");
+    const other = clone(request); if (changed) other.input.draft.store.people[0].name = "Changed Input";
+    const pending = [observe(a.execute(request)), observe(b.execute(other))];
+    let outcomes;
+    try {
+      await lock.waitFor([a.app, b.app]);
+      assert.equal(snapshotEvent(a).head, null); assert.equal(snapshotEvent(b).head, null);
+      await lock.release(); outcomes = await Promise.all(pending);
+    } finally { await lock.release(); await Promise.all(pending); }
+    if (changed) {
+      assert.equal(outcomes.filter(o => o.ok).length, 1);
+      assert.ok(code("idempotency-conflict")(outcomes.find(o => !o.ok).error));
+    } else {
+      assert.ok(outcomes.every(o => o.ok));
+      assert.deepEqual(outcomes.map(o => o.value.replayed).sort(), [false, true]);
+      assert.deepEqual(outcomes[0].value.result, outcomes[1].value.result);
+    }
+    assertCounts(await fullState(), selectedScope, { versions: 1, audit: 1, receipts: 1, draftRev: 1 });
+  });
+  for (const [table, operation] of [["versions", "INSERT"], ["audit", "INSERT"], ["heads", "INSERT"], ["heads", "UPDATE"], ["receipts", "INSERT"]]) {
+    realTest(`AFTER ${table} ${operation} failure rolls back every table and permits exact retry`, async () => {
+      const selectedScope = localScope(`rollback-${table}-${operation.toLowerCase()}`), seeded = operation === "UPDATE";
+      if (seeded) await client(selectedScope).execute(saveRequest(selectedScope, "seed"));
+      const request = saveRequest(selectedScope, "failed-then-retried", seeded ? 1 : 0), before = await fullState();
+      const remove = await fixtureTrigger(table, operation, selectedScope, "RAISE EXCEPTION 'fixture-after-mutation';");
+      try {
+        await assert.rejects(client(selectedScope).execute(request), code("storage-unavailable"));
+        assert.deepEqual(await fullState(), before);
+      } finally { await remove(); }
+      const result = await client(selectedScope).execute(request), committed = await fullState();
+      assert.equal(result.replayed, false);
+      const n = seeded ? 2 : 1;
+      assertCounts(committed, selectedScope, { versions: n, audit: n, receipts: n, draftRev: n });
+      const retry = client(selectedScope);
+      assert.deepEqual(await retry.execute(request), { result: result.result, replayed: true });
+      assert.equal(commitEvent(retry).args.p_plan, null); assert.deepEqual(await fullState(), committed);
+    });
+  }
+  for (const field of ["publishedRev", "auditRevision", "prevAuditHash"]) realTest(`isolated stale ${field} expected-state fault rejects before mutation`, async () => {
+    const selectedScope = localScope(`guard-${field.toLowerCase()}`);
+    await seededPublished(selectedScope);
+    const before = await fullState(), request = saveRequest(selectedScope, `stale-${field}`, 1);
+    const c = client(selectedScope, { beforeCommit(args, event) {
+      if (field === "publishedRev") args.p_expected.head.publishedRev = 0;
+      else if (field === "auditRevision") args.p_expected.auditRevision--;
+      else args.p_expected.prevAuditHash = null;
+      assert.deepEqual(args.p_plan, event.original.p_plan); assert.deepEqual(args.p_receipt, event.original.p_receipt);
+      const expected = clone(event.original.p_expected);
+      if (field === "publishedRev") expected.head.publishedRev = 0;
+      else if (field === "auditRevision") expected.auditRevision--;
+      else expected.prevAuditHash = null;
+      assert.deepEqual(args.p_expected, expected);
+    } });
+    // Only the expected-state packet is stale. The current plan/receipt remain
+    // valid, so later plan checks cannot mask a missing CAS predicate.
+    await assert.rejects(c.execute(request), code("conflict"));
+    assert.deepEqual(await fullState(), before);
+    assert.equal((await client(selectedScope).execute(request)).replayed, false);
+  });
+  realTest("a different store commits while the first store remains demonstrably blocked", async () => {
+    const sa = localScope("store-a"), sb = localScope("store-b");
+    assert.notEqual(await sql(`SELECT hashtextextended(${textLiteral(`sage-scheduler:${sa.storeId}`)},0)`),
+      await sql(`SELECT hashtextextended(${textLiteral(`sage-scheduler:${sb.storeId}`)},0)`));
+    const lock = await holdLock(`sage-scheduler:${sa.storeId}`), a = client(sa), b = client(sb);
+    const pendingA = observe(a.execute(saveRequest(sa, "same-id"))); let pendingB;
+    try {
+      await lock.waitFor([a.app]);
+      pendingB = observe(b.execute(saveRequest(sb, "same-id")));
+      const resultB = await bounded(pendingB, 10000, "other store waited on the first store");
+      assert.equal(resultB.ok, true); assert.equal(resultB.value.replayed, false);
+      await lock.waitFor([a.app]);
+      const state = await fullState();
+      assert.deepEqual(selectedState(state, sa), { heads: [], versions: [], audit: [], receipts: [] });
+      assertCounts(state, sb, { versions: 1, audit: 1, receipts: 1, draftRev: 1 });
+      await lock.release(); assert.equal((await pendingA).ok, true);
+    } finally { await lock.release(); await pendingA; if (pendingB) await pendingB; }
+    assertCounts(await fullState(), sa, { versions: 1, audit: 1, receipts: 1, draftRev: 1 });
+  });
+  for (const existing of [false, true]) realTest(`coherent ${existing ? "existing" : "absent"} snapshots during a fully mutated uncommitted write`, async () => {
+    const selectedScope = localScope(existing ? "coherent-existing" : "coherent-absent");
+    if (existing) await seededPublished(selectedScope);
+    const beforeReader = client(selectedScope), beforeResult = await beforeReader.execute(readRequest(selectedScope));
+    const beforeSnapshot = snapshotEvent(beforeReader), lockText = `fixture-uncommitted-${selectedScope.storeId}`;
+    const lock = await holdLock(lockText);
+    const remove = await fixtureTrigger("receipts", "INSERT", selectedScope, `PERFORM pg_advisory_xact_lock(hashtextextended(${textLiteral(lockText)},0));`);
+    const writer = client(selectedScope), pending = observe(writer.execute(saveRequest(selectedScope, "new-draft", existing ? 1 : 0, "DRAFT-ONLY-NEW")));
+    try {
+      await lock.waitFor([writer.app]);
+      for (const kind of ["draft", "published", "draft"]) {
+        const reader = client(selectedScope), result = await reader.execute(readRequest(selectedScope, kind));
+        assert.deepEqual(snapshotEvent(reader), beforeSnapshot);
+        if (kind === "draft") assert.deepEqual(result, beforeResult);
+        else assert.doesNotMatch(JSON.stringify(result), /DRAFT-ONLY/);
       }
-      assert.equal(waiting, true, "both contenders must reach the lock barrier");
-      control.stdin.end("COMMIT;\n");
-      const results = (await Promise.all([a, b])).map(JSON.parse);
-      assert.deepEqual(results.map(r => r.replayed).sort(), [false, true]);
-      assert.deepEqual(results[0].result, results[1].result);
-    } finally { if (!control.stdin.destroyed) control.stdin.end("ROLLBACK;\n"); }
-    const prior = await state();
-    assert.equal(JSON.parse(await sql(query)).replayed, true);
-    assert.equal(await state(), prior);
-    await assert.rejects(sql("UPDATE scheduler_private.versions SET version_text=version_text"));
-    assert.equal(await state(), prior);
-    const changed = makeReceipt(makePlan(s), key, "b".repeat(64));
-    await assert.rejects(sql(command(s, makePlan(s), changed)), /scheduler:idempotency-conflict/);
-    assert.equal(await state(), prior);
+      await lock.release(); assert.equal((await pending).ok, true);
+    } finally { await lock.release(); await pending; await remove(); }
+    const afterReader = client(selectedScope), afterResult = await afterReader.execute(readRequest(selectedScope));
+    const afterSnapshot = snapshotEvent(afterReader), staged = commitEvent(writer).args.p_plan;
+    assert.deepEqual(afterSnapshot.head, staged.resultingHead);
+    assert.equal(afterSnapshot.draftText, staged.ops[0].text);
+    assert.equal(afterSnapshot.publishedText, beforeSnapshot.publishedText);
+    assert.equal(afterSnapshot.auditRevision, beforeSnapshot.auditRevision + 1);
+    assert.equal(afterSnapshot.prevAuditHash, staged.auditEntry.hash);
+    assert.equal(afterResult.result.schedule.store.people[0].name, "DRAFT-ONLY-NEW");
+    const published = await client(selectedScope).execute(readRequest(selectedScope, "published"));
+    assert.doesNotMatch(JSON.stringify(published), /DRAFT-ONLY/);
   });
-  test("REAL SQL: final receipt failure rolls back versions, audit and head", async () => {
-    const s = await snapshot(), p = makePlan(s), r = makeReceipt(p, JSON.stringify([actor.id, scope.storeId, scope.month, "rollback"]));
-    const before = await state();
-    await sql("CREATE FUNCTION scheduler_private.fixture_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fictional failure'; END $$; CREATE TRIGGER fixture_failure BEFORE INSERT ON scheduler_private.receipts FOR EACH ROW EXECUTE FUNCTION scheduler_private.fixture_fail();");
-    try { await assert.rejects(sql(command(s, p, r)), /fictional failure/); assert.equal(await state(), before); }
-    finally { await sql("DROP TRIGGER fixture_failure ON scheduler_private.receipts; DROP FUNCTION scheduler_private.fixture_fail();"); }
-    assert.equal(JSON.parse(await sql(command(s, p, r))).replayed, false);
-    assert.equal(JSON.parse(await sql(command(s, p, r))).replayed, true);
+  for (const kind of ["lost", "malformed"]) realTest(`committed ${kind} reply recovers its historic receipt through a fresh full chain`, async () => {
+    const selectedScope = localScope(`reply-${kind}`), request = saveRequest(selectedScope, "ambiguous");
+    const first = client(selectedScope, { afterCommit(data) {
+      assert.equal(data.replayed, false);
+      if (kind === "lost") throw new Error("fictional reply lost after commit");
+      return { result: { private: "must not escape" }, replayed: true };
+    } });
+    await assert.rejects(first.execute(request), code("storage-unavailable"));
+    const initial = await fullState();
+    assertCounts(initial, selectedScope, { versions: 1, audit: 1, receipts: 1, draftRev: 1 });
+    await client(selectedScope).execute(saveRequest(selectedScope, "later-save", 1));
+    const beforeRetry = await fullState(), retry = client(selectedScope);
+    const recovered = await retry.execute(request);
+    assert.deepEqual(recovered, { result: { head: { draftRev: 1, publishedRev: 0 } }, replayed: true });
+    assert.equal(commitEvent(retry).args.p_plan, null);
+    assert.deepEqual(await fullState(), beforeRetry);
+    assertCounts(beforeRetry, selectedScope, { versions: 2, audit: 2, receipts: 2, draftRev: 2 });
   });
-  test("REAL SQL: committed state survives a clean local server restart", async () => {
-    const before = await state();
-    await exec(path.join(bin, "pg_ctl"), ["-D", path.join(root, "data"), "-w", "-m", "fast", "stop"], { env, timeout: 15000 });
-    await exec(path.join(bin, "pg_ctl"), ["-D", path.join(root, "data"), "-l", path.join(root, "postgres.log"), "-w", "start"], { env, timeout: 15000 });
-    assert.equal(await state(), before);
+  realTest("saved immutable rows and an older receipt replay survive clean restart", async () => {
+    const selectedScope = localScope("restart"), request = saveRequest(selectedScope, "before-restart");
+    const original = await client(selectedScope).execute(request);
+    await client(selectedScope).execute(saveRequest(selectedScope, "newer-head", 1));
+    const before = await fullState();
+    assert.equal(controllers.size, 0); assert.equal(activeProcesses.size, 0);
+    await run(path.join(bin, "pg_ctl"), ["-D", path.join(root, "data"), "-w", "-m", "fast", "stop"]);
+    await run(path.join(bin, "pg_ctl"), ["-D", path.join(root, "data"), "-l", path.join(root, "postgres.log"), "-w", "start"]);
+    await verifiedCluster();
+    const retry = client(selectedScope);
+    assert.deepEqual(await retry.execute(request), { result: original.result, replayed: true });
+    assert.equal(commitEvent(retry).args.p_plan, null); assert.deepEqual(await fullState(), before);
+    await assert.rejects(sql(`UPDATE scheduler_private.versions SET version_text=version_text WHERE store_id=${textLiteral(selectedScope.storeId)}`));
+    assert.deepEqual(await fullState(), before);
   });
+  test("REAL SQL COMPOSITION: all owned processes and lock controllers settled", { concurrency: false }, async () => {
+    for (const controller of [...controllers]) await controller.release();
+    await Promise.allSettled([...activeProcesses]);
+    assert.equal(controllers.size, 0); assert.equal(activeProcesses.size, 0);
+  });
+}
 }
