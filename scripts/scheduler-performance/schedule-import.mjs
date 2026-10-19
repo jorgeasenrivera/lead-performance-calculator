@@ -3,6 +3,10 @@ import { membershipAt, sameTeams, absenceKind, validateMembership } from "./team
 import { validDate, minute, shiftProblem, storeTimezone } from './shift-intervals.mjs';
 import { enteredMonth, validMonth } from './month-model.mjs';
 import { nameKey as normalize, reservedTeamName } from './name-key.mjs';
+// A membership that never said where it came from, or whether it is unknown, has no such key. An undefined value is not a
+// value, and what is written down must be plain data, so only those optional keys are dropped when undefined, and only here:
+// explicit false, true and null, and everything defined, are kept.
+const withoutUndefined=(o,keys)=>{for(const k of keys)if(Object.hasOwn(o,k)&&o[k]===undefined)delete o[k];return o;};
 // Strict CSV: quoted commas/newlines and escaped quotes, with physical source line numbers.
 export function csvRows(text) {
   if(text.length>100000)throw Error('Choose a CSV smaller than 100 KB.');
@@ -80,7 +84,7 @@ export function reviewImport(planner,index,rows,choices={}) {
       if(item.teamMismatch&&!['keep','confirm'].includes(item.teamDecision))item.messages.push('Team membership differs. Explicitly retain the shown membership or confirm the declared teams for this date.');
       if(item.teamMismatch&&item.teamDecision==='confirm'&&!item.knownTeams)item.messages.push('Unknown team name. Add it in Teams first, keep current teams, or skip.');
       const useDeclared=item.teamMismatch&&item.teamDecision==='confirm'&&item.knownTeams;
-      acceptedTeam={...current,date:raw.date,from:raw.date,to:raw.date,membershipBasis:{from:current.from,to:current.to,source:current.source},unknown:useDeclared?false:current.unknown,teamIds:useDeclared?declared:current.teamIds,source:{kind:useDeclared?'CSV confirmed team change':raw.team?'CSV reviewed membership':'CSV retained membership',...row.source,declaredTeam:raw.team||null}};
+      acceptedTeam=withoutUndefined({...current,date:raw.date,from:raw.date,to:raw.date,membershipBasis:withoutUndefined({from:current.from,to:current.to,source:current.source},['source']),unknown:useDeclared?false:current.unknown,teamIds:useDeclared?declared:current.teamIds,source:{kind:useDeclared?'CSV confirmed team change':raw.team?'CSV reviewed membership':'CSV retained membership',...row.source,declaredTeam:raw.team||null}},['source','unknown']);
       if(useDeclared)teamChange={...acceptedTeam,from:raw.date,to:raw.date};
     }
     if(item.messages.length)continue;

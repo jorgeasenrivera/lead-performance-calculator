@@ -108,3 +108,48 @@ test('Cedar December 31 cap eight blocks January 1 minute despite January cap fo
  assert.ok(r.items[0].messages.some(m=>m.includes('Existing assignment on 2026-12-31')));
  assert.throws(()=>applyImport(p,r));assert.equal(importSnapshot(p,0),before);
 });
+
+// The membership an import carries must be plain data that survives JSON unchanged, and must not gain, lose or change
+// a decision or any provenance because an optional key was missing or undefined.
+const storeWith=(memberships)=>({...makeStore(),teams:[{id:'t1',name:'Team One'},{id:'t2',name:'Team Two'}],memberships});
+const member=(personId,extra={})=>({storeId:'s1',personId,teamIds:['t1'],from:'2014-01-01',to:'2100-12-31',...extra});
+const importedTeam=(memberships,lines='Alex One,2026-11-02,09:00,17:00,work',choices={})=>{
+ const p=createPlanner([storeWith(memberships)]),r=reviewImport(p,0,csv(lines),choices);assert.equal(r.blocked,false,JSON.stringify(r.items?.map(i=>i.messages)));applyImport(p,r);
+ return p.rows(0,'2026-11')[1].record.teamSnapshot.a;
+};
+const plain=(v)=>assert.deepEqual(JSON.parse(JSON.stringify(v)),v);
+test('a membership with no source and no unknown key produces plain data with neither key',()=>{
+ const t=importedTeam([member('a'),member('b')]);
+ plain(t);assert.equal(Object.hasOwn(t,'unknown'),false);assert.equal(Object.hasOwn(t.membershipBasis,'source'),false);
+ assert.deepEqual(t.teamIds,['t1']);assert.equal(t.source.kind,'CSV retained membership');assert.equal(t.source.file,'synthetic.csv');assert.equal(t.source.line,2);
+ assert.deepEqual([t.membershipBasis.from,t.membershipBasis.to],['2014-01-01','2100-12-31']);
+});
+test('explicitly undefined source and unknown are the same as missing, wherever they came from',()=>{
+ const t=importedTeam([member('a',{source:undefined,unknown:undefined}),member('b')]);
+ plain(t);assert.equal(Object.hasOwn(t,'unknown'),false);assert.equal(Object.hasOwn(t.membershipBasis,'source'),false);
+ // The same through a copy of the membership that was spread from another object.
+ const base={source:undefined,unknown:undefined};
+ const u=importedTeam([{...base,...member('a')},member('b')]);plain(u);assert.equal(Object.hasOwn(u,'unknown'),false);assert.equal(Object.hasOwn(u.membershipBasis,'source'),false);
+});
+test('explicit false, true and null, and every defined source, are kept exactly',()=>{
+ const f=importedTeam([member('a',{unknown:false,source:{kind:'manager',note:'kept'}}),member('b')]);
+ plain(f);assert.equal(f.unknown,false);assert.deepEqual(f.membershipBasis.source,{kind:'manager',note:'kept'});
+ const n=importedTeam([member('a',{unknown:null,source:null}),member('b')]);
+ plain(n);assert.equal(n.unknown,null);assert.equal(n.membershipBasis.source,null);
+ // A membership that is unknown stays unknown, with its source.
+ const t=importedTeam([member('a',{teamIds:[],unknown:true,source:{kind:'unknown membership'}}),member('b')]);
+ plain(t);assert.equal(t.unknown,true);assert.deepEqual(t.membershipBasis.source,{kind:'unknown membership'});assert.deepEqual(t.teamIds,[]);
+});
+test('a confirmed team change sets unknown to false and keeps the membership it replaced as its basis',()=>{
+ const lines='Name,Date,Start,End,Status,Team\nAlex One,2026-11-02,09:00,17:00,work,Team Two';
+ const p=createPlanner([storeWith([member('a',{source:{kind:'file',line:3}}),member('b')])]);
+ const r=reviewImport(p,0,parseSchedule(lines,'synthetic.csv'),{0:{teamDecision:'confirm'}});assert.equal(r.blocked,false,JSON.stringify(r.items.map(i=>i.messages)));applyImport(p,r);
+ const c=p.rows(0,'2026-11')[1].record.teamSnapshot.a;plain(c);
+ assert.equal(c.unknown,false);assert.deepEqual(c.teamIds,['t2']);assert.deepEqual(c.membershipBasis.source,{kind:'file',line:3});assert.equal(c.source.kind,'CSV confirmed team change');assert.equal(c.source.declaredTeam,'Team Two');
+});
+test('decisions and messages do not depend on whether the optional keys were present',()=>{
+ const run2=(memberships)=>{const p=createPlanner([storeWith(memberships)]);const r=reviewImport(p,0,parseSchedule('Name,Date,Start,End,Status,Team\nAlex One,2026-11-02,09:00,17:00,work,Team Two','synthetic.csv'),{});return r.items.map(i=>({state:i.state,messages:i.messages,teamMismatch:i.teamMismatch,currentTeams:i.currentTeams,currentTeamUnknown:i.currentTeamUnknown}));};
+ const without=run2([member('a'),member('b')]),withUndef=run2([member('a',{source:undefined,unknown:undefined}),member('b')]),withFalse=run2([member('a',{unknown:false,source:{kind:'x'}}),member('b')]);
+ assert.deepEqual(without,withUndef);assert.deepEqual(without,withFalse);
+ assert.equal(without[0].teamMismatch,true);
+});
