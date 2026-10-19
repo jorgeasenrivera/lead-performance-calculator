@@ -42,7 +42,21 @@ jobs:
           set -euo pipefail
           mkdir -p evidence
           {
-            test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+            node --input-type=module <<'CHECKOUT'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const env = process.env;
+          assert.equal(env.GITHUB_REPOSITORY, 'jorgeasenrivera/lead-performance-calculator');
+          assert.equal(env.GITHUB_REF, 'refs/heads/codex/reported-reader-integration');
+          assert.equal(env.GITHUB_EVENT_NAME, 'push');
+          assert.match(env.EXPECTED_SHA, /^[0-9a-f]{40}$/);
+          assert.equal(env.EXPECTED_SHA, env.GITHUB_SHA);
+          assert.equal(fs.realpathSync(process.cwd()), fs.realpathSync(env.GITHUB_WORKSPACE));
+          assert.ok(fs.lstatSync('.git').isDirectory(), 'Ordinary checkout directory required');
+          assert.ok(fs.lstatSync('.git/HEAD').isFile(), 'Regular detached HEAD required');
+          const head = fs.readFileSync('.git/HEAD', 'utf8');
+          assert.ok(head === env.EXPECTED_SHA || head === env.EXPECTED_SHA + '\n', 'Exact detached checkout SHA required');
+          CHECKOUT
             printf 'repository=%s\nref=%s\nsha=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF" "$EXPECTED_SHA"
             printf 'node=%s\n' "$(node --version)"
             sha256sum --check <<'HASHES'
@@ -52,6 +66,8 @@ jobs:
           87d0d5e8384f87f82c0b4b6f46c318ab81f98f7c93581e4e3463f2e4c37abc68  src/reported-auth.mjs
           45c6b66906698f592ded9092ecf55bf78535f84b11f6453209def403b43fe2ca  src/reported-month.mjs
           8bc965d71771ff3db392c8dc4f9588304134c5f60fb79fc4895bb01db58ad11b  vercel.json
+          b0d92b22ce43dfe0397a55e0d9bb6d4764a874c766263860696a39f9da68fb14  package.json
+          e26e0992a716a32ca34abf1ccc4ccafd7088a97d060fc5322b20050e9ba9e573  package-lock.json
           HASHES
             node --input-type=module -e "import fs from 'node:fs'; const c = JSON.parse(fs.readFileSync('vercel.json')); if (c.git?.deploymentEnabled?.['codex/reported-reader-integration'] !== false) throw Error('Branch deployment stop missing');"
             sha256sum .github/workflows/reported-month-hook.yml package.json package-lock.json
@@ -63,7 +79,10 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/reported-hook-runtime" --no-save --package-lock=false playwright@1.63.0 2>&1 | tee -a evidence/install.log
           printf 'FEEL_PLAYWRIGHT=%s\n' "$RUNNER_TEMP/reported-hook-runtime/node_modules/playwright" >> "$GITHUB_ENV"
           node -p "require('$RUNNER_TEMP/reported-hook-runtime/node_modules/playwright/package.json').version" | tee evidence/playwright-version.txt
-          git diff --exit-code -- package.json package-lock.json
+          sha256sum --check <<'MANIFESTS'
+          b0d92b22ce43dfe0397a55e0d9bb6d4764a874c766263860696a39f9da68fb14  package.json
+          e26e0992a716a32ca34abf1ccc4ccafd7088a97d060fc5322b20050e9ba9e573  package-lock.json
+          MANIFESTS
       - name: Run full tests and build
         run: |
           set -euo pipefail
