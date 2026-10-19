@@ -40,11 +40,15 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
   const teamState = stores.map(seedTeams), initialTeams = structuredClone(teamState);
   let revision = 0;
   const key = (index, month) => `${index}:${month}`;
+  // The draft bridge keeps, per month, what is saved (or pristine) so "unsaved" means "differs from that", never "was ever edited".
+  const baselines = new Map(), acked = new Map(), seen = new Map(), groups = [], listeners = new Set();
+  const issued = new WeakMap();
+  let seq = 0, changeToken = 0;
   const get = (index, month) => {
     monthDays(month);
     if (!stores[index]) throw Error("Unknown store");
     const k = key(index, month);
-    if (!drafts.has(k))
+    if (!drafts.has(k)) {
       drafts.set(k, {
         store: {
           ...stores[index],
@@ -57,6 +61,9 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
         accepted: false,
         reviewFingerprint: null,
       });
+      // The first thing a month is, before anyone has changed it, is what it is measured against.
+      if (!baselines.has(k)) { baselines.set(k, canonOf(k)); seen.set(k, baselines.get(k)); }
+    }
     return drafts.get(k);
   };
   const resolve = (index, day) => drafts.get(key(index, day.slice(0, 7))) || { store: {...stores[index],...teamState[index]}, overrides: {} };
@@ -131,7 +138,153 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     for(const [k,d] of prepared)drafts.set(k,d);
     revision++;undos.delete(token);return {...token};
   };
-  return { get, rows, record, setAssignment, reset, drafts, setMembership, addTeam, teamState, settingsChanged,reviewOffDay,applyOffDay,undoOffDay,get revision() { return revision; },context };
+  /* ---- the draft bridge -------------------------------------------------------------------------------------
+     What a month would save is exactly {storeId, month, store:{people, rules, teams, memberships, timezone}, overrides}.
+     Acceptance, review fingerprints, history and anything on screen are not part of it and never leave here as saved
+     state. Every value handed out is a copy, and every value taken in is checked first and copied before anything is
+     changed. Nothing here sends anything anywhere, or knows how a draft is written down: the caller's own verified
+     codec says whether a projection is acceptable. */
+  const stable = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((p) => [p, x[p]])) : x));
+  const monthOf = (k) => k.slice(k.indexOf(":") + 1);
+  const indexOf = (k) => Number(k.slice(0, k.indexOf(":")));
+  const projectionFor = (k) => {
+    const index = indexOf(k), d = drafts.get(k);
+    return {
+      storeId: stores[index].id,
+      month: monthOf(k),
+      store: {
+        people: structuredClone(d.store.people),
+        rules: structuredClone(d.store.rules),
+        teams: structuredClone(teamState[index].teams),
+        memberships: structuredClone(teamState[index].memberships),
+        timezone: d.store.timezone,
+      },
+      overrides: structuredClone(d.overrides),
+    };
+  };
+  const canonOf = (k) => stable(projectionFor(k));
+  const unresolved = () => groups.filter((g) => [...g.keys].some((x) => !((acked.get(x)?.revision ?? -1) >= g.revision)));
+  const touch = (kind) => {
+    const changed = [];
+    for (const k of drafts.keys()) {
+      const c = canonOf(k);
+      if (seen.get(k) !== c) { seen.set(k, c); changed.push(k); }
+    }
+    if (!changed.length) return;
+    // A change that reached more than one month is one change: no month's success can stand for the others.
+    if (changed.length > 1) groups.push({ keys: new Set(changed), reason: kind === "teams" ? "shared-teams" : kind === "off-day" ? "cross-month-move" : "multi-month", revision });
+    const event = Object.freeze({ token: ++changeToken, kind, months: Object.freeze(changed.map((k) => Object.freeze({ index: indexOf(k), month: monthOf(k) }))) });
+    for (const fn of [...listeners]) { try { fn(event); } catch { /* a listener's failure is its own */ } }
+  };
+  const mutating = (fn, kind) => (...args) => { try { return fn(...args); } finally { touch(kind); } };
+  const refuse = (reason) => Object.freeze({ ok: false, reason });
+  const exportMonth = (index, month) => {
+    get(index, month);
+    const k = key(index, month), canonical = canonOf(k);
+    const linked = [...new Set(unresolved().filter((g) => g.keys.has(k)).flatMap((g) => [...g.keys]).filter((x) => x !== k).map(monthOf))].sort();
+    const token = Object.freeze({ storeIndex: index, month, storeId: stores[index].id, seq: ++seq, linked: Object.freeze(linked) });
+    issued.set(token, { key: k, canonical, seq: token.seq, revision });
+    return { projection: projectionFor(k), token };
+  };
+  // The baseline moves to exactly what was submitted, and only forward: anything changed since stays unsaved, and an
+  // acknowledgment that is unknown, for another month, or older than one already taken changes nothing.
+  const acknowledgeMonth = (index, month, token) => {
+    const meta = token && typeof token === "object" ? issued.get(token) : null;
+    if (!meta) return refuse("unknown-submission");
+    const k = key(index, month);
+    if (meta.key !== k || token.storeIndex !== index || token.month !== month) return refuse("wrong-scope");
+    if (!drafts.has(k)) return refuse("no-such-month");
+    if (meta.seq < (acked.get(k)?.seq ?? 0)) return refuse("stale");
+    acked.set(k, { seq: meta.seq, revision: meta.revision });
+    baselines.set(k, meta.canonical);
+    touch("ack");
+    const open = unresolved().filter((g) => g.keys.has(k));
+    return Object.freeze({ ok: true, clean: canonOf(k) === meta.canonical && canonOf(k) === baselines.get(k), stillLinked: Object.freeze([...new Set(open.flatMap((g) => [...g.keys]).filter((x) => x !== k).map(monthOf))].sort()) });
+  };
+  const dirtyKeys = () => [...drafts.keys()].filter((k) => canonOf(k) !== baselines.get(k));
+  const draftStatus = (index) => {
+    const mine = (k) => indexOf(k) === index;
+    const open = unresolved().filter((g) => [...g.keys].some(mine));
+    return Object.freeze({
+      dirtyMonths: Object.freeze(dirtyKeys().filter(mine).map(monthOf).sort()),
+      // Changes that reached several months. Each month must be submitted and acknowledged on its own; none of them is
+      // saved together, and this says so until each one has been.
+      unresolved: Object.freeze(open.map((g) => Object.freeze({ reason: g.reason, months: Object.freeze([...g.keys].filter(mine).map(monthOf).sort()), complete: false }))),
+      atomic: false,
+    });
+  };
+  const SHAPE_TOP = ["month", "overrides", "storeId", "store"].sort(), SHAPE_STORE = ["memberships", "people", "rules", "teams", "timezone"];
+  const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  const sameKeys = (o, want) => plain(o) && Object.keys(o).sort().join() === want.join();
+  const shapeProblem = (c, index) => {
+    if (!sameKeys(c, SHAPE_TOP)) return "shape";
+    if (c.storeId !== stores[index].id) return "scope";
+    if (!validMonth(c.month)) return "shape";
+    if (!sameKeys(c.store, SHAPE_STORE)) return "shape";
+    const { people, rules, teams, memberships, timezone } = c.store;
+    if (![people, rules, teams, memberships].every(Array.isArray) || people.length > 500 || rules.length > 400 || teams.length > 200 || memberships.length > 5000) return "shape";
+    const ids = new Set();
+    for (const p of people) { if (!plain(p) || typeof p.id !== "string" || !p.id || ids.has(p.id)) return "shape"; ids.add(p.id); }
+    if (typeof timezone !== "string" || !timezone) return "shape";
+    try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }); } catch { return "shape"; }
+    if (!plain(c.overrides)) return "shape";
+    const days = new Set(monthDays(c.month));
+    for (const [day, value] of Object.entries(c.overrides)) if (!days.has(day) || value === null || typeof value !== "object") return "shape";
+    return null;
+  };
+  // Takes a saved month in. It never writes the month's draft by way of the map's own set, which the editor wraps to
+  // seed a roster into each NEW draft: that is for months nobody has saved, and would replace the people saved here.
+  const hydrateMonth = (index, input, verify) => {
+    if (!stores[index]) return refuse("scope");
+    if (typeof verify !== "function") return refuse("codec-missing");
+    let candidate;
+    try { candidate = structuredClone(input); } catch { return refuse("shape"); }
+    let verified;
+    try { verified = verify(structuredClone(candidate)); } catch { return refuse("codec-refused"); }
+    if (verified === false || verified === null || verified === undefined) return refuse("codec-refused");
+    if (verified !== true) { try { candidate = structuredClone(verified); } catch { return refuse("codec-refused"); } }
+    const bad = shapeProblem(candidate, index);
+    if (bad) return refuse(bad);
+    const k = key(index, candidate.month);
+    if (drafts.has(k) && canonOf(k) !== baselines.get(k)) return refuse("unsaved-changes");
+    const others = [...drafts.keys()].filter((x) => x !== k && indexOf(x) === index);
+    const sameTeams = stable({ teams: candidate.store.teams, memberships: candidate.store.memberships }) === stable({ teams: teamState[index].teams, memberships: teamState[index].memberships });
+    // Teams and memberships belong to the store, not the month: another month that is unsaved, or has been saved or
+    // loaded, depends on the ones in place now, so different ones are refused rather than rewritten under it.
+    const dependent = others.filter((x) => canonOf(x) !== baselines.get(x) || acked.has(x));
+    if (!sameTeams && dependent.length) return refuse("shared-teams");
+    // Everything is checked; from here on nothing can fail.
+    if (!sameTeams) {
+      teamState[index].teams.splice(0, teamState[index].teams.length, ...structuredClone(candidate.store.teams));
+      teamState[index].memberships.splice(0, teamState[index].memberships.length, ...structuredClone(candidate.store.memberships));
+    }
+    const draft = {
+      store: { ...stores[index], ...teamState[index], timezone: candidate.store.timezone, people: candidate.store.people, rules: candidate.store.rules },
+      overrides: candidate.overrides,
+      accepted: false,
+      reviewFingerprint: null,
+    };
+    Map.prototype.set.call(drafts, k, draft);
+    for (const g of groups) g.keys.delete(k);
+    seen.set(k, canonOf(k)); baselines.set(k, seen.get(k));
+    // Months that were only ever pristine are still pristine under the teams just taken in.
+    if (!sameTeams) for (const x of others) { seen.set(x, canonOf(x)); baselines.set(x, seen.get(x)); }
+    acked.set(k, { seq: ++seq, revision });
+    touch("hydrate");
+    return Object.freeze({ ok: true, ...exportMonth(index, candidate.month) });
+  };
+  const subscribe = (fn) => { if (typeof fn !== "function") return () => {}; listeners.add(fn); return () => listeners.delete(fn); };
+  return {
+    get, rows, record, drafts, teamState, reviewOffDay, context,
+    setAssignment: mutating(setAssignment, "edit"), reset: mutating(reset, "edit"), settingsChanged: mutating(settingsChanged, "edit"),
+    setMembership: mutating(setMembership, "teams"), addTeam: mutating(addTeam, "teams"),
+    applyOffDay: mutating(applyOffDay, "off-day"), undoOffDay: mutating(undoOffDay, "off-day"),
+    exportMonth, acknowledgeMonth, hydrateMonth, draftStatus, subscribe,
+    // Notices the changes made by code that edits a draft directly and tells the planner afterwards, or not at all.
+    observe: () => touch("observe"),
+    get unsaved() { return dirtyKeys().length > 0; },
+    get revision() { return revision; },
+  };
 }
 // Evaluate legacy full-day and explicit minute shifts across complete Monday–Sunday weeks.
 // Suggestions never contribute hours and never become assignments implicitly.

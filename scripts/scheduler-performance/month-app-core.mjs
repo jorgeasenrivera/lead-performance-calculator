@@ -39,7 +39,15 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
  * opts: root, stores (each with explicit teams and memberships, which may be empty), assignmentForDay,
  * peopleForMonth(index, month) -> that month's people, for each new month draft (default: the store's people),
  * today(store) -> YYYY-MM-DD in that store's own time, index, embedded, keyTarget (where Escape is heard,
- * default the root), confirm(message), onSummary(detail), onClose(), onExit(), onError(error).
+ * default the root), confirm(message), onSummary(detail), onClose(), onExit(), onError(error),
+ * draftCodec({ verify(projection) }) -> the caller's own codec check, which `hydrateMonth` requires and this file never
+ * replaces with a default.
+ *
+ * The draft bridge, on the returned handle: `exportMonth(month, index)` -> { projection, token }, a detached copy of
+ * what that month would save and a submission token; `acknowledgeMonth(month, token, index)` moves that month's saved
+ * baseline to exactly what the token was cut from (edits made after stay unsaved); `hydrateMonth(projection, index)`
+ * takes a saved month in, refusing without changing anything; `draftStatus(index)` and `subscribeDraft(fn)`. Nothing
+ * here saves, sends or reads from anywhere.
  */
 export function mountMonthApp(opts) {
   if (!opts || typeof opts !== "object") throw new TypeError("mountMonthApp needs options");
@@ -49,6 +57,7 @@ export function mountMonthApp(opts) {
   // Without explicit teams and memberships the planner invents placeholder teams (Oak, Pine) and people.
   for (const s of stores) if (!s || !Array.isArray(s.teams) || !Array.isArray(s.memberships)) throw new TypeError("every store needs explicit teams and memberships");
   if (typeof opts.assignmentForDay !== "function") throw new TypeError("mountMonthApp needs assignmentForDay");
+  if (opts.draftCodec !== undefined && (opts.draftCodec === null || typeof opts.draftCodec !== "object" || typeof opts.draftCodec.verify !== "function")) throw new TypeError("draftCodec needs a verify function");
   const startIndex = opts.index ?? 0;
   if (!Number.isInteger(startIndex) || !stores[startIndex]) throw new TypeError("index is not a store");
   // The store on screen; the clock below asks it for the date.
@@ -179,7 +188,9 @@ const pendingAssignments = new Map();
 const pendingSettings = new Map();
 let leavingPreview=false;
 listen(window,'pageshow',()=>{leavingPreview=false;});
-const hasLocalDraft=()=>Boolean(localSettingsChanged||planner.revision||pendingAssignments.size||pendingSettings.size||generationAnswers.size);
+// Unsaved means a month differs from what it was saved as (or began as). Marking a month reviewed is not part of what
+// is saved, so it stays a change of this page until the page is closed.
+const hasLocalDraft=()=>Boolean(localSettingsChanged||planner.unsaved||pendingAssignments.size||pendingSettings.size||generationAnswers.size);
 listen(window,'beforeunload',event=>{if(!leavingPreview&&hasLocalDraft()){event.preventDefault();event.returnValue='';}});
 const pendingKey = day => `${selected}:${day}`;
 const initialDay = () => month === today().slice(0,7) ? today() : month + "-01";
@@ -221,7 +232,6 @@ const rows = () => planner.rows(selected, month);
 const fingerprint = (r) => JSON.stringify(r);
 const markChanged = () => {
   planner.settingsChanged(selected,month);
-  localSettingsChanged=true;
   draft().accepted = false;
   draft().reviewFingerprint = null;
 };
@@ -286,6 +296,9 @@ function focusControl(el, options) {
   el?.focus(options);
 }
 function render(focusId, announcement = "") {
+  try { return renderNow(focusId, announcement); } finally { if (!disposed) { try { planner.observe(); } catch {} } }
+}
+function renderNow(focusId, announcement = "") {
   if (disposed) return;
   if(generationDetour && !returningToGeneration())generationDetour=null;
   closeOffDay();
@@ -860,6 +873,27 @@ listen(app,"touchend",event=>{
     get disposed() { return disposed; },
     // Whether anything has been changed in this page and not yet discarded, so a host can warn before it closes the editor.
     hasDraft() { return !disposed && hasLocalDraft(); },
+    // The draft bridge. Each answers a refusal ({ ok: false, reason }) rather than throwing, and none changes anything it refuses.
+    exportMonth(month, index = selected) {
+      if (disposed) return { ok: false, reason: "disposed" };
+      try { return { ok: true, ...planner.exportMonth(index, month) }; } catch { return { ok: false, reason: "scope" }; }
+    },
+    acknowledgeMonth(month, token, index = selected) {
+      if (disposed) return { ok: false, reason: "disposed" };
+      try { return planner.acknowledgeMonth(index, month, token); } catch { return { ok: false, reason: "scope" }; }
+    },
+    hydrateMonth(projection, index = selected) {
+      if (disposed) return { ok: false, reason: "disposed" };
+      let out;
+      try { out = planner.hydrateMonth(index, projection, opts.draftCodec ? (p) => opts.draftCodec.verify(p) : undefined); } catch { return { ok: false, reason: "refused" }; }
+      if (out.ok) { try { render(); } catch {} }
+      return out;
+    },
+    draftStatus(index = selected) {
+      if (disposed) return { ok: false, reason: "disposed" };
+      return { ok: true, ...planner.draftStatus(index), pending: pendingAssignments.size + pendingSettings.size > 0 };
+    },
+    subscribeDraft(fn) { return disposed ? () => {} : planner.subscribe(fn); },
     view(detail) { if (!disposed) signals["scheduler-view"]?.({ detail: detail ?? {} }); },
     hide() { if (!disposed) signals["scheduler-hide"]?.(); },
     dispose,

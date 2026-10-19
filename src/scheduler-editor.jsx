@@ -9,6 +9,11 @@
  *
  * The records are taken when the editor opens for a store. A different store, or a new sign-in
  * (`principalEpoch`), opens a fresh editor and drops the old one with whatever was unapplied.
+ *
+ * The draft bridge, through `guardRef.current` while the editor is open: `hasDraft()`, and the per-month
+ * `exportMonth(month)`, `acknowledgeMonth(month, token)`, `hydrateMonth(projection)` and `draftStatus()` of the
+ * editor's handle. `draftCodec` ({ verify }) is the caller's own check of a saved month, which hydration requires;
+ * `onDraftChange(event)` hears every change to what a month would save. This file sends and stores nothing.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import css from "../scripts/scheduler-performance/planner.css?inline";
@@ -28,14 +33,14 @@ const FRAME = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta 
 
 export default function SchedulerEditor({
   store, data, isOff, timezone, now, principalEpoch, dataEpoch, day, title = "Plan the month",
-  onClose, onSummary, onError, confirm, guardRef,
+  onClose, onSummary, onError, confirm, guardRef, draftCodec, onDraftChange,
 }) {
   const frame = useRef(null);
   const [loaded, setLoaded] = useState(null);
   const [failed, setFailed] = useState(false);
   // Latest callbacks without remounting the editor when a parent re-renders.
   const latest = useRef({});
-  latest.current = { onClose, onSummary, onError, confirm, day, now };
+  latest.current = { onClose, onSummary, onError, confirm, day, now, draftCodec, onDraftChange };
   const identity = `${store?.id}|${principalEpoch}`;
   // One snapshot per store and sign-in. A later change to `data` is not applied to an open editor.
   // The records count only while they were loaded for this store (`data.__storeId`) and under this sign-in
@@ -50,7 +55,7 @@ export default function SchedulerEditor({
     // `loaded` names the store it loaded for, so a frame left over from the last store is never mounted into.
     if (!built.ok || !loaded || loaded.identity !== identity || !loaded.frame.isConnected) return undefined;
     const { frame: host } = loaded;
-    let handle = null;
+    let handle = null, stopDraftEvents = null;
     try {
       const doc = host.contentDocument;
       handle = mountMonthApp({
@@ -68,9 +73,20 @@ export default function SchedulerEditor({
         onSummary: (detail) => latest.current.onSummary?.(detail),
         onClose: () => latest.current.onClose?.(),
         onError: (error) => latest.current.onError?.(error),
+        // Whichever codec the parent has now, asked when a month is hydrated; none given means hydration refuses.
+        ...(latest.current.draftCodec ? { draftCodec: { verify: (projection) => latest.current.draftCodec.verify(projection) } } : {}),
       });
+      stopDraftEvents = handle.subscribeDraft((event) => latest.current.onDraftChange?.(event));
       // The parent asks this before it closes the editor for the person: is there anything unsaved here?
-      if (guardRef) guardRef.current = { hasDraft: () => handle.hasDraft() };
+      if (guardRef) {
+        guardRef.current = {
+          hasDraft: () => handle.hasDraft(),
+          exportMonth: (month, index) => handle.exportMonth(month, index),
+          acknowledgeMonth: (month, token, index) => handle.acknowledgeMonth(month, token, index),
+          hydrateMonth: (projection, index) => handle.hydrateMonth(projection, index),
+          draftStatus: (index) => handle.draftStatus(index),
+        };
+      }
       if (latest.current.day) handle.view({ day: latest.current.day, store: built.stores[0].id });
     } catch (error) {
       // The editor has already told onError; this only swaps the frame for the message.
@@ -78,6 +94,7 @@ export default function SchedulerEditor({
     }
     return () => {
       if (guardRef && handle && guardRef.current && guardRef.current.hasDraft) guardRef.current = null;
+      try { stopDraftEvents?.(); } catch { /* the editor is going */ }
       handle?.dispose();
     };
   }, [built, loaded, identity, guardRef]);
