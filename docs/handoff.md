@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X60 · Independent reader lifecycle delegated within X19/X20 completion.**
+
+The parent coordinator assigns existing child `01a0f2e1-c445-749c-90b3-7c08aa06e0df` the three new files listed on the board, on `codex/reported-reader-integration` at verified `a6c2e6c4b8ce1080374ce12151fa005747f3f196`: `src/use-reported-month.mjs`, `test/use-reported-month.test.mjs`, `scripts/probe-reported-month-hook.mjs`. This is bounded preparation under the existing parent X19/X20 completion assignment, not an ownership transfer or renewal. Original branches and all existing owners remain intact.
+
+Borrow but never dispose the shared auth adapter. Expose only status/days/retry; render-time masking covers adapter identity/epoch/store/month/active/lifetime. Effects own the reader with StrictMode-safe cancellation, one deadline and no extra same-session refresh requests. Synthetic fixtures only, external requests blocked. No runtime wiring, activation, package/workflow/Manager/X26/auth/controller edits. Independent exact-diff review, applicable full tests/build and focused browser checks precede the reviewed push; verify exact remote/CI SHAs, completed checks and zero deployments. Keep the existing branch deployment stop unchanged. No merge, deployment, live data, credentials or permissions changes. H-X59 proceeds independently. This commit records coordination only and implements no hook.
+
 **H-X59 · Exact hero-bars correction and limited X26 publication resumed.**
 
 Jorge's 19 October 02:27:28.216263 UTC "Yes" (`Sentinel_bbeba7b6dce881919bfabcb67946a9b2`) approves the exact one-file correction, application/push by existing X26 Claude on deployment-blocked PR491, required tests/build and fresh existing Chromium/WebKit checks, with exact-SHA and zero-deployment verification. This explicitly resumes that limited work after the earlier push issue. The board records exact base, patch and source/result hashes. Parent Codex coordinates only; X26 remains the writer. No ownership transfer or X25 renewal. This commit changes only these two coordination documents.
