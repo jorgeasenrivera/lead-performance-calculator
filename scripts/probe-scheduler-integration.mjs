@@ -129,14 +129,16 @@ async function openApp(browser, base, { width = 1280, height = 900, touch = fals
       if (storeRow && route.request().method() === "GET") state.storeReads += 1;
       if (storeRow && state.failStore && route.request().method() === "GET") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
       if (storeRow && state.holdStore) {
-        state.storeHeld = true;
-        await state.holdStore.promise;
+        // One request takes the hold; the next read is not held. A held answer is "poisoned" unless it says otherwise.
+        const hold = state.holdStore;
         state.holdStore = null;
+        state.storeHeld = true;
+        await hold.promise;
         // The answer that was in flight when the sign-in changed carries somebody who must never be shown.
         const real = await route.fetch();
         const body = await real.json();
         const doc = Array.isArray(body) ? body[0] : body;
-        if (doc && doc.value && Array.isArray(doc.value.roster)) doc.value.roster = [...doc.value.roster, { id: "stale-sam", name: "Stale Sam", roleId: "sales" }];
+        if (hold.poison !== false && doc && doc.value && Array.isArray(doc.value.roster)) doc.value.roster = [...doc.value.roster, { id: "stale-sam", name: "Stale Sam", roleId: "sales" }];
         return route.fulfill({ response: real, body: JSON.stringify(body) });
       }
       return route.continue();
@@ -251,14 +253,32 @@ try {
       assert.equal(await page.locator("button:has-text('Plan the month')").count(), 1);
     });
 
-    await step("desktop a new sign-in masks at once and asks for nothing", async () => {
+    await step("desktop a new sign-in masks at once, asks for nothing, and recovers by itself", async () => {
       const before = state.deliveries.length;
+      // The dashboard reads the store again under the new sign-in; the read is held so the masked window can be looked at.
+      const hold = { ...defer(), poison: false };
+      state.holdStore = hold;
+      state.storeHeld = null;
       await announce(ctx, entry.url, "SIGNED_IN", SID_B);
       await page.waitForFunction((re) => !new RegExp(re).test(document.querySelector(".sc-dialog")?.innerText || ""), DELIVERED.source, { timeout: 3000 });
       assert.equal(await page.locator("button:has-text('Plan the month')").count(), 0, "no planner from another sign-in's records");
+      for (let i = 0; i < 60 && !state.storeHeld; i++) await page.waitForTimeout(100);
+      assert.ok(state.storeHeld, "the store is read again under the new sign-in, on its own");
       await page.waitForTimeout(800);
-      assert.equal(state.deliveries.length, before, "and no request made on the strength of them");
+      assert.equal(state.deliveries.length, before, "no request made on the strength of the old records while it waits");
       assert.equal(state.dialogs.length, 0, "no question asked about it");
+      // Same store, new session: it is back without a reload, a store switch or a change on the server.
+      hold.resolve();
+      // The dashboard is back on its own; the calendar starts closed again, as it does for any new page of records.
+      await page.waitForSelector(".sc-entry .sc-toggle", { timeout: 20000 });
+      assert.equal(state.deliveries.length, before, "nothing is asked until it is opened");
+      await page.click(".sc-entry .sc-toggle");
+      await page.getByText(DELIVERED).waitFor({ timeout: 20000 });
+      assert.equal(await page.locator("button:has-text('Plan the month')").count(), 1, "the planner is available again");
+      assert.equal(state.deliveries.length, before + 1, "one request, for the new sign-in's records");
+      const used = JSON.parse(Buffer.from(state.deliveries.at(-1).auth.split(" ")[1].split(".")[1], "base64url").toString());
+      assert.equal(used.session_id, SID_B, "and it carries the new sign-in's token");
+      assert.equal(state.dialogs.length, 0);
     });
     await ctx.close();
   }
@@ -284,14 +304,16 @@ try {
   /* ---- desktop: a new sign-in while the store is loading */
   {
     const { ctx, page, state } = await openApp(browser, entry.url, { blocked, errors, name: "loading" });
-    state.holdStore = defer();
+    const loadingHold = defer();
+    state.holdStore = loadingHold;
     await signIn(page, entry);
     await page.waitForFunction(() => true);
     for (let i = 0; i < 100 && !state.storeHeld; i++) await page.waitForTimeout(150);
     await step("a sign-in change during the load is not accepted", async () => {
       assert.ok(state.storeHeld, "the store request was held in flight");
+      const inFlight = loadingHold;
       await announce(ctx, entry.url, "SIGNED_IN", SID_B);
-      state.holdStore.resolve();
+      inFlight.resolve();
       // Either the dashboard reads the store again under the sign-in that is current, or it says it could not open and
       // offers its own way to try again. Both end the same way; neither may show what was in flight.
       const t0 = Date.now();
@@ -303,12 +325,13 @@ try {
       }
       await settle(page, ".sc-entry .sc-toggle");
       results["loading-recovery-seconds"] = Math.round((Date.now() - t0) / 1000);
+      assert.ok(!results["loading-needed-try-again"], "it read the store again on its own, with no Try again");
       assert.doesNotMatch(await dashboardPeople(page), /Stale Sam/, "the dashboard itself did not take the answer that was in flight");
       await page.click(".sc-entry .sc-toggle");
       await page.click("button:has-text('Plan the month')");
       const f = page.frameLocator("iframe");
       await f.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
-      await f.locator("#workspace").click();
+      await f.locator("#workspace").evaluate((el) => el.click());
       await f.locator("summary", { hasText: "Schedule tools" }).click();
       await f.locator("#setup").click();
       await f.locator("#people").click();
@@ -331,6 +354,8 @@ try {
         const real = await route.fetch();
         const body = await real.json();
         const row = Array.isArray(body) ? body[0] : body;
+        // Only the setup row itself is given a second store; any other answer to that key goes through as it is.
+        if (!row || !row.value || !Array.isArray(row.value.stores)) return route.fulfill({ response: real, body: JSON.stringify(body) });
         row.value.stores = [...row.value.stores, { ...row.value.stores[0], id: "sage-two", name: "Second Motors" }];
         row.value.standards["sage-two"] = row.value.standards[STORE];
         return route.fulfill({ response: real, body: JSON.stringify(Array.isArray(body) ? [row] : row) });
@@ -382,21 +407,34 @@ try {
       await page.getByText(DELIVERED).waitFor({ timeout: 2000 });
     });
 
-    await step("a refresh answered after the sign-in changed is not adopted", async () => {
-      state.holdStore = defer();
+    await step("a refresh answered after the sign-in changed is not adopted, and the store recovers by itself", async () => {
+      const late = defer();
+      state.holdStore = late;
       state.storeHeld = null;
       await moveStoreRow();
       await refreshNow();
       for (let i = 0; i < 60 && !state.storeHeld; i++) await page.waitForTimeout(150);
       assert.ok(state.storeHeld, "the refresh was in flight");
+      // The new sign-in reads the store again; that read is held too, so the window between the two can be looked at.
+      const again = { ...defer(), poison: false };
+      state.holdStore = again;
+      state.storeHeld = null;
       await announce(ctx, entry.url, "SIGNED_IN", SID_B);
-      state.holdStore.resolve();
-      await page.waitForTimeout(1500);
+      for (let i = 0; i < 60 && !state.storeHeld; i++) await page.waitForTimeout(100);
+      assert.ok(state.storeHeld, "the store is read again under the new sign-in");
+      late.resolve();
+      await page.waitForTimeout(1200);
       assert.equal(await page.locator("button:has-text('Plan the month')").count(), 0, "nothing from the late answer is allowed to plan");
       assert.equal(await page.getByText(DELIVERED).count(), 0, "or to show numbers");
+      assert.doesNotMatch(await page.locator("body").innerText(), /Stale Sam/, "or to be shown anywhere");
+      again.resolve();
+      await page.waitForSelector(".sc-entry .sc-toggle", { timeout: 20000 });
+      await page.click(".sc-entry .sc-toggle");
+      await page.getByText(DELIVERED).waitFor({ timeout: 20000 });
+      assert.equal(await page.locator("button:has-text('Plan the month')").count(), 1, "the new sign-in's own read is trusted");
       await page.click(".sc-dialog .sc-close");
       await page.waitForSelector(".sc-dialog", { state: "detached" });
-      assert.doesNotMatch(await dashboardPeople(page), /Stale Sam/, "and the dashboard itself did not adopt the late answer");
+      assert.doesNotMatch(await dashboardPeople(page), /Stale Sam/, "and the dashboard itself never adopted the late answer");
     });
     await ctx.close();
   }
@@ -440,7 +478,7 @@ try {
       await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
     };
     const makeDraft = async () => {
-      await frame.locator("#workspace").click();
+      await frame.locator("#workspace").evaluate((el) => el.click());   // the editor may open on a chosen day, whose sheet covers the button
       await frame.locator("summary", { hasText: "Schedule tools" }).click();
       await frame.locator("#setup").click();
       await frame.locator("#people").click();
@@ -455,7 +493,7 @@ try {
 
     await step("planner shows this store's people and says nothing is saved", async () => {
       await openPlanner();
-      await frame.locator("#workspace").click();   // the statement sits with the editing tools
+      await frame.locator("#workspace").evaluate((el) => el.click());   // the editor may open on a chosen day, whose sheet covers the button   // the statement sits with the editing tools
       const text = await frame.locator("#app").evaluate((el) => el.textContent);
       assert.match(text, /Nothing here is saved to the schedule/);
       assert.doesNotMatch(text, /synthetic|fictional|\bOak\b|\bPine\b/i);
@@ -476,6 +514,35 @@ try {
       await page.click(".sc-dialog:has(iframe) .sc-close");
       await planner().waitFor({ state: "detached" });
       assert.equal(await page.evaluate(() => [...document.body.children].some((n) => n.hasAttribute("inert"))), false, "given back on close");
+    });
+
+    await step("the planner opens on the day chosen in the calendar, moves to a later month, and a cancelled close keeps both", async () => {
+      if (!(await page.locator(".sc-dialog:has-text('Deliveries calendar')").count())) await page.click(".sc-entry .sc-toggle");
+      const day = await page.locator(".sc-day").evaluateAll((els) => { const d = els.map((e) => e.getAttribute("data-date")).find((x) => x && x.endsWith("-12")); return d || els[3].getAttribute("data-date"); });
+      await page.locator(`.sc-day[data-date="${day}"]`).click();
+      await page.click("button:has-text('Plan the month')");
+      await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
+      assert.equal(await frame.locator("#app").getAttribute("data-haptic-date"), day, "the editor is on the date picked in the calendar");
+      const heading = (await frame.locator("#period-heading").innerText()).trim();
+      // The day sheet it opened on covers the month controls on a small frame; the control itself is what is being used.
+      await frame.locator("#next").evaluate((el) => el.click());
+      await frame.locator("#app [data-day]").first().waitFor();
+      const later = (await frame.locator("#period-heading").innerText()).trim();
+      assert.notEqual(later, heading, "a later month opens");
+      assert.ok((await frame.locator("#app [data-day]").count()) >= 28, "with its days");
+      await makeDraft();
+      const before = asks();
+      await page.click(".sc-dialog:has(iframe) .sc-close");
+      await page.waitForTimeout(500);
+      assert.equal(asks(), before + 1, "closing with changes asks");
+      assert.equal(await planner().count(), 1, "and no keeps the planner");
+      assert.equal((await frame.locator("#period-heading").innerText()).trim(), later, "on the same month");
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.accept(); });
+      await page.click(".sc-dialog:has(iframe) .sc-close");
+      await planner().waitFor({ state: "detached", timeout: 5000 });
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
     });
 
     // Each way out: the first answer is no (the planner stays), the second is yes (it goes).
@@ -556,7 +623,11 @@ try {
         page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
       });
     }
-    await step("a change of sign-in removes the planner with no question", async () => {
+    await step("a change of sign-in removes a planner with unsaved changes, with no question", async () => {
+      // The earlier steps leave the planner closed, so open it again and make it dirty first: this is the case that matters.
+      if (!(await planner().count())) await openPlanner();
+      await makeDraft();
+      assert.equal(await planner().count(), 1, "a dirty planner is open");
       const before = state.dialogs.length;
       await announce(ctx, entry.url, "SIGNED_IN", SID_B);
       await planner().waitFor({ state: "detached", timeout: 3000 });

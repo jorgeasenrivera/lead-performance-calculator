@@ -257,6 +257,7 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
     <EditorDialog id={panelId + "-plan"} label={`Plan the month, ${monthText(month)}`} onRequestClose={requestClose}>
       <Suspense fallback={<p role="status">Opening the planner.</p>}>
         <SchedulerEditor store={store} data={data} isOff={isOff} timezone={STORE_TIME_ZONE}
+          day={selectedDate || undefined}
           principalEpoch={identity.principalEpoch} dataEpoch={stamp ? stamp.epoch : undefined}
           guardRef={guard} onClose={() => setPlanning(false)} />
       </Suspense>

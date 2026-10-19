@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
@@ -915,6 +915,14 @@ const keepStamp = (prev, next) => (reportedAuth ? inheritLoadedUnder(prev, next)
    unsaved changes. Off with the scheduler, it never asks. A sign-in or store change is not this: it ends the
    records and takes the planner away without a question. */
 const askLeave = () => (reportedAuth ? mayLeave() : true);
+/* The sign-in the scheduler follows, as a plain number (null with the scheduler off, and always the same then). A new
+   sign-in on this page moves it, and the store on screen is read again under it instead of staying masked until a reload. */
+const noSubscribe = () => () => {};
+const noEpoch = () => null;
+const epochNow = () => {
+  try { const s = reportedAuth.getSnapshot(); return Number.isSafeInteger(s?.principalEpoch) && s.disposed !== true ? s.principalEpoch : null; } catch { return null; }
+};
+const useAuthEpoch = () => useSyncExternalStore(reportedAuth ? reportedAuth.subscribe : noSubscribe, reportedAuth ? epochNow : noEpoch, reportedAuth ? epochNow : noEpoch);
 
 const AUTH_ENABLED = true;
 
@@ -1795,6 +1803,7 @@ export default function LeadPerformanceCalculator() {
   const [storeLoadError, setStoreLoadError] = useState("");
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
+  const authEpoch = useAuthEpoch();
   /* Restore points, by store, read from their own rows. They are loaded when
      something is about to show or use one rather than with the store, because
      the whole point of moving them out is that the common path never carries
@@ -2330,7 +2339,7 @@ export default function LeadPerformanceCalculator() {
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready, initialViewReady]); // eslint-disable-line
+  }, [view, ready, initialViewReady, authEpoch]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
