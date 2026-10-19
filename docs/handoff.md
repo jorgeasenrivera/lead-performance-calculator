@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X67 addendum · One reviewed core-hash constant in the preview builder.**
+
+The board now permits existing X26 to update only the core SHA-256 constant in `scripts/scheduler-performance/build.mjs`, after independent exact-diff review of the final H-X67 core bytes. Supplied hash `4a390efc38cc6bee542b2d60fadcdf8d331c72027dd86cda4f6a7bca8d203d4a` remains provisional. Every transform, source/anchor guard, isolation negative control and original immutable manifest stays unchanged; the existing conditional candidate-manifest scope remains. Parent reports H-X66 completed at `b69cb4e298fa9ad7a86ffb09951980e23372c3b7`; retained legacy failures and the failed/unattributed shots WebKit crash remain visible. Local H-X67 `a284a76` has no core edit yet. No ownership change or production merge/deployment. This addendum changes coordination only.
+
 **H-X67 · Serialized actual-load provenance and reader/editor integration.**
 
 The board records the parent's bounded eight-path implementation exception for existing X26 WT8 on `claude/scheduler-editor-runtime`, conditional on completed exact-head H-X66 and coordinator-confirmed absence of a conflicting Manager writer. No C97 transfer/renewal. The dashboard loader is in the core, not Manager; therefore a Manager-only epoch stamp cannot prove provenance. Capture the shared adapter snapshot at initial/cache-origin/refresh load, keep `{data, loadedUnder:{storeId,epoch}}` in memory and never persist or relabel it. Thread through existing entries, reuse the three reader files byte-identically from `2ab0db62b8e619cd4a7dd5efa8d9693d7dc8d868`, control month/retry/editor and unify user dirty-close decisions while invalidation masks stale content immediately.
