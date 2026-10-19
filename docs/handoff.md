@@ -619,6 +619,14 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X59 · Exact hero-bars correction and limited X26 publication resumed.**
+
+Jorge's 19 October 02:27:28.216263 UTC "Yes" (`Sentinel_bbeba7b6dce881919bfabcb67946a9b2`) approves the exact one-file correction, application/push by existing X26 Claude on deployment-blocked PR491, required tests/build and fresh existing Chromium/WebKit checks, with exact-SHA and zero-deployment verification. This explicitly resumes that limited work after the earlier push issue. The board records exact base, patch and source/result hashes. Parent Codex coordinates only; X26 remains the writer. No ownership transfer or X25 renewal. This commit changes only these two coordination documents.
+
+Independent source review cleared patch `e24968dfbff3f7445a466128a11af3d009a6246f06936e41f300a08925dcabb8`. Combined diagnostic run `39185262255` at `13fd167c0da671d7b9d50be5cd753793b77fb11d` completed 140 scenarios per repetition: no-drain page errors 0/15/11, drain 0/0/0; all six delayed-read and invalid-preflight controls passed. Both error bursts followed canceled mock app_data POSTs in baseline phase. The original nine unlabelled errors remain unattributable. Evidence supports the harness correction, not production or release readiness; fresh release validation remains required.
+
+Apply only the reviewed three-line `scripts/hero-bars.mjs` patch, preserving assertions and measurements. Do not change manifests, workflows, helper, mock, seed, product code or the existing deployment block. Keep PR491 draft. No merge, deployment, activation, live data, credentials or permissions changes. Stop and report any new approval denial. All unrelated owners, scopes and release gates remain unchanged.
+
 **H-X58 · Separate deployment-blocked WebKit diagnosis assigned.**
 
 Under Jorge's 19 October 01:12:51 UTC approval `Sentinel_cca80d64f5888191b0797feb9b9cc658`, the parent coordinator assigned the exact new diagnostic scope recorded on the board: branch `codex/hero-bars-webkit-diagnostic` from `45ea85499e062d0966ffb5ff73c0c26480c1b7e4`, two new diagnostic files and only that branch's deployment-disable entry alongside the existing X26 guard. This is neither a transfer nor a renewal. This coordination commit changes only these documents.
