@@ -91,7 +91,7 @@ async function launch() {
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 // An unsigned token with the two claims the reported-auth adapter reads: who, and which session.
 const jwt = (sid, jti = "first") => `${b64({ alg: "none", typ: "JWT" })}.${b64({ sub: USER_ID, session_id: sid, jti, exp: Math.floor(Date.now() / 1000) + 3600 })}.x`;
-const SID_A = "11111111-1111-4111-8111-111111111111", SID_B = "22222222-2222-4222-8222-222222222222";
+const SID_A = "11111111-1111-4111-8111-111111111111", SID_B = "22222222-2222-4222-8222-222222222222", SID_C = "33333333-3333-4333-8333-333333333333";
 const sessionOf = (sid, extra = {}, jti = "first") => ({
   access_token: jwt(sid, jti), token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: "mock-refresh",
   user: { id: USER_ID, email: "demo@sageonline.app", aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }, ...extra,
@@ -629,16 +629,120 @@ try {
         page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
       });
     }
+    // The planner belongs to the page, not to the entry that opened it: a window resized across the phone line swaps the
+    // entry (and so the layout), and the planner, its month, its day and what was typed must come through.
+    const pickDay = async () => {
+      const day = await page.locator(".sc-day").evaluateAll((els) => { const d = els.map((e) => e.getAttribute("data-date")).find((x) => x && x.endsWith("-12")); return d || els[3].getAttribute("data-date"); });
+      await page.locator(`.sc-day[data-date="${day}"]`).click();
+      return day;
+    };
+    const openOnThisLayout = async () => {
+      if (await page.locator(".sc-entry").count()) {
+        if (!(await page.locator(".sc-dialog:has-text('Deliveries calendar')").count())) await page.click(".sc-entry .sc-toggle");
+      } else {
+        const t = page.locator(".sc-calendar > .sc-toggle").first();
+        if ((await t.getAttribute("aria-expanded")) !== "true") await t.click();
+      }
+    };
+    const throughResizes = async (first, sizes, label) => {
+      await page.setViewportSize({ width: first.width, height: first.height });
+      await page.waitForTimeout(700);
+      await openOnThisLayout();
+      const day = await pickDay();
+      await page.click("button:has-text('Plan the month')");
+      await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
+      await frame.locator("#next").evaluate((el) => el.click());
+      const later = (await frame.locator("#period-heading").innerText()).trim();
+      await makeDraft();
+      const handle = await planner().elementHandle();
+      assert.equal((await page.locator(".sc-entry").count()) === 1, first.wide, `${label}: it starts on the ${first.wide ? "wide" : "phone"} layout`);
+      for (const size of sizes) {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.waitForTimeout(1000);
+        const wide = (await page.locator(".sc-entry").count()) === 1;
+        assert.equal(wide, size.wide, `${label}: the layout really changed to the ${size.wide ? "wide" : "phone"} one`);
+        assert.equal(await planner().count(), 1, `${label}: the planner is still open`);
+        assert.equal(await handle.evaluate((el) => el.isConnected), true, `${label}: it is the same editor, not a new one`);
+        assert.equal((await frame.locator("#period-heading").innerText()).trim(), later, `${label}: on the same month`);
+        assert.equal(await frame.locator("#app").getAttribute("data-haptic-date") !== null, true, `${label}: and its day`);
+        assert.equal(await page.evaluate(() => [...document.body.children].filter((n) => !n.hasAttribute("inert") && n.querySelector && !n.querySelector("iframe") && n.getAttribute("data-scheduler-planner-host") === null && !n.classList.contains("sc-scrim")).length), 0, `${label}: nothing but the planner is reachable`);
+      }
+      const before = asks();
+      await page.click(".sc-dialog:has(iframe) .sc-close");
+      await page.waitForTimeout(500);
+      assert.equal(asks(), before + 1, `${label}: the changes made before the resize are still there, so closing asks`);
+      assert.equal(await planner().count(), 1);
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.accept(); });
+      await page.click(".sc-dialog:has(iframe) .sc-close");
+      await planner().waitFor({ state: "detached", timeout: 5000 });
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
+      return day;
+    };
+    await step("a dirty planner survives a resize from the wide layout to the phone layout and back", async () => {
+      const day = await throughResizes({ width: 1280, height: 900, wide: true }, [{ width: 600, height: 900, wide: false }, { width: 1280, height: 900, wide: true }], "wide to phone to wide");
+      // The date chosen before the swap is still the one chosen after it.
+      await page.waitForSelector(`.sc-day[data-date="${day}"][aria-pressed="true"]`, { timeout: 5000 });
+    });
+    await step("a dirty planner survives a resize from the phone layout to the wide layout", async () => {
+      await throughResizes({ width: 600, height: 900, wide: false }, [{ width: 1280, height: 900, wide: true }], "phone to wide");
+    });
+    await step("a planner opened under one sign-in does not outlive a swap that ends it", async () => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.waitForTimeout(700);
+      await openOnThisLayout();
+      await page.click("button:has-text('Plan the month')");
+      await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
+      await makeDraft();
+      await page.setViewportSize({ width: 600, height: 900 });
+      await page.waitForTimeout(900);
+      assert.equal(await planner().count(), 1, "open across the swap");
+      const before = state.dialogs.length;
+      await announce(ctx, entry.url, "SIGNED_IN", SID_B);
+      await planner().waitFor({ state: "detached", timeout: 3000 });
+      assert.equal(state.dialogs.length, before, "taken away with no question");
+      assert.equal(await page.evaluate(() => [...document.body.children].some((n) => n.hasAttribute("inert"))), false, "and the page is given back");
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.waitForSelector(".sc-entry .sc-toggle", { timeout: 20000 });
+    });
+
     await step("a change of sign-in removes a planner with unsaved changes, with no question", async () => {
       // The earlier steps leave the planner closed, so open it again and make it dirty first: this is the case that matters.
       if (!(await planner().count())) await openPlanner();
       await makeDraft();
       assert.equal(await planner().count(), 1, "a dirty planner is open");
       const before = state.dialogs.length;
-      await announce(ctx, entry.url, "SIGNED_IN", SID_B);
+      await announce(ctx, entry.url, "SIGNED_IN", SID_C);
       await planner().waitFor({ state: "detached", timeout: 3000 });
       assert.equal(state.dialogs.length, before, "no veto on records that are no longer this person's");
       assert.equal(await page.evaluate(() => [...document.body.children].some((n) => n.hasAttribute("inert"))), false);
+    });
+
+    await step("signing out with unsaved changes asks first; a session that ends on its own does not", async () => {
+      await page.waitForSelector(".sc-entry .sc-toggle", { timeout: 20000 });
+      await openOnThisLayout();
+      await page.click("button:has-text('Plan the month')");
+      await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
+      await makeDraft();
+      const before = asks();
+      page.removeAllListeners("dialog");
+      let answer = false;
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); if (answer) await d.accept(); else await d.dismiss(); });
+      const signOut = async () => {
+        await page.locator(".brand-btn").first().evaluate((el) => el.click());
+        await page.locator(".bm-item", { hasText: "Sign out" }).first().evaluate((el) => el.click());
+      };
+      await signOut();
+      await page.waitForTimeout(600);
+      assert.equal(asks(), before + 1, "asked once");
+      assert.equal(await planner().count(), 1, "and with no the planner stays");
+      assert.equal(await page.locator('input[type="password"]').count(), 0, "and so does the sign-in");
+      answer = true;
+      await signOut();
+      await page.waitForSelector('input[type="password"]', { timeout: 20000 });
+      assert.equal(await planner().count(), 0, "with yes it goes, and the page is signed out");
+      assert.equal(await page.evaluate(() => [...document.body.children].some((n) => n.hasAttribute("inert"))), false, "with nothing left behind inert");
     });
     await ctx.close();
   }

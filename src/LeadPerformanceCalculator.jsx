@@ -3095,6 +3095,10 @@ export default function LeadPerformanceCalculator() {
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
+    // Every caller is a person's own press of a sign-out control: with changes in the month planner it asks first.
+    // A session that ends on its own (expired, signed out elsewhere) never comes through here; the planner is taken
+    // away without a question when the sign-in it was opened under ends.
+    if (!askLeave()) return;
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
