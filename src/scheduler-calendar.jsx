@@ -230,9 +230,14 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
   const requestClose = () => {
     if (guard.current && guard.current.hasDraft() && !window.confirm(DISCARD)) return false;
     setPlanning(false);
-    if (planner.current) planner.current.focus();
     return true;
   };
+  // Focus goes back to the button that opened the planner once the page behind it is reachable again.
+  const wasPlanning = useRef(false);
+  useEffect(() => {
+    if (planning) { wasPlanning.current = true; return; }
+    if (wasPlanning.current) { wasPlanning.current = false; if (planner.current) planner.current.focus(); }
+  }, [planning]);
   const canPlan = followed && fresh;
   const plan = canPlan ? (
     <button type="button" ref={planner} className="sc-retry" aria-haspopup="dialog" onClick={() => setPlanning(true)}>Plan the month</button>
@@ -242,7 +247,7 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
       <Suspense fallback={<p role="status">Opening the planner.</p>}>
         <SchedulerEditor store={store} data={data} isOff={isOff} timezone={STORE_TIME_ZONE}
           principalEpoch={identity.principalEpoch} dataEpoch={stamp ? stamp.epoch : undefined}
-          guardRef={guard} onClose={() => { setPlanning(false); if (planner.current) planner.current.focus(); }} />
+          guardRef={guard} onClose={() => setPlanning(false)} />
       </Suspense>
     </EditorDialog>
   ) : null;
@@ -323,10 +328,12 @@ function EditorDialog({ id, label, onRequestClose, children }) {
     // take the person to another tab or room from behind it. The only way out is the dialog, which asks about unsaved changes.
     const rest = [...document.body.children].filter((n) => n !== el.parentElement && !n.hasAttribute("inert"));
     for (const n of rest) n.setAttribute("inert", "");
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); closeRef.current(); } };
-    document.addEventListener("keydown", onKey, true);
+    // On the window, in the capture phase, so it runs before the calendar dialog's own listener on the document and
+    // stops there: one Escape asks about the planner and leaves the calendar behind it alone.
+    const onKey = (e) => { if (e.key === "Escape") { e.stopImmediatePropagation(); e.preventDefault(); closeRef.current(); } };
+    window.addEventListener("keydown", onKey, true);
     return () => {
-      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKey, true);
       document.body.style.overflow = overflow;
       for (const n of rest) n.removeAttribute("inert");
     };

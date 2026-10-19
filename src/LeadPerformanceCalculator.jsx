@@ -908,6 +908,10 @@ const reportedAuth = (import.meta.env.VITE_SCHEDULER_CALENDAR === "1" && supabas
   ? reportedAuthFor(supabase, createReportedAuthAdapter)
   : null;
 
+/* With no adapter these do nothing at all, so every load and every save is exactly what it was. */
+const startLoad = (storeId, lane) => (reportedAuth ? beginLoad(reportedAuth, storeId, lane) : null);
+const keepStamp = (prev, next) => (reportedAuth ? inheritLoadedUnder(prev, next) : next);
+
 const AUTH_ENABLED = true;
 
 /* The same bargain loadRowIfChanged strikes, for the shared rows: ask for the
@@ -2041,7 +2045,7 @@ export default function LeadPerformanceCalculator() {
         // First load: pull every accessible store, cache it, pick a starting view.
         const all = {};
         for (const s of accessible) {
-          const ticket = beginLoad(reportedAuth, s.id);
+          const ticket = startLoad(s.id, "load");
           const got = await withTimeout(loadStrict(storeKey(s.id)));
           const r = got.value || { ok: false };
           let d = r.ok ? r.value : undefined;
@@ -2114,7 +2118,7 @@ export default function LeadPerformanceCalculator() {
       if (!missing.length) return;
       const add = {};
       for (const s of missing) {
-        const ticket = beginLoad(reportedAuth, s.id);
+        const ticket = startLoad(s.id, "missing");
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
@@ -2255,7 +2259,7 @@ export default function LeadPerformanceCalculator() {
       setStoreLoadFailed(false);
       setStoreMismatch(null);
       setStoreLoadError("");
-      const ticket = beginLoad(reportedAuth, want);
+      const ticket = startLoad(want, "load");
       try {
         /* A request that never answers used to leave this screen loading for ever:
            there was no failure to catch, so nothing downstream ever ran. Twelve
@@ -2305,7 +2309,13 @@ export default function LeadPerformanceCalculator() {
         console.error("store load failed", { key: want, error: e });
         // A failed load must NOT masquerade as an empty store, or the next save wipes it.
         setStoreLoadError(String((e && e.message) || e || "Unknown error"));
-        setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+        /* With the scheduler on, a copy the device kept is read again before it is shown; if that read fails it
+           stands in, as it always did, and stays unstamped so the scheduler does not trust it. */
+        if (reportedAuth && cached && !(cached.__storeId && cached.__storeId !== view)) {
+          setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setStoreLoadError("");
+        } else {
+          setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+        }
       }
       if (!dead && want === view) setTab("board");
     })();
@@ -2362,11 +2372,11 @@ export default function LeadPerformanceCalculator() {
       try {
         const stamp = await loadStoreStamp(storeKey(view));
         if (!stamp || dead || stamp === storeStampRef.current) return;
-        const ticket = beginLoad(reportedAuth, view, "refresh");
+        const ticket = startLoad(view, "refresh");
         const fresh = await loadStore(view, null, true);
         if (!fresh || dead || savingRef.current) return;
-        // Another store's document is never relabelled as this one's, and an answer for a sign-in that has ended is dropped.
-        if (fresh.__storeId && fresh.__storeId !== view) return;
+        // With the scheduler on: another store's document is never relabelled as this one's, and an answer for a
+        // sign-in that has ended is dropped. Without it the refresh is what it always was.
         if (reportedAuth && !acceptLoad(ticket, reportedAuth, fresh).ok) return;
         fresh.__storeId = view;
         storeStampRef.current = stamp;
@@ -2438,7 +2448,7 @@ export default function LeadPerformanceCalculator() {
        would have meant reading and rewriting every store to save a snapshot
        that is superseded the next time a report lands. */
     if (next && next.snapshots) delete next.snapshots;
-    inheritLoadedUnder(adminData[storeId] || storeData, next);   // a local change keeps where the document came from
+    keepStamp(adminData[storeId] || storeData, next);   // a local change keeps where the document came from
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
 
@@ -2457,7 +2467,7 @@ export default function LeadPerformanceCalculator() {
     const ok = res.ok;
     if (ok) {
       const merged = res.value || next;
-      inheritLoadedUnder(next, merged);
+      keepStamp(next, merged);
       if (seq === saveSeq.current) {
         setStoreData(merged);
         setAdminData((p) => ({ ...p, [storeId]: merged }));
@@ -2492,13 +2502,13 @@ export default function LeadPerformanceCalculator() {
          is; anything else is not ours to write to. */
       if (prev.__storeId && prev.__storeId !== storeId) return prev;
       if (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry)) return prev;
-      return inheritLoadedUnder(prev, { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] });
+      return keepStamp(prev, { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] });
     });
     setAdminData((p) => {
       const cur = p[storeId];
       if (!cur || (cur.__storeId && cur.__storeId !== storeId)) return p;
       if (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry)) return p;
-      return { ...p, [storeId]: inheritLoadedUnder(cur, { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] }) };
+      return { ...p, [storeId]: keepStamp(cur, { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] }) };
     });
   }, []);
 

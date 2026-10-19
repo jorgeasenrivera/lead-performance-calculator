@@ -53,6 +53,12 @@ async function buildApp() {
   Object.assign(process.env, { VITE_SUPABASE_URL: MOCK, VITE_SUPABASE_ANON_KEY: "mock-anon-key", VITE_SCHEDULER_CALENDAR: "1" });
   const { build } = await import(pathToFileURL(path.join(ROOT, "node_modules/vite/dist/node/index.js")).href);
   await build({ root: ROOT, logLevel: "error", build: { outDir: dir, emptyOutDir: true } });
+  // A build that was pointed anywhere but the local mock stops here, before a browser opens: the bundle must name the
+  // mock and must not name the production project or any hosted backend.
+  const bundle = fs.readdirSync(path.join(dir, "assets")).filter((f) => f.endsWith(".js")).map((f) => fs.readFileSync(path.join(dir, "assets", f), "utf8")).join("\n");
+  assert.ok(bundle.includes(MOCK), "the build names the local mock as its backend");
+  assert.ok(!bundle.includes("dydfevdnpppvxgdptiwv"), "the build does not name the production project");
+  assert.ok(!/https:\/\/[a-z0-9]+\.supabase\.co/.test(bundle.replace(/https:\/\/supabase\.com[^"']*/g, "")), "the build names no hosted backend");
   return dir;
 }
 
@@ -82,10 +88,10 @@ async function launch() {
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 // An unsigned token with the two claims the reported-auth adapter reads: who, and which session.
-const jwt = (sid) => `${b64({ alg: "none", typ: "JWT" })}.${b64({ sub: USER_ID, session_id: sid, exp: Math.floor(Date.now() / 1000) + 3600 })}.x`;
+const jwt = (sid, jti = "first") => `${b64({ alg: "none", typ: "JWT" })}.${b64({ sub: USER_ID, session_id: sid, jti, exp: Math.floor(Date.now() / 1000) + 3600 })}.x`;
 const SID_A = "11111111-1111-4111-8111-111111111111", SID_B = "22222222-2222-4222-8222-222222222222";
-const sessionOf = (sid, extra = {}) => ({
-  access_token: jwt(sid), token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: "mock-refresh",
+const sessionOf = (sid, extra = {}, jti = "first") => ({
+  access_token: jwt(sid, jti), token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: "mock-refresh",
   user: { id: USER_ID, email: "demo@sageonline.app", aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() }, ...extra,
 });
 
@@ -100,6 +106,14 @@ const monthRows = (store, month) => {
 };
 const DELIVERED = /20 delivered on 5 recorded days/;
 
+// What the dashboard itself lists, read from its own People tab: the core's copy, not the scheduler's view of it.
+async function dashboardPeople(page) {
+  await page.getByRole("button", { name: "People", exact: true }).first().click();
+  await page.waitForTimeout(600);
+  const text = await page.locator("body").innerText();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).first().click();
+  return text;
+}
 const defer = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 
 /* ------------------------------------------------------------------ a signed-in dashboard */
@@ -166,14 +180,14 @@ async function settle(page, selector) {
   }
 }
 // Another tab of the same browser tells this one that the sign-in changed, as a real second tab would.
-async function announce(ctx, base, event, sid) {
+async function announce(ctx, base, event, sid, jti = "first") {
   const other = await ctx.newPage();
   await other.goto(new URL("/robots.txt", base).href);
   // The browser's stored session changes first, as it does when another tab signs in, then the tab is told.
   await other.evaluate(([event, session]) => {
     localStorage.setItem("lpc-auth", JSON.stringify(session));
     const c = new BroadcastChannel("lpc-auth"); c.postMessage({ event, session }); c.close();
-  }, [event, sessionOf(sid)]);
+  }, [event, sessionOf(sid, {}, jti)]);
   await other.close();
 }
 
@@ -221,10 +235,18 @@ try {
     });
 
     await step("desktop token rotation changes nothing", async () => {
-      await announce(ctx, entry.url, "TOKEN_REFRESHED", SID_A);
+      await announce(ctx, entry.url, "TOKEN_REFRESHED", SID_A, "rotated");
       await page.waitForTimeout(600);
       await page.getByText(DELIVERED).waitFor({ timeout: 2000 });
       assert.equal(await page.locator("button:has-text('Plan the month')").count(), 1, "still allowed to plan");
+      // Closed and opened again, the reader asks with the rotated token, and the records are still this person's.
+      await page.click(".sc-dialog .sc-close");
+      await page.waitForSelector(".sc-dialog", { state: "detached" });
+      await wide.click();
+      await page.getByText(DELIVERED).waitFor();
+      const used = JSON.parse(Buffer.from(state.deliveries.at(-1).auth.split(" ")[1].split(".")[1], "base64url").toString());
+      assert.equal(used.jti, "rotated", "the next request carries the rotated token");
+      assert.equal(await page.locator("button:has-text('Plan the month')").count(), 1);
     });
 
     await step("desktop a new sign-in masks at once and asks for nothing", async () => {
@@ -279,6 +301,7 @@ try {
       }
       await settle(page, ".sc-entry .sc-toggle");
       results["loading-recovery-seconds"] = Math.round((Date.now() - t0) / 1000);
+      assert.doesNotMatch(await dashboardPeople(page), /Stale Sam/, "the dashboard itself did not take the answer that was in flight");
       await page.click(".sc-entry .sc-toggle");
       await page.click("button:has-text('Plan the month')");
       const f = page.frameLocator("iframe");
@@ -290,6 +313,48 @@ try {
       const people = await f.locator("#settings-sheet #person").innerText();
       assert.doesNotMatch(people, /Stale Sam/, "the answer that was in flight is not on the roster");
       assert.match(people, /\S/, "and the roster is the real one");
+    });
+    await ctx.close();
+  }
+
+  /* ---- desktop: a copy of a store kept from before the sign-in changed is read again, not shown */
+  {
+    const { ctx, page, state } = await openApp(browser, entry.url, { blocked, errors, name: "switch" });
+    const demoRow = (await (await fetch(`${MOCK}/rest/v1/app_data?key=eq.lpc%3Astore%3A${STORE}%3Av2&select=*`)).json())[0];
+    let secondReads = 0;
+    await page.route("**/rest/v1/app_data**", async (route) => {
+      const url = route.request().url();
+      if (route.request().method() !== "GET") return route.fallback();
+      if (/lpc(%3A|:)config(%3A|:)v2/.test(url)) {
+        const real = await route.fetch();
+        const body = await real.json();
+        const row = Array.isArray(body) ? body[0] : body;
+        row.value.stores = [...row.value.stores, { ...row.value.stores[0], id: "sage-two", name: "Second Motors" }];
+        row.value.standards["sage-two"] = row.value.standards[STORE];
+        return route.fulfill({ response: real, body: JSON.stringify(Array.isArray(body) ? [row] : row) });
+      }
+      if (/lpc(%3A|:)store(%3A|:)sage-two/.test(url) && !/day/.test(url) && !/select=updated_at/.test(url)) {
+        secondReads += 1;
+        const who = secondReads === 1 ? "Cached Cal" : "Fresh Fran";
+        const row = { ...demoRow, key: "lpc:store:sage-two:v2", value: { ...demoRow.value, __storeId: "sage-two", roster: [{ id: "two-1", name: who, roleId: "sales" }] } };
+        const single = (route.request().headers().accept || "").includes("pgrst.object");
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(single ? row : [row]) });
+      }
+      return route.fallback();
+    });
+    await signIn(page, entry);
+    await settle(page, ".sc-entry .sc-toggle");
+    await step("a store's copy from before a sign-in change is read again, not shown", async () => {
+      assert.equal(secondReads, 1, "the second store was read once, with the first load");
+      await announce(ctx, entry.url, "SIGNED_IN", SID_B);
+      await page.waitForTimeout(500);
+      await page.selectOption(".view-select", "sage-two");
+      for (let i = 0; i < 60 && secondReads < 2; i++) await page.waitForTimeout(250);
+      assert.ok(secondReads >= 2, "it was read again, not taken from the copy in hand");
+      await page.waitForTimeout(800);
+      const text = await dashboardPeople(page);
+      assert.match(text, /Fresh Fran/, "what is shown is what was read again");
+      assert.doesNotMatch(text, /Cached Cal/, "and not the copy from before the sign-in changed");
     });
     await ctx.close();
   }
@@ -327,6 +392,9 @@ try {
       await page.waitForTimeout(1500);
       assert.equal(await page.locator("button:has-text('Plan the month')").count(), 0, "nothing from the late answer is allowed to plan");
       assert.equal(await page.getByText(DELIVERED).count(), 0, "or to show numbers");
+      await page.click(".sc-dialog .sc-close");
+      await page.waitForSelector(".sc-dialog", { state: "detached" });
+      assert.doesNotMatch(await dashboardPeople(page), /Stale Sam/, "and the dashboard itself did not adopt the late answer");
     });
     await ctx.close();
   }
@@ -339,6 +407,10 @@ try {
     await page.reload({ waitUntil: "domcontentloaded" });
     await step("a copy the device kept is shown without being trusted", async () => {
       await settle(page, ".sc-entry .sc-toggle");
+      // The remembered copy stands in, as it always did: the dashboard opens, with nothing about a failed load.
+      assert.equal(await page.getByText(/Connection interrupted/i).count(), 0);
+      assert.equal(await page.getByText(/didn.t load fully|load reported/i).count(), 0, "no failure notice: the remembered copy is shown");
+      assert.match(await page.locator("body").innerText(), /Sage Demo Motors/);
       await page.click(".sc-entry .sc-toggle");
       await page.waitForSelector(".sc-dialog");
       assert.equal(await page.locator("button:has-text('Plan the month')").count(), 0, "unknown provenance: no planner");
@@ -387,10 +459,11 @@ try {
       assert.doesNotMatch(text, /synthetic|fictional|\bOak\b|\bPine\b/i);
     });
 
-    await step("planner closes without a question when clean", async () => {
+    await step("planner closes without a question when clean, and focus goes back", async () => {
       await page.click(".sc-dialog:has(iframe) .sc-close");
       await planner().waitFor({ state: "detached" });
       assert.equal(asks(), 0);
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Plan the month", "focus is on the button that opened the planner");
     });
 
     await step("the page behind the planner is out of reach", async () => {
@@ -426,7 +499,11 @@ try {
     };
     await asked("the Close button", () => page.click(".sc-dialog:has(iframe) .sc-close"));
     await asked("the scrim", () => page.mouse.click(4, 4));
-    await asked("Escape on the page", async () => { await page.locator(".sc-dialog:has(iframe) .sc-close").focus(); await page.keyboard.press("Escape"); });
+    await asked("Escape on the page", async (again) => {
+      await page.locator(".sc-dialog:has(iframe) .sc-close").focus();
+      await page.keyboard.press("Escape");
+      if (!again) assert.equal(await page.locator(".sc-dialog:has-text('Deliveries calendar')").count(), 1, "the calendar behind it is not closed by the same key");
+    });
     await asked("Escape inside the planner", async (again) => {
       if (!again) await frame.locator("#app").press("Escape");   // the first steps back from editing
       await frame.locator("#app").press("Escape");               // the next asks before leaving
