@@ -123,10 +123,15 @@ async function openApp(browser, base, { width = 1280, height = 900, touch = fals
   // No service worker: the app's own would answer same-origin requests itself, out of reach of the page-level routes below
   // in WebKit (the delivery request reached the static server there), and nothing this probe checks is about a worker.
   const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, serviceWorkers: "block" });
-  const state = { deliveries: [], answer: "ok", holdStore: null, storeHeld: null, failStore: false, storeReads: 0, dialogs: [] };
+  const state = { deletions: [], deliveries: [], answer: "ok", holdStore: null, storeHeld: null, failStore: false, storeReads: 0, dialogs: [] };
   await ctx.route("**/*", async (route) => {
     const target = route.request().url();
     const origin = new URL(target).origin;
+    if (origin === new URL(base).origin && new URL(target).pathname === "/api/delete-account") {
+      // The completion of an account deletion is simulated here and nowhere else: nothing is deleted, and no request leaves this machine.
+      state.deletions.push(route.request().method());
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    }
     if (origin === new URL(base).origin && new URL(target).pathname === "/api/daily-deliveries") {
       // Answered here, on the context's own route: WebKit did not hand this request to a page-level route, and the page
       // then got the static server's fallback page instead of the delivery rows.
@@ -714,6 +719,7 @@ try {
       assert.equal(asks(), before + 1, "its changes were still there");
       page.removeAllListeners("dialog");
       page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
+      await page.waitForFunction(() => document.activeElement && document.activeElement.textContent === "Plan the month", null, { timeout: 3000 }).catch(() => {});
       assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.textContent), "Plan the month", "focus is back on the button that opened it");
     });
     await step("a planner opened under one sign-in does not outlive a swap that ends it", async () => {
@@ -745,6 +751,38 @@ try {
       await planner().waitFor({ state: "detached", timeout: 3000 });
       assert.equal(state.dialogs.length, before, "no veto on records that are no longer this person's");
       assert.equal(await page.evaluate(() => [...document.body.children].some((n) => n.hasAttribute("inert"))), false);
+    });
+
+    await step("the cleanup after a deleted account is not vetoed by the discard question (simulated completion only)", async () => {
+      await page.waitForSelector(".sc-entry .sc-toggle", { timeout: 20000 });
+      await openOnThisLayout();
+      await page.click("button:has-text('Plan the month')");
+      await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
+      await makeDraft();
+      const before = asks();
+      // Even a "no" to any question would stay signed in; none is asked, so this answers no to everything on purpose.
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
+      await page.locator(".brand-btn").first().evaluate((el) => el.click());
+      await page.locator(".bm-item", { hasText: "Your account" }).first().evaluate((el) => el.click());
+      await page.locator(".mc-set-out").first().evaluate((el) => el.click());
+      // Typed the way the page's own field takes it; the sheet sits behind the planner's inert backdrop, out of a pointer's reach.
+      await page.locator("#acct-confirm").evaluate((el) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "DELETE");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      assert.equal(state.deletions.length, 0, "nothing has been sent yet");
+      await page.waitForFunction(() => { const b = document.querySelector(".acct-go"); return !!b && !b.disabled; }, null, { timeout: 5000 });
+      await page.locator(".acct-go").evaluate((el) => el.click());
+      for (let i = 0; i < 40 && !state.deletions.length; i++) await page.waitForTimeout(100);
+      assert.deepEqual(state.deletions, ["POST"], "the deletion call was answered by this probe, once: " + (await page.locator(".acct-err").innerText().catch(() => "no error shown")));
+      await page.waitForSelector('input[type="password"]', { timeout: 20000 });
+      assert.equal(asks(), before, "no discard question was asked");
+      assert.equal(await planner().count(), 0, "the planner went with the session");
+      assert.equal(await page.evaluate(() => [...document.body.children].some((n) => n.hasAttribute("inert"))), false, "and nothing is left inert");
+      // A person's own sign-out is still asked about, in the next step, with the page signed in again.
+      await signIn(page, entry);
+      await settle(page, ".sc-entry .sc-toggle");
     });
 
     await step("signing out with unsaved changes asks first; a session that ends on its own does not", async () => {

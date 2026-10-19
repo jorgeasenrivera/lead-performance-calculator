@@ -915,6 +915,11 @@ const keepStamp = (prev, next) => (reportedAuth ? inheritLoadedUnder(prev, next)
    unsaved changes. Off with the scheduler, it never asks. A sign-in or store change is not this: it ends the
    records and takes the planner away without a question. */
 const askLeave = () => (reportedAuth ? mayLeave() : true);
+/* Some sign-outs are not a choice: once the server has deleted the account, signing out is only the cleanup, and a
+   question about unsaved planner changes must not be able to stop it. The flag is set for the length of that one
+   synchronous call and never outlives it, so a person's own press of Sign out is still asked. */
+let sessionEndForced = false;
+const endSessionNow = (fn) => { sessionEndForced = true; try { return fn(); } finally { sessionEndForced = false; } };
 /* The sign-in the scheduler follows, as a plain number (null with the scheduler off, and always the same then). A new
    sign-in on this page moves it, and the store on screen is read again under it instead of staying masked until a reload. */
 const noSubscribe = () => () => {};
@@ -3095,10 +3100,10 @@ export default function LeadPerformanceCalculator() {
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
-    // Every caller is a person's own press of a sign-out control: with changes in the month planner it asks first.
-    // A session that ends on its own (expired, signed out elsewhere) never comes through here; the planner is taken
-    // away without a question when the sign-in it was opened under ends.
-    if (!askLeave()) return;
+    // A person's own press of a sign-out control, with changes in the month planner, asks first. A sign-out that is
+    // only cleanup after the server deleted the account (endSessionNow) does not, and a session that ends on its own
+    // never comes through here: the planner is taken away without a question when its sign-in ends.
+    if (!sessionEndForced && !askLeave()) return;
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
@@ -4177,7 +4182,7 @@ function AccountSheet({ name, onClose, onDeleted, desk = false }) {
     const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE" } });
     if (!out || out.error) { setBusy(false); setErr((out && out.error) || "That did not go through. Try again."); return; }
     try { sessionStorage.setItem(DELETED_KEY, "1"); } catch (e) {}
-    onDeleted();
+    endSessionNow(onDeleted);
   };
   const close = () => { if (!busy) onClose(); };
   return (
