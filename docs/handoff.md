@@ -619,6 +619,14 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X65 · Same-owner dormant scheduler save/read continuation.**
+
+The parent coordinator assigned the existing storage child the exact five new paths and limits recorded in the board's 19 October 05:47 UTC continuation, on deployment-stopped `codex/scheduler-storage-boundary` at verified `7487b58c74589d0a2ebf2b26bf2e5ca801d69d7e`. No transfer or renewal. This amendment changes only Codex records in `docs/in-flight.md` and `docs/handoff.md`; independent review and verified expected-head main publication must precede implementation. Verify cancellation or suppression of any Vercel deployment for this docs-only main commit.
+
+Save/read only, with request-scoped injected authority; publish is rejected. Existing wrapper/API/default 503, C113 contracts and provider remain unchanged. No wiring, grants, applied migration, credentials, live records, access/security change, production merge/deploy or activation. Do not retry the denied C113 review. Local validation must use fictional data; actual atomicity evidence needs real disposable Postgres, not a mock. The initial runner check found no Postgres or Docker, so report that evidence gap and any installation/runner prerequisite rather than claiming coverage. No dependency or workflow expansion.
+
+The board names the exact C92/C96, C103 and C93/C97/C111 exceptions; it releases no directory or unrelated owner. Independent implementation review, applicable checks/build, guarded source publication, terminal exact-SHA CI and zero-deployment verification remain required. Stop and report any permission-review denial with its exact action and target, without retry or rerouting. Implementation remains held until this coordination commit is verified.
+
 **H-X64 · Independent scheduler contract adapter, source only.**
 
 The parent assigns existing storage child `01a0f2e1-c445-749c-90b3-7c08aa06e0df` only new `api/_scheduler-contract.mjs`, new `test/scheduler-contract.test.mjs` and bounded `docs/scheduler-publication.md` updates on deployment-blocked `codex/scheduler-storage-boundary`, verified expected `781225ab4004b86c39a1bf303a0cda57a0d63cf2`, under launch-preparation approval. Inject exact provider `5be1a1a` and C113 r1 interfaces; no branch wholesale copy, C113 edits or existing wrapper/API activation. No ownership transfer or renewal.
