@@ -29,5 +29,11 @@
       ]
     }
   ],
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md' ':(exclude)scripts' ':(exclude)test' ':(exclude).github' ':(exclude)native' ':(exclude)supabase'"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md' ':(exclude)scripts' ':(exclude)test' ':(exclude).github' ':(exclude)native' ':(exclude)supabase'",
+  "git": {
+    "deploymentEnabled": {
+      "codex/report-delivery-foundation": false,
+      "codex/delivery-server-path": false
+    }
+  }
 }
