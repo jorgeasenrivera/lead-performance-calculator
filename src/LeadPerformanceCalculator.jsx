@@ -2458,7 +2458,8 @@ export default function LeadPerformanceCalculator() {
        would have meant reading and rewriting every store to save a snapshot
        that is superseded the next time a report lands. */
     if (next && next.snapshots) delete next.snapshots;
-    keepStamp(adminData[storeId] || storeData, next);   // a local change keeps where the document came from
+    // A local change keeps where the document on screen came from; the preload's copy may predate it (another store, another sign-in).
+    keepStamp(storeData && storeData.__storeId === storeId ? storeData : (adminData[storeId] || storeData), next);
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
 
@@ -3158,7 +3159,7 @@ export default function LeadPerformanceCalculator() {
   // explicit sign-in. chooseModule stays for the in-app "Tools" button.
   const goTab = (t) => { if (t !== tab && !askLeave()) return; setTab(t); };
   const chooseModule = (mod) => {
-    if (mod && mod !== appModule && !askLeave()) return;
+    if ((mod || "perf") !== appModule && !askLeave()) return;
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
       const first = (isAdmin ? config.stores : accessibleStores)[0];
