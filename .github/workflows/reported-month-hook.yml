@@ -1,0 +1,87 @@
+name: reported-month-hook
+
+on:
+  push:
+    branches: [codex/reported-reader-integration]
+    paths:
+      - src/use-reported-month.mjs
+      - test/use-reported-month.test.mjs
+      - scripts/probe-reported-month-hook.mjs
+      - .github/workflows/reported-month-hook.yml
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-react:
+    if: github.event_name == 'push' && github.repository == 'jorgeasenrivera/lead-performance-calculator' && github.ref == 'refs/heads/codex/reported-reader-integration'
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    defaults:
+      run:
+        shell: bash
+    env:
+      FEEL_BROWSER: ${{ matrix.browser }}
+      EXPECTED_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact source and deployment stop
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          {
+            test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+            printf 'repository=%s\nref=%s\nsha=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF" "$EXPECTED_SHA"
+            printf 'node=%s\n' "$(node --version)"
+            sha256sum --check <<'HASHES'
+          1344ed314881551a2bd3c2a343cde6767124fece5cd1d338811d655f0481a65a  src/use-reported-month.mjs
+          413bd4ff22be6889e9b1fca129fe647abcb3fc89c59ee8d3ee710710603194ee  test/use-reported-month.test.mjs
+          811b15776761c8e0c36a912b1e05cedb56e5c4bfe27b6daa8bc7e12d2812ef38  scripts/probe-reported-month-hook.mjs
+          87d0d5e8384f87f82c0b4b6f46c318ab81f98f7c93581e4e3463f2e4c37abc68  src/reported-auth.mjs
+          45c6b66906698f592ded9092ecf55bf78535f84b11f6453209def403b43fe2ca  src/reported-month.mjs
+          8bc965d71771ff3db392c8dc4f9588304134c5f60fb79fc4895bb01db58ad11b  vercel.json
+          HASHES
+            node --input-type=module -e "import fs from 'node:fs'; const c = JSON.parse(fs.readFileSync('vercel.json')); if (c.git?.deploymentEnabled?.['codex/reported-reader-integration'] !== false) throw Error('Branch deployment stop missing');"
+            sha256sum .github/workflows/reported-month-hook.yml package.json package-lock.json
+          } 2>&1 | tee evidence/preflight.log
+      - name: Install locked app dependencies and matching browser driver
+        run: |
+          set -euo pipefail
+          npm ci 2>&1 | tee evidence/install.log
+          npm install --prefix "$RUNNER_TEMP/reported-hook-runtime" --no-save --package-lock=false playwright@1.63.0 2>&1 | tee -a evidence/install.log
+          printf 'FEEL_PLAYWRIGHT=%s\n' "$RUNNER_TEMP/reported-hook-runtime/node_modules/playwright" >> "$GITHUB_ENV"
+          node -p "require('$RUNNER_TEMP/reported-hook-runtime/node_modules/playwright/package.json').version" | tee evidence/playwright-version.txt
+          git diff --exit-code -- package.json package-lock.json
+      - name: Run full tests and build
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee evidence/tests.log
+          npm run build 2>&1 | tee evidence/build.log
+      - name: Exercise the real React lifecycle with synthetic responses
+        run: |
+          set -uo pipefail
+          set +e
+          node scripts/probe-reported-month-hook.mjs 2>&1 | tee evidence/probe.log
+          statuses=("${PIPESTATUS[@]}")
+          printf 'probe_exit=%s\nlog_exit=%s\n' "${statuses[0]}" "${statuses[1]}" | tee evidence/result.txt
+          test "${statuses[0]}" -eq 0 && test "${statuses[1]}" -eq 0
+      - name: Retain exact-head evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reported-month-hook-${{ matrix.browser }}-${{ github.sha }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
