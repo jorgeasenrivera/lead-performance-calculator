@@ -34,12 +34,12 @@ export default function SchedulerEditor({
   const [failed, setFailed] = useState(false);
   // Latest callbacks without remounting the editor when a parent re-renders.
   const latest = useRef({});
-  latest.current = { onClose, onSummary, onError, confirm, day };
+  latest.current = { onClose, onSummary, onError, confirm, day, now };
   const ready = Boolean(store) && data?.__storeId === store.id;
   const identity = `${store?.id}|${principalEpoch}`;
   // One snapshot per store and sign-in. A later change to `data` is not applied to an open editor.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const built = useMemo(() => editorProps({ store, data, isOff, timezone, now, ready }), [identity, ready, timezone]);
+  const built = useMemo(() => editorProps({ store, data, isOff, timezone, ready, now: () => { const n = latest.current.now; return typeof n === "function" ? n() : n ?? new Date(); } }), [identity, ready, timezone]);
 
   useEffect(() => { setFailed(false); }, [identity]);
 
@@ -57,6 +57,8 @@ export default function SchedulerEditor({
         today: built.today,
         index: built.index,
         embedded: true,
+        // Live stores: no copy that calls the data fictional or synthetic.
+        preview: false,
         keyTarget: doc,
         confirm: (message) => (latest.current.confirm ? latest.current.confirm(message) : host.contentWindow.confirm(message)),
         onSummary: (detail) => latest.current.onSummary?.(detail),
@@ -65,8 +67,8 @@ export default function SchedulerEditor({
       });
       if (latest.current.day) handle.view({ day: latest.current.day, store: built.stores[0].id });
     } catch (error) {
+      // The editor has already told onError; this only swaps the frame for the message.
       setFailed(true);
-      latest.current.onError?.(error);
     }
     return () => handle?.dispose();
   }, [built, loaded, identity]);

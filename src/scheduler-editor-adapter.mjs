@@ -8,7 +8,7 @@
  * a person's hours, the store's hours, history, teams and memberships are carried as unknown (or
  * as empty lists the editor will not seed over), and a day is never marked worked.
  */
-import { staffingMonth, validDate, validMonth } from "./scheduler-calendar-model.mjs";
+import { monthDays, staffingMonth, validDate, validMonth } from "./scheduler-calendar-model.mjs";
 
 export class EditorInputError extends Error {
   constructor(code, detail) {
@@ -39,17 +39,27 @@ export function zonedToday(timezone, now = new Date()) {
 /**
  * The planner's store for one real store. People are the roster's, bound by id (first record of an
  * id wins, as in the calendar). Availability and hours are null: nothing the app holds says them.
+ * Given the day the editor opens (`today`), someone who left before this month began, or who starts after
+ * it ends, is left out: they could only ever show as an unknown person on days that are not theirs.
  * `teams` and `memberships` are given outright, even empty, so the editor never seeds placeholder
  * teams or people.
  */
-export function editorStore(store, data, timezone) {
+export function editorStore(store, data, timezone, today) {
   if (!store || typeof store.id !== "string" || !ID.test(store.id)) refuse("store", "id");
   const roster = Array.isArray(data?.roster) ? data.roster : [];
   const seen = new Set();
   const people = [];
+  const monthStart = validDate(today) ? `${today.slice(0, 7)}-01` : null;
+  const monthEnd = monthStart ? monthDays(today.slice(0, 7)).at(-1) : null;
+  const dayOf = (v) => (typeof v === "string" && validDate(v.slice(0, 10)) ? v.slice(0, 10) : null);
+  const left = (p) => {
+    const rec = (Array.isArray(data?.departed) ? data.departed : []).find((d) => d && (d.id === p.id || (d.id == null && typeof d.name === "string" && d.name.trim().toLowerCase() === String(p.name).trim().toLowerCase())));
+    return rec ? dayOf(rec.at) : null;
+  };
   for (const p of roster) {
     if (!p || typeof p.id !== "string" || !p.id || !p.roleId || seen.has(p.id)) continue;
     seen.add(p.id);
+    if (monthStart && ((left(p) && left(p) < monthStart) || (dayOf(p.hiredAt) && dayOf(p.hiredAt) > monthEnd))) continue;
     people.push({ id: p.id, name: typeof p.name === "string" && p.name ? p.name : "Unnamed", off: null, start: null, end: null, maxHours: null });
   }
   if (people.length > MAX_PEOPLE) refuse("roster", "too many people");
@@ -71,7 +81,7 @@ export function editorStore(store, data, timezone) {
  * inside each person's employment (the calendar's `staffingMonth`). Who is working is not known, so
  * `on` is empty and the editor shows the day as needing a schedule. A day with nobody listed off is null.
  */
-export function assignmentResolver(data, { isOff } = {}) {
+export function assignmentResolver(data, { isOff, only } = {}) {
   const cache = new Map();
   const month = (m) => {
     if (!cache.has(m)) {
@@ -87,7 +97,9 @@ export function assignmentResolver(data, { isOff } = {}) {
   return (day, index = 0) => {
     if (index !== 0 || typeof day !== "string" || !validDate(day) || !validMonth(day.slice(0, 7))) return null;
     const off = month(day.slice(0, 7)).byDate[day]?.off ?? [];
-    return off.length ? { on: [], off: off.map((p) => p.id) } : null;
+    // Only people the editor knows: an id it was not given would be a stranger to the planner.
+    const ids = off.map((p) => p.id).filter((id) => !only || only.has(id));
+    return ids.length ? { on: [], off: ids } : null;
   };
 }
 
@@ -103,10 +115,11 @@ export function editorProps({ store, data, isOff, timezone, now, ready } = {}) {
     // `now` is an instant or a function giving one, so the date is asked again on every use.
     const instant = typeof now === "function" ? now : () => now ?? new Date();
     if (zonedToday(timezone, instant()) === null) return { ok: false, reason: "timezone" };
+    const stores = [editorStore(store, data, timezone, zonedToday(timezone, instant()))];
     return {
       ok: true,
-      stores: [editorStore(store, data, timezone)],
-      assignmentForDay: assignmentResolver(data, { isOff }),
+      stores,
+      assignmentForDay: assignmentResolver(data, { isOff, only: new Set(stores[0].people.map((p) => p.id)) }),
       today: () => {
         const day = zonedToday(timezone, instant());
         if (day === null) throw new EditorInputError("timezone", "today");

@@ -46,6 +46,19 @@ test("people are the roster's real ids, first record wins, nothing about them is
   assert.deepEqual(editorStore(store, undefined).people, []);
 });
 
+test("people who are not employed in the month the editor opens are left out, and never reach the planner as strangers", () => {
+  const d = data({ departed: [{ id: "r3", at: "2026-09-20" }], roster: [...data().roster, { id: "late", name: "Late", roleId: "sales", hiredAt: "2026-11-02" }], daysOff: { r3: ["2026-10-13"], r1: ["2026-10-05"] } });
+  const oct = editorStore(store, d, NY, "2026-10-14");
+  assert.deepEqual(oct.people.map((p) => p.id), ["r1", "r2"], "r3 left in September; Late starts in November");
+  const props = editorProps({ store, data: d, timezone: NY, now: new Date("2026-10-14T16:00:00Z") });
+  assert.deepEqual(props.stores[0].people.map((p) => p.id), ["r1", "r2"]);
+  assert.deepEqual(props.assignmentForDay("2026-10-05", 0), { on: [], off: ["r1"] });
+  assert.equal(props.assignmentForDay("2026-09-15", 0), null);
+  const nov = editorStore(store, d, NY, "2026-11-03");
+  assert.deepEqual(nov.people.map((p) => p.id), ["r1", "r2", "late"]);
+  assert.deepEqual(editorStore(store, d, NY).people.map((p) => p.id), ["r1", "r2", "r3", "late"], "with no date nothing is judged");
+});
+
 test("the planner takes the store as given: no Oak, no Pine, no fixture people, even with nothing in the roster", () => {
   for (const d of [data(), { __storeId: "store-a" }]) {
     const stores = [editorStore(store, d, NY)];

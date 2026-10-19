@@ -32,6 +32,8 @@ import { mountMonthApp } from ${JSON.stringify(path.join(ROOT, "scripts/schedule
 import { editorProps } from ${JSON.stringify(path.join(ROOT, "src/scheduler-editor-adapter.mjs"))};
 const root = createRoot(document.getElementById("root"));
 window.__events = [];
+window.__haptics = 0;
+document.addEventListener("sage-preview-haptic", () => { window.__haptics += 1; });
 window.__render = (props) => root.render(<SchedulerEditor {...props} now={new Date(props.now)} onClose={() => window.__events.push("close")} onSummary={(d) => window.__events.push("summary:" + d.store + ":" + d.month)} onError={(e) => window.__events.push("error:" + e.message)} />);
 window.__unmount = () => root.unmount();
 // The core mounted straight into this page, to see exactly what it attaches here and what dispose takes back.
@@ -117,6 +119,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--month-bar-height")), "");
     results[`${vp.name}-dispose`] = "ok";
 
+    await page.evaluate(() => { window.__haptics = 0; }); // the direct mounts above sit in this very document
     /* ---- the store's own people and date */
     const before = await page.evaluate(() => window.__live());
     await page.evaluate((p) => window.__render(p), props("store-a", ["Rae Alder", "Sam Birch"]));
@@ -129,15 +132,46 @@ try {
     assert.equal(marked, "2026-10");
     results[`${vp.name}-date`] = "ok";
 
+    /* ---- nothing fictional in the markup, closed disclosures included, and no haptic event on the outer page */
+    const all = await page.frameLocator("iframe").locator("#app").evaluate((el) => el.textContent);
+    assert.doesNotMatch(all, /synthetic|fictional|\bOak\b|\bPine\b/i, `${vp.name}: no placeholder wording anywhere in the editor`);
+    await page.frameLocator("iframe").locator("#workspace").click();
+    const editing = await page.frameLocator("iframe").locator("#app").evaluate((el) => el.textContent);
+    assert.doesNotMatch(editing, /synthetic|fictional|\bOak\b|\bPine\b/i, `${vp.name}: none while editing either`);
+    assert.match(editing, /Monday–Sunday · America\/New_York/, `${vp.name}: the store's own zone is named`);
+    assert.equal(await page.evaluate(() => window.__haptics), 0, `${vp.name}: no haptic event reached the outer page`);
+
+    /* ---- People opens for real ids */
+    await page.frameLocator("iframe").locator("summary", { hasText: "Schedule tools" }).click();
+    await page.frameLocator("iframe").locator("#setup").click();
+    await page.frameLocator("iframe").locator("#people").click();
+    await page.frameLocator("iframe").locator("#settings-sheet #person").waitFor();
+    assert.match(await page.frameLocator("iframe").locator("#settings-sheet #person").innerText(), /Rae Alder/);
+    assert.deepEqual(errors, [], `${vp.name}: People opened without an error`);
+    await page.keyboard.press("Escape");
+    await page.frameLocator("iframe").locator("#workspace").waitFor();
+
     /* ---- no sideways scroll in the host or the frame */
     const widths = await page.evaluate(() => ({ host: document.documentElement.scrollWidth <= innerWidth, frame: (() => { const d = document.querySelector("iframe").contentDocument.documentElement; return d.scrollWidth <= d.clientWidth + 1; })() }));
     assert.deepEqual(widths, { host: true, frame: true }, `${vp.name}: no sideways scroll`);
 
     /* ---- Escape closes through the host's callback */
     await page.frameLocator("iframe").locator("#day-2026-10-14").focus();
-    await page.keyboard.press("Escape");
+    // Editing steps back to the roster first; the next Escape leaves.
+    for (let i = 0; i < 3 && !(await page.evaluate(() => window.__events)).includes("close"); i++) { await page.frameLocator("iframe").locator("#app").press("Escape"); }
     assert.ok((await page.evaluate(() => window.__events)).includes("close"), `${vp.name}: Escape reaches onClose`);
     assert.ok((await page.evaluate(() => window.__events)).some((e) => e.startsWith("summary:store-a:")), `${vp.name}: summary names the real store`);
+
+    /* ---- an empty roster opens, and People says so instead of failing */
+    await page.evaluate((p) => window.__render(p), props("store-e", []));
+    await page.frameLocator("iframe").locator("#app [data-day]").first().waitFor();
+    await page.frameLocator("iframe").locator("#workspace").click();
+    await page.frameLocator("iframe").locator("summary", { hasText: "Schedule tools" }).click();
+    await page.frameLocator("iframe").locator("#setup").click();
+    await page.frameLocator("iframe").locator("#people").click();
+    assert.match(await page.frameLocator("iframe").locator("#message").textContent(), /No people are on this store/);
+    assert.deepEqual(errors, [], `${vp.name}: empty roster, no error`);
+    results[`${vp.name}-empty-roster`] = "ok";
 
     /* ---- a masked store shows nothing of the last one */
     await page.evaluate((p) => window.__render(p), { ...props("store-b", ["Zed Cole"]), data: data("store-a", ["Rae Alder"]) });
