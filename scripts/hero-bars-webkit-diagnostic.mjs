@@ -7,13 +7,15 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const root = process.cwd(), phase = process.env.DIAG_PHASE, drain = process.env.DIAG_DRAIN;
-assert(['before', 'after'].includes(phase));
+assert(['before', 'after', 'combined'].includes(phase));
+const repetition = process.env.DIAG_REPEAT || '1';
+assert(['1','2','3'].includes(repetition));
 assert(['0', '1'].includes(drain));
 const sourceDir = path.join(root, '.source');
 const original = readFileSync(path.join(sourceDir, 'scripts/hero-bars.mjs'), 'utf8');
 const hash = s => createHash('sha256').update(s).digest('hex');
 assert.equal(hash(original), '1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972');
-const out = path.join(root, 'diagnostic');
+const out = path.join(root, 'diagnostic', `${phase}-drain-${drain}-repeat-${repetition}`);
 mkdirSync(out, { recursive: true });
 const eventsPath = path.join(out, 'events.jsonl');
 writeFileSync(eventsPath, '');
@@ -52,7 +54,8 @@ page.on('requestfinished', r => diagEvent('requestfinished', diagRequest(r)));
 page.on('requestfailed', r => diagEvent('requestfailed', {...diagRequest(r), failure: r.failure()}));
 page.on('response', r => diagEvent('response', {...diagRequest(r.request()), status: r.status()}));
 page.on('pageerror', e => diagEvent('pageerror', { message: e.message, stack: e.stack, pageUrl: page.url() }));`);
-once("for(const phase of ['before','after'])", `for(const phase of [${JSON.stringify(phase)}])`);
+if (phase !== 'combined') once("for(const phase of ['before','after'])", `for(const phase of [${JSON.stringify(phase)}])`);
+else assert(source.includes("for(const phase of ['before','after'])"), 'combined phase order unchanged');
 once("   rates=Object.fromEntries(Object.keys(thresholds).map((id,i)=>[id,values[i]]));", `   diagEvent('scenario-transition', { next: {phase,width,name} });
    if (diagDrain) { diagEvent('drain-start'); await diagSettle(); diagEvent('drain-complete'); }
    diagScenario = {phase,width,name}; diagEvent('scenario-start');
@@ -63,7 +66,7 @@ for (const line of original.split('\n').filter(l => l.includes('assert.'))) asse
 const generated = path.join(out, 'hero-bars.observed.mjs');
 writeFileSync(generated, source);
 const identity = {
-  phase, drain: drain === '1', originalProbeSHA256: hash(original), observedProbeSHA256: hash(source),
+  phase, repetition, drain: drain === '1', originalProbeSHA256: hash(original), observedProbeSHA256: hash(source),
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], {cwd: sourceDir, encoding: 'utf8'}).trim(),
   sourceTree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {cwd: sourceDir, encoding: 'utf8'}).trim(),
   baselineCommit: execFileSync('git', ['rev-parse', 'HEAD'], {cwd: path.join(root,'.baseline'), encoding:'utf8'}).trim(),
@@ -72,12 +75,12 @@ const identity = {
 };
 writeFileSync(path.join(out,'identity.json'), JSON.stringify(identity,null,2));
 if (process.env.DIAG_PREPARE_ONLY !== '1') {
-  const run = spawnSync(process.execPath, [generated], {cwd:root, env:{...process.env, FEEL_BROWSER:'webkit'}, stdio:'inherit'});
+  const run = spawnSync(process.execPath, [generated], {cwd:out, env:{...process.env, FEEL_BROWSER:'webkit'}, stdio:'inherit'});
   writeFileSync(path.join(out,'outcome.json'),JSON.stringify({status:run.status, signal:run.signal, error:run.error?.message},null,2));
   const events = readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
   const errors = events.filter(e => e.kind === 'pageerror');
   const failed = events.filter(e => e.kind === 'requestfailed');
-  const summary = {phase, drain: drain === '1', status: run.status, scenarios: events.filter(e => e.kind === 'scenario-start').length, pageErrors: errors, failedRequests: failed};
+  const summary = {phase, repetition, drain: drain === '1', status: run.status, scenarios: events.filter(e => e.kind === 'scenario-start').length, pageErrors: errors, failedRequests: failed};
   writeFileSync(path.join(out,'summary.json'), JSON.stringify(summary,null,2));
   console.log('DIAGNOSTIC_SUMMARY ' + JSON.stringify(summary));
   process.exitCode = run.status ?? 1;

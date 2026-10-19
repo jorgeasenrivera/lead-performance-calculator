@@ -9,11 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        phase: [before, after]
         drain: ['0', '1']
     steps:
       - uses: actions/checkout@v4
@@ -50,32 +49,56 @@ jobs:
           set -eu
           ln -s "$PWD/node_modules" .source/node_modules
           ln -s "$PWD/node_modules" .baseline/node_modules
-          if [ '${{ matrix.phase }}' = before ]; then target=.baseline; else target=.source; fi
-          (cd "$target" && VITE_SCHEDULER_CALENDAR=0 VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
-      - name: Observe unchanged assertions, with optional draining
+          for target in .baseline .source; do
+            (cd "$target" && VITE_SCHEDULER_CALENDAR=0 VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
+          done
+      - name: Three combined lifecycle repetitions and genuine negative controls
         env:
-          DIAG_PHASE: ${{ matrix.phase }}
+          DIAG_PHASE: combined
           DIAG_DRAIN: ${{ matrix.drain }}
           HERO_BASELINE_URL: http://127.0.0.1:5181/
           FEEL_URL: http://127.0.0.1:5178/
-        run: |
-          set -eu
-          SALESPERSON=1 node .source/scripts/mock-supabase.mjs > diagnostic/mock.log 2>&1 &
-          if [ "$DIAG_PHASE" = before ]; then target=.baseline; port=5181; else target=.source; port=5178; fi
-          node node_modules/vite/bin/vite.js preview --outDir "$target/dist" --port "$port" --host 127.0.0.1 > diagnostic/preview.log 2>&1 &
-          for i in $(seq 1 100); do curl -sf "http://127.0.0.1:$port/" > /dev/null && break; sleep 0.2; done
-          curl -sf "http://127.0.0.1:$port/" > /dev/null
-          node scripts/hero-bars-webkit-diagnostic.mjs
-      - name: Genuine invalid-preflight negative control
-        if: ${{ always() && steps.build.outcome == 'success' }}
-        env:
           FEEL_BROWSER: webkit
         run: |
-          FEEL_PLAYWRIGHT="$PWD/node_modules/playwright" node .source/scripts/probe-feel-navigation.mjs
+          set -eu
+          node node_modules/vite/bin/vite.js preview --outDir .baseline/dist --port 5181 --host 127.0.0.1 > diagnostic/baseline-preview.log 2>&1 &
+          baseline_pid=$!
+          node node_modules/vite/bin/vite.js preview --outDir .source/dist --port 5178 --host 127.0.0.1 > diagnostic/candidate-preview.log 2>&1 &
+          candidate_pid=$!
+          mock_pid=
+          trap 'kill "$baseline_pid" "$candidate_pid" 2>/dev/null || true; if [ -n "$mock_pid" ]; then kill "$mock_pid" 2>/dev/null || true; fi' EXIT
+          for port in 5181 5178; do
+            for i in $(seq 1 100); do curl -sf "http://127.0.0.1:$port/" > /dev/null && break; sleep 0.2; done
+            curl -sf "http://127.0.0.1:$port/" > /dev/null
+          done
+          overall=0
+          for repetition in 1 2 3; do
+            export DIAG_REPEAT="$repetition"
+            output="diagnostic/combined-drain-$DIAG_DRAIN-repeat-$repetition"
+            mkdir -p "$output"
+            # Fresh mock per repetition; the same mock and browser context span both phases.
+            SALESPERSON=1 node .source/scripts/mock-supabase.mjs > "$output/mock.log" 2>&1 &
+            mock_pid=$!
+            for i in $(seq 1 100); do curl -sf 'http://127.0.0.1:5433/rest/v1/profiles?select=*' > /dev/null && break; sleep 0.2; done
+            curl -sf 'http://127.0.0.1:5433/rest/v1/profiles?select=*' > /dev/null
+            observed=0
+            timeout 420s node scripts/hero-bars-webkit-diagnostic.mjs > "$output/observation.log" 2>&1 || observed=$?
+            cat "$output/observation.log"
+            negative=0
+            FEEL_PLAYWRIGHT="$PWD/node_modules/playwright" timeout 60s node .source/scripts/probe-feel-navigation.mjs > "$output/negative-control.log" 2>&1 || negative=$?
+            cat "$output/negative-control.log"
+            printf '{"repetition":%s,"observationExit":%s,"negativeControlExit":%s}\n' "$repetition" "$observed" "$negative" > "$output/process-status.json"
+            echo "COMBINED_OUTCOME drain=$DIAG_DRAIN repetition=$repetition observation=$observed negative=$negative"
+            if [ "$observed" -ne 0 ] || [ "$negative" -ne 0 ]; then overall=1; fi
+            kill "$mock_pid"
+            wait "$mock_pid" 2>/dev/null || true
+            mock_pid=
+          done
+          exit "$overall"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: hero-webkit-${{ matrix.phase }}-drain-${{ matrix.drain }}
+          name: hero-webkit-combined-drain-${{ matrix.drain }}
           path: |
             diagnostic/
             hero-bars/
