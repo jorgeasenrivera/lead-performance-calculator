@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useId, useRef, useState} from 'react';
 import SchedulerEditor from './scheduler-editor.jsx';
 import {createSchedulerDraftBinding} from './scheduler-draft-binding.mjs';
-import {draftMonthView, monthName, nearbyMonths, recoveryBlocked} from './scheduler-draft-desktop-state.mjs';
+import {draftMonthView, monthName, nearbyMonths, pendingDayReview, recoveryBlocked} from './scheduler-draft-desktop-state.mjs';
 import './scheduler-draft-desktop.css';
 
 // Opt-in composition only. The caller supplies existing auth and a transport;
@@ -11,6 +11,7 @@ export default function SchedulerDraftDesktop(props) {
 }
 function DraftSession({auth, transport, draftCodec, onClose, onSummary, onError, confirm, ...editorProps}) {
   const [mount, setMount] = useState(0), [month, setMonth] = useState(null), [snapshot, setSnapshot] = useState(null);
+  const [pendingBlocked, setPendingBlocked] = useState(false);
   const [notice, setNotice] = useState(''), [recovering, setRecovering] = useState(false), [authEpoch, setAuthEpoch] = useState(auth.getSnapshot().principalEpoch);
   const guard = useRef(null), session = useRef(null), alive = useRef(true), activeMonth = useRef(null), heading = useRef(null), recoveryButton = useRef(null);
   const id = useId(), callbacks = useRef({onClose, onSummary, onError, confirm});
@@ -33,6 +34,7 @@ function DraftSession({auth, transport, draftCodec, onClose, onSummary, onError,
   const report = useCallback(error => {
     if (!alive.current) return;
     const code = error?.code;
+    setPendingBlocked(code === 'pending-editor-controls');
     setNotice(code === 'pending-editor-controls' || code === 'unsaved-editor-changes'
       ? 'Apply or cancel pending choices. Existing edits will not be replaced.'
       : code === 'retry-required' ? 'Retry the outstanding save first.'
@@ -69,13 +71,19 @@ function DraftSession({auth, transport, draftCodec, onClose, onSummary, onError,
     }
     callbacks.current.onSummary?.(detail);
   };
-  const change = event => { session.current?.binding.onDraftChange(event); setNotice(''); refresh(); };
+  const change = event => { session.current?.binding.onDraftChange(event); setNotice(''); setPendingBlocked(false); refresh(); };
   const act = (target, kind) => {
     const current = session.current;
     if (!current) return;
     setNotice('');
     try { void current.binding[kind](target).then(() => {if (session.current === current) refresh();}, report); }
     catch (error) { report(error); }
+  };
+  const reviewPending = () => {
+    if (!eligible || !session.current?.binding.getSnapshot().active) return;
+    const target = pendingDayReview(session.current.binding.getSnapshot());
+    if (target) guard.current?.reviewPendingDay(target.day);
+    setPendingBlocked(false); setNotice(''); refresh();
   };
   const close = () => {
     if (recoveryBlocked(session.current?.binding.getSnapshot())) {
@@ -104,6 +112,7 @@ function DraftSession({auth, transport, draftCodec, onClose, onSummary, onError,
   const boundaryNotReady = nearby.some(m => !entries.find(e => e.month === m)?.loadAccepted);
   const editorBlocked = blocked || boundaryNotReady;
   const changed = snapshot?.editor?.dirtyMonths || [];
+  const pendingReview = pendingBlocked ? pendingDayReview(snapshot) : null;
   return <section className="scheduler-draft-desktop" aria-labelledby={`${id}-title`}>
     <header className="sdd-toolbar">
       <div><h2 id={`${id}-title`} ref={heading} tabIndex={-1}>Schedule drafts</h2><p>Save each month’s draft separately. Saving does not publish a staff schedule.</p></div>
@@ -121,6 +130,7 @@ function DraftSession({auth, transport, draftCodec, onClose, onSummary, onError,
     <div className="sdd-actions">
       <button type="button" className="sdd-primary" disabled={!view.canAct || blocked} onClick={() => act(month, view.action)}>
         {view.action === 'retry' ? 'Retry same save' : 'Save month draft'}</button>
+      {pendingReview && <button type="button" disabled={blocked} onClick={reviewPending}>{pendingReview.label}</button>}
       {view.canRead && <button type="button" disabled={blocked} onClick={() => act(month, 'load')}>Retry loading draft</button>}
       <span>{changed.length ? `${changed.length} month${changed.length === 1 ? '' : 's'} with unsaved edits` : 'No applied month edits waiting to save'}</span>
     </div>

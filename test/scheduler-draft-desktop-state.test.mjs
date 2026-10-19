@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {draftMonthView, nearbyMonths, recoveryBlocked} from '../src/scheduler-draft-desktop-state.mjs';
+import {draftMonthView, nearbyMonths, pendingDayReview, recoveryBlocked} from '../src/scheduler-draft-desktop-state.mjs';
 const month = '2026-11';
 const snapshot = (state = {}, entry = {}, editor = {}) => ({active: true, editor: {dirtyMonths: [], pending: false, unresolved: [], ...editor},
   months: [{month, loadAccepted: true, operation: null, awaitingAcknowledgement: false, error: null,
@@ -38,4 +38,17 @@ test('boundary preloads are month-scoped and bounded to published planner dates'
   assert.deepEqual(nearbyMonths('2014-01'), ['2014-01','2014-02']);
   assert.deepEqual(nearbyMonths('2100-12'), ['2100-12','2100-11']);
   assert.deepEqual(nearbyMonths('invalid'), []);
+});
+
+test('pending recovery identifies the actual retained date and refuses stale or invalid targets', () => {
+  const s = snapshot({}, {}, {pending: true, pendingDays: ['2026-11-10']});
+  assert.deepEqual(pendingDayReview(s), {day: '2026-11-10', label: 'Review November 10 choices'});
+  const before = structuredClone(s);
+  assert.deepEqual(pendingDayReview(s), pendingDayReview(s));
+  assert.deepEqual(s, before);
+  assert.equal(pendingDayReview({...s, active: false}), null);
+  assert.equal(pendingDayReview(snapshot({}, {}, {pending: false, pendingDays: ['2026-11-10']})), null);
+  for (const day of ['2026-02-30', 'invalid', undefined]) {
+    assert.equal(pendingDayReview(snapshot({}, {}, {pending: true, pendingDays: [day]})), null);
+  }
 });

@@ -894,7 +894,16 @@ listen(app,"touchend",event=>{
     },
     draftStatus(index = selected) {
       if (disposed) return { ok: false, reason: "disposed" };
-      return { ok: true, ...planner.draftStatus(index), pending: pendingAssignments.size + pendingSettings.size > 0 };
+      return { ok: true, ...planner.draftStatus(index), pending: pendingAssignments.size + pendingSettings.size > 0,
+        ...(DRAFT_SAVE_CONTROLS ? { pendingDays: [...pendingAssignments.keys()].filter(key => key.startsWith(`${index}:`)).map(key => key.slice(key.indexOf(":") + 1)).sort() } : {}) };
+    },
+    reviewPendingDay(day) {
+      if (disposed) return { ok: false, reason: "disposed" };
+      if (!DRAFT_SAVE_CONTROLS || !pendingAssignments.has(pendingKey(day))) return { ok: false, reason: "no-pending-day" };
+      // Navigate to the existing controls without applying or clearing any choices.
+      month = day.slice(0, 7); selectedDay = day; editing = true; quickEdit = false;
+      render(); daySheet(day);
+      return { ok: true };
     },
     subscribeDraft(fn) { return disposed ? () => {} : planner.subscribe(fn); },
     view(detail) { if (!disposed) signals["scheduler-view"]?.({ detail: detail ?? {} }); },

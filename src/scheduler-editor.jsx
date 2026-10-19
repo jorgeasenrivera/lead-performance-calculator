@@ -87,6 +87,7 @@ export default function SchedulerEditor({
           acknowledgeMonth: (month, token, index) => handle.acknowledgeMonth(month, token, index),
           hydrateMonth: (projection, index) => handle.hydrateMonth(projection, index),
           draftStatus: (index) => handle.draftStatus(index),
+          reviewPendingDay: (day) => handle.reviewPendingDay(day),
         };
       }
       if (latest.current.day) handle.view({ day: latest.current.day, store: built.stores[0].id });
