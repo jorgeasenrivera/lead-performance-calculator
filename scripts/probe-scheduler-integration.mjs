@@ -678,6 +678,10 @@ try {
       await planner().waitFor({ state: "detached", timeout: 5000 });
       page.removeAllListeners("dialog");
       page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
+      // The page's scroll comes back once nothing is left open, whichever order a resize closed the two dialogs in.
+      if (await page.locator(".sc-dialog").count()) { await page.click(".sc-dialog .sc-close"); await page.waitForSelector(".sc-dialog", { state: "detached" }); }
+      assert.equal(await page.evaluate(() => document.body.style.overflow), "", `${label}: the page scrolls again`);
+      await openOnThisLayout();
       return day;
     };
     await step("a dirty planner survives a resize from the wide layout to the phone layout and back", async () => {
@@ -687,6 +691,30 @@ try {
     });
     await step("a dirty planner survives a resize from the phone layout to the wide layout", async () => {
       await throughResizes({ width: 600, height: 900, wide: false }, [{ width: 1280, height: 900, wide: true }], "phone to wide");
+    });
+    await step("a dirty planner survives resizes that come one after another", async () => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.waitForTimeout(700);
+      await openOnThisLayout();
+      await page.click("button:has-text('Plan the month')");
+      await frame.locator("#app [data-day]").first().waitFor({ timeout: 20000 });
+      await makeDraft();
+      const handle = await planner().elementHandle();
+      for (let i = 0; i < 6; i++) { await page.setViewportSize({ width: i % 2 ? 1280 : 600, height: 900 }); await page.waitForTimeout(60); }
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.waitForTimeout(800);
+      assert.equal(await planner().count(), 1, "still open");
+      assert.equal(await handle.evaluate((el) => el.isConnected), true, "the same editor");
+      assert.equal(await page.evaluate(() => document.querySelectorAll(".sc-dialog:has(iframe)").length), 1, "and only one");
+      const before = asks();
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.accept(); });
+      await page.click(".sc-dialog:has(iframe) .sc-close");
+      await planner().waitFor({ state: "detached", timeout: 5000 });
+      assert.equal(asks(), before + 1, "its changes were still there");
+      page.removeAllListeners("dialog");
+      page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
+      assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.textContent), "Plan the month", "focus is back on the button that opened it");
     });
     await step("a planner opened under one sign-in does not outlive a swap that ends it", async () => {
       await page.setViewportSize({ width: 1280, height: 900 });

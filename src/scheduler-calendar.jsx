@@ -9,7 +9,7 @@
  * Month and store are the caller's. This surface never picks a month for itself,
  * so the delivery snapshot and the grid cannot disagree about which one is shown.
  */
-import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Component, lazy, Suspense, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import css from "./scheduler-calendar.css?inline";
@@ -31,6 +31,12 @@ const NO_AUTH = Object.freeze({
 const NO_AUTH_SNAPSHOT = Object.freeze({ principalEpoch: null, disposed: true });
 const DISCARD = "Close the editor and discard this page’s unsaved changes?";
 const LEAVE = "Leave this page and discard its unsaved changes?";
+
+// Both dialogs lock the page's scroll, and a resize can close them in either order, so the lock is counted and the
+// page's own setting comes back only when the last one lets go.
+let scrollLocks = 0, scrollWas = "";
+const lockScroll = () => { if (scrollLocks++ === 0) scrollWas = document.body.style.overflow; document.body.style.overflow = "hidden"; };
+const unlockScroll = () => { if (--scrollLocks === 0) document.body.style.overflow = scrollWas; };
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
 const SOURCE_WORDS = { manager: "Marked off by a manager", schedule: "From the schedule", "on file": "On file" };
@@ -241,6 +247,13 @@ function planRequestClose() {
   return true;
 }
 
+// The planner's root is its own, so nothing above it catches a failure to load or draw it: this does, and says so.
+class PlannerBoundary extends Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? <p role="alert">The planner could not open. Close it and try again.</p> : this.props.children; }
+}
+
 function PlannerHost() {
   const s = useSyncExternalStore(planSubscribe, planSnapshot, planSnapshot);
   const auth = currentReportedAuth() || NO_AUTH;
@@ -265,10 +278,12 @@ function PlannerHost() {
   const { store, data, isOff, day, dataEpoch } = s.props;
   return (
     <EditorDialog id="sc-plan" label={`Plan the month, ${monthText(storeToday().slice(0, 7))}`} hidden={!s.visible} onRequestClose={planRequestClose}>
-      <Suspense fallback={<p role="status">Opening the planner.</p>}>
-        <SchedulerEditor store={store} data={data} isOff={isOff} timezone={STORE_TIME_ZONE} day={day}
-          principalEpoch={identity.principalEpoch} dataEpoch={dataEpoch} guardRef={draftGuard} onClose={planClose} />
-      </Suspense>
+      <PlannerBoundary>
+        <Suspense fallback={<p role="status">Opening the planner.</p>}>
+          <SchedulerEditor store={store} data={data} isOff={isOff} timezone={STORE_TIME_ZONE} day={day}
+            principalEpoch={identity.principalEpoch} dataEpoch={dataEpoch} guardRef={draftGuard} onClose={planClose} />
+        </Suspense>
+      </PlannerBoundary>
     </EditorDialog>
   );
 }
@@ -324,13 +339,13 @@ function EntryBody({ store, data, isOff, layout = "panel", reported = null, prin
   const epoch = principalEpoch ?? identity.principalEpoch;
 
   // The planner is not this entry's: it is attached to, not owned. See "Who owns the planner" above.
-  useEffect(() => {
+  useLayoutEffect(() => {
     planAttach(entryId, { storeId: store?.id ?? null, focus: () => { if (planner.current) planner.current.focus(); } });
     return () => planDetach(entryId);
   }, [entryId, store?.id]);
   // A change of store or of the records' sign-in takes the planner away at once; there is no question to ask about
   // records that are no longer this person's.
-  useEffect(() => { if (!(followed && fresh) && planState.open && planState.storeId === (store?.id ?? null)) planClose(); }, [followed, fresh, store?.id]);
+  useLayoutEffect(() => { if (!(followed && fresh) && planState.open && planState.storeId === (store?.id ?? null)) planClose(); }, [followed, fresh, store?.id]);
   // What this entry shows, for the one that may replace it.
   useEffect(() => {
     lastShown.storeId = store?.id ?? null;
@@ -375,8 +390,7 @@ function CalendarDialog({ id, label, onClose, children }) {
   useEffect(() => {
     const el = box.current;
     el.querySelector(".sc-close").focus();
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    lockScroll();
     const onKey = (e) => {
       if (e.key === "Escape") { e.stopPropagation(); closeRef.current(); return; }
       if (e.key !== "Tab") return;
@@ -387,7 +401,7 @@ function CalendarDialog({ id, label, onClose, children }) {
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", onKey, true);
-    return () => { document.removeEventListener("keydown", onKey, true); document.body.style.overflow = overflow; };
+    return () => { document.removeEventListener("keydown", onKey, true); unlockScroll(); };
   }, []);
   return createPortal(
     <div className="sc-scrim" onClick={(e) => { if (e.target === e.currentTarget) closeRef.current(); }}>
@@ -409,17 +423,21 @@ function EditorDialog({ id, label, hidden = false, onRequestClose, children }) {
   const box = useRef(null);
   const closeRef = useRef(onRequestClose);
   closeRef.current = onRequestClose;
+  // Hidden for a moment in a swap and shown again: focus comes back into the dialog if it was lost.
+  useEffect(() => {
+    if (!hidden && box.current && !box.current.contains(document.activeElement)) box.current.querySelector(".sc-close").focus();
+  }, [hidden]);
   useEffect(() => {
     const el = box.current;
     el.querySelector(".sc-close").focus();
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    lockScroll();
     // Everything else on the page is out of reach while the planner is open: no click, tap, key or screen reader can
     // take the person to another tab or room from behind it. The only way out is the dialog, which asks about unsaved changes.
     const rest = [...document.body.children].filter((n) => n !== el.parentElement && !n.hasAttribute("inert"));
     for (const n of rest) n.setAttribute("inert", "");
     // A page that is put on screen while the planner is open (the other layout's entry, after a resize) is out of reach too.
     const watcher = new MutationObserver((records) => {
+      for (let i = rest.length - 1; i >= 0; i--) if (!rest[i].isConnected) rest.splice(i, 1);
       for (const r of records) for (const n of r.addedNodes) {
         if (n.nodeType === 1 && n !== el.parentElement && !n.hasAttribute("inert")) { n.setAttribute("inert", ""); rest.push(n); }
       }
@@ -432,7 +450,7 @@ function EditorDialog({ id, label, hidden = false, onRequestClose, children }) {
     return () => {
       window.removeEventListener("keydown", onKey, true);
       watcher.disconnect();
-      document.body.style.overflow = overflow;
+      unlockScroll();
       for (const n of rest) n.removeAttribute("inert");
     };
   }, []);
