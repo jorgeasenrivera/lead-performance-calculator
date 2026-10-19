@@ -619,6 +619,14 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X57 · Exact X26 branch guard and candidate-only config hash approved.**
+
+Jorge's 19 October 00:18:13 UTC "Yes" (`Sentinel_f9b50369ee2c8191ab97c3114ed727c6`) approves blocking automatic deployment only on `claude/scheduler-live-integration`. The board records the narrow C93 exception for the existing X26 owner, Claude session `https://claude.ai/code/session_01WT8Lhj3VnYw7eFon84yFeh`, and the parent runtime-QA candidate-only hash exception. No owner is transferred or renewed.
+
+For X26 relay: reviewed remote source remains `03e99f739cdf0c88e867240f0826a2c60c9fcd60`. Insert only `git.deploymentEnabled["claude/scheduler-live-integration"] = false`, preserving all other config. Exact guarded `vercel.json` SHA-256: `d1bcea9d06773cb061253fffaa84fa6aadee3fff13bd8a8b706232c3f0d9ab5d`. Guard patch SHA-256: `022853f9bcb513d5f5869f2fa2077d0ddcc928dd510d1a971c4eccb8b96a5ade`. The reviewed H-X54 product patch remains `c5d0971db2a4c8e564fb2c854c6a471cee792a3299be1131223dd73fbd3eee2e`. This coordination commit edits neither source nor config.
+
+Runtime-QA retains the immutable 106-path v1 and 109-path candidate. Only reviewed core, Manager and the exact guarded config may differ; config validation is byte-exact against the frozen original plus this entry, not permission to rehash arbitrary config. The local workflow adds explicit scheduler-on/off builds, actual phone/desktop entry assertions and flag-off/missing-entry negative controls while retaining legacy comparisons. Local Chromium entry checks passed; supported CI, WebKit and protected static-preview gates remain. Independent source review cleared runtime-QA patch `7f8fdb62ddde8fb0dba886661443dcc74ca478c67c1aa68340592e9ce5dd7356` and the exact guard patch: positive validation, 11 negative cases and all 109 hashes passed. Publication coordination remains pending; this is not release approval. X26 owns its own source/guard application, and no Manager push occurs before guard verification. Verify deployment suppression on the eventual exact published SHA. No automatic repository build using a live backend, activation, deployment or merge is authorized.
+
 **H-X56 · Exact two-branch reader/storage deployment safeguard approved.**
 
 Jorge approved at 23:43:48 UTC, message
