@@ -1,0 +1,114 @@
+name: Android KVM read-only diagnostic
+# Preparation only. Adding a label tied to the reviewed head is the sole trigger.
+on:
+  pull_request:
+    types: [labeled]
+permissions: {}
+concurrency:
+  group: android-kvm-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: >-
+      github.event.repository.private == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/android-kvm-diagnostic' &&
+      github.event.label.name == format('kvm:{0}', github.event.pull_request.head.sha)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # No checkout, downloaded actions, package installation or Android tooling.
+      - name: Record runner and KVM metadata, then stop
+        timeout-minutes: 2
+        shell: bash
+        env:
+          DIAGNOSTIC_HEAD: ${{ github.event.pull_request.head.sha }}
+          DIAGNOSTIC_LABEL: ${{ github.event.label.name }}
+        run: |
+          python3 - <<'PY'
+          import datetime
+          import grp
+          import json
+          import os
+          import platform
+          import pwd
+          import re
+          import shutil
+          import stat
+          import subprocess
+
+          head = os.environ['DIAGNOSTIC_HEAD']
+          assert re.fullmatch(r'[0-9a-f]{40}', head)
+          assert os.environ['DIAGNOSTIC_LABEL'] == 'kvm:' + head
+
+          def error(exc):
+              return {'status': 'unavailable', 'errno': exc.errno, 'error': str(exc)}
+
+          def metadata(path, follow):
+              try:
+                  value = os.stat(path, follow_symlinks=follow)
+                  result = {
+                      'status': 'present', 'type_and_mode': stat.filemode(value.st_mode),
+                      'permissions_octal': oct(stat.S_IMODE(value.st_mode)),
+                      'uid': value.st_uid, 'gid': value.st_gid,
+                      'character_device': stat.S_ISCHR(value.st_mode),
+                      'symlink': stat.S_ISLNK(value.st_mode),
+                  }
+                  if stat.S_ISCHR(value.st_mode):
+                      result['device_major_minor'] = [os.major(value.st_rdev), os.minor(value.st_rdev)]
+                  return result
+              except OSError as exc:
+                  return error(exc)
+
+          def group_name(gid):
+              try:
+                  return grp.getgrgid(gid).gr_name
+              except KeyError:
+                  return None
+
+          report = {
+              'purpose': 'metadata only, not an acceleration or Android test',
+              'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'reviewed_head': head,
+              'runner': {key: os.environ.get(key) for key in (
+                  'RUNNER_NAME', 'RUNNER_OS', 'RUNNER_ARCH', 'RUNNER_ENVIRONMENT',
+                  'ImageOS', 'ImageVersion', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT',
+                  'GITHUB_SHA', 'GITHUB_WORKFLOW_REF', 'GITHUB_WORKFLOW_SHA')},
+              'kernel': {'system': platform.system(), 'release': platform.release(), 'machine': platform.machine()},
+              'identity': {
+                  'uid': os.getuid(), 'euid': os.geteuid(), 'gid': os.getgid(), 'egid': os.getegid(),
+                  'username': pwd.getpwuid(os.geteuid()).pw_name,
+                  'groups': [{'gid': gid, 'name': group_name(gid)} for gid in sorted(set(os.getgroups() + [os.getegid()]))],
+              },
+              'dev_directory': metadata('/dev', True),
+              'kvm_lstat': metadata('/dev/kvm', False),
+              'kvm_stat': metadata('/dev/kvm', True),
+              'kvm_access_effective_ids': {
+                  'exists': os.access('/dev/kvm', os.F_OK, effective_ids=True),
+                  'readable': os.access('/dev/kvm', os.R_OK, effective_ids=True),
+                  'writable': os.access('/dev/kvm', os.W_OK, effective_ids=True),
+              },
+          }
+          getfacl = shutil.which('getfacl')
+          if getfacl:
+              try:
+                  acl = subprocess.run([getfacl, '-p', '/dev/kvm'], capture_output=True, text=True, timeout=10)
+                  report['kvm_acl'] = {'exit_code': acl.returncode, 'stdout': acl.stdout, 'stderr': acl.stderr}
+              except subprocess.TimeoutExpired:
+                  report['kvm_acl'] = {'status': 'timeout'}
+              except OSError as exc:
+                  report['kvm_acl'] = error(exc)
+          else:
+              report['kvm_acl'] = {'status': 'getfacl not preinstalled; no installation attempted'}
+          try:
+              with open('/proc/cpuinfo', encoding='utf-8') as cpu:
+                  flags = [line.split(':', 1)[1].split() for line in cpu if line.startswith(('flags\t', 'Features\t'))]
+              report['cpu_virtualization_flags'] = {
+                  'flag_records': len(flags),
+                  'records_with_flag': {flag: sum(flag in record for record in flags) for flag in ('vmx', 'svm', 'hypervisor')},
+              }
+          except OSError as exc:
+              report['cpu_virtualization_flags'] = error(exc)
+          print(json.dumps(report, indent=2, sort_keys=True))
+          print('Diagnostic complete. No device opened, permissions changed or Android tooling invoked.')
+          PY
