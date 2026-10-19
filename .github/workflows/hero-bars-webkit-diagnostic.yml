@@ -1,0 +1,82 @@
+name: hero-bars-webkit-diagnostic
+on:
+  push:
+    branches: [codex/hero-bars-webkit-diagnostic]
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        phase: [before, after]
+        drain: ['0', '1']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 45ea85499e062d0966ffb5ff73c0c26480c1b7e4
+          path: .source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 57c381c4e07c8d815819bb5e2feed00d104ba4f8
+          path: .baseline
+          persist-credentials: false
+      - name: Verify exact inputs and record runner
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/.source"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/.baseline"
+          test "$(git -C .source rev-parse HEAD)" = 45ea85499e062d0966ffb5ff73c0c26480c1b7e4
+          test "$(git -C .baseline rev-parse HEAD)" = 57c381c4e07c8d815819bb5e2feed00d104ba4f8
+          for file in scripts/hero-bars.mjs scripts/feel-navigation.mjs scripts/mock-supabase.mjs scripts/demo-seed.mjs scripts/search-runtime.sha256 scripts/search-runtime.scheduler-v1.sha256 .github/workflows/manager-spacing.yml; do cmp "$file" ".source/$file"; done
+          mkdir -p diagnostic
+          cat /etc/os-release > diagnostic/runner.txt
+          node --version >> diagnostic/runner.txt
+          sha256sum .source/scripts/hero-bars.mjs .source/scripts/feel-navigation.mjs .source/scripts/mock-supabase.mjs .source/scripts/demo-seed.mjs > diagnostic/input-hashes.txt
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Build isolated inputs with mock settings only
+        id: build
+        run: |
+          set -eu
+          ln -s "$PWD/node_modules" .source/node_modules
+          ln -s "$PWD/node_modules" .baseline/node_modules
+          if [ '${{ matrix.phase }}' = before ]; then target=.baseline; else target=.source; fi
+          (cd "$target" && VITE_SCHEDULER_CALENDAR=0 VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
+      - name: Observe unchanged assertions, with optional draining
+        env:
+          DIAG_PHASE: ${{ matrix.phase }}
+          DIAG_DRAIN: ${{ matrix.drain }}
+          HERO_BASELINE_URL: http://127.0.0.1:5181/
+          FEEL_URL: http://127.0.0.1:5178/
+        run: |
+          set -eu
+          SALESPERSON=1 node .source/scripts/mock-supabase.mjs > diagnostic/mock.log 2>&1 &
+          if [ "$DIAG_PHASE" = before ]; then target=.baseline; port=5181; else target=.source; port=5178; fi
+          node node_modules/vite/bin/vite.js preview --outDir "$target/dist" --port "$port" --host 127.0.0.1 > diagnostic/preview.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf "http://127.0.0.1:$port/" > /dev/null && break; sleep 0.2; done
+          curl -sf "http://127.0.0.1:$port/" > /dev/null
+          node scripts/hero-bars-webkit-diagnostic.mjs
+      - name: Genuine invalid-preflight negative control
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        env:
+          FEEL_BROWSER: webkit
+        run: |
+          FEEL_PLAYWRIGHT="$PWD/node_modules/playwright" node .source/scripts/probe-feel-navigation.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hero-webkit-${{ matrix.phase }}-drain-${{ matrix.drain }}
+          path: |
+            diagnostic/
+            hero-bars/
+          retention-days: 14
