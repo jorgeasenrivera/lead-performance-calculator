@@ -185,12 +185,29 @@ until that is done on purpose. Hashing is never this file's own: the caller supp
 and it is checked against two known answers on every use.
 
 **Trusted recomputation.** `verifyReview(input, {definition, digest}, {sha256})` recomputes and
-compares. A claim that carries its own rows, issue count or fingerprint is refused, and so is
-input that carries a caller's `openIssues` or `recomputedFingerprint`.
+compares, and on a match returns only `{ok, digest, openIssues}`, never the rows. A claim that
+carries its own rows, issue count or fingerprint is refused, and so is input that carries a
+caller's `openIssues` or `recomputedFingerprint`. Every answer from the supplied `sha256` must be
+64 lowercase hex and the same on a second ask, and it is first checked against known answers that
+include non-ASCII text, a 1000 character input and both sides of the 56 and 64 byte block edges.
 
-**Input is strict.** Plain JSON only, bounded in depth, size and counts, copied and frozen.
-Unknown keys, missing span days, a missing scope month draft, a store id that is not the scope's,
-non-finite numbers, accessors and `__proto__` are all refused with a named error code.
+**Input is strict.** Plain JSON only, copied and frozen: plain objects, and plain dense arrays with
+no extra properties or holes (a subclass, getter or proxy array is refused, and an array's length is
+checked before it is walked). It is bounded in depth, nodes, characters, key length and per-record
+counts, and in time: assignments times memberships is capped, because the planner looks up
+memberships per person per day. Every key of a day record is named and the keys the planner reads
+(`on`, `off`, `shifts`, `generationLocks`, `generation`, and so on) are type-checked, so bad input is
+refused here with a named code and does not fail inside the planner; any planner exception is
+rethrown as a named `planner` refusal. Months outside the planner's own range are refused as
+`scope`. Unknown keys, missing span days, a missing scope month draft, a store id that is not the
+scope's, non-finite numbers, accessors and `__proto__` are all refused.
+
+**Export proves itself.** `exportReviewInput` takes the planner, the `stores` it was created with
+(unchanged) and its `assignmentForDay`, rebuilds a planner from the exported input, and refuses with
+`parity` unless the rows match the live planner byte for byte. State the input cannot carry, such
+as a base store changed after the planner was made, is therefore refused and not exported. Like
+`rows()`, it creates the month's draft if there is none, and a falsy `assignmentForDay` answer is
+"no assignment", as in the planner.
 
 **Known limits.**
 - `month-model.mjs` imports `scripts/scheduler-proposal/model.mjs`, which holds the pure date and

@@ -332,3 +332,128 @@ test("a hydrated planner is independent of the input it came from", () => {
   assert.notEqual(JSON.stringify(a.rows(0, "2026-10")), JSON.stringify(b.rows(0, "2026-10")));
   assert.equal(JSON.stringify(b.rows(0, "2026-10")), reviewMonth(i).legacyFingerprint);
 });
+
+/* ---- Independent review findings, each held by a regression ---------------------------- */
+const fresh = () => plain(input(make(), "2026-10"));
+const day14 = "2026-10-14";
+
+test("arrays are plain, dense and bounded before they are walked", () => {
+  // a subclass could override every/map/toJSON and so change what is checked or hashed
+  class Evil extends Array { every() { return true; } }
+  const evil = new Evil(); evil.push(5);
+  const a = fresh(); a.baseStore.memberships = [{ storeId: a.scope.storeId, personId: "x", teamIds: evil, from: "2026-01-01", to: "2026-12-31" }];
+  throwsCode(() => validateReviewInput(a), "not plain");
+  class Forge extends Array { toJSON() { return [{ id: "t", name: "T" }]; } }
+  const b = fresh(); b.teamState.teams = new Forge();
+  throwsCode(() => validateReviewInput(b), "not plain");
+  class Species extends Array { static get [Symbol.species]() { return Array; } }
+  const c = fresh(); c.base[day14] = { on: new Species(), off: [] };
+  throwsCode(() => validateReviewInput(c), "not plain");
+  // a huge sparse array is refused at once, not after it has been walked
+  const d = fresh(); const big = []; big.length = 2 ** 30; d.base[day14] = { on: big, off: [] };
+  const t0 = Date.now();
+  throwsCode(() => validateReviewInput(d), "too large");
+  assert.ok(Date.now() - t0 < 500, "refused without walking the array");
+  // holes and extra properties are not plain arrays
+  const e = fresh(); e.base[day14] = { on: [, "x"], off: [] };
+  throwsCode(() => validateReviewInput(e), "not a plain array");
+  const f = fresh(); const withExtra = ["x"]; withExtra.foo = 1; f.base[day14] = { on: withExtra, off: [] };
+  throwsCode(() => validateReviewInput(f), "not a plain array");
+  const g = fresh(); const getter = ["x"]; Object.defineProperty(getter, 0, { get() { return "x"; }, enumerable: true }); g.base[day14] = { on: getter, off: [] };
+  throwsCode(() => validateReviewInput(g), "not a plain array");
+  // and the digest cannot be forged through any of them: input that differs has a different inputDigest
+  const h = fresh(); h.teamState.teams = [{ id: "t", name: "T" }];
+  assert.notEqual(reviewMonth(h, { sha256 }).inputDigest, reviewMonth(fresh(), { sha256 }).inputDigest);
+});
+
+test("every record key the planner reads is named and typed, so it cannot fail inside the planner", () => {
+  const cases = {
+    "generationLocks that is not a list": [(r) => { r.generationLocks = 5; }, "shape"],
+    "an unknown record key": [(r) => { r.zzz = 1; }, "unknown key"],
+    "shifts that is not a list": [(r) => { r.shifts = "x"; }, "shape"],
+    "a shift with an unknown key": [(r) => { r.shifts = [{ personId: "a", extra: 1 }]; }, "unknown key"],
+    "a shift with no person": [(r) => { r.shifts = [{ startMinute: 1 }]; }, "missing"],
+    "a shift minute that is text": [(r) => { r.shifts = [{ personId: "a", startMinute: "9" }]; }, "shape"],
+    "absences that is a list": [(r) => { r.absences = []; }, "shape"],
+    "generation with the wrong parts": [(r) => { r.generation = { unlocked: 5 }; }, "shape"],
+    "generation with an unknown part": [(r) => { r.generation = { extra: 1 }; }, "unknown key"],
+    "an on list holding a number": [(r) => { r.on = [5]; }, "shape"],
+  };
+  for (const [name, [edit, code]] of Object.entries(cases)) {
+    const i = fresh(); const r = { on: [], off: [] }; edit(r); i.base[day14] = r;
+    throwsCode(() => reviewMonth(i), code);
+    assert.deepEqual(verifyReview(i, { definition: REVIEW_DEFINITION, digest: "0".repeat(64) }, { sha256 }).ok, false, name);
+  }
+  const ok = fresh(); ok.base[day14] = { on: [ok.baseStore.people[0].id], off: [], shifts: [], generationLocks: [], generation: { unlocked: [], signatures: {} }, absences: {}, unknownNotes: {}, teamSnapshot: {} };
+  assert.doesNotThrow(() => reviewMonth(ok));
+});
+
+test("months the planner cannot hold are refused by name, and verify does not throw", () => {
+  const early = fresh(); early.scope.month = "2013-12";
+  throwsCode(() => reviewMonth(early), "scope");
+  throwsCode(() => reviewSpan("2013-12"), "scope");
+  throwsCode(() => reviewSpan("2101-01"), "scope");
+  assert.deepEqual(verifyReview(early, { definition: REVIEW_DEFINITION, digest: "0".repeat(64) }, { sha256 }), { ok: false, reason: "scope" });
+  // a neighbour draft before the planner's first month is refused too
+  const ctx = make();
+  const jan = plain(exportReviewInput({ planner: ctx.planner, stores: ctx.stores, storeId: ctx.stores[0].id, month: "2014-01", assignmentForDay: ctx.assign }));
+  jan.months["2013-12"] = jan.months["2014-01"];
+  throwsCode(() => reviewMonth(jan), "scope");
+  assert.doesNotThrow(() => reviewMonth(plain(exportReviewInput({ planner: ctx.planner, stores: ctx.stores, storeId: ctx.stores[0].id, month: "2014-01", assignmentForDay: ctx.assign }))), "the first month itself is fine");
+});
+
+test("time and size are bounded together, not just node counts", () => {
+  const many = fresh();
+  const names = Array.from({ length: LIMITS.idsPerRecord }, (_, i) => "p" + i);
+  many.baseStore.memberships = Array.from({ length: LIMITS.memberships }, () => ({ storeId: many.scope.storeId, personId: "x", teamIds: [], from: "2026-01-01", to: "2026-12-31" }));
+  many.base[day14] = { on: names, off: [] };
+  const t0 = Date.now();
+  throwsCode(() => validateReviewInput(many), "too much work");
+  assert.ok(Date.now() - t0 < 2000, "refused before the planner runs");
+  const wide = fresh();
+  for (const d of reviewSpan("2026-10").days.slice(0, 7)) wide.base[d] = { on: [], off: [], unknownNotes: Object.fromEntries(Array.from({ length: 400 }, (_, i) => ["k" + i, { note: "x".repeat(LIMITS.string) }])) };
+  throwsCode(() => validateReviewInput(wide), "too large");
+  const longKey = fresh(); longKey.base[day14] = { on: [], off: [], absences: { ["k".repeat(LIMITS.key + 1)]: {} } };
+  throwsCode(() => validateReviewInput(longKey), "key too long");
+});
+
+test("the hash is held to more than two easy answers", () => {
+  const real = sha256;
+  const i = fresh();
+  const latin1 = (t) => createHash("sha256").update(Buffer.from(t, "latin1")).digest("hex");
+  throwsCode(() => reviewMonth(i, { sha256: latin1 }), "hash");
+  throwsCode(() => reviewMonth(i, { sha256: (t) => (t.length < 56 ? real(t) : "f".repeat(64)) }), "hash");
+  throwsCode(() => reviewMonth(i, { sha256: (t) => (t.length < 64 ? real(t) : real(t.slice(0, 63))) }), "hash");
+  const short = new Set(["abc", ""]);
+  const specialised = (t) => (short.has(t) ? real(t) : "not hex");
+  throwsCode(() => reviewMonth(i, { sha256: specialised }), "hash");
+  const easy = (t) => (["abc", ""].includes(t) ? real(t) : "z".repeat(64));
+  throwsCode(() => reviewMonth(i, { sha256: easy }), "hash");
+  // a correct hash that answers differently the second time about the real input is refused when it is used
+  let calls = 0;
+  const vectors = new Set(["abc", "", "José", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "a".repeat(1000), "b".repeat(55), "b".repeat(56), "b".repeat(64), "€uro €"]);
+  const drifting = (t) => (vectors.has(t) ? real(t) : (++calls % 2 ? real(t) : real(t + " ")));
+  throwsCode(() => reviewMonth(i, { sha256: drifting }), "hash");
+  assert.doesNotThrow(() => reviewMonth(i, { sha256: real }));
+});
+
+test("export proves itself against the live planner, and a verified match returns no rows", () => {
+  // a base store changed after the planner was made cannot be represented: refused, not quietly different
+  const ctx = make();
+  ctx.stores[0].memberships = [];
+  throwsCode(() => exportReviewInput({ planner: ctx.planner, stores: ctx.stores, storeId: ctx.stores[0].id, month: "2026-10", assignmentForDay: ctx.assign }), "parity");
+  // a falsy answer from assignmentForDay is "no assignment", as in the planner
+  const falsy = make((d) => (d === day14 ? 0 : d === "2026-10-15" ? false : d === "2026-10-16" ? "" : fixtureAssignments(d, 0)));
+  const i = input(falsy, "2026-10");
+  assert.equal(i.base[day14], null);
+  assert.equal(reviewMonth(i).legacyFingerprint, JSON.stringify(falsy.planner.rows(0, "2026-10")));
+  const r = reviewMonth(i, { sha256 });
+  const verified = verifyReview(i, { definition: REVIEW_DEFINITION, digest: r.digest }, { sha256 });
+  assert.deepEqual(Object.keys(verified).sort(), ["digest", "ok", "openIssues"]);
+  assert.equal(verified.openIssues, r.openIssues);
+  // like rows(), export creates the month's draft; that is the planner's own behaviour
+  const bare = make();
+  assert.equal(bare.planner.drafts.size, 0);
+  input(bare, "2026-10");
+  assert.ok(bare.planner.drafts.size >= 1);
+});

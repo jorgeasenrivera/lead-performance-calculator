@@ -29,7 +29,7 @@
  *
  * Nothing here fetches, writes, reads a clock or touches storage.
  */
-import { createPlanner, monthDays } from "./month-model.mjs";
+import { createPlanner, monthDays, validMonth } from "./month-model.mjs";
 import { validDate } from "./shift-intervals.mjs";
 
 export const REVIEW_DEFINITION = "month-review/1";
@@ -37,8 +37,8 @@ export const REVIEW_DEFINITION = "month-review/1";
 // Every bound is a refusal, not a truncation: input that is too large is an error.
 export const LIMITS = Object.freeze({
   people: 500, rules: 200, history: 20000, teams: 200, memberships: 20000,
-  holidays: 400, overridesPerMonth: 62, shiftsPerRecord: 64, idsPerRecord: 1000,
-  string: 2000, depth: 12, nodes: 600000,
+  holidays: 400, overridesPerMonth: 62, shiftsPerRecord: 64, idsPerRecord: 500,
+  string: 2000, key: 200, chars: 4000000, depth: 12, nodes: 600000, work: 4000000,
 });
 
 export class ReviewInputError extends Error {
@@ -52,14 +52,14 @@ const refuse = (code, detail) => { throw new ReviewInputError(code, detail); };
 
 /* ------------------------------------------------------------------ the span */
 
-const MONTH = /^(20\d{2}|2100)-(0[1-9]|1[0-2])$/;
 const STORE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const dow = (day) => new Date(day + "T12:00:00Z").getUTCDay();
 const add = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 
 // The complete Monday to Sunday weeks that cover a month, which is what the planner reads.
 export function reviewSpan(month) {
-  if (typeof month !== "string" || !MONTH.test(month)) refuse("scope", "month");
+  // The planner's own range, so a month it cannot hold is refused here by name.
+  if (!validMonth(month)) refuse("scope", "month");
   const days = monthDays(month);
   const from = add(days[0], -((dow(days[0]) + 6) % 7));
   const to = add(days.at(-1), 6 - ((dow(days.at(-1)) + 6) % 7));
@@ -74,20 +74,41 @@ const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 // Plain JSON only, bounded in depth and size, copied and frozen. Anything else is refused.
 function frozenJson(value, where) {
-  let nodes = 0;
+  let nodes = 0, chars = 0;
+  const text = (str, path) => {
+    if (str.length > LIMITS.string) refuse("string too long", path);
+    chars += str.length;
+    if (chars > LIMITS.chars) refuse("too large", where);
+    return str;
+  };
   const walk = (v, depth, path) => {
     if (++nodes > LIMITS.nodes) refuse("too large", where);
     if (depth > LIMITS.depth) refuse("too deep", path);
     if (v === null || typeof v === "boolean") return v;
     if (typeof v === "number") { if (!Number.isFinite(v)) refuse("not finite", path); return v; }
-    if (typeof v === "string") { if (v.length > LIMITS.string) refuse("string too long", path); return v; }
-    if (Array.isArray(v)) return Object.freeze(v.map((x, i) => walk(x, depth + 1, `${path}[${i}]`)));
+    if (typeof v === "string") return text(v, path);
+    if (Array.isArray(v)) {
+      // Only a plain, dense array with no other properties. The length is checked before any
+      // element is touched, so a huge sparse array is refused at once, not after it is walked.
+      if (Object.getPrototypeOf(v) !== Array.prototype) refuse("not plain", path);
+      if (v.length > LIMITS.nodes - nodes) refuse("too large", path);
+      if (Object.keys(v).length !== v.length) refuse("not a plain array", path);
+      const out = [];
+      for (let i = 0; i < v.length; i++) {
+        const desc = Object.getOwnPropertyDescriptor(v, i);
+        if (!desc || !("value" in desc)) refuse("not a plain array", `${path}[${i}]`);
+        out.push(walk(desc.value, depth + 1, `${path}[${i}]`));
+      }
+      return Object.freeze(out);
+    }
     if (typeof v === "object") {
       const proto = Object.getPrototypeOf(v);
       if (proto !== Object.prototype && proto !== null) refuse("not plain", path);
       const out = {};
       for (const key of Object.keys(v)) {
         if (FORBIDDEN_KEYS.has(key)) refuse("forbidden key", `${path}.${key}`);
+        if (key.length > LIMITS.key) refuse("key too long", path);
+        text(key, path);
         const desc = Object.getOwnPropertyDescriptor(v, key);
         if (!("value" in desc)) refuse("accessor", `${path}.${key}`);
         out[key] = walk(desc.value, depth + 1, `${path}.${key}`);
@@ -180,15 +201,45 @@ function validateStore(store, storeId, where, { timezoneOptional }) {
   validateMemberships(store.memberships, where);
 }
 
-// A day's record is the planner's own value. Its known parts are checked and the rest is bounded JSON.
+const RECORD_KEYS = ["on", "off", "shifts", "teamSnapshot", "absences", "unknownNotes", "generation", "generationLocks"];
+const SHIFT_KEYS = ["storeId", "personId", "date", "endDate", "startMinute", "endMinute", "timezone", "role", "source"];
+// A day's record is the planner's own value. Every key is named, and each key the planner reads
+// has the type it reads: an unknown key or a wrong type is refused here, not left to fail inside the planner.
 function validateRecord(record, where) {
   if (Array.isArray(record)) { stringArray(record, LIMITS.idsPerRecord, where); return; }
-  need(isObj(record), "shape", where);
-  for (const k of ["on", "off"]) if (Object.hasOwn(record, k)) stringArray(record[k], LIMITS.idsPerRecord, `${where}.${k}`);
+  keysOnly(record, RECORD_KEYS, [], where);
+  for (const k of ["on", "off", "generationLocks"]) if (Object.hasOwn(record, k)) stringArray(record[k], LIMITS.idsPerRecord, `${where}.${k}`);
   if (Object.hasOwn(record, "shifts")) {
-    need(Array.isArray(record.shifts) && record.shifts.length <= LIMITS.shiftsPerRecord && record.shifts.every(isObj), "shape", `${where}.shifts`);
+    need(Array.isArray(record.shifts) && record.shifts.length <= LIMITS.shiftsPerRecord, "shape", `${where}.shifts`);
+    record.shifts.forEach((s, i) => {
+      const w = `${where}.shifts[${i}]`;
+      keysOnly(s, SHIFT_KEYS, ["personId"], w);
+      for (const k of ["storeId", "personId", "date", "endDate", "timezone", "role"]) if (Object.hasOwn(s, k)) need(typeof s[k] === "string", "shape", `${w}.${k}`);
+      for (const k of ["startMinute", "endMinute"]) if (Object.hasOwn(s, k)) need(num(s[k]), "shape", `${w}.${k}`);
+      if (Object.hasOwn(s, "source")) need(isObj(s.source), "shape", `${w}.source`);
+    });
   }
-  for (const k of ["teamSnapshot", "absences", "unknownNotes"]) if (Object.hasOwn(record, k)) need(isObj(record[k]), "shape", `${where}.${k}`);
+  for (const k of ["teamSnapshot", "absences", "unknownNotes"]) {
+    if (!Object.hasOwn(record, k)) continue;
+    need(isObj(record[k]) && Object.keys(record[k]).length <= LIMITS.idsPerRecord && Object.values(record[k]).every(isObj), "shape", `${where}.${k}`);
+  }
+  if (Object.hasOwn(record, "generation")) {
+    const g = record.generation;
+    keysOnly(g, ["unlocked", "signatures"], [], `${where}.generation`);
+    if (Object.hasOwn(g, "unlocked")) stringArray(g.unlocked, LIMITS.idsPerRecord, `${where}.generation.unlocked`);
+    if (Object.hasOwn(g, "signatures")) need(isObj(g.signatures) && Object.values(g.signatures).every((x) => typeof x === "string"), "shape", `${where}.generation.signatures`);
+  }
+}
+
+// Time is bounded as well as size: the planner looks up memberships once per assigned person per day.
+function boundWork(input) {
+  const count = (r) => (r === null ? 0 : Array.isArray(r) ? r.length : (r.on?.length || 0) + (r.off?.length || 0) + (r.shifts?.length || 0));
+  let ids = 0;
+  for (const r of Object.values(input.base)) ids += count(r);
+  for (const d of Object.values(input.months)) for (const r of Object.values(d.overrides)) ids += count(r);
+  const memberships = Math.max(input.baseStore.memberships.length, input.teamState.memberships.length,
+    ...Object.values(input.months).map((d) => d.store.memberships.length));
+  need(ids * Math.max(memberships, 1) <= LIMITS.work, "too much work", `${ids} assignments against ${memberships} memberships`);
 }
 
 /**
@@ -212,6 +263,7 @@ export function validateReviewInput(raw) {
   need(isObj(input.months), "shape", "months");
   need(Object.hasOwn(input.months, input.scope.month), "missing", `months.${input.scope.month} (the scope month's own draft)`);
   for (const [month, draft] of Object.entries(input.months)) {
+    need(validMonth(month), "scope", `months.${month} is not a month the planner can hold`);
     need(span.months.includes(month), "unknown key", `months.${month} is outside the span`);
     keysOnly(draft, ["store", "overrides"], ["store", "overrides"], `months.${month}`);
     validateStore(draft.store, input.scope.storeId, `months.${month}.store`, { timezoneOptional: false });
@@ -227,6 +279,7 @@ export function validateReviewInput(raw) {
   for (const day of baseDays) need(span.days.includes(day), "unknown key", `base.${day} is outside the span`);
   for (const day of span.days) need(Object.hasOwn(input.base, day), "missing", `base.${day} (every span day needs an explicit entry, null if none)`);
   for (const day of span.days) if (input.base[day] !== null) validateRecord(input.base[day], `base.${day}`);
+  boundWork(input);
   return input;
 }
 
@@ -257,13 +310,27 @@ const sortKeys = (value) => {
 // Key order cannot change what this string says; array order always does.
 export const canonicalJson = (value) => JSON.stringify(sortKeys(value));
 
-const VECTORS = Object.freeze([["abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"],
-  ["", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]]);
-// The hash is the caller's, because this file has none of its own. It is checked against known answers every time.
+const VECTORS = Object.freeze([
+  ["abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"],
+  ["", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
+  ["Jos\u00e9", "24c2ab65b7adab7e070ba05a00a3f3ae074e28b8bcdd59735b7107e7a538a551"],
+  ["abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"],
+  ["a".repeat(1000), "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"],
+  ["b".repeat(55), "eb2c86e932179f4ba13fe8715a26124b77d6bad290b9b4c1cc140cf633300c19"], ["b".repeat(56), "a5fc6e203a4c2b657d0d153885932414b2ffc6a93f0f8bf8b3183315e5a7212c"], ["b".repeat(64), "a0fab1377f49a759b57f63318262ebe89fabfc990e8e93ceac2984561482b9d4"],
+  ["\u20acuro \u20ac", "2e081e9a5a8e37543db37255db9f09463f1e03150f04b0c28ef56c4c7377db15"],
+]);
+const HEX = /^[0-9a-f]{64}$/;
+// The hash is the caller's, because this file has none of its own. It is checked against known answers
+// (short, long, non-ASCII, and either side of the block boundaries), and every answer it gives later
+// must be 64 lowercase hex and the same on a second ask.
 function trusted(sha256) {
   if (typeof sha256 !== "function") refuse("hash", "a sha256 implementation is required");
   for (const [text, want] of VECTORS) if (sha256(text) !== want) refuse("hash", "the supplied sha256 gave a wrong answer");
-  return sha256;
+  return (text) => {
+    const a = sha256(text);
+    if (typeof a !== "string" || !HEX.test(a) || sha256(text) !== a) refuse("hash", "the supplied sha256 gave an unusable or unstable answer");
+    return a;
+  };
 }
 
 const deepFreeze = (v) => { if (v && typeof v === "object" && !Object.isFrozen(v)) { Object.freeze(v); for (const x of Object.values(v)) deepFreeze(x); } return v; };
@@ -277,7 +344,9 @@ export function reviewMonth(raw, { sha256 } = {}) {
   const hash = sha256 === undefined ? null : trusted(sha256);
   const { month } = input.scope;
   const span = reviewSpan(month);
-  const rows = hydrateReviewPlanner(input).rows(0, month);
+  let rows;
+  try { rows = hydrateReviewPlanner(input).rows(0, month); }
+  catch (e) { if (e instanceof ReviewInputError) throw e; refuse("planner", String(e && e.message).slice(0, 120)); }
   const openIssues = rows.reduce((n, r) => n + r.issues.length, 0);
   const canonical = canonicalJson({ definition: REVIEW_DEFINITION, scope: input.scope, span: { from: span.from, to: span.to }, rows });
   return deepFreeze({
@@ -305,16 +374,18 @@ export function verifyReview(raw, claim, { sha256 } = {}) {
   let review;
   try { review = reviewMonth(raw, { sha256: trusted(sha256) }); }
   catch (e) { if (e instanceof ReviewInputError) return { ok: false, reason: e.code }; throw e; }
-  return review.digest === claim.digest ? { ok: true, review } : { ok: false, reason: "digest" };
+  // The rows stay with the caller that holds the input; a match says only that, and how many issues.
+  return review.digest === claim.digest ? { ok: true, digest: review.digest, openIssues: review.openIssues } : { ok: false, reason: "digest" };
 }
 
 /* ------------------------------------------------------------------- export */
 
 /**
  * The input for a live planner, for the editor to hand to the provider.
- * `stores` and `assignmentForDay` are what the planner was created with. The base
- * store must carry its teams and memberships explicitly: with none, the planner
- * would seed its own placeholders, and a review built on those is refused here.
+ * `stores` and `assignmentForDay` are what the planner was created with, and `stores[index]` must
+ * be the object it was given, unchanged. The base store must carry its teams and memberships
+ * explicitly: with none, the planner would seed its own placeholders, and a review built on
+ * those is refused here. Like `rows()`, this creates the month's draft if there is none yet.
  */
 export function exportReviewInput({ planner, stores, index = 0, storeId, month, assignmentForDay }) {
   need(planner && typeof planner.get === "function" && planner.drafts instanceof Map, "shape", "planner");
@@ -331,10 +402,11 @@ export function exportReviewInput({ planner, stores, index = 0, storeId, month, 
   }
   const baseByDay = {};
   for (const day of span.days) {
+    // The planner reads any falsy answer as "no assignment", so the input says null for it.
     const value = assignmentForDay(day, index);
-    baseByDay[day] = value === undefined ? null : value;
+    baseByDay[day] = value ? value : null;
   }
-  return validateReviewInput({
+  const exported = validateReviewInput({
     definition: REVIEW_DEFINITION,
     scope: { storeId, month },
     baseStore: base,
@@ -342,4 +414,9 @@ export function exportReviewInput({ planner, stores, index = 0, storeId, month, 
     months,
     base: baseByDay,
   });
+  // The export proves itself: rebuilt from the input, the planner must give the live planner's exact
+  // rows. State the input cannot carry (a base store changed after the planner was made, for one)
+  // shows up here as a refusal instead of a review that quietly differs.
+  need(reviewMonth(exported).legacyFingerprint === JSON.stringify(planner.rows(index, month)), "parity", "the rebuilt planner does not match the live planner");
+  return exported;
 }
