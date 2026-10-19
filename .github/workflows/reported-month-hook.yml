@@ -62,7 +62,7 @@ jobs:
             sha256sum --check <<'HASHES'
           1344ed314881551a2bd3c2a343cde6767124fece5cd1d338811d655f0481a65a  src/use-reported-month.mjs
           413bd4ff22be6889e9b1fca129fe647abcb3fc89c59ee8d3ee710710603194ee  test/use-reported-month.test.mjs
-          811b15776761c8e0c36a912b1e05cedb56e5c4bfe27b6daa8bc7e12d2812ef38  scripts/probe-reported-month-hook.mjs
+          812ef41c8dc1beab0b5158e9b881cd430d45bab617a9c74c847bbf555fcc53f6  scripts/probe-reported-month-hook.mjs
           87d0d5e8384f87f82c0b4b6f46c318ab81f98f7c93581e4e3463f2e4c37abc68  src/reported-auth.mjs
           45c6b66906698f592ded9092ecf55bf78535f84b11f6453209def403b43fe2ca  src/reported-month.mjs
           8bc965d71771ff3db392c8dc4f9588304134c5f60fb79fc4895bb01db58ad11b  vercel.json

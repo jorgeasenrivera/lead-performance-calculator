@@ -258,7 +258,16 @@ try {
     ...(process.env.REPORTED_HOOK_EXECUTABLE ? {executablePath: process.env.REPORTED_HOOK_EXECUTABLE} : {})});
   const context = await browser.newContext({serviceWorkers: 'block'}), page = await context.newPage();
   const errors = [], blocked = [];
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', error => {
+    errors.push(error.message);
+    console.error('Synthetic page error:', error.message);
+  });
+  page.on('console', message => {
+    if (message.type() === 'error') console.error('Synthetic console error:', message.text());
+  });
+  page.on('requestfailed', request => {
+    console.error('Synthetic request failed:', new URL(request.url()).pathname, request.failure()?.errorText);
+  });
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== origin || url.pathname.startsWith('/api/')) {
@@ -268,9 +277,10 @@ try {
       '<!doctype html><html><body><script type="module" src="/__reported_hook_test__.mjs"></script></body></html>'});
     if (url.pathname === '/__reported_hook_test__.mjs') return route.fulfill({contentType: 'text/javascript', body:
       `import React from '/node_modules/.vite/deps/react.js';
-       import {createRoot} from '/node_modules/.vite/deps/react-dom_client.js';
-       import {flushSync} from '/node_modules/.vite/deps/react-dom.js';
+       import ReactDOMClient from '/node_modules/.vite/deps/react-dom_client.js';
+       import ReactDOM from '/node_modules/.vite/deps/react-dom.js';
        import {useReportedMonth} from '/src/use-reported-month.mjs';
+       const {createRoot} = ReactDOMClient, {flushSync} = ReactDOM;
        window.probe = (${exercise.toString()})(React, createRoot, flushSync, useReportedMonth)
          .then(checks => ({checks, react: React.version}), error => ({error: error.stack}));`});
     return route.continue();
