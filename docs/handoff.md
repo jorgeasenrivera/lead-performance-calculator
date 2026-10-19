@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X58 · Separate deployment-blocked WebKit diagnosis assigned.**
+
+Under Jorge's 19 October 01:12:51 UTC approval `Sentinel_cca80d64f5888191b0797feb9b9cc658`, the parent coordinator assigned the exact new diagnostic scope recorded on the board: branch `codex/hero-bars-webkit-diagnostic` from `45ea85499e062d0966ffb5ff73c0c26480c1b7e4`, two new diagnostic files and only that branch's deployment-disable entry alongside the existing X26 guard. This is neither a transfer nor a renewal. This coordination commit changes only these documents.
+
+WebKit run `39181825905`, job `117836010022`, failed at the final `hero-bars.mjs` empty-error assertion with nine local mocked app_data access-control errors. Baseline/candidate attribution remains unknown. The real calendar entry checks passed; later WebKit measurements did not run. Original logs and assertions remain evidence. New supported-CI diagnosis separates baseline/candidate and draining/no-draining with phase/request observations and an invalid-preflight control. Source and browser versions, errors and raw artifacts must remain visible even on failure. Existing release workflows, probes, manifests, mock and seed stay unchanged. No production, live-data, permission or credential changes; no merge, activation or deployment. Preserve PR491 and original branches. This separate approval is not a retroactive approval of, or an alternate route for, the earlier denied X26 push.
+
 **H-X57 · Exact X26 branch guard and candidate-only config hash approved.**
 
 Jorge's 19 October 00:18:13 UTC "Yes" (`Sentinel_f9b50369ee2c8191ab97c3114ed727c6`) approves blocking automatic deployment only on `claude/scheduler-live-integration`. The board records the narrow C93 exception for the existing X26 owner, Claude session `https://claude.ai/code/session_01WT8Lhj3VnYw7eFon84yFeh`, and the parent runtime-QA candidate-only hash exception. No owner is transferred or renewed.
