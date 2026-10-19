@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X67 follow-through · Drain selector fixture handlers before teardown.**
+
+The board permits WT8 only `await context.unrouteAll({behavior:'wait'});` immediately before the selector finalizer's `await browser.close();`, after original file hash verification (`5b01fe0b143a3f90ea6a26b2e0bdeb4f3971da2ced34a03a652a7e2529888573`). Preserve assertions, fixtures, evidence and error exits; no ignoreErrors or blanket catch. Failed Chromium run `39228222402` remains evidence, with fresh supported checks still required. No WT8 branch edit in this docs-only amendment, ownership change or production action.
+
 **H-X67 qualification addendum · Exact branch guard and consumed runtime closure.**
 
 The board enumerates 34 additional consumed runtime/style paths for WT8's candidate manifest, bringing the editor-runtime case to 37 additions over 106 immutable paths, 143 entries total. Only `.github/workflows/manager-spacing.yml` and conditional `scripts/search-runtime.scheduler-v1.sha256` qualification are added here. Select the same-repository editor PR case from event metadata; require the exact existing two-false-entry guard/hash, preserve the old one-guard/109-entry contract for other branches, all immutable/source checks and enumerated negative cases. Final hashes require independent source review; listing dependencies grants no edits to them. No `vercel.json` or original-manifest change, deployment enablement, ownership transfer/renewal or production action. Preserve failures. This commit changes coordination only; the parent hands off to the existing WT8 writer after exact-head serialization.
