@@ -67,6 +67,8 @@ function serve(dist, seen) {
   const server = http.createServer((req, res) => {
     seen.push(req.url);
     const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    // An empty page on the same origin, for the probe's second tab (it shares the storage and the broadcast channel).
+    if (pathname === "/__probe-blank") { res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>blank</title>"); return; }
     let file = path.join(dist, pathname);
     const missing = !file.startsWith(dist) || !fs.existsSync(file) || fs.statSync(file).isDirectory();
     // A route with no file extension is the app; a file that is not there is not found, never the app's page.
@@ -118,11 +120,21 @@ const defer = () => { let resolve; const promise = new Promise((r) => { resolve 
 
 /* ------------------------------------------------------------------ a signed-in dashboard */
 async function openApp(browser, base, { width = 1280, height = 900, touch = false, blocked, errors, name }) {
-  const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
+  // No service worker: the app's own would answer same-origin requests itself, out of reach of the page-level routes below
+  // in WebKit (the delivery request reached the static server there), and nothing this probe checks is about a worker.
+  const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, serviceWorkers: "block" });
   const state = { deliveries: [], answer: "ok", holdStore: null, storeHeld: null, failStore: false, storeReads: 0, dialogs: [] };
   await ctx.route("**/*", async (route) => {
     const target = route.request().url();
     const origin = new URL(target).origin;
+    if (origin === new URL(base).origin && new URL(target).pathname === "/api/daily-deliveries") {
+      // Answered here, on the context's own route: WebKit did not hand this request to a page-level route, and the page
+      // then got the static server's fallback page instead of the delivery rows.
+      const u = new URL(target);
+      state.deliveries.push({ store: u.searchParams.get("store"), month: u.searchParams.get("month"), auth: route.request().headers().authorization || "" });
+      if (state.answer === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(monthRows(u.searchParams.get("store"), u.searchParams.get("month"))) });
+    }
     if (origin === new URL(base).origin || origin === MOCK) {
       if (origin === MOCK && /\/auth\/v1\/token/.test(target)) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(sessionOf(SID_A)) });
       const storeRow = origin === MOCK && /\/rest\/v1\/app_data/.test(target) && /lpc(%3A|:)store(%3A|:)sage-demo/.test(target) && !/day/.test(target) && !/select=updated_at/.test(target);
@@ -158,12 +170,6 @@ async function openApp(browser, base, { width = 1280, height = 900, touch = fals
   page.on("console", (m) => { if (consoleLog.length < 40) consoleLog.push(`${name}: ${m.type()} ${m.text().slice(0, 240)}`); });
   page.on("pageerror", (e) => errors.push(`${name}: ${String(e).slice(0, 300)}`));
   page.on("dialog", async (d) => { state.dialogs.push({ type: d.type(), message: d.message() }); await d.dismiss(); });
-  await page.route("**/api/daily-deliveries**", (route) => {
-    const u = new URL(route.request().url());
-    state.deliveries.push({ store: u.searchParams.get("store"), month: u.searchParams.get("month"), auth: route.request().headers().authorization || "" });
-    if (state.answer === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(monthRows(u.searchParams.get("store"), u.searchParams.get("month"))) });
-  });
   return { ctx, page, state };
 }
 
@@ -186,7 +192,7 @@ async function settle(page, selector) {
 // Another tab of the same browser tells this one that the sign-in changed, as a real second tab would.
 async function announce(ctx, base, event, sid, jti = "first") {
   const other = await ctx.newPage();
-  await other.goto(new URL("/robots.txt", base).href);
+  await other.goto(new URL("/__probe-blank", base).href);
   // The browser's stored session changes first, as it does when another tab signs in, then the tab is told.
   await other.evaluate(([event, session]) => {
     localStorage.setItem("lpc-auth", JSON.stringify(session));
