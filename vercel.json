@@ -1,7 +1,8 @@
 {
   "git": {
     "deploymentEnabled": {
-      "claude/scheduler-live-integration": false
+      "claude/scheduler-live-integration": false,
+      "claude/scheduler-editor-runtime": false
     }
   },
   "functions": {
