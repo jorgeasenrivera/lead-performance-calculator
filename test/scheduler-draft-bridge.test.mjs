@@ -284,7 +284,7 @@ test("what is inside the lists is checked here too, so a lax codec cannot poison
   bad((x) => { x.store.memberships = [7]; return x; }, "a membership that is not an object");
   bad((x) => { x.store.teams = [{ id: "x" }]; return x; }, "a team with no name");
   bad((x) => { x.store.teams.push({ ...x.store.teams[0] }); return x; }, "a duplicate team");
-  bad((x) => { x.store.memberships[0].personId = "nobody"; return x; }, "a membership for someone not in the month");
+  bad((x) => { x.store.memberships[0].personId = ""; return x; }, "a membership with no person");
   bad((x) => { x.store.memberships[0].teamIds = ["unknown"]; return x; }, "a membership in a team that is not there");
   bad((x) => { x.store.memberships[0].storeId = "store-b"; return x; }, "a membership for another store");
   assert.equal(JSON.stringify([p.teamState[0], p.exportMonth(0, "2026-12").projection]), before, "nothing was taken in");
@@ -301,4 +301,20 @@ test("a move that made its own months is clean again once it is undone, and noti
   p.undoOffDay(undo);
   assert.equal(p.unsaved, false, "the months began without those days");
   assert.deepEqual(p.draftStatus(0).unresolved, []);
+});
+
+test("a membership for someone who is not on that month's roster is saved data, and a hydrated member does not hide its dirty partner", () => {
+  const p = make();
+  const { projection } = make().exportMonth(0, "2026-03");
+  projection.store.memberships.push({ storeId: "store-a", personId: "left-in-february", teamIds: ["old"], from: "2014-01-01", to: "2026-02-28" });
+  assert.equal(p.hydrateMonth(0, projection, allow).ok, true);
+  // A group of two months; one of them is loaded from saved state while the other is still unsaved.
+  const q = make();
+  q.get(0, "2026-10"); q.get(0, "2026-11");
+  q.addTeam(0, "Third");
+  const clean = q.exportMonth(0, "2026-10");
+  q.acknowledgeMonth(0, "2026-10", clean.token);
+  assert.deepEqual(q.draftStatus(0).dirtyMonths, ["2026-11"]);
+  assert.equal(q.hydrateMonth(0, clean.projection, allow).ok, true);
+  assert.deepEqual(q.draftStatus(0).unresolved.map((u) => u.months), [["2026-10", "2026-11"]], "the boundary is still stated");
 });

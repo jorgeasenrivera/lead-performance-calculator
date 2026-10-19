@@ -238,7 +238,7 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
     if (!rules.every((r) => plain(r) && typeof r.effective === "string")) return "shape";
     const teamIds = new Set();
     for (const t of teams) { if (!plain(t) || typeof t.id !== "string" || !t.id || typeof t.name !== "string" || teamIds.has(t.id)) return "shape"; teamIds.add(t.id); }
-    if (!memberships.every((m) => plain(m) && m.storeId === c.storeId && ids.has(m.personId) && Array.isArray(m.teamIds) && m.teamIds.every((id) => teamIds.has(id)) && typeof m.from === "string" && typeof m.to === "string")) return "shape";
+    if (!memberships.every((m) => plain(m) && m.storeId === c.storeId && typeof m.personId === "string" && m.personId && Array.isArray(m.teamIds) && m.teamIds.every((id) => teamIds.has(id)) && typeof m.from === "string" && typeof m.to === "string")) return "shape";
     if (typeof timezone !== "string" || !timezone) return "shape";
     try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }); } catch { return "shape"; }
     if (!plain(c.overrides)) return "shape";
@@ -279,7 +279,6 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
       reviewFingerprint: null,
     };
     Map.prototype.set.call(drafts, k, draft);
-    for (const g of groups) g.keys.delete(k);
     seen.set(k, canonOf(k)); baselines.set(k, seen.get(k));
     // Months that were only ever pristine are still pristine under the teams just taken in.
     if (!sameTeams) for (const x of others) { seen.set(x, canonOf(x)); baselines.set(x, seen.get(x)); }
