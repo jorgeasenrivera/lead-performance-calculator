@@ -619,6 +619,13 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X67 · Serialized actual-load provenance and reader/editor integration.**
+
+The board records the parent's bounded eight-path implementation exception for existing X26 WT8 on `claude/scheduler-editor-runtime`, conditional on completed exact-head H-X66 and coordinator-confirmed absence of a conflicting Manager writer. No C97 transfer/renewal. The dashboard loader is in the core, not Manager; therefore a Manager-only epoch stamp cannot prove provenance. Capture the shared adapter snapshot at initial/cache-origin/refresh load, keep `{data, loadedUnder:{storeId,epoch}}` in memory and never persist or relabel it. Thread through existing entries, reuse the three reader files byte-identically from `2ab0db62b8e619cd4a7dd5efa8d9693d7dc8d868`, control month/retry/editor and unify user dirty-close decisions while invalidation masks stale content immediately.
+
+Only the reviewed-candidate `scripts/search-runtime.scheduler-v1.sha256` has conditional final-hash scope after independent source review; the original immutable manifest and existing workflow assertions stay unchanged. Concrete incompatibilities require separate scope, not blind rehash. The new dedicated integration probe/workflow must cover the actual loader, phone/desktop entry and race/close behavior with retained synthetic Chromium/WebKit evidence. Preserve H-X65/H-X66, existing save payloads, unrelated core behavior, access rules and every owner. No implementation in this docs-only amendment; verify expected-head publication and canceled docs deployment. No live persistence/backend wiring, auth-role change, merge or deployment.
+
+
 **H-X66 · Same-owner editor probe compatibility and dedicated browser CI.**
 
 The parent records the exact test-only scope on the board for existing X26 Claude WT8 owner at PR494 `303e638f9201966063cebf538400f7cd2cc8dcd6`, branch `claude/scheduler-editor-runtime`. Four edits only for preview fixture/planner capture: probe-audit-corrections, probe-balance-comparisons, probe-generation and probe-mobile-sheet. The reviewed source wrapper has mountMonthApp and seedTeams; the returned handle has no planner. Intercept the imported createPlanner in test responses to capture and return its actual single instance, with unique-anchor/capture checks. Feed the larger generation fixture through bootstrap before team seeding. Do not change production core or create a parallel planner. Retain all original assertions, interactions and workloads. The two stale quickEdit anchors are a separate pre-existing issue.
