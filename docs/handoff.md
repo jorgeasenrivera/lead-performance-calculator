@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X61 · Parent-owned round-up setup correction, preparation only.**
+
+The parent coordinator assigns only `.github/workflows/manager-spacing.yml` for an uncommitted correction and independent review under existing approved check-fix work. Fresh synthetic login must wait for the expected round-up, click its normal accessible Close button and verify dialog/backdrop disappearance. Preserve every calendar assertion, measurement, negative control, timeout, source hash and deployment guard. No product edits, seen-state shortcut, force-click, or overlay hiding/removal. H-X59's hero-bars correction stays unchanged; X26 and all other owners retain their scope.
+
+Run `39190814873` on PR491 head `0aee81159519bb01567ffeb0bb699bc15f490f4b` passed Chromium but WebKit's desktop calendar click timed out behind `.ru-scrim` before hero-bars ran. The round-up can open after arrival plus 700 ms, while current setup only checks instantaneous visibility. Previous run `39181825905` passed entry checks with identical workflow/product/fixture sources and browser image; exact opening/dismissal timing was not recorded. Review the minimal user-interaction correction and provide a supported validation plan without claiming it tested. This coordination commit alone is published. No correction push to PR491 or another branch, release-CI rerun, merge, deployment, activation, live data, credentials or permissions changes. Stop on any new tool denial; no retry or alternate route. No ownership transfer or X25 renewal.
+
 **H-X60 · Independent reader lifecycle delegated within X19/X20 completion.**
 
 The parent coordinator assigns existing child `01a0f2e1-c445-749c-90b3-7c08aa06e0df` the three new files listed on the board, on `codex/reported-reader-integration` at verified `a6c2e6c4b8ce1080374ce12151fa005747f3f196`: `src/use-reported-month.mjs`, `test/use-reported-month.test.mjs`, `scripts/probe-reported-month-hook.mjs`. This is bounded preparation under the existing parent X19/X20 completion assignment, not an ownership transfer or renewal. Original branches and all existing owners remain intact.
