@@ -1,0 +1,275 @@
+# The hosted scheduler editor, in a real browser, in both engines.
+#
+# Restricted on purpose: this repository's own editor-runtime branch (and pull
+# requests from it into the integration branch), read-only token, no secrets, no
+# deployment, nothing but a local page server and synthetic fixtures. The probe
+# blocks every request that is not to that server and fails if one is attempted.
+# Nothing here is a release check; it exists so the editor is looked at in WebKit
+# as well as Chromium before anything is wired to it.
+name: scheduler-editor
+
+on:
+  push:
+    branches: [claude/scheduler-editor-runtime]
+  pull_request:
+    branches: [claude/scheduler-live-integration]
+    paths:
+      - src/scheduler-editor.jsx
+      - src/scheduler-editor-adapter.mjs
+      - test/scheduler-editor-adapter.test.mjs
+      - scripts/probe-scheduler-editor.mjs
+      - scripts/scheduler-performance/**
+      - .github/workflows/scheduler-editor.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduler-editor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The hosted editor and the core mounted straight into a page: dispose, store date,
+  # month rosters, sign-in, masking, wording, no listener left behind, no external request.
+  hosted:
+    if: >-
+      github.repository == 'jorgeasenrivera/lead-performance-calculator' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'claude/scheduler-editor-runtime'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: npm ci
+      # The browsers are in the image; only the package that drives them is needed,
+      # and it is not a dependency of the app.
+      - run: npm i --no-save playwright@1.63.0
+      - name: Unit tests for the adapter
+        run: node --test test/scheduler-editor-adapter.test.mjs
+      - name: Hosted editor probe
+        shell: bash
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+          PROBE_EVIDENCE_DIR: editor-evidence
+        run: node scripts/probe-scheduler-editor.mjs 2>&1 | tee editor-evidence.log; exit "${PIPESTATUS[0]}"
+      - name: Keep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-editor-${{ matrix.engine }}
+          path: |
+            editor-evidence/
+            editor-evidence.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  # The preview's own probes, before and after the editor was extracted.
+  #
+  # This is NOT a pass of seven probes. Six of them fail on the preview as it was before
+  # the extraction (stale expectations: a moved "Schedule tools" disclosure, an old
+  # `let quickEdit = false;` anchor, an `Off 6` count, a geometry check, an accessible-name
+  # check). Those failures are not repaired here and are reported as what they are:
+  # baseline diagnostics. What this job requires is:
+  #   1. each of the four probes that now capture the planner says it captured exactly one
+  #      real instance (and none failed on the capture);
+  #   2. probe-editor-embedded passes on the extracted preview;
+  #   3. a differential: the frozen pre-extraction preview (f12b228) and the extracted one
+  #      are each built and run in the SAME engine, and each probe must fail at the SAME
+  #      point on both. In Chromium that point must also be the recorded one below. A probe
+  #      that fails somewhere new, passes unexpectedly, or leaves no result fails the job.
+  # The old audit and balance probes need their stale `let quickEdit = false;` anchor
+  # rewritten mechanically (a sed, below) to reach the steps that are compared at all.
+  preview:
+    if: >-
+      github.repository == 'jorgeasenrivera/lead-performance-calculator' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'claude/scheduler-editor-runtime'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The frozen pre-extraction preview: PR491 composed with the approved preview, before month-app-core.
+      - uses: actions/checkout@v4
+        with:
+          ref: f12b228e963d5e33e7c9b68b61482c5a8a2ef6ff
+          path: .old
+          fetch-depth: 0
+          persist-credentials: false
+      - run: npm ci
+      # The probes name their tools by fixed path; provide those, pinned, outside the repository.
+      - name: Tools the probes expect
+        shell: bash
+        run: |
+          mkdir -p /workspace/cloud-tools /workspace/qa-tools
+          npm i --prefix /workspace/cloud-tools playwright@1.63.0
+          npm i --prefix /workspace/qa-tools axe-core@4.14.0
+          ln -sf "$(node -e "console.log(require('/workspace/cloud-tools/node_modules/playwright').chromium.executablePath())")" /usr/bin/chromium
+      # Some probes read historic files with `git show`. The container user does not own the checkout, so git
+      # refuses it until it is told these two directories are fine (this was the one difference between the runs).
+      - name: Let git read the checkouts
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/.old"
+      - name: Build both previews
+        shell: bash
+        run: |
+          node scripts/scheduler-performance/build.mjs
+          ln -s "$PWD/node_modules" .old/node_modules
+          (cd .old && node scripts/scheduler-performance/build.mjs)
+      - name: Run the probes on both builds, in this engine
+        shell: bash
+        env:
+          BROWSER: ${{ matrix.engine }}
+          BROWSERS: ${{ matrix.engine }}
+        run: |
+          mkdir -p preview-evidence/old preview-evidence/new
+          cat > "$RUNNER_TEMP/serve.cjs" <<'EOF'
+          const http = require("http"), fs = require("fs"), path = require("path");
+          const root = path.resolve(process.argv[2]);
+          const types = { ".html": "text/html", ".mjs": "text/javascript", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json" };
+          http.createServer((req, res) => {
+            let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+            if (p.endsWith("/")) p += "index.html";
+            const f = path.join(root, p);
+            if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404).end(); return; }
+            res.writeHead(200, { "content-type": types[path.extname(f)] || "application/octet-stream" }).end(fs.readFileSync(f));
+          }).listen(5190, "127.0.0.1");
+          EOF
+          serve() {
+            node "$RUNNER_TEMP/serve.cjs" "$1" > "preview-evidence/serve-$2.log" 2>&1 &
+            SERVER=$!
+            for i in $(seq 1 50); do curl -sf http://127.0.0.1:5190/planner/ > /dev/null && break; sleep 0.2; done
+          }
+          # name side cwd file [ENV=value ...]
+          run() {
+            name="$1"; side="$2"; dir="$3"; file="$4"; shift 4
+            set +e
+            (cd "$dir" && env EVIDENCE_DIR="$GITHUB_WORKSPACE/preview-evidence/$side/$name-evidence" "$@" timeout 240 node "$file") > "preview-evidence/$side/$name.log" 2>&1
+            echo $? > "preview-evidence/$side/$name.code"
+            set -e
+          }
+          if [ "$BROWSER" = chromium ]; then ALL="probe-audit-corrections probe-balance-comparisons probe-generation probe-mobile-sheet probe-embedded-sheet probe-polish probe-editor-embedded"
+          else ALL="probe-audit-corrections probe-balance-comparisons probe-generation probe-editor-embedded"; fi
+          # The old preview, frozen. Its audit and balance probes only get past their stale anchor with the sed.
+          serve .old/dist-harness/scheduler-performance old
+          for name in $ALL; do
+            file="scripts/scheduler-performance/$name.mjs"
+            case "$name" in
+              probe-audit-corrections|probe-balance-comparisons)
+                sed 's/let quickEdit = false;/let quickEdit = false,/g' ".old/$file" > ".old/scripts/scheduler-performance/$name.anchored.mjs"
+                file="scripts/scheduler-performance/$name.anchored.mjs" ;;
+            esac
+            if [ "$name" = probe-editor-embedded ]; then run "$name" old .old "$file" AFTER_ONLY=1; else run "$name" old .old "$file"; fi
+          done
+          kill "$SERVER" 2>/dev/null || true; sleep 1
+          # The extracted preview.
+          serve dist-harness/scheduler-performance new
+          for name in $ALL; do
+            file="scripts/scheduler-performance/$name.mjs"
+            if [ "$name" = probe-editor-embedded ]; then run "$name" new . "$file" AFTER_ONLY=1; else run "$name" new . "$file"; fi
+          done
+          kill "$SERVER" 2>/dev/null || true
+      - name: Judge
+        shell: bash
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          cat > "$RUNNER_TEMP/judge.cjs" <<'EOF'
+          const fs = require("fs");
+          const engine = process.env.ENGINE;
+          const read = (side, name, ext) => { try { return fs.readFileSync(`preview-evidence/${side}/${name}.${ext}`, "utf8"); } catch { return null; } };
+          // Where a probe stopped: the first error line, and the first locator it was waiting for. Paths and numbers
+          // that differ between a run and the next are dropped.
+          const where = (log) => {
+            const lines = log.split("\n");
+            const at = lines.findIndex((l) => /AssertionError|TimeoutError|Error:|Timeout \d+ms exceeded/.test(l));
+            if (at < 0) return null;
+            const head = lines[at].replace(/\/[^\s]*\//g, "").replace(/\d+ms/, "Nms").split("{")[0].trim().slice(0, 200);
+            const wait = lines.slice(at, at + 12).find((l) => /waiting for locator/.test(l));
+            return wait ? `${head} | ${wait.replace(/\x1b\[[0-9;]*m/g, "").trim()}` : head;
+          };
+          // The recorded failure points in Chromium (verified on the frozen pre-extraction preview and the extracted one).
+          const known = {
+            "probe-audit-corrections": "locator('#import-schedule')",
+            "probe-balance-comparisons": "locator('#balance')",
+            "probe-generation": "locator('[name=mode]')",
+            "probe-mobile-sheet": "/Off 6/",
+            "probe-embedded-sheet": "desktop geometry changed",
+            "probe-polish": "accessible name retains all visible day facts",
+          };
+          const capture = ["probe-audit-corrections", "probe-balance-comparisons", "probe-generation", ...(engine === "chromium" ? ["probe-mobile-sheet"] : [])];
+          const names = engine === "chromium"
+            ? ["probe-audit-corrections", "probe-balance-comparisons", "probe-generation", "probe-mobile-sheet", "probe-embedded-sheet", "probe-polish", "probe-editor-embedded"]
+            : ["probe-audit-corrections", "probe-balance-comparisons", "probe-generation", "probe-editor-embedded"];
+          const problems = [], required = [], diagnostics = [];
+          for (const name of names) {
+            const o = { code: read("old", name, "code"), log: read("old", name, "log") };
+            const n = { code: read("new", name, "code"), log: read("new", name, "log") };
+            if (o.code === null || n.code === null || o.log === null || n.log === null) { problems.push(`${name}: a result is missing`); continue; }
+            const oc = Number(o.code.trim()), nc = Number(n.code.trim());
+            if (name === "probe-editor-embedded") {
+              required.push(`${name}: old exit ${oc}, new exit ${nc} (must pass on the extracted preview)`);
+              if (nc !== 0) problems.push(`${name} did not pass on the extracted preview (exit ${nc})`);
+              if (oc !== 0) problems.push(`${name} did not pass on the frozen pre-extraction preview (exit ${oc})`);
+              continue;
+            }
+            if (capture.includes(name)) {
+              const done = /planner captured:/.test(n.log), broke = /exactly one planner instance|planner import anchor|icon import anchor|bootstrap fixture anchor|exposed planner is the captured/.test(n.log);
+              required.push(`${name}: planner captured exactly once = ${done && !broke}`);
+              if (!done || broke) problems.push(`${name}: the planner capture did not complete`);
+            }
+            if (oc === 0 || nc === 0) { problems.push(`${name}: passed on ${oc === 0 ? "old" : ""}${oc === 0 && nc === 0 ? " and " : ""}${nc === 0 ? "new" : ""}; the recorded baseline says it fails, so the record is out of date`); continue; }
+            const ow = where(o.log), nw = where(n.log);
+            diagnostics.push(`${name}: old exit ${oc} at [${ow}] | new exit ${nc} at [${nw}]`);
+            if (!ow || !nw) { problems.push(`${name}: a failure point could not be read`); continue; }
+            if (ow !== nw) problems.push(`${name}: fails at a different point after the extraction\n    old: ${ow}\n    new: ${nw}`);
+            if (engine === "chromium" && !nw.includes(known[name])) problems.push(`${name}: fails somewhere other than the recorded point (${known[name]})\n    new: ${nw}`);
+          }
+          const out = [
+            `## scheduler-editor preview, ${engine}`,
+            "", "### Required",
+            ...required.map((l) => `- ${l}`),
+            `- differential: ${diagnostics.length} stale probes fail at the same point on the frozen pre-extraction preview and the extracted one${engine === "chromium" ? ", and at the recorded point" : " (no WebKit baseline is recorded, so equality is the only test)"}`,
+            "", "### Baseline diagnostics (these probes FAIL on both builds; none of them passed)",
+            ...diagnostics.map((l) => `- ${l}`),
+            "", problems.length ? "### Problems\n" + problems.map((l) => `- ${l}`).join("\n") : "### No problems found",
+          ].join("\n");
+          console.log(out);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY || "/dev/null", out + "\n");
+          fs.writeFileSync("preview-evidence/judge.md", out + "\n");
+          if (problems.length) { for (const p of problems) console.log(`::error::${p.split("\n")[0]}`); process.exit(1); }
+          EOF
+          node "$RUNNER_TEMP/judge.cjs"
+      - name: Keep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-editor-preview-${{ matrix.engine }}
+          path: |
+            preview-evidence/
+          if-no-files-found: warn
+          retention-days: 7

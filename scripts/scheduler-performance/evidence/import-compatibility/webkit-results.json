@@ -1,0 +1,80 @@
+[
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 1,
+    "input": "keyboard",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "webkit",
+    "width": 320,
+    "scale": 2,
+    "input": "keyboard",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 1,
+    "input": "keyboard",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "webkit",
+    "width": 390,
+    "scale": 2,
+    "input": "keyboard",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 1,
+    "input": "keyboard",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "webkit",
+    "width": 1440,
+    "scale": 2,
+    "input": "keyboard",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  }
+]

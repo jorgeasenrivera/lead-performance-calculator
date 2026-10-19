@@ -97,13 +97,61 @@ jobs:
           cd .frozen-runtime
           sha256sum --check scripts/search-runtime.sha256
       - name: Verify the scheduler candidate manifest contract
+        env:
+          # Chosen from the event's own metadata, never from anything the pull request wrote into the workspace: a pull
+          # request from this repository whose head branch is exactly the editor-runtime branch. Everything else keeps
+          # the original one-guard, 109-entry contract.
+          EDITOR_RUNTIME_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'claude/scheduler-editor-runtime' }}
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           import assert from 'node:assert/strict';
-          const parse = (file) => {
+          const GUARD_ONE = '  "git": {\n    "deploymentEnabled": {\n      "claude/scheduler-live-integration": false\n    }\n  },\n';
+          const GUARD_TWO = '  "git": {\n    "deploymentEnabled": {\n      "claude/scheduler-live-integration": false,\n      "claude/scheduler-editor-runtime": false\n    }\n  },\n';
+          const CALENDAR = ['src/scheduler-calendar-model.mjs', 'src/scheduler-calendar.css', 'src/scheduler-calendar.jsx'];
+          const EDITOR = [
+            'scripts/scheduler-performance/assignment-view.mjs',
+            'scripts/scheduler-performance/calendar-key.mjs',
+            'scripts/scheduler-performance/calendar-tokens.css',
+            'scripts/scheduler-performance/day-edit-state.mjs',
+            'scripts/scheduler-performance/day-motion.mjs',
+            'scripts/scheduler-performance/demand-context.mjs',
+            'scripts/scheduler-performance/generation-ui.mjs',
+            'scripts/scheduler-performance/generation.mjs',
+            'scripts/scheduler-performance/haptics.mjs',
+            'scripts/scheduler-performance/import-compatibility.mjs',
+            'scripts/scheduler-performance/import-ui.mjs',
+            'scripts/scheduler-performance/mobile-roster.mjs',
+            'scripts/scheduler-performance/month-app-core.mjs',
+            'scripts/scheduler-performance/month-model.mjs',
+            'scripts/scheduler-performance/name-key.mjs',
+            'scripts/scheduler-performance/off-day-command.mjs',
+            'scripts/scheduler-performance/off-day-ui.mjs',
+            'scripts/scheduler-performance/planner.css',
+            'scripts/scheduler-performance/sage-icons.mjs',
+            'scripts/scheduler-performance/schedule-import.mjs',
+            'scripts/scheduler-performance/shared-system.css',
+            'scripts/scheduler-performance/shift-intervals.mjs',
+            'scripts/scheduler-performance/store-editor.mjs',
+            'scripts/scheduler-performance/team-balance.mjs',
+            'scripts/scheduler-performance/team-model.mjs',
+            'scripts/scheduler-performance/team-ui.mjs',
+            'scripts/scheduler-performance/weekly-hours.mjs',
+            'scripts/scheduler-proposal/model.mjs',
+            'src/reported-auth.mjs',
+            'src/reported-month.mjs',
+            'src/scheduler-editor-adapter.mjs',
+            'src/scheduler-editor.jsx',
+            'src/scheduler-load-context.mjs',
+            'src/use-reported-month.mjs'
+          ];
+          const CASES = {
+            original: { added: CALENDAR, size: 109, guard: GUARD_ONE, hash: 'd1bcea9d06773cb061253fffaa84fa6aadee3fff13bd8a8b706232c3f0d9ab5d' },
+            editor: { added: [...CALENDAR, ...EDITOR], size: 143, guard: GUARD_TWO, hash: '662cf0e4955ad4cff2b47ce966a05e41ceb0379651937060fee0eb741702627d' },
+          };
+          const parse = (file, text) => {
             const entries = new Map();
-            for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+            for (const line of text.split(/\r?\n/)) {
               if (!line || line.startsWith('#')) continue;
               assert(!line.startsWith('PENDING'), `${file}: candidate hashes are pending review`);
               const match = /^([a-f0-9]{64})  ([^\s]+)$/.exec(line);
@@ -115,33 +163,77 @@ jobs:
             }
             return entries;
           };
-          const frozen = parse('scripts/search-runtime.sha256');
-          const candidate = parse('scripts/search-runtime.scheduler-v1.sha256');
-          assert.equal(frozen.size, 106, 'released manifest must retain all 106 paths');
-          const added = [...candidate.keys()].filter(path => !frozen.has(path)).sort();
-          const dropped = [...frozen.keys()].filter(path => !candidate.has(path)).sort();
-          assert.deepEqual(dropped, [], 'candidate dropped frozen paths');
-          assert.deepEqual(added, [
-            'src/scheduler-calendar-model.mjs',
-            'src/scheduler-calendar.css',
-            'src/scheduler-calendar.jsx',
-          ], 'candidate additions must be exactly the three scheduler runtime files');
-          const changed = [...frozen.keys()].filter(path => candidate.get(path) !== frozen.get(path)).sort();
-          assert.deepEqual(changed, ['src/LeadPerformanceCalculator.jsx', 'src/Manager.jsx', 'vercel.json'],
-            'only the reviewed core, Manager and exact branch guard hashes may differ');
-          const originalConfig = readFileSync('.frozen-runtime/vercel.json', 'utf8');
-          assert.equal(frozen.get('vercel.json'), '4ae9575bf5380fc1231df7f3ae7e111ea43a22a70daea02da74e087d7d8b9cda');
-          assert(originalConfig.startsWith('{\n'), 'frozen config opening must match');
-          assert(!Object.hasOwn(JSON.parse(originalConfig), 'git'), 'frozen config must not have Git settings');
-          const exactGuard = '  "git": {\n    "deploymentEnabled": {\n      "claude/scheduler-live-integration": false\n    }\n  },\n';
-          const expectedConfig = originalConfig.slice(0, 2) + exactGuard + originalConfig.slice(2);
-          assert.equal(readFileSync('vercel.json', 'utf8'), expectedConfig, 'only the exact approved branch guard may change config');
-          assert.equal(candidate.get('vercel.json'), 'd1bcea9d06773cb061253fffaa84fa6aadee3fff13bd8a8b706232c3f0d9ab5d', 'config hash must match the reviewed branch guard');
-          assert.equal(candidate.size, 109, 'candidate must cover all retained and added paths');
-          console.log('Manifest contract passed: 106 retained paths, 3 declared additions, 3 declared rehashes including the exact branch guard.');
+          // Pure over its inputs, so the same function judges the real files and every deliberately damaged copy below.
+          const verify = (kind, { frozenText, candidateText, originalConfig, config }) => {
+            const want = CASES[kind];
+            const frozen = parse('scripts/search-runtime.sha256', frozenText);
+            const candidate = parse('scripts/search-runtime.scheduler-v1.sha256', candidateText);
+            assert.equal(frozen.size, 106, 'released manifest must retain all 106 paths');
+            const added = [...candidate.keys()].filter(path => !frozen.has(path)).sort();
+            const dropped = [...frozen.keys()].filter(path => !candidate.has(path)).sort();
+            assert.deepEqual(dropped, [], 'candidate dropped frozen paths');
+            assert.deepEqual(added, [...want.added].sort(), kind === 'editor'
+              ? 'candidate additions must be exactly the three calendar files and the 34 enumerated editor files'
+              : 'candidate additions must be exactly the three scheduler runtime files');
+            const changed = [...frozen.keys()].filter(path => candidate.get(path) !== frozen.get(path)).sort();
+            assert.deepEqual(changed, ['src/LeadPerformanceCalculator.jsx', 'src/Manager.jsx', 'vercel.json'],
+              'only the reviewed core, Manager and exact branch guard hashes may differ');
+            assert.equal(frozen.get('vercel.json'), '4ae9575bf5380fc1231df7f3ae7e111ea43a22a70daea02da74e087d7d8b9cda');
+            assert(originalConfig.startsWith('{\n'), 'frozen config opening must match');
+            assert(!Object.hasOwn(JSON.parse(originalConfig), 'git'), 'frozen config must not have Git settings');
+            assert.equal(config, originalConfig.slice(0, 2) + want.guard + originalConfig.slice(2), 'only the exact approved branch guard may change config');
+            assert.equal(candidate.get('vercel.json'), want.hash, 'config hash must match the reviewed branch guard');
+            assert.equal(candidate.size, want.size, 'candidate must cover all retained and added paths');
+          };
+          const read = file => readFileSync(file, 'utf8');
+          const inputs = { frozenText: read('scripts/search-runtime.sha256'), candidateText: read('scripts/search-runtime.scheduler-v1.sha256'),
+            originalConfig: read('.frozen-runtime/vercel.json'), config: read('vercel.json') };
+          const kind = process.env.EDITOR_RUNTIME_PR === 'true' ? 'editor' : 'original';
+          verify(kind, inputs);
+          // Every case that must be refused, in memory, against the case under test.
+          const lines = inputs.candidateText.split('\n');
+          const hashOf = path => lines.find(l => l.endsWith('  ' + path)).slice(0, 64);
+          const without = path => lines.filter(l => !l.endsWith('  ' + path)).join('\n');
+          const refuse = (name, change) => assert.throws(() => verify(kind, { ...inputs, ...change }), undefined, `must refuse: ${name}`);
+          const flip = h => (h[0] === 'a' ? 'b' : 'a') + h.slice(1);
+          refuse('a dropped original entry', { candidateText: without('api/_env.mjs') });
+          refuse('a missing declared addition', { candidateText: without('src/scheduler-calendar.jsx') });
+          refuse('an extra entry', { candidateText: inputs.candidateText + '\n' + '0'.repeat(64) + '  src/unreviewed.mjs\n' });
+          refuse('a duplicate entry', { candidateText: inputs.candidateText + '\n' + hashOf('api/_env.mjs') + '  api/_env.mjs\n' });
+          refuse('a pending entry', { candidateText: inputs.candidateText + '\nPENDING src/x.mjs\n' });
+          refuse('an unsafe path', { candidateText: inputs.candidateText + '\n' + '0'.repeat(64) + '  ../escape.mjs\n' });
+          refuse('an unrelated original entry changed', { candidateText: inputs.candidateText.replace(hashOf('api/_env.mjs'), flip(hashOf('api/_env.mjs'))) });
+          refuse('the wrong config checksum', { candidateText: inputs.candidateText.replace(hashOf('vercel.json'), flip(hashOf('vercel.json'))) });
+          refuse('an altered immutable manifest', { frozenText: inputs.frozenText.replace(/^([a-f0-9])/m, c => (c === 'a' ? 'b' : 'a')) });
+          refuse('the other case\'s guard', { config: inputs.originalConfig.slice(0, 2) + CASES[kind === 'editor' ? 'original' : 'editor'].guard + inputs.originalConfig.slice(2) });
+          refuse('the first guard missing', { config: inputs.config.replace('      "claude/scheduler-live-integration": false', '') });
+          refuse('the first guard enabled', { config: inputs.config.replace('"claude/scheduler-live-integration": false', '"claude/scheduler-live-integration": true') });
+          refuse('an extra guard', { config: inputs.config.replace('"claude/scheduler-live-integration": false', '"claude/scheduler-live-integration": false,\n      "claude/other": false') });
+          refuse('an unrelated config edit', { config: inputs.config.replace('"functions"', '"functions2"') });
+          if (kind === 'editor') {
+            refuse('the second guard missing', { config: inputs.config.replace(',\n      "claude/scheduler-editor-runtime": false', '') });
+            refuse('the second guard enabled', { config: inputs.config.replace('"claude/scheduler-editor-runtime": false', '"claude/scheduler-editor-runtime": true') });
+          }
+          // The editor case is not available to anything else: judged as the original case, the same files are refused.
+          if (kind === 'editor') assert.throws(() => verify('original', inputs), undefined, 'the expanded contract must not satisfy the original one');
+          console.log(`Manifest contract passed (${kind} case): ${CASES[kind].size} entries, ${CASES[kind].added.length} declared additions, exact branch guard${kind === 'editor' ? 's' : ''}, ${kind === 'editor' ? 16 : 14} refusals proved.`);
           NODE
       - name: Verify the exact candidate runtime
         run: sha256sum --check scripts/search-runtime.scheduler-v1.sha256
+      - name: Prove the baseline and checksum checks refuse damaged copies
+        run: |
+          set -eu
+          tmp=$(mktemp -d)
+          # an altered immutable manifest is not the released one
+          cp scripts/search-runtime.sha256 "$tmp/baseline"; printf '\n' >> "$tmp/baseline"
+          if cmp "$tmp/baseline" .frozen-runtime/scripts/search-runtime.sha256 > /dev/null 2>&1; then echo "an altered baseline was accepted"; exit 1; fi
+          # a candidate entry whose checksum does not match its source
+          awk 'BEGIN{done=0} /^[a-f0-9]{64}  /{ if(!done){ c=substr($0,1,1); r=(c=="a")?"b":"a"; $0=r substr($0,2); done=1 } } {print}' scripts/search-runtime.scheduler-v1.sha256 > "$tmp/mismatch"
+          if sha256sum --check "$tmp/mismatch" > /dev/null 2>&1; then echo "a checksum mismatch was accepted"; exit 1; fi
+          # a candidate entry whose source is missing
+          { cat scripts/search-runtime.scheduler-v1.sha256; printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 src/does-not-exist.mjs; } > "$tmp/missing"
+          if sha256sum --check "$tmp/missing" > /dev/null 2>&1; then echo "a missing source was accepted"; exit 1; fi
+          echo "Baseline and checksum checks refused all three damaged copies."
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Build fictional app
