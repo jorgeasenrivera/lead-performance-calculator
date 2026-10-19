@@ -885,10 +885,10 @@ listen(app,"touchend",event=>{
       if (disposed) return { ok: false, reason: "disposed" };
       try { return planner.acknowledgeMonth(index, month, token); } catch { return { ok: false, reason: "scope" }; }
     },
-    hydrateMonth(projection, index = selected) {
+    hydrateMonth(projection, index = selected, expectedScope) {
       if (disposed) return { ok: false, reason: "disposed" };
       let out;
-      try { out = planner.hydrateMonth(index, projection, opts.draftCodec ? (p) => opts.draftCodec.verify(p) : undefined); } catch { return { ok: false, reason: "refused" }; }
+      try { out = planner.hydrateMonth(index, projection, opts.draftCodec ? (p) => opts.draftCodec.verify(p) : undefined, expectedScope); } catch { return { ok: false, reason: "refused" }; }
       if (out.ok) { try { render(); } catch {} }
       return out;
     },

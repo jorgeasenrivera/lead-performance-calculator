@@ -248,15 +248,24 @@ export function createPlanner(stores, { assignmentForDay = () => null } = {}) {
   };
   // Takes a saved month in. It never writes the month's draft by way of the map's own set, which the editor wraps to
   // seed a roster into each NEW draft: that is for months nobody has saved, and would replace the people saved here.
-  const hydrateMonth = (index, input, verify) => {
+  const hydrateMonth = (index, input, verify, expectedScope) => {
     if (!stores[index]) return refuse("scope");
+    // Capture the requested scope before invoking caller code. Legacy direct
+    // callers bind to their input month; the save binding supplies its load scope.
+    const expectedStore = expectedScope === undefined ? stores[index].id : expectedScope?.storeId;
+    const expectedMonth = expectedScope === undefined ? input?.month : expectedScope?.month;
+    if (expectedStore !== stores[index].id) return refuse("scope");
+    if (!validMonth(expectedMonth)) return refuse(expectedScope === undefined ? "shape" : "scope");
+    const matchesScope = value => value?.storeId === expectedStore && value?.month === expectedMonth;
     if (typeof verify !== "function") return refuse("codec-missing");
     let candidate;
     try { candidate = structuredClone(input); } catch { return refuse("shape"); }
+    if (!matchesScope(candidate)) return refuse("scope");
     let verified;
     try { verified = verify(structuredClone(candidate)); } catch { return refuse("codec-refused"); }
     if (verified === false || verified === null || verified === undefined) return refuse("codec-refused");
     if (verified !== true) { try { candidate = structuredClone(verified); } catch { return refuse("codec-refused"); } }
+    if (!matchesScope(candidate)) return refuse("scope");
     const bad = shapeProblem(candidate, index);
     if (bad) return refuse(bad);
     const k = key(index, candidate.month);

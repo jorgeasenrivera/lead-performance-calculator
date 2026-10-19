@@ -85,7 +85,7 @@ export default function SchedulerEditor({
           hasDraft: () => handle.hasDraft(),
           exportMonth: (month, index) => handle.exportMonth(month, index),
           acknowledgeMonth: (month, token, index) => handle.acknowledgeMonth(month, token, index),
-          hydrateMonth: (projection, index) => handle.hydrateMonth(projection, index),
+          hydrateMonth: (projection, index, expectedScope) => handle.hydrateMonth(projection, index, expectedScope),
           draftStatus: (index) => handle.draftStatus(index),
           reviewPendingDay: (day) => handle.reviewPendingDay(day),
         };

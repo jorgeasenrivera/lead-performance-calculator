@@ -134,6 +134,7 @@ export function createSchedulerDraftBinding({auth, transport, getEditor, storeId
       const e = get(month), running = busy(e, 'load');
       if (running) return running;
       if (e.accepted || e.submission) throw draftError('already-loaded');
+      const expectedScope = Object.freeze({storeId, month});
       const before = exportMonth(month).projection, initial = status();
       if (initial.pending || initial.dirtyMonths.includes(month)) throw draftError('unsaved-editor-changes');
       return start(e, 'load', () => e.controller.load(), operation => {
@@ -143,7 +144,8 @@ export function createSchedulerDraftBinding({auth, transport, getEditor, storeId
         if (operation.changed || latest.pending || latest.dirtyMonths.includes(month)
             || !equal(before, exportMonth(month).projection)) { e.error = 'editor-changed-during-load'; return; }
         if (s.status === 'ready') {
-          const hydrated = editor.hydrateMonth(s.draft, index);
+          if (s.draft?.storeId !== expectedScope.storeId || s.draft?.month !== expectedScope.month) { e.error = 'scope'; return; }
+          const hydrated = editor.hydrateMonth(s.draft, index, expectedScope);
           if (hydrated?.ok !== true) { e.error = hydrated?.reason || 'hydration-refused'; return; }
           // A verifier which transforms the projection must not silently leave
           // the editor and server baseline representing different models.
