@@ -66,6 +66,9 @@ test("a newer load of the same store overtakes an older one, whichever answers l
   assert.equal(acceptLoad(second, auth, quick).ok, true);
   assert.equal(acceptLoad(first, auth, slow).reason, "overtaken");
   assert.equal(loadedUnder(slow), null);
+  const refresh = beginLoad(auth, "store-a", "refresh");
+  assert.equal(acceptLoad(refresh, auth, doc()).ok, true, "a refresh is its own lane");
+  assert.equal(acceptLoad(second, auth, doc()).ok, true, "and does not overtake the load that is putting the store on screen");
   const other = beginLoad(auth, "store-b");
   assert.equal(acceptLoad(other, auth, doc({ __storeId: "store-b" })).ok, true, "another store's load is its own line");
   assert.equal(acceptLoad(second, auth, doc()).ok, true, "the latest ticket for a store still stands");
