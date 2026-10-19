@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X63 · X26 Scope B isolated editor runtime, no entry wiring.**
+
+The parent assigns existing X26 Claude WT8 owner the bounded editor extraction on `claude/scheduler-editor-runtime` under launch-preparation approval. Compose verified PR491 `6e2e159f9bfe53599f68d7c4225f31558bea2cac` with approved preview `e3caf183ada1c4ce2b555e224f9a5f5056c3119d`; clean merge-tree `3cb82aab07e9daa234da1ba22dd5784365b54f29` retains parent workflow repairs and adds only 98 preview-directory changes. The board lists the exact bootstrap/core/build-copy, new runtime/adapter/test/probe files and branch-only deployment-stop exception. Originals remain unchanged. No ownership transfer/renewal; implementation stays with X26.
+
+Inject real root/stores/assignment resolution/store-local clock/callbacks and fully dispose listeners/pending state. Explicit real teams/memberships, including empty arrays, must prevent synthetic seed fallback. Reuse editor modules read-only; no model/generation/import/team/CSS writes, Manager/calendar wiring, backend writes or durable-save claims. Cover real-ID/unknown/scope-switch/future-month/cancel/pending/remount/error/duplicate behavior and preview parity. Shared review provider requires exact reviewed handoff; parent owns later manifest qualification. Add only this branch's false deployment entry before source publication, preserve existing guards/settings, obtain independent review and applicable synthetic tests/build/browser evidence, and verify expected-head publication/exact SHA/zero deployments. No main/production merge, deploy, activation, live data or security change. This commit records coordination only; stop on any new tool denial without workaround.
+
 **H-X62 · X26 Scope A month review provider, source only.**
 
 Under Jorge's launch-preparation approval `Sentinel_479861925fa081918c0881a3d126ad2d`, the parent assigns existing X26 Claude WT8 owner the new `claude/scheduler-review-provider` branch from exact checkpoint `0aee81159519bb01567ffeb0bb699bc15f490f4b`. The board records the exact two new month-review files, bounded integration-contract section and branch-only deployment-stop exception. PR491 stays frozen except the parent's workflow correction. Scope B editor composition is separate and not assigned. No ownership transfer or renewal.
