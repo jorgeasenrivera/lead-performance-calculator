@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { norm } from "../api/_report-parsers.mjs";
+import { isMeasured } from "../api/_standard-rollup.mjs";
 
 const manager = await readFile(new URL("../src/Manager.jsx", import.meta.url), "utf8");
 const core = await readFile(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
@@ -9,15 +10,16 @@ const phone = manager.slice(manager.indexOf("function BoardRoomPhone("), manager
 // Execute the production selector, including its actual memo dependencies.
 const selector = phone.slice(phone.indexOf("  const q = norm(query);"), phone.indexOf("\n  const goalMonth ="));
 assert.ok(selector.includes("const rows = useMemo"));
-const select = new Function("people", "roleFilter", "limitOnly", "drill", "query", "norm", "useMemo", selector + "\nreturn rows;");
-const person = (id, name, roleId, units, atLimit, state, pct) => ({ a: { id, name, roleId }, units, atLimit, five: [{ key: "engagedVideoPct", state }], st: { internetPct: pct } });
+const select = new Function("people", "roleFilter", "limitOnly", "drill", "query", "norm", "useMemo", "isMeasured", selector + "\nreturn rows;");
+// A real row's dot carries the figure it was read from, and the below-standard drill only admits a figure that can be a measurement.
+const person = (id, name, roleId, units, atLimit, state, pct) => ({ a: { id, name, roleId }, units, atLimit, five: [{ key: "engagedVideoPct", state, v: state === "ok" ? 0.6 : state === "warn" ? 0.4 : 0.1 }], st: { internetPct: pct } });
 const people = [
   person("a", "Peter Tran", "sales", 8, false, "ok", .3),
   person("b", "Petra Lee", "sales", 12, true, "warn", .2),
   person("c", "Peter Alvarez", "internet", 10, true, "bad", .4),
   person("d", "Jo Lee", "sales", 12, false, "bad", null),
 ];
-const rows = (query = "", { role = "sales", limit = false, drill = null, memo = (fn) => fn() } = {}) => select(people, role, limit, drill, query, norm, memo);
+const rows = (query = "", { role = "sales", limit = false, drill = null, memo = (fn) => fn() } = {}) => select(people, role, limit, drill, query, norm, memo, isMeasured);
 const ids = (list) => list.map((p) => p.a.id);
 
 test("the existing manager search value reaches the phone board", () => {
@@ -52,6 +54,13 @@ test("search intersects role, lead-cap and below-standard filters", () => {
   assert.deepEqual(ids(rows("peter", { limit: true })), ["c"]);
   assert.deepEqual(ids(rows("pet", { drill: { kind: "below", id: "engagedVideoPct" } })), ["b"]);
   assert.deepEqual(ids(rows("peter", { role: null })), ["c", "a"]);
+});
+
+test("the below-standard drill admits only a figure the dial would count: a real zero yes, a negative or NaN no", () => {
+  const row = (id, name, v) => ({ ...person(id, name, "sales", 1, false, "bad", null), five: [{ key: "engagedVideoPct", state: "bad", v }] });
+  const board = [row("x", "Low Figure", 0.1), row("y", "Negative Figure", -0.2), row("z", "Not A Number", NaN), row("w", "Real Zero", 0), row("m", "No Figure", null)];
+  const listed = select(board, "sales", false, { kind: "below", id: "engagedVideoPct" }, "", norm, (fn) => fn(), isMeasured);
+  assert.deepEqual(ids(listed).sort(), ["w", "x"]);
 });
 
 test("channel drill retains its channel ranking within the search results", () => {
