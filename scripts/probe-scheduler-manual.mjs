@@ -49,6 +49,9 @@ export async function runManualBrowser({socket,dataDirectory,evidenceDir,engine,
   await own.getByText('Revision '+revision,{exact:true}).waitFor();await own.getByText('2026-10-05: working 09:00–16:00 America/New_York',{exact:true}).waitFor();
   evidence.timing={acknowledgementToDOMObservedMs:performance.now()-ack,clock:'Node performance.now; conservative controller observation',targetMs:5000};assert.ok(evidence.timing.acknowledgementToDOMObservedMs<=5000);assert.ok(!(await own.innerText()).includes('Synthetic b'));check('published revision and own content rendered');
   // A draft edit after publish must not alter the immutable employee result.
+  await manager.getByRole('button',{name:'Mark off',exact:true}).click();
+  await manager.getByText('Remove this person’s shifts explicitly before marking off.',{exact:true}).waitFor();
+  await manager.getByRole('listitem').filter({hasText:'2026-10-05: Synthetic a 09:00–16:00 sales'}).getByRole('button',{name:'Remove this shift',exact:true}).click();
   await manager.getByRole('button',{name:'Mark off',exact:true}).click();await manager.getByRole('button',{name:'Save private draft',exact:true}).click();await manager.getByText('Draft saved. Staff cannot see these changes yet.',{exact:true}).waitFor();
   const oldOwn=await refresh();assert.equal(oldOwn.revision,revision);assert.deepEqual(oldOwn.days.find(d=>d.date==='2026-10-05').intervals,[[540,960]]);await own.getByText('2026-10-05: working 09:00–16:00 America/New_York',{exact:true}).waitFor();check('later private draft does not replace publication');
   await employee.context().setOffline(true);await employee.getByText('Your published schedule is unavailable.',{exact:true}).waitFor();await employee.context().setOffline(false);await employee.evaluate(()=>window.dispatchEvent(new Event('online')));await own.getByText('Revision '+revision,{exact:true}).waitFor();check('offline failure and reconnect');
