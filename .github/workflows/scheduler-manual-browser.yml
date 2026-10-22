@@ -1,0 +1,40 @@
+name: scheduler-manual-browser
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/scheduler-manual*'
+      - 'api/*scheduler*'
+      - 'scripts/scheduler-manual/**'
+      - 'scripts/probe-scheduler-manual.mjs'
+      - 'scripts/scheduler-source-capture/**'
+      - 'scripts/scheduler-delivery-relational/**'
+      - '.github/workflows/scheduler-manual-browser.yml'
+permissions:
+  contents: read
+jobs:
+  manual:
+    if: github.repository == 'jorgeasenrivera/lead-performance-calculator' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/scheduler-published-delivery-local'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preflight preinstalled PostgreSQL16 without installation
+        run: node scripts/scheduler-manual/browser-postgres.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm i --no-save --ignore-scripts --no-audit --no-fund playwright@1.63.0
+      - name: Manual publication across independent browser contexts
+        run: bash scripts/scheduler-manual/browser-ci.sh '${{ matrix.engine }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: manual-browser-${{ matrix.engine }}
+          path: manual-browser-evidence/
+          if-no-files-found: warn
+          retention-days: 7

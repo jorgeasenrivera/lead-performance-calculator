@@ -66,9 +66,11 @@ function Preview() {
     onChange: setData,
     readOnly: true,
   };
-  const close = (restoreDetails = true) => {
+  const historyReturn=useRef(true),historyBackPending=useRef(false),lastPlannerEntry=useRef(null);
+  const close = (restoreDetails = true, fromHistory = false) => {
     haptics.cancel();
     if (!dialog.current.open) return;
+    if(!fromHistory && history.state?.sageSchedulerPreview){if(historyBackPending.current)return;historyBackPending.current=true;historyReturn.current=restoreDetails!==false;history.back();return;}
     frame.current?.contentWindow?.dispatchEvent(new CustomEvent("scheduler-hide"));
     const sheet = frame.current?.contentDocument?.querySelector(
       "#sheet:not([hidden])",
@@ -91,6 +93,8 @@ function Preview() {
     const open = (e) => {
       haptics.cancel();
       if(dialog.current.open)return;
+      lastPlannerEntry.current=e.detail;
+      if(!history.state?.sageSchedulerPreview)history.pushState({...history.state,sageSchedulerPreview:true},"",location.href);
       routeEpoch.current++;returnRoute.current=e.detail.resumeDetails||null;setReturnLabel(e.detail.returnLabel||null);
       opener.current = e.detail.opener;
       scroll.current = window.scrollY;
@@ -99,6 +103,12 @@ function Preview() {
       document.body.style.overflow = "hidden";
       (e.detail.day ? frame.current.contentDocument?.querySelector(".day-heading") : dialog.current.querySelector("button"))?.focus();
     };
+    const historyChanged=()=>{
+      historyBackPending.current=false;
+      if(history.state?.sageSchedulerPreview){if(!dialog.current.open&&lastPlannerEntry.current)open({detail:{...lastPlannerEntry.current,day:undefined}});}
+      else {const restore=historyReturn.current;historyReturn.current=true;close(restore,true);}
+    };
+    window.addEventListener('popstate',historyChanged);
     // Native modal traversal can leave the document at the iframe boundary.
     // Close that loop explicitly in both directions, using currently visible controls.
     const trapTab = (e) => {
@@ -144,6 +154,7 @@ function Preview() {
       childDocument?.removeEventListener("keydown", trapTab);
       frame.current?.removeEventListener("load", attach);
       document.removeEventListener("keydown", trapTab);
+      window.removeEventListener("popstate",historyChanged);
       window.removeEventListener("scheduler-open", open);
       window.removeEventListener("scheduler-close", close);
       document.body.style.overflow = "";
@@ -197,9 +208,9 @@ function Preview() {
             type="button"
             onClick={()=>close()}
             data-context-back={returnLabel ? "true" : undefined}
-            aria-label={returnLabel ? "Back to "+returnLabel : "Return to Performance"}
+            aria-label={returnLabel ? "Back to "+returnLabel : "Back to dashboard"}
           >
-            <PixIcon glyph="arrowleft" size={16} /> <span>{returnLabel ? "Back to "+returnLabel : "Performance"}</span>
+            <PixIcon glyph="arrowleft" size={16} /> <span>{returnLabel ? "Back to "+returnLabel : "Back to dashboard"}</span>
           </button>
           <h1 id="sp-title">Schedule</h1>
           {returnLabel && <button type="button" onClick={()=>close(false)} aria-label="Close Schedule and return to Performance"><PixIcon glyph="close" size={16}/></button>}

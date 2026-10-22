@@ -1,14 +1,27 @@
 name: manager-spacing
 on:
   push:
-    branches: [codex/signal-phone-spacing]
+    branches: [codex/signal-phone-spacing, codex/scheduler-runtime-qa]
   pull_request:
     paths:
+      - scripts/scheduler-carrier/**
+      - src/scheduler-manual*
+      - api/*scheduler*
+      - scripts/scheduler-manual/**
+      - scripts/scheduler-source-capture/**
+      - scripts/scheduler-delivery-relational/**
+      - package.json
+      - package-lock.json
       - src/Manager.jsx
+      - src/LeadPerformanceCalculator.jsx
+      - src/scheduler-calendar.jsx
+      - src/scheduler-calendar.css
+      - src/scheduler-calendar-model.mjs
       - src/manager-signal.css
       - scripts/manager-selector.mjs
       - scripts/manager-spacing.mjs
       - scripts/search-runtime.sha256
+      - scripts/search-runtime.scheduler-v1.sha256
       - scripts/hero-bars.mjs
       - scripts/manager-viewports.mjs
       - scripts/room-hero-colors.mjs
@@ -18,6 +31,8 @@ on:
       - .github/workflows/manager-spacing.yml
 jobs:
   spacing:
+    env:
+      SCHEDULER_CARRIER_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/scheduler-published-delivery-local' && github.base_ref == 'main' }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
@@ -71,14 +86,179 @@ jobs:
           ref: e6d087c203bb88685159efbc272e04ce868e4c89
           path: .freshness-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: d9320e253b603260f6a7355d4bc1c77a59fefa5b
+          path: .frozen-runtime
+          persist-credentials: false
+      - name: Record the actual checkout identity
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          under_test=$(git rev-parse HEAD)
+          test "$under_test" = "${{ github.sha }}"
+          echo "SEARCH_RUNTIME_SHA=$under_test" >> "$GITHUB_ENV"
+          echo "Runtime under test: $under_test"
+          echo "PR head: ${{ github.event.pull_request.head.sha || 'not a pull request' }}"
+      - name: Verify the immutable released baseline
+        run: |
+          set -eu
+          cmp scripts/search-runtime.sha256 .frozen-runtime/scripts/search-runtime.sha256
+          cd .frozen-runtime
+          sha256sum --check scripts/search-runtime.sha256
+      - name: Verify independently reviewed manual carrier and refusals
+        if: env.SCHEDULER_CARRIER_PR == 'true'
+        run: |
+          node scripts/scheduler-carrier/verify.mjs
+          node --test test/scheduler-carrier.test.mjs
+      - name: Verify the scheduler candidate manifest contract
+        if: env.SCHEDULER_CARRIER_PR != 'true'
+        env:
+          # Chosen from the event's own metadata, never from anything the pull request wrote into the workspace: a pull
+          # request from this repository whose head branch is exactly the editor-runtime branch. Everything else keeps
+          # the original one-guard, 109-entry contract.
+          EDITOR_RUNTIME_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'claude/scheduler-editor-runtime' }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const GUARD_ONE = '  "git": {\n    "deploymentEnabled": {\n      "claude/scheduler-live-integration": false\n    }\n  },\n';
+          const GUARD_TWO = '  "git": {\n    "deploymentEnabled": {\n      "claude/scheduler-live-integration": false,\n      "claude/scheduler-editor-runtime": false\n    }\n  },\n';
+          const CALENDAR = ['src/scheduler-calendar-model.mjs', 'src/scheduler-calendar.css', 'src/scheduler-calendar.jsx'];
+          const EDITOR = [
+            'scripts/scheduler-performance/assignment-view.mjs',
+            'scripts/scheduler-performance/calendar-key.mjs',
+            'scripts/scheduler-performance/calendar-tokens.css',
+            'scripts/scheduler-performance/day-edit-state.mjs',
+            'scripts/scheduler-performance/day-motion.mjs',
+            'scripts/scheduler-performance/demand-context.mjs',
+            'scripts/scheduler-performance/generation-ui.mjs',
+            'scripts/scheduler-performance/generation.mjs',
+            'scripts/scheduler-performance/haptics.mjs',
+            'scripts/scheduler-performance/import-compatibility.mjs',
+            'scripts/scheduler-performance/import-ui.mjs',
+            'scripts/scheduler-performance/mobile-roster.mjs',
+            'scripts/scheduler-performance/month-app-core.mjs',
+            'scripts/scheduler-performance/month-model.mjs',
+            'scripts/scheduler-performance/name-key.mjs',
+            'scripts/scheduler-performance/off-day-command.mjs',
+            'scripts/scheduler-performance/off-day-ui.mjs',
+            'scripts/scheduler-performance/planner.css',
+            'scripts/scheduler-performance/sage-icons.mjs',
+            'scripts/scheduler-performance/schedule-import.mjs',
+            'scripts/scheduler-performance/shared-system.css',
+            'scripts/scheduler-performance/shift-intervals.mjs',
+            'scripts/scheduler-performance/store-editor.mjs',
+            'scripts/scheduler-performance/team-balance.mjs',
+            'scripts/scheduler-performance/team-model.mjs',
+            'scripts/scheduler-performance/team-ui.mjs',
+            'scripts/scheduler-performance/weekly-hours.mjs',
+            'scripts/scheduler-proposal/model.mjs',
+            'src/reported-auth.mjs',
+            'src/reported-month.mjs',
+            'src/scheduler-editor-adapter.mjs',
+            'src/scheduler-editor.jsx',
+            'src/scheduler-load-context.mjs',
+            'src/use-reported-month.mjs'
+          ];
+          const CASES = {
+            original: { added: CALENDAR, size: 109, guard: GUARD_ONE, hash: 'd1bcea9d06773cb061253fffaa84fa6aadee3fff13bd8a8b706232c3f0d9ab5d' },
+            editor: { added: [...CALENDAR, ...EDITOR], size: 143, guard: GUARD_TWO, hash: '662cf0e4955ad4cff2b47ce966a05e41ceb0379651937060fee0eb741702627d' },
+          };
+          const parse = (file, text) => {
+            const entries = new Map();
+            for (const line of text.split(/\r?\n/)) {
+              if (!line || line.startsWith('#')) continue;
+              assert(!line.startsWith('PENDING'), `${file}: candidate hashes are pending review`);
+              const match = /^([a-f0-9]{64})  ([^\s]+)$/.exec(line);
+              assert(match, `${file}: malformed checksum entry`);
+              const [, hash, path] = match;
+              assert(!path.startsWith('/') && !path.split('/').includes('..'), `${file}: unsafe path`);
+              assert(!entries.has(path), `${file}: duplicate path ${path}`);
+              entries.set(path, hash);
+            }
+            return entries;
+          };
+          // Pure over its inputs, so the same function judges the real files and every deliberately damaged copy below.
+          const verify = (kind, { frozenText, candidateText, originalConfig, config }) => {
+            const want = CASES[kind];
+            const frozen = parse('scripts/search-runtime.sha256', frozenText);
+            const candidate = parse('scripts/search-runtime.scheduler-v1.sha256', candidateText);
+            assert.equal(frozen.size, 106, 'released manifest must retain all 106 paths');
+            const added = [...candidate.keys()].filter(path => !frozen.has(path)).sort();
+            const dropped = [...frozen.keys()].filter(path => !candidate.has(path)).sort();
+            assert.deepEqual(dropped, [], 'candidate dropped frozen paths');
+            assert.deepEqual(added, [...want.added].sort(), kind === 'editor'
+              ? 'candidate additions must be exactly the three calendar files and the 34 enumerated editor files'
+              : 'candidate additions must be exactly the three scheduler runtime files');
+            const changed = [...frozen.keys()].filter(path => candidate.get(path) !== frozen.get(path)).sort();
+            assert.deepEqual(changed, ['src/LeadPerformanceCalculator.jsx', 'src/Manager.jsx', 'vercel.json'],
+              'only the reviewed core, Manager and exact branch guard hashes may differ');
+            assert.equal(frozen.get('vercel.json'), '4ae9575bf5380fc1231df7f3ae7e111ea43a22a70daea02da74e087d7d8b9cda');
+            assert(originalConfig.startsWith('{\n'), 'frozen config opening must match');
+            assert(!Object.hasOwn(JSON.parse(originalConfig), 'git'), 'frozen config must not have Git settings');
+            assert.equal(config, originalConfig.slice(0, 2) + want.guard + originalConfig.slice(2), 'only the exact approved branch guard may change config');
+            assert.equal(candidate.get('vercel.json'), want.hash, 'config hash must match the reviewed branch guard');
+            assert.equal(candidate.size, want.size, 'candidate must cover all retained and added paths');
+          };
+          const read = file => readFileSync(file, 'utf8');
+          const inputs = { frozenText: read('scripts/search-runtime.sha256'), candidateText: read('scripts/search-runtime.scheduler-v1.sha256'),
+            originalConfig: read('.frozen-runtime/vercel.json'), config: read('vercel.json') };
+          const kind = process.env.EDITOR_RUNTIME_PR === 'true' ? 'editor' : 'original';
+          verify(kind, inputs);
+          // Every case that must be refused, in memory, against the case under test.
+          const lines = inputs.candidateText.split('\n');
+          const hashOf = path => lines.find(l => l.endsWith('  ' + path)).slice(0, 64);
+          const without = path => lines.filter(l => !l.endsWith('  ' + path)).join('\n');
+          const refuse = (name, change) => assert.throws(() => verify(kind, { ...inputs, ...change }), undefined, `must refuse: ${name}`);
+          const flip = h => (h[0] === 'a' ? 'b' : 'a') + h.slice(1);
+          refuse('a dropped original entry', { candidateText: without('api/_env.mjs') });
+          refuse('a missing declared addition', { candidateText: without('src/scheduler-calendar.jsx') });
+          refuse('an extra entry', { candidateText: inputs.candidateText + '\n' + '0'.repeat(64) + '  src/unreviewed.mjs\n' });
+          refuse('a duplicate entry', { candidateText: inputs.candidateText + '\n' + hashOf('api/_env.mjs') + '  api/_env.mjs\n' });
+          refuse('a pending entry', { candidateText: inputs.candidateText + '\nPENDING src/x.mjs\n' });
+          refuse('an unsafe path', { candidateText: inputs.candidateText + '\n' + '0'.repeat(64) + '  ../escape.mjs\n' });
+          refuse('an unrelated original entry changed', { candidateText: inputs.candidateText.replace(hashOf('api/_env.mjs'), flip(hashOf('api/_env.mjs'))) });
+          refuse('the wrong config checksum', { candidateText: inputs.candidateText.replace(hashOf('vercel.json'), flip(hashOf('vercel.json'))) });
+          refuse('an altered immutable manifest', { frozenText: inputs.frozenText.replace(/^([a-f0-9])/m, c => (c === 'a' ? 'b' : 'a')) });
+          refuse('the other case\'s guard', { config: inputs.originalConfig.slice(0, 2) + CASES[kind === 'editor' ? 'original' : 'editor'].guard + inputs.originalConfig.slice(2) });
+          refuse('the first guard missing', { config: inputs.config.replace('      "claude/scheduler-live-integration": false', '') });
+          refuse('the first guard enabled', { config: inputs.config.replace('"claude/scheduler-live-integration": false', '"claude/scheduler-live-integration": true') });
+          refuse('an extra guard', { config: inputs.config.replace('"claude/scheduler-live-integration": false', '"claude/scheduler-live-integration": false,\n      "claude/other": false') });
+          refuse('an unrelated config edit', { config: inputs.config.replace('"functions"', '"functions2"') });
+          if (kind === 'editor') {
+            refuse('the second guard missing', { config: inputs.config.replace(',\n      "claude/scheduler-editor-runtime": false', '') });
+            refuse('the second guard enabled', { config: inputs.config.replace('"claude/scheduler-editor-runtime": false', '"claude/scheduler-editor-runtime": true') });
+          }
+          // The editor case is not available to anything else: judged as the original case, the same files are refused.
+          if (kind === 'editor') assert.throws(() => verify('original', inputs), undefined, 'the expanded contract must not satisfy the original one');
+          console.log(`Manifest contract passed (${kind} case): ${CASES[kind].size} entries, ${CASES[kind].added.length} declared additions, exact branch guard${kind === 'editor' ? 's' : ''}, ${kind === 'editor' ? 16 : 14} refusals proved.`);
+          NODE
+      - name: Verify the exact candidate runtime
+        if: env.SCHEDULER_CARRIER_PR != 'true'
+        run: sha256sum --check scripts/search-runtime.scheduler-v1.sha256
+      - name: Prove the baseline and checksum checks refuse damaged copies
+        if: env.SCHEDULER_CARRIER_PR != 'true'
+        run: |
+          set -eu
+          tmp=$(mktemp -d)
+          # an altered immutable manifest is not the released one
+          cp scripts/search-runtime.sha256 "$tmp/baseline"; printf '\n' >> "$tmp/baseline"
+          if cmp "$tmp/baseline" .frozen-runtime/scripts/search-runtime.sha256 > /dev/null 2>&1; then echo "an altered baseline was accepted"; exit 1; fi
+          # a candidate entry whose checksum does not match its source
+          awk 'BEGIN{done=0} /^[a-f0-9]{64}  /{ if(!done){ c=substr($0,1,1); r=(c=="a")?"b":"a"; $0=r substr($0,2); done=1 } } {print}' scripts/search-runtime.scheduler-v1.sha256 > "$tmp/mismatch"
+          if sha256sum --check "$tmp/mismatch" > /dev/null 2>&1; then echo "a checksum mismatch was accepted"; exit 1; fi
+          # a candidate entry whose source is missing
+          { cat scripts/search-runtime.scheduler-v1.sha256; printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 src/does-not-exist.mjs; } > "$tmp/missing"
+          if sha256sum --check "$tmp/missing" > /dev/null 2>&1; then echo "a missing source was accepted"; exit 1; fi
+          echo "Baseline and checksum checks refused all three damaged copies."
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
-      - name: Verify frozen preview runtime
-        run: sha256sum --check scripts/search-runtime.sha256
       - name: Build fictional app
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
-          npm run build
+          VITE_SCHEDULER_CALENDAR=0 npm run build
+          VITE_SCHEDULER_CALENDAR=1 npm run build -- --outDir dist-scheduler
           ln -s "$PWD/node_modules" .color-baseline/node_modules
           ln -s "$PWD/node_modules" .hero-baseline/node_modules
           ln -s "$PWD/node_modules" .freshness-baseline/node_modules
@@ -86,11 +266,100 @@ jobs:
           (cd .hero-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
           cd .color-baseline
           VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build
+      - name: Verify scheduler-enabled Manager entries and negative controls
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -eu
+          SALESPERSON=1 node scripts/mock-supabase.mjs > scheduler-mock.log 2>&1 &
+          mock_pid=$!
+          node node_modules/vite/bin/vite.js preview --outDir dist-scheduler --port 5186 --host 127.0.0.1 > scheduler-preview.log 2>&1 &
+          enabled_pid=$!
+          node node_modules/vite/bin/vite.js preview --outDir dist --port 5187 --host 127.0.0.1 > scheduler-legacy.log 2>&1 &
+          legacy_pid=$!
+          trap 'kill "$mock_pid" "$enabled_pid" "$legacy_pid" 2>/dev/null || true' EXIT
+          for port in 5186 5187; do
+            for i in $(seq 1 100); do curl -sf "http://127.0.0.1:$port/" > /dev/null && break; sleep 0.2; done
+            curl -sf "http://127.0.0.1:$port/" > /dev/null
+          done
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { mkdir, writeFile } from 'node:fs/promises';
+          import { chromium, webkit } from 'playwright';
+          const browser = await ({ chromium, webkit }[process.env.FEEL_BROWSER]).launch({ headless: true });
+          const evidence = { checkout: process.env.SEARCH_RUNTIME_SHA, engine: process.env.FEEL_BROWSER, checks: [] };
+          await mkdir('scheduler-entry', { recursive: true });
+          async function login(port) {
+            const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', serviceWorkers: 'block' });
+            await context.route('**/*', route => {
+              const u = new URL(route.request().url());
+              return u.hostname === '127.0.0.1' && [String(port), '5433'].includes(u.port) ? route.continue() : route.abort();
+            });
+            await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
+              const response = await route.fetch(), data = await response.json();
+              const manager = p => ({ ...p, role: 'admin', wants: 'manager', onboarded: true, stores: ['sage-demo'] });
+              await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
+            });
+            const page = await context.newPage();
+            page.setDefaultTimeout(20000);
+            await page.addInitScript(() => localStorage.setItem('lpc:last-view', 'sage-demo'));
+            await page.goto(`http://127.0.0.1:${port}/`);
+            await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');
+            await page.locator('input[type="password"]').fill('x');
+            await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+            await page.locator('.bp-row').first().waitFor({ timeout: 40000 });
+            await page.evaluate(() => document.fonts.ready);
+            await page.locator('.signin-over').waitFor({ state: 'hidden' });
+            await page.locator('html.sage-flight-owned').waitFor({ state: 'hidden' });
+            // The phone board does not mount RoundUp, regardless of the scheduler flag.
+            assert.equal(await page.locator('.ru-scrim').count(), 0, 'phone board has no round-up');
+            return { context, page };
+          }
+          async function requireEntry(page, selector) {
+            await page.locator(selector).waitFor({ state: 'visible', timeout: 5000 });
+            assert.equal(await page.locator(selector).count(), 1, 'scheduler entry must render exactly once');
+            assert.ok(await page.locator(selector).isVisible(), 'scheduler entry must be visible');
+          }
+          try {
+            const legacy = await login(5187);
+            await assert.rejects(() => requireEntry(legacy.page, '.sc-calendar[data-layout="compact"]'), { name: 'TimeoutError' });
+            evidence.checks.push({ name: 'flag-off rejected by enabled coverage', flag: 0, pass: true });
+            await legacy.context.close();
+            const { context, page } = await login(5186);
+            const compact = '.sc-calendar[data-layout="compact"]';
+            await requireEntry(page, compact);
+            await page.locator(`${compact} .sc-toggle`).click();
+            await page.locator(`${compact} .sc-day`).first().waitFor();
+            await page.screenshot({ path: 'scheduler-entry/enabled-phone.png', fullPage: true });
+            evidence.checks.push({ name: 'phone entry opens real calendar', flag: 1, pass: true });
+            await page.locator(compact).evaluate(n => n.remove());
+            await assert.rejects(() => requireEntry(page, compact), { name: 'TimeoutError' });
+            evidence.checks.push({ name: 'missing entry rejected by enabled coverage', flag: 1, pass: true });
+            await context.close();
+            const desktop = await login(5186);
+            await desktop.page.setViewportSize({ width: 1440, height: 1000 });
+            await requireEntry(desktop.page, '.sc-entry');
+            // Resizing mounts the desktop Board and its due round-up, possibly after arrival.
+            const roundUp = desktop.page.getByRole('dialog', { name: 'Your round-up', exact: true });
+            await roundUp.waitFor({ state: 'visible' });
+            await roundUp.getByRole('button', { name: 'Close the round-up', exact: true }).click();
+            await roundUp.waitFor({ state: 'hidden' });
+            await desktop.page.locator('.ru-scrim').waitFor({ state: 'hidden' });
+            await desktop.page.locator('.sc-entry .sc-toggle').click();
+            await desktop.page.locator('.sc-dialog[role="dialog"]').waitFor();
+            await desktop.page.locator('.sc-dialog .sc-day').first().waitFor();
+            await desktop.page.screenshot({ path: 'scheduler-entry/enabled-desktop.png', fullPage: true });
+            evidence.checks.push({ name: 'desktop entry opens real calendar', flag: 1, pass: true });
+            await desktop.context.close();
+          } finally {
+            await writeFile('scheduler-entry/evidence.json', JSON.stringify(evidence, null, 2));
+            await browser.close();
+          }
+          NODE
       - name: Measure before and after
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: 710cc8d78d0363856df2f9000162923859434b73
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
@@ -116,6 +385,10 @@ jobs:
         with:
           name: manager-spacing-${{ matrix.engine }}
           path: |
+            scheduler-entry/
+            scheduler-mock.log
+            scheduler-preview.log
+            scheduler-legacy.log
             manager-spacing/
             manager-selector/
             search-keyboard/

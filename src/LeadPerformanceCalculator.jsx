@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import {MANUAL_SCHEDULER_ENABLED} from './scheduler-manual-client.mjs';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
@@ -13,6 +14,8 @@ import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArri
 let _papa = null;
 const loadPapa = async () => (_papa || (_papa = import("papaparse").then((m) => m.default || m)));
 import { createClient } from "@supabase/supabase-js";
+import { createReportedAuthAdapter } from "./reported-auth.mjs";
+import { acceptLoad, adoptCached, beginLoad, inheritLoadedUnder, loadedUnder, mayLeave, reportedAuthFor } from "./scheduler-load-context.mjs";
 /* The mark. One drawing on the same 9x9 grid PixIcon uses, so the identity and
    the app's iconography come off one ruler. Its own file because it is shipped
    artwork rather than a screen: every size, plate and print form is generated
@@ -899,6 +902,34 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
     })
   : null;
 
+/* Which sign-in a store document was loaded under. Kept in memory beside the document (never on it, so a
+   save cannot carry it) for the scheduler to check before it shows a roster. Only with the scheduler's
+   build flag: without it nothing here listens to anything and every load goes through exactly as before. */
+const reportedAuth = (import.meta.env.VITE_SCHEDULER_CALENDAR === "1" && supabase)
+  ? reportedAuthFor(supabase, createReportedAuthAdapter)
+  : null;
+
+/* With no adapter these do nothing at all, so every load and every save is exactly what it was. */
+const startLoad = (storeId, lane) => (reportedAuth ? beginLoad(reportedAuth, storeId, lane) : null);
+const keepStamp = (prev, next) => (reportedAuth ? inheritLoadedUnder(prev, next) : next);
+/* Moving off the page the month planner is open on, by the app's own navigation, asks first if there are
+   unsaved changes. Off with the scheduler, it never asks. A sign-in or store change is not this: it ends the
+   records and takes the planner away without a question. */
+const askLeave = () => (reportedAuth ? mayLeave() : true);
+/* Some sign-outs are not a choice: once the server has deleted the account, signing out is only the cleanup, and a
+   question about unsaved planner changes must not be able to stop it. The flag is set for the length of that one
+   synchronous call and never outlives it, so a person's own press of Sign out is still asked. */
+let sessionEndForced = false;
+const endSessionNow = (fn) => { sessionEndForced = true; try { return fn(); } finally { sessionEndForced = false; } };
+/* The sign-in the scheduler follows, as a plain number (null with the scheduler off, and always the same then). A new
+   sign-in on this page moves it, and the store on screen is read again under it instead of staying masked until a reload. */
+const noSubscribe = () => () => {};
+const noEpoch = () => null;
+const epochNow = () => {
+  try { const s = reportedAuth.getSnapshot(); return Number.isSafeInteger(s?.principalEpoch) && s.disposed !== true ? s.principalEpoch : null; } catch { return null; }
+};
+const useAuthEpoch = () => useSyncExternalStore(reportedAuth ? reportedAuth.subscribe : noSubscribe, reportedAuth ? epochNow : noEpoch, reportedAuth ? epochNow : noEpoch);
+
 const AUTH_ENABLED = true;
 
 /* The same bargain loadRowIfChanged strikes, for the shared rows: ask for the
@@ -1778,6 +1809,7 @@ export default function LeadPerformanceCalculator() {
   const [storeLoadError, setStoreLoadError] = useState("");
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
+  const authEpoch = useAuthEpoch();
   /* Restore points, by store, read from their own rows. They are loaded when
      something is about to show or use one rather than with the store, because
      the whole point of moving them out is that the common path never carries
@@ -2032,9 +2064,12 @@ export default function LeadPerformanceCalculator() {
         // First load: pull every accessible store, cache it, pick a starting view.
         const all = {};
         for (const s of accessible) {
+          const ticket = startLoad(s.id, "preload");
           const got = await withTimeout(loadStrict(storeKey(s.id)));
           const r = got.value || { ok: false };
           let d = r.ok ? r.value : undefined;
+          let fromNetwork = r.ok;   // a copy the phone remembers was not loaded under any sign-in of today's
+          const remember = !!(r.ok && d);   // what the original remembered: a row that came back with a document
           if (!r.ok) {
             /* Never let a failed read look like an empty store. The copy the
                phone remembers stands in where there is one; a salesperson's
@@ -2044,12 +2079,13 @@ export default function LeadPerformanceCalculator() {
             if (c && c.value) { d = c.value; netSet(true, c.at); }
             else if (wantsFloor) continue;
             else { setLoadErr(true); return; }
-          } else if (d) cachePut("store:" + s.id, d);
+          } else if (d && !reportedAuth) cachePut("store:" + s.id, d);
           if (!d) {
             const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`));
             const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
+            fromNetwork = true;
           }
           // Same check as the single-store load: a document that says it belongs
           // to another store never enters the cache, because the cache is read
@@ -2057,6 +2093,12 @@ export default function LeadPerformanceCalculator() {
           if (d.__storeId && d.__storeId !== s.id) {
             console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
             continue;
+          }
+          if (fromNetwork && reportedAuth) {
+            const took = acceptLoad(ticket, reportedAuth, d);
+            if (!took.ok) { console.warn("store load not accepted", { key: s.id, reason: took.reason }); continue; }
+            // Remembered on the device only once it is accepted: an answer that is refused never becomes the next offline copy.
+            if (remember) cachePut("store:" + s.id, d);
           }
           if (!d.__storeId) d.__storeId = s.id;   // only ever stamps a document that arrived without one
           all[s.id] = d;
@@ -2098,6 +2140,7 @@ export default function LeadPerformanceCalculator() {
       if (!missing.length) return;
       const add = {};
       for (const s of missing) {
+        const ticket = startLoad(s.id, "missing");
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
@@ -2105,6 +2148,10 @@ export default function LeadPerformanceCalculator() {
         if (d.__storeId && d.__storeId !== s.id) {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
+        }
+        if (reportedAuth) {
+          const took = acceptLoad(ticket, reportedAuth, d);
+          if (!took.ok) { console.warn("store load not accepted", { key: s.id, reason: took.reason }); continue; }
         }
         if (!d.__storeId) d.__storeId = s.id;
         add[s.id] = d;
@@ -2218,7 +2265,11 @@ export default function LeadPerformanceCalculator() {
           setStoreData(null); setStoreLoadFailed(true);
           return;
         }
-        setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setTab("board"); return;
+        /* A copy in hand is shown only if it was loaded for this store under the sign-in that is current.
+           Otherwise it is read again, and never given today's sign-in just because it is to hand. */
+        if (!reportedAuth || adoptCached(cached, view, reportedAuth).ok) {
+          setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setTab("board"); return;
+        }
       }
       /* Drop the store we were showing BEFORE fetching the next one. Without this
          the board keeps rendering the previous store's roster under the new
@@ -2230,6 +2281,7 @@ export default function LeadPerformanceCalculator() {
       setStoreLoadFailed(false);
       setStoreMismatch(null);
       setStoreLoadError("");
+      const ticket = startLoad(want, "load");
       try {
         /* A request that never answers used to leave this screen loading for ever:
            there was no failure to catch, so nothing downstream ever ran. Twelve
@@ -2262,6 +2314,17 @@ export default function LeadPerformanceCalculator() {
           setStoreData(null); setStoreLoadFailed(true);
           return;
         }
+        if (reportedAuth) {
+          const took = acceptLoad(ticket, reportedAuth, d);
+          if (!took.ok) {
+            console.warn("store load not accepted", { key: want, reason: took.reason });
+            setStoreLoadError(took.reason === "principal"
+              ? "The account changed while this store was loading. Reload to continue."
+              : "This store was loaded again while it was loading. Reload to continue.");
+            setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+            return;
+          }
+        }
         setStoreMismatch(null);
         d.__storeId = want;   // only ever stamps a document that arrived without one
         setStoreData(d); setStoreLoadFailed(false); setStoreLoadError("");
@@ -2270,12 +2333,19 @@ export default function LeadPerformanceCalculator() {
         console.error("store load failed", { key: want, error: e });
         // A failed load must NOT masquerade as an empty store, or the next save wipes it.
         setStoreLoadError(String((e && e.message) || e || "Unknown error"));
-        setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+        /* With the scheduler on, a copy the device kept is read again before it is shown; if that read fails it
+           stands in, as it did before the scheduler, and stays unstamped so the scheduler does not trust it.
+           A copy that was loaded under a sign-in (stamped) and was not adopted above is another sign-in's: it never stands in. */
+        if (reportedAuth && cached && !loadedUnder(cached) && !(cached.__storeId && cached.__storeId !== view)) {
+          setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setStoreLoadError("");
+        } else {
+          setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+        }
       }
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready, initialViewReady]); // eslint-disable-line
+  }, [view, ready, initialViewReady, authEpoch]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -2327,8 +2397,12 @@ export default function LeadPerformanceCalculator() {
       try {
         const stamp = await loadStoreStamp(storeKey(view));
         if (!stamp || dead || stamp === storeStampRef.current) return;
+        const ticket = startLoad(view, "refresh");
         const fresh = await loadStore(view, null, true);
         if (!fresh || dead || savingRef.current) return;
+        // With the scheduler on: another store's document is never relabelled as this one's, and an answer for a
+        // sign-in that has ended is dropped. Without it the refresh is what it always was.
+        if (reportedAuth && !acceptLoad(ticket, reportedAuth, fresh).ok) return;
         fresh.__storeId = view;
         storeStampRef.current = stamp;
         setStoreData(fresh);
@@ -2399,6 +2473,8 @@ export default function LeadPerformanceCalculator() {
        would have meant reading and rewriting every store to save a snapshot
        that is superseded the next time a report lands. */
     if (next && next.snapshots) delete next.snapshots;
+    // A local change keeps where the document on screen came from; the preload's copy may predate it (another store, another sign-in).
+    keepStamp(storeData && storeData.__storeId === storeId ? storeData : (adminData[storeId] || storeData), next);
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
 
@@ -2417,6 +2493,7 @@ export default function LeadPerformanceCalculator() {
     const ok = res.ok;
     if (ok) {
       const merged = res.value || next;
+      keepStamp(next, merged);
       if (seq === saveSeq.current) {
         setStoreData(merged);
         setAdminData((p) => ({ ...p, [storeId]: merged }));
@@ -2451,13 +2528,13 @@ export default function LeadPerformanceCalculator() {
          is; anything else is not ours to write to. */
       if (prev.__storeId && prev.__storeId !== storeId) return prev;
       if (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry)) return prev;
-      return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
+      return keepStamp(prev, { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] });
     });
     setAdminData((p) => {
       const cur = p[storeId];
       if (!cur || (cur.__storeId && cur.__storeId !== storeId)) return p;
       if (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry)) return p;
-      return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
+      return { ...p, [storeId]: keepStamp(cur, { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] }) };
     });
   }, []);
 
@@ -3024,6 +3101,10 @@ export default function LeadPerformanceCalculator() {
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
+    // A person's own press of a sign-out control, with changes in the month planner, asks first. A sign-out that is
+    // only cleanup after the server deleted the account (endSessionNow) does not, and a session that ends on its own
+    // never comes through here: the planner is taken away without a question when its sign-in ends.
+    if (!sessionEndForced && !askLeave()) return;
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
@@ -3095,7 +3176,9 @@ export default function LeadPerformanceCalculator() {
   // The Tools chooser is gone. Signing in drops the person straight into the
   // Performance dashboard; the cinematic intro (below) covers the transition on the
   // explicit sign-in. chooseModule stays for the in-app "Tools" button.
+  const goTab = (t) => { if (t !== tab && !askLeave()) return; setTab(t); };
   const chooseModule = (mod) => {
+    if ((mod || "perf") !== appModule && !askLeave()) return;
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
       const first = (isAdmin ? config.stores : accessibleStores)[0];
@@ -3136,6 +3219,7 @@ export default function LeadPerformanceCalculator() {
      rather than leaving the page half-exited. */
   const switchTool = (mod) => {
     if (mod === appModule) return;
+    if (!askLeave()) return;
     const root = document.documentElement;
     const dir = WARP_ORDER.indexOf(mod) >= WARP_ORDER.indexOf(appModule) ? "r" : "l";
     clearToolMove();
@@ -3192,6 +3276,7 @@ export default function LeadPerformanceCalculator() {
      modules actually own an import screen. From the other four it lands on
      Performance's, which is where the files it wants would go anyway. */
   const goImport = () => {
+    if (!askLeave()) return;
     if (appModule === "perf" || appModule === "activity") { setTab("import"); return; }
     setAppModule("perf");
     setTab("import");
@@ -3288,10 +3373,10 @@ export default function LeadPerformanceCalculator() {
     navValue = adminTab; navOnChange = setAdminTab;
   } else if (view === "combined" && isOverseer) {
     navItems = [["board", "Combined Board"], ["gm", "Summary"]];
-    navValue = tab === "board" || tab === "gm" ? tab : "board"; navOnChange = setTab;
+    navValue = tab === "board" || tab === "gm" ? tab : "board"; navOnChange = goTab;
   } else if (currentStore && storeData && isOverseer) {
     navItems = [["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]];
-    navValue = ["board", "gm", "history"].includes(tab) ? tab : "board"; navOnChange = setTab;
+    navValue = ["board", "gm", "history"].includes(tab) ? tab : "board"; navOnChange = goTab;
   } else if (currentStore && storeData) {
     if (appModule === "activity") {
       navItems = isAdmin
@@ -3304,7 +3389,7 @@ export default function LeadPerformanceCalculator() {
         : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]];
       navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
     }
-    navOnChange = setTab;
+    navOnChange = goTab;
   }
 
   return wrap(
@@ -3329,7 +3414,7 @@ export default function LeadPerformanceCalculator() {
           const choices = accessibleStores.length + (showAll ? 1 : 0) + (showCombined ? 1 : 0);
           if (choices < 2) return null;
           return (
-            <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
+            <select className="view-select" value={view} onChange={(e) => { if (e.target.value !== view && !askLeave()) return; setView(e.target.value); }}>
               {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
               {showAll && <option value="admin">All Stores</option>}
               {showCombined && <option value="combined">Combined (my stores)</option>}
@@ -3398,7 +3483,7 @@ export default function LeadPerformanceCalculator() {
           <nav className="seg-wrap no-print">
             <SegControl
               items={[["board", "Combined Board"], ["gm", "Summary"]]}
-              value={tab === "board" || tab === "gm" ? tab : "board"} onChange={setTab} />
+              value={tab === "board" || tab === "gm" ? tab : "board"} onChange={goTab} />
           </nav>
           <div key={"combined" + tab} className="page">
             {tab === "gm"
@@ -3427,7 +3512,7 @@ export default function LeadPerformanceCalculator() {
           <nav className="seg-wrap no-print">
             <SegControl
               items={[["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]]}
-              value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={setTab} />
+              value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={goTab} />
             {(tab === "board" || !["gm", "history"].includes(tab)) &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
@@ -3447,7 +3532,7 @@ export default function LeadPerformanceCalculator() {
                   ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
                   : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
                 value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
-                onChange={setTab}
+                onChange={goTab}
                 attentionId={activityDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
             ) : (
@@ -3458,7 +3543,7 @@ export default function LeadPerformanceCalculator() {
                 value={(isAdmin
                   ? ["board", "import", "gm", "history", "standards", "roster"]
                   : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
-                onChange={setTab}
+                onChange={goTab}
                 attentionId={reportsDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
             )}
@@ -3477,7 +3562,7 @@ export default function LeadPerformanceCalculator() {
             )}
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} onCoach={() => setTab("coaching")} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} onCoach={() => goTab("coaching")} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
                 {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -3503,7 +3588,7 @@ export default function LeadPerformanceCalculator() {
                         onSetRestriction={setRestriction}
                         onCoach={() => { coachAfter.current = true; switchTool("activity"); }} />
                     ) : (<>
-                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
+                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={goTab}
                       filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc}
                       canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig} />
                     {/* The delivery chart now lives inside the hero's rotating display. */}
@@ -4098,7 +4183,7 @@ function AccountSheet({ name, onClose, onDeleted, desk = false }) {
     const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE" } });
     if (!out || out.error) { setBusy(false); setErr((out && out.error) || "That did not go through. Try again."); return; }
     try { sessionStorage.setItem(DELETED_KEY, "1"); } catch (e) {}
-    onDeleted();
+    endSessionNow(onDeleted);
   };
   const close = () => { if (!busy) onClose(); };
   return (
@@ -10250,6 +10335,7 @@ const openToOf = (store) => {
   catch (e) { return "home"; }
 };
 
+const OwnPublishedSchedule = React.lazy(() => import('./scheduler-manual.jsx').then(m=>({default:m.OwnPublishedSchedule})));
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
                     line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false, host = null }) {
@@ -10819,6 +10905,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             )}
             {sheet === "sched" && (
               <>
+                {MANUAL_SCHEDULER_ENABLED ? <React.Suspense fallback={<p>Loading your schedule…</p>}><OwnPublishedSchedule client={supabase} storeId={store} month={date.slice(0,7)}/></React.Suspense> : <>
                 <div className="mc-sc">
                   {"SMTWTFS".split("").map((c, i) => <b key={"w" + i}>{c}</b>)}
                   {cal.map((c, i) => c === null
@@ -10852,6 +10939,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                     );
                   })()}
                 </div>
+                </>}
               </>
             )}
             {sheet === "board" && board && (() => {

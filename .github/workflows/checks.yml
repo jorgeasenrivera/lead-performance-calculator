@@ -24,6 +24,11 @@ jobs:
       # modules with Node's own test runner — but the build does, and a build
       # that fails is as broken as a test that fails.
       - run: npm ci
+      - name: Obtain required exact scheduler binding fixture
+        run: |
+          git fetch --no-tags origin b6cd4798d6daa0ab950f6e8e142f6df6479521f4
+          test "$(git rev-parse FETCH_HEAD)" = b6cd4798d6daa0ab950f6e8e142f6df6479521f4
+          git cat-file -e b6cd4798d6daa0ab950f6e8e142f6df6479521f4^{commit}
       - run: npm test
       - run: npm run build
 

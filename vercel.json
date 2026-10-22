@@ -1,4 +1,11 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "claude/scheduler-live-integration": false,
+      "claude/scheduler-editor-runtime": false,
+      "codex/scheduler-published-delivery-local": false
+    }
+  },
   "functions": {
     "api/ingest.mjs": {
       "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js"

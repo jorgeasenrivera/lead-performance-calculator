@@ -1,0 +1,87 @@
+# The scheduler inside the real dashboard, in a real browser, in both engines.
+#
+# Restricted on purpose, like scheduler-editor.yml: this repository's own editor-runtime branch (and pull
+# requests from it into the integration branch), a read-only token, no secrets, no deployment. The probe
+# builds the actual app with the scheduler flag on against the local mock backend, serves synthetic delivery
+# rows itself, blocks and counts every request that is not to its own local servers, and fails if one is
+# attempted. Nothing here is a release check and nothing is saved anywhere but the mock's own rows.
+name: scheduler-integration
+
+on:
+  push:
+    branches: [claude/scheduler-editor-runtime]
+  pull_request:
+    branches: [claude/scheduler-live-integration, main]
+    paths:
+      - src/scheduler-manual*
+      - api/*scheduler*
+      - scripts/scheduler-manual/**
+      - scripts/scheduler-source-capture/**
+      - scripts/scheduler-delivery-relational/**
+      - test/scheduler*
+      - package.json
+      - package-lock.json
+      - src/LeadPerformanceCalculator.jsx
+      - src/Manager.jsx
+      - src/scheduler-calendar.jsx
+      - src/scheduler-editor.jsx
+      - src/scheduler-editor-adapter.mjs
+      - src/scheduler-load-context.mjs
+      - src/use-reported-month.mjs
+      - src/reported-month.mjs
+      - src/reported-auth.mjs
+      - scripts/probe-scheduler-integration.mjs
+      - scripts/mock-supabase.mjs
+      - scripts/scheduler-performance/month-app-core.mjs
+      - .github/workflows/scheduler-integration.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduler-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    if: >-
+      github.repository == 'jorgeasenrivera/lead-performance-calculator' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        ((github.base_ref == 'claude/scheduler-live-integration' && github.head_ref == 'claude/scheduler-editor-runtime') ||
+         (github.base_ref == 'main' && github.head_ref == 'codex/scheduler-published-delivery-local'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: npm ci
+      # The browsers are in the image; only the package that drives them is needed, and it is not a dependency of the app.
+      - run: npm i --no-save playwright@1.63.0
+      - name: The load-context unit tests
+        run: node --test test/scheduler-load-context.test.mjs test/scheduler-editor-adapter.test.mjs
+      - name: Scheduler integration probe
+        shell: bash
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+          PROBE_EVIDENCE_DIR: integration-evidence
+        run: node scripts/probe-scheduler-integration.mjs 2>&1 | tee integration-evidence.log; exit "${PIPESTATUS[0]}"
+      - name: Keep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-integration-${{ matrix.engine }}
+          path: |
+            integration-evidence/
+            integration-evidence.log
+          if-no-files-found: warn
+          retention-days: 7

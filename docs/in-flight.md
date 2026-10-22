@@ -476,3 +476,20 @@ These are not agent work. They are here so nobody proposes them again.
 | #368 | One motion for a tap and a swipe: a tap was a push that covered the sheet being left, which is what folding looks like, and both tile now. The push, its two sets of cut keyframes and #359's flat slab are all deleted. The app opens at Home. Home and Live Floor travel, one-sidedly, which is a step towards C29 rather than C29. A guard caught `tabMove` colliding with Manager.jsx's own. | Claude |
 | #369 | The first open after a deploy cost 3.5s against a steady 2.0, because #365 adopted the new build mid-open and `location.reload()` is held until the page it was called on finishes loading: a build taken at 266 ms did not commit until 1301 and threw the whole boot away. Adoption now happens only where it is free, at the start of an open before anything is drawn or on the way to the background. One open late at worst, never slow. Steady-state boot measured flat back to #353, so the app itself was never the problem. | Claude |
 | #370 | The corner's cards no longer fade in on top of the stage's slide, which was two motions at once: the page 90 per cent off screen with its cards at half opacity, and the cards still settling half a second after the page had stopped. A corner arriving on the slide reads that once at birth and keeps its cards still; the cold open keeps its entrance. | Claude |
+
+
+## Local disabled scheduler carrier, 22 October 2026
+
+Codex is preparing a separate main-based carrier at `codex/scheduler-carrier-main-local`, intended publication branch `codex/scheduler-published-delivery-local`. Scope: scheduler lineage and disabled manual publication/own-read components, local verification and CI gates. No PR485/492 merge, production activation, remote push or deployment. Existing records above are retained unchanged. See `docs/scheduler-carrier-readiness.md` for source lineage, excluded artifacts, evidence and overlap boundaries.
+
+## Local manual browser acceptance preparation
+
+Codex owns scripts/scheduler-manual/browser-*, scripts/probe-scheduler-manual.mjs and a dedicated synthetic CI job on codex/manual-browser-acceptance-local. PR497 remains unchanged. No local browser, provisioning, installation or push. Earlier image lookup deniedHTTP403 and not retried; user-approved preinstalled hostPG16 supersedes that route. No PGinstallation or system service change.
+
+## Local request-scoped manual server preparation
+
+Codex owns only scripts/scheduler-manual/server-adapter.mjs, server-adapter.test.mjs and SERVER-COMPOSITION.md in the isolated carrier worktree. Parent authorized code-only preparation and independent review, not push, main claim publication, activation, hosted calls, credentials or permissions. Existing API/UI sources and manifests remain unchanged. Capture executor privileges remain unresolved and no owner/service-role shortcut is permitted.
+
+## Local capture capability closure
+
+Parent authorized capture-executor.sql, restricted-capabilities.mjs and run-restricted-sql.mjs plus the local request adapter/tests/document above. Grants are migration source and disposable fake-data tests only. No hosted install, actual access change, push or public activation. Independent security review required. Public API/UI/runtime contract unchanged.
