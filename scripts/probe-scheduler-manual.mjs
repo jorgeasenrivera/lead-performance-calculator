@@ -28,7 +28,7 @@ export async function runManualBrowser({socket,dataDirectory,evidenceDir,engine,
   assert.equal((await pending.firstOwn).status(),403);await pending.getByText('Your published schedule is unavailable.',{exact:true}).waitFor();check('pending own read denied');
   await manager.getByLabel('Month',{exact:true}).fill('2026-10');await manager.getByRole('button',{name:'Load month',exact:true}).click();
   await manager.getByText('Draft loaded. Changes stay private until published.',{exact:true}).waitFor();
-  await manager.getByLabel('Date',{exact:true}).fill('2026-10-05');await manager.getByLabel('Person',{exact:true}).selectOption('a');
+  await manager.getByLabel('Date',{exact:true}).fill('2026-10-05');await manager.getByRole('combobox',{name:/^Person\b/}).selectOption('a');
   await manager.getByLabel('Start',{exact:true}).fill('09:00');await manager.getByLabel('End',{exact:true}).fill('16:00');
   await manager.getByLabel('Configured shift role, if required',{exact:true}).fill('sales');
   await manager.getByLabel('Replace this person’s recorded absence on this date').check();
@@ -69,10 +69,14 @@ export async function runManualBrowser({socket,dataDirectory,evidenceDir,engine,
   await employee.getByRole('button',{name:'Fixture sign out',exact:true}).click();release();await settled;await employee.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   await employee.getByText('Your published schedule is unavailable.',{exact:true}).waitFor();assert.equal(await employee.getByRole('region',{name:'My published schedule'}).count(),0);check('late old-identity response refused');
   assert.deepEqual(evidence.blocked,[]);
+ }catch(error){
+  evidence.failure={name:error.name,message:error.message};
+  if(browser){evidence.pages=[];for(const context of browser.contexts())for(const page of context.pages())try{evidence.pages.push({url:page.url(),text:await page.locator('body').innerText({timeout:2000})});}catch{}}
+  throw error;
  }finally{
   const failures=[];
   for(const cleanup of [()=>browser?.close(),()=>server?.close(),()=>fixture?.close(),()=>rm(dist,{recursive:true,force:true})])try{await cleanup();}catch(error){failures.push(error);}
-  evidence.cleanup=failures.length===0;await mkdir(evidenceDir,{recursive:true});await writeFile(path.join(evidenceDir,'manual-browser-'+engine+'.json'),JSON.stringify(evidence,null,2));
+  evidence.cleanup=failures.length===0;await mkdir(evidenceDir,{recursive:true});await writeFile(path.join(evidenceDir,'manual-browser-'+engine+'.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));
   if(failures.length)throw new AggregateError(failures,'manual browser cleanup failed');
  }
  return evidence;

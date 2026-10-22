@@ -29,7 +29,7 @@ cleanup() {
  cp -R "$root/evidence"/. manual-browser-evidence/ 2>/dev/null || true
  if [[ "$cleanup_ok" == true ]]; then rm -rf -- "$root"; [[ ! -e "$root" ]] || cleanup_ok=false; fi
  [[ "$cleanup_ok" == true ]] || status=1
- printf '{"clusterAndContainerCleanupVerified":%s,"postgresVersion":%s}\n' "$cleanup_ok" "$version" > manual-browser-evidence/cleanup.json
+ printf '{"clusterAndContainerCleanupVerified":%s,"postgresVersion":%s}\n' "$cleanup_ok" "$version" | tee manual-browser-evidence/cleanup.json
  exit "$status"
 }
 trap cleanup EXIT
