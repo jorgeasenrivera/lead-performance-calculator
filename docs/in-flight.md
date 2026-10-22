@@ -481,3 +481,7 @@ These are not agent work. They are here so nobody proposes them again.
 ## Local disabled scheduler carrier, 22 October 2026
 
 Codex is preparing a separate main-based carrier at `codex/scheduler-carrier-main-local`, intended publication branch `codex/scheduler-published-delivery-local`. Scope: scheduler lineage and disabled manual publication/own-read components, local verification and CI gates. No PR485/492 merge, production activation, remote push or deployment. Existing records above are retained unchanged. See `docs/scheduler-carrier-readiness.md` for source lineage, excluded artifacts, evidence and overlap boundaries.
+
+## Local manual browser acceptance preparation
+
+Codex owns scripts/scheduler-manual/browser-*, scripts/probe-scheduler-manual.mjs and a dedicated synthetic CI job on codex/manual-browser-acceptance-local. PR497 remains unchanged. No local browser, provisioning, installation or push. Earlier image lookup deniedHTTP403 and not retried; user-approved preinstalled hostPG16 supersedes that route. No PGinstallation or system service change.
