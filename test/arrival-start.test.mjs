@@ -69,7 +69,10 @@ test("both desktop and touch waits remain bounded when frames or resizes stall",
 });
 
 test("sign-in pauses the existing breath without a rise or dot wave", () => {
-  assert.match(core, /mode === "signin" \? " login-launch" : ""/);
+  // The flight's launch pose, for the two modes that start the flight: sign-in,
+  // and saving a new password from a reset link (C97). Create Account and
+  // Forgot start no flight and keep the busy rise.
+  assert.match(core, /mode === "signin" \|\| mode === "reset" \? " login-launch" : ""/);
   const rule = core.slice(core.indexOf(".login-card.login-launch .login-logo {"));
   assert.match(rule, /^\.login-card\.login-launch \.login-logo \{\s*animation: markBreathe 5\.4s ease-in-out infinite; animation-play-state:paused; \}/);
   assert.match(rule, /\.login-card\.login-launch \.login-logo circle \{ animation:none; \}/);
