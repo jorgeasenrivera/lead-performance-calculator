@@ -1,0 +1,67 @@
+{
+  "mandatory-binding": {
+    "exit": 0,
+    "summary": [
+      "\u2139 tests 20",
+      "\u2139 suites 0",
+      "\u2139 pass 20",
+      "\u2139 fail 0",
+      "\u2139 cancelled 0",
+      "\u2139 skipped 0",
+      "\u2139 todo 0",
+      "\u2139 duration_ms 387.684807"
+    ],
+    "logSha256": "5dad83464c2e7d547d66d3cbf8bcfc7da42b2c7b22e9e4f2cc34d72b7050a9a9"
+  },
+  "carrier": {
+    "exit": 0,
+    "summary": [
+      "\u2139 tests 23",
+      "\u2139 suites 0",
+      "\u2139 pass 23",
+      "\u2139 fail 0",
+      "\u2139 cancelled 0",
+      "\u2139 skipped 0",
+      "\u2139 todo 0",
+      "\u2139 duration_ms 601.698123"
+    ],
+    "logSha256": "fc080099c3e1e1f3675e8b276ee746d8b541ca95377bbe9d33f0a753e614d417"
+  },
+  "full-suite": {
+    "exit": 0,
+    "summary": [
+      "\u2139 tests 1763",
+      "\u2139 suites 0",
+      "\u2139 pass 1762",
+      "\u2139 fail 0",
+      "\u2139 cancelled 0",
+      "\u2139 skipped 0",
+      "\u2139 todo 1",
+      "\u2139 duration_ms 21989.1611"
+    ],
+    "logSha256": "270b7c3454281a884e79b4e5ace0915fb8a619011e163e99d9ebbaaad4d27e6f"
+  },
+  "build": {
+    "exit": 0,
+    "summary": [],
+    "logSha256": "c343d754b860abd6f934d5c8dfc6729944ba25ea6ffc064d53321dee0c4143b8"
+  },
+  "scope": "exact selected main-based carrier; documentation-only verification record added after execution",
+  "baseMain": "25d821a6d0a8e3c9b4a700cc5845c574e1c9b837",
+  "network": "no hosted services/browser/production access",
+  "disabledFakeEnvironment": {
+    "exit": 0,
+    "handlersReturning503": 2,
+    "clientEnabled": false,
+    "fetchCalls": 0,
+    "logSha256": "c0d1c9ad4de9ef9db5235a667733d7debe952572545aaad4d03de14e7afd5ea9"
+  },
+  "independentReview": {
+    "agent": "/root/independent_relational_review",
+    "authoredPatch": false,
+    "mode": "read-only static cumulative review",
+    "result": "no new blocker",
+    "limits": "no browser or hosted/runtime/permission acceptance"
+  },
+  "externalLogs": "Raw logs retained as external local evidence; hashes above identify them. No workspace path is needed to read this portable summary."
+}

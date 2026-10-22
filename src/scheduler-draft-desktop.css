@@ -1,0 +1,17 @@
+/* Scoped reuse of shared-system.css palette/control tokens and planner spacing.
+   No global CSS or iframe/editor styles are changed by this composition. */
+.scheduler-draft-desktop{--sdd-paper:var(--sage-paper,#fffdf4);--sdd-forest:var(--sage-forest,#234939);--sdd-line:var(--sage-line,#cbd3c5);--sdd-sand:var(--sage-sand,#edeada);color:var(--sdd-forest);background:var(--sage-canvas,#f4f1e7);font-family:Geist,system-ui,sans-serif;min-width:0}
+.scheduler-draft-desktop :is(h2,h3,p){margin:0}
+.scheduler-draft-desktop button{font:inherit;min-height:44px;border:1px solid var(--sdd-line);border-radius:var(--sage-control,12px);padding:10px 14px;background:var(--sdd-paper);color:var(--sdd-forest);cursor:pointer}
+.scheduler-draft-desktop :is(button,summary):focus-visible{outline:3px solid var(--sdd-forest);outline-offset:3px}
+.scheduler-draft-desktop button:disabled{background:var(--sdd-sand);color:#52624d;cursor:not-allowed}
+.scheduler-draft-desktop .sdd-primary:not(:disabled){background:var(--sage-perf,#567d61);color:var(--sdd-paper)}
+.sdd-toolbar,.sdd-actions,.sdd-months li{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sdd-toolbar{justify-content:space-between;padding:16px 20px;background:var(--sdd-paper);border-bottom:1px solid var(--sdd-line)}
+.sdd-toolbar h2{font-size:1.25rem;line-height:1.35;margin-bottom:6px}
+.sdd-status{display:flex;gap:12px;flex-wrap:wrap;padding:12px 20px}
+.sdd-actions{padding:8px 20px 16px}
+.sdd-months{margin:0 20px 16px}.sdd-months summary{cursor:pointer;padding:10px 0}.sdd-months ul{list-style:none;padding:0;margin:0}.sdd-months li{padding:12px 0;border-top:1px solid var(--sdd-line);justify-content:space-between}.sdd-months p{margin-top:6px}
+.sdd-recovery,.sdd-warning{margin:0 20px 16px!important;padding:16px;background:var(--sage-warm,#f6e3c3);border:1px solid var(--sdd-line);border-radius:var(--sage-control,12px)}
+.sdd-recovery p{margin-top:8px}.sdd-recovery .sdd-actions{padding:16px 0 0}
+.sdd-editor{height:75vh;min-height:640px}.sdd-editor[inert]{pointer-events:none;opacity:.65}

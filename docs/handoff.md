@@ -1530,3 +1530,8 @@ Jorge's phone preview. X5 and #410 are separate.
 
 H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
 separate from X4, the per-store text sizing repair Jorge has now approved.
+
+
+## Local disabled scheduler carrier, 22 October 2026
+
+Codex is preparing a separate main-based carrier at `codex/scheduler-carrier-main-local`, intended publication branch `codex/scheduler-published-delivery-local`. Scope: scheduler lineage and disabled manual publication/own-read components, local verification and CI gates. No PR485/492 merge, production activation, remote push or deployment. Existing records above are retained unchanged. See `docs/scheduler-carrier-readiness.md` for source lineage, excluded artifacts, evidence and overlap boundaries.

@@ -1,0 +1,98 @@
+/* The scheduler calendar. Colours, cell shapes and the heat scale are the approved
+   Performance calendar's (#486 e3caf183); only the selectors are new, and all of
+   them sit under .sc-calendar so nothing here can reach another screen. Heat
+   rises from dark to bright: brighter green is more delivered. */
+.sc-calendar { --sc-forest:#183c2f; --sc-moss:#234939; --sc-ink:#fffdf4; --sc-line:#bfd0b473; --sc-gold:#e4c98d;
+  box-sizing:border-box; width:100%; min-width:0; padding:16px; border-radius:4px; background:var(--sc-moss); color:var(--sc-ink);
+  box-shadow:0 0 0 4px var(--sc-moss), 0 0 0 5px var(--sc-line); font:400 .875rem/1.5 var(--font-ui, system-ui, sans-serif); }
+/* On a wide screen the card keeps phone-like cells; the caller decides where it sits. */
+.sc-calendar[data-layout="panel"] { max-width:40rem; }
+.sc-calendar *, .sc-calendar *::before, .sc-calendar *::after { box-sizing:border-box; }
+.sc-calendar [hidden] { display:none; }
+
+.sc-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; margin:0 0 4px; }
+.sc-head h2 { margin:0; font:600 1.125rem/1.4 var(--font-ui, system-ui, sans-serif); color:var(--sc-ink); }
+.sc-note, .sc-key { margin:0; font:400 .6875rem/1.5 var(--font-ui, system-ui, sans-serif); color:var(--sc-ink); }
+.sc-summary { margin:0 0 12px; font:500 .875rem/1.5 var(--font-ui, system-ui, sans-serif); color:var(--sc-ink); overflow-wrap:anywhere; }
+.sc-retry { margin:0 0 12px; min-height:44px; padding:0 14px; border:1px solid var(--sc-line); border-radius:7px; background:var(--sc-forest); color:var(--sc-ink); font:inherit; cursor:pointer; }
+
+.sc-toggle { display:flex; flex-wrap:wrap; align-items:center; gap:10px; width:100%; min-height:48px; padding:12px; text-align:left;
+  border:1px solid var(--sc-line); border-radius:4px; background:var(--sc-forest); color:var(--sc-ink); font:inherit; cursor:pointer; }
+.sc-toggle:hover { background:#193b2e; }
+.sc-toggle-month { flex:1; min-width:0; font-weight:600; overflow-wrap:anywhere; }
+.sc-panel { padding:8px 0 0; }
+
+.sc-weekdays, .sc-grid { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:6px; }
+.sc-weekdays { margin-bottom:6px; text-align:center; font:500 .6875rem/1.5 var(--font-mono, ui-monospace, monospace); color:var(--sc-ink); }
+.sc-blank { min-height:44px; }
+
+/* Every date is the same size, whatever it holds. */
+.sc-day { position:relative; display:grid; place-items:center; width:100%; min-width:0; min-height:44px; padding:0;
+  border:1px solid var(--sc-line); border-radius:3px; background:var(--sc-forest); color:var(--sc-ink);
+  font:500 .8125rem/1.4 var(--font-mono, ui-monospace, monospace); cursor:pointer; }
+.sc-day:focus-visible, .sc-toggle:focus-visible, .sc-retry:focus-visible { outline:3px solid var(--sc-gold); outline-offset:2px; }
+.sc-day[aria-pressed="true"] { outline:2px solid var(--sc-ink); outline-offset:1px; }
+.sc-day.heat-0 { background:#183c2f; color:#fffdf4; }
+.sc-day.heat-1 { background:#234939; color:#fffdf4; }
+.sc-day.heat-2 { background:#3c5f49; color:#fffdf4; }
+.sc-day.heat-3 { background:#567d61; color:#fffdf4; }
+.sc-day.heat-4 { background:#8fd8af; color:#173d2b; }
+/* Not reported is never a heat step. Each reason has its own mark, so none of
+   them reads as a quiet day. */
+.sc-day:is(.sales-missing, .sales-unavailable, .sales-incomplete) { border-style:dashed; background:#fffef8; color:#234939; }
+.sc-day.sales-conflict { border:2px solid var(--sc-gold); background:#fffef8; color:#234939; }
+.sc-day.sales-future { background:transparent; color:var(--sc-ink); }
+.sc-day::after { position:absolute; right:3px; top:2px; font-size:.5rem; line-height:1; }
+.sc-day.sales-missing::after, .sc-day.sales-unavailable::after { content:'○'; }
+.sc-day.sales-incomplete::after { content:'◐'; }
+.sc-day.sales-conflict::after { content:'!'; }
+.sc-day.sales-future::after { content:'·'; }
+.sc-day.today { outline:2px solid var(--sc-gold); outline-offset:1px; }
+.sc-day.today[aria-pressed="true"] { outline-color:var(--sc-ink); }
+.sc-day.best { border:1px solid var(--sc-gold); box-shadow:inset 0 0 0 1px var(--sc-gold); }
+
+.sc-key { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:12px; }
+
+/* The day sheet sits on the light dialog surface of the approved design. */
+.sc-sheet { margin-top:16px; padding:16px; border:1px solid #3c5f49; border-radius:10px; background:#f5f5ee; color:#173d2b; }
+.sc-sheet h3 { margin:0 0 8px; font:600 1rem/1.4 var(--font-ui, system-ui, sans-serif); color:#173d2b; }
+/* Delivered is one row: the word on the left, the count on the right. */
+.sc-delivered { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:0 0 4px; }
+.sc-delivered-label { font-weight:600; }
+.sc-delivered-value { font:600 1.25rem/1.4 var(--font-mono, ui-monospace, monospace); overflow-wrap:anywhere; text-align:right; }
+.sc-fine { margin:0 0 8px; font-size:.75rem; line-height:1.5; color:#294c38; overflow-wrap:anywhere; }
+.sc-sheet h4 { margin:12px 0 4px; font:600 .875rem/1.4 var(--font-ui, system-ui, sans-serif); color:#173d2b; }
+.sc-sheet ul { margin:0; padding:0; list-style:none; }
+.sc-sheet li { padding:4px 0; border-top:1px solid #bfd0b4; overflow-wrap:anywhere; }
+.sc-sheet li:first-child { border-top:0; }
+.sc-source { color:#294c38; font-size:.75rem; }
+.sc-sheet details { margin-top:8px; }
+.sc-sheet summary { min-height:44px; display:flex; align-items:center; cursor:pointer; font-weight:600; }
+.sc-sheet summary:focus-visible { outline:3px solid #8a6a1f; outline-offset:2px; }
+
+.sc-schedule { margin:12px 0 0; font-size:.75rem; line-height:1.5; color:var(--sc-ink); overflow-wrap:anywhere; }
+
+@media (max-width:360px) {
+  .sc-calendar { padding:12px 8px; }
+  .sc-weekdays, .sc-grid { gap:2px; }
+  .sc-sheet { padding:12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-calendar, .sc-calendar * { animation:none !important; transition:none !important; }
+}
+
+/* The entry button sits on the dashboard's own surface, not inside the calendar card. */
+.sc-entry { min-width:0; margin-top:12px; }
+.sc-entry > .sc-toggle { --sc-forest:#183c2f; --sc-ink:#fffdf4; --sc-line:#bfd0b473; --sc-gold:#e4c98d; }
+.sc-entry > [id] { margin-top:8px; }
+
+/* The wide-screen calendar is a dialog on the approved light surface, over a scrim. */
+.sc-scrim { position:fixed; inset:0; z-index:400; display:flex; align-items:flex-start; justify-content:center; overflow:auto; padding:16px; background:rgba(23,61,43,.55); }
+.sc-dialog { width:100%; max-width:40rem; margin:auto; border:1px solid #3c5f49; border-radius:10px; background:#f5f5ee; overflow:hidden; }
+.sc-dialog-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; background:#234939; color:#fffdf4; }
+.sc-dialog-bar h2 { margin:0; font:600 1.125rem/1.4 var(--font-ui, system-ui, sans-serif); color:#fffdf4; }
+.sc-close { min-height:44px; padding:0 16px; border:1px solid #bfd0b473; border-radius:7px; background:#183c2f; color:#fffdf4; font:500 .875rem/1.4 var(--font-ui, system-ui, sans-serif); cursor:pointer; }
+.sc-close:focus-visible { outline:3px solid #e4c98d; outline-offset:2px; }
+.sc-dialog .sc-calendar { max-width:none; border-radius:0; box-shadow:none; }
+.sc-dialog .sc-head h2 { font-size:1rem; }
+@media (max-height:400px) { .sc-scrim { padding:8px; } .sc-dialog-bar { padding:8px 12px; } }

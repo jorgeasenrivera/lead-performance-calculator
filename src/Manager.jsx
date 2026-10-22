@@ -1,3 +1,4 @@
+import {MANUAL_SCHEDULER_ENABLED} from './scheduler-manual-client.mjs';
 import managerSignalCSS from "./manager-signal.css?inline";
 import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
 /* The manager's pages.
@@ -55,6 +56,11 @@ import { buzz, MOTION, useNet, AccountSheet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENAB
    salesperson's phone, the TV board, and every manager who never opens the lot
    editor would otherwise carry on every single load. */
 const FenceEditor = React.lazy(() => import("./FenceEditor.jsx"));
+/* The scheduler calendar (X26) stays out of the main bundle and off until a build asks
+   for it: the flag is read at build time, and nothing sets it for production. */
+const ManualManagerEntry = React.lazy(() => import('./scheduler-manual.jsx').then(m=>({default:m.ManualManagerEntry})));
+const SCHEDULER_CALENDAR = import.meta.env.VITE_SCHEDULER_CALENDAR === "1";
+const SchedulerCalendarEntry = React.lazy(() => import("./scheduler-calendar.jsx").then((m) => ({ default: m.SchedulerCalendarEntry })));
 
 /* ============================================================
    LEAD PERFORMANCE CALCULATOR v3
@@ -17352,6 +17358,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             <span className="bp-num"><DotNum value={String(Math.round(totalUnits))} dot={9} color="#fff" /></span>
             <span className="bp-goal">{goalUnits ? `/ ${fmtNum(goalBar)} goal` : canSetGoal ? "/ set a goal" : ""}</span>
           </button>
+          {!SCHEDULER_CALENDAR && (
           <button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>
             <span className="bp-mo"><PixIcon glyph="calendar" size={12} />{new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }).toUpperCase()}</span>
             <span className="bp-grid">
@@ -17360,6 +17367,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             </span>
             <span className="bp-left">{pace.daysLeft} selling {pace.daysLeft === 1 ? "day" : "days"} left</span>
           </button>
+          )}
           <button type="button" className="bp-l2" onClick={() => setPop({ k: "pace" })}>
             <span className="bp-strip">
               <span className="bp-dots">{Array.from({ length: dotN }, (_, i) => <i key={i} className={i < litDots ? "bp-d" : ""} />)}</span>
@@ -17372,9 +17380,11 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             <span className="bp-nu"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></span>
             <span className="bp-nul"><span><b>{fmtNum(split.nw)}</b> new</span><span><b>{fmtNum(split.us)}</b> used</span></span>
           </button>
+          {!SCHEDULER_CALENDAR && (
           <button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>
             <span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>
           </button>
+          )}
         </div>
         <div className="bp-secdiv" />
         <div className="bp-five">
@@ -17406,6 +17416,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             );
           })}
         </div>
+        {MANUAL_SCHEDULER_ENABLED && <React.Suspense fallback={null}><ManualManagerEntry client={supabase} storeId={store.id} store={store} data={data} isOff={isOff}/></React.Suspense>}
+        {SCHEDULER_CALENDAR && (
+          <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} isOff={isOff} layout="compact" /></React.Suspense>
+        )}
       </div>
 
       {canSetGoal && !goalMonth.set && (
@@ -18154,6 +18168,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             </button>
           </div>
           <div className="s2-chip-state">
+{MANUAL_SCHEDULER_ENABLED && <React.Suspense fallback={null}><ManualManagerEntry client={supabase} storeId={store.id} store={store} data={data} isOff={isOff}/></React.Suspense>}
+{SCHEDULER_CALENDAR ? (
+<React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} isOff={isOff} layout="panel" /></React.Suspense>
+) : (
 <SignalSchedule onCount={onCount} offCount={offToday.length}>
             <div className="s2-rota bloop-host" tabIndex={0}>
               <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
@@ -18207,6 +18225,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               </div>
             </div>
 </SignalSchedule>
+)}
           </div>
           </div>
       </aside>
