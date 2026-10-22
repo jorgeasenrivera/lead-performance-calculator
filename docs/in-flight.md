@@ -485,3 +485,11 @@ Codex is preparing a separate main-based carrier at `codex/scheduler-carrier-mai
 ## Local manual browser acceptance preparation
 
 Codex owns scripts/scheduler-manual/browser-*, scripts/probe-scheduler-manual.mjs and a dedicated synthetic CI job on codex/manual-browser-acceptance-local. PR497 remains unchanged. No local browser, provisioning, installation or push. Earlier image lookup deniedHTTP403 and not retried; user-approved preinstalled hostPG16 supersedes that route. No PGinstallation or system service change.
+
+## Local request-scoped manual server preparation
+
+Codex owns only scripts/scheduler-manual/server-adapter.mjs, server-adapter.test.mjs and SERVER-COMPOSITION.md in the isolated carrier worktree. Parent authorized code-only preparation and independent review, not push, main claim publication, activation, hosted calls, credentials or permissions. Existing API/UI sources and manifests remain unchanged. Capture executor privileges remain unresolved and no owner/service-role shortcut is permitted.
+
+## Local capture capability closure
+
+Parent authorized capture-executor.sql, restricted-capabilities.mjs and run-restricted-sql.mjs plus the local request adapter/tests/document above. Grants are migration source and disposable fake-data tests only. No hosted install, actual access change, push or public activation. Independent security review required. Public API/UI/runtime contract unchanged.
