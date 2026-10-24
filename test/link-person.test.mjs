@@ -16,7 +16,7 @@ const API = new URL("../api/", import.meta.url);
 
 let DEVICES=[];
 let USERS=[];
-let LINKS=[], PROFILE={ role:"manager", stores:["honda"] }, SESSION="mgr-1", sessionOk=true;
+let LINKS=[], PROFILE={ role:"manager", active:true, stores:["honda"] }, SESSION="mgr-1", sessionOk=true;
 let upserts=[], deletes=[];
 const j = (o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{"content-type":"application/json"}});
 globalThis.fetch = async (url, opt={}) => {
@@ -70,19 +70,19 @@ test("a linked account registers", async () => {
 
 // ---- who may link ----
 test("who may link", async () => {
-    SESSION="mgr-1"; PROFILE={ role:"manager", stores:["honda"] }; LINKS=[];
+    SESSION="mgr-1"; PROFILE={ role:"manager", active:true, stores:["honda"] }; LINKS=[];
     assert.ok(
       (await call(link,{store:"honda",user_id:"user-luis",person_id:"roster-luis"})).code === 200);
-    PROFILE={ role:"manager", stores:["other"] };
+    PROFILE={ role:"manager", active:true, stores:["other"] };
     assert.ok(
       (await call(link,{store:"honda",user_id:"user-luis",person_id:"roster-luis"})).code === 403);
-    PROFILE={ role:"admin", stores:[] };
+    PROFILE={ role:"admin", active:true, stores:[] };
     assert.ok(
       (await call(link,{store:"honda",user_id:"user-luis",person_id:"roster-luis"})).code === 200);
     PROFILE=null;
     assert.ok(
       (await call(link,{store:"honda",user_id:"user-luis",person_id:"roster-luis"})).code === 403);
-    PROFILE={ role:"manager", stores:["honda"] };
+    PROFILE={ role:"manager", active:true, stores:["honda"] };
     assert.ok(
       (await call(link,{store:"honda",user_id:"u",person_id:"p"}, null)).code === 401);
 });
@@ -124,7 +124,7 @@ test("unlinking takes the devices with it", async () => {
 
 // ---- reading the links back, which is what the manager's screen does ----
 test("reading the links back, which is what the manager's screen does", async () => {
-    SESSION="mgr-1"; PROFILE={ role:"manager", stores:["honda"] };
+    SESSION="mgr-1"; PROFILE={ role:"manager", active:true, stores:["honda"] };
     LINKS = [{ id:"honda:user-luis", user_id:"user-luis", store:"honda", person_id:"roster-luis" },
              { id:"honda:user-jason", user_id:"user-jason", store:"honda", person_id:"roster-jason" }];
     DEVICES = [{ person_id:"roster-luis", platform:"ios", updated_at:"2026-08-18T10:00:00Z" },
@@ -148,7 +148,7 @@ test("reading the links back, which is what the manager's screen does", async ()
       !JSON.stringify(res.body).match(/apns|fcm|activity_token/i), res.body);
 });
 test("the claims ride along, minus anybody already linked", async () => {
-    SESSION="mgr-1"; PROFILE={ role:"manager", stores:["honda"] };
+    SESSION="mgr-1"; PROFILE={ role:"manager", active:true, stores:["honda"] };
     LINKS = [{ id:"honda:user-luis", user_id:"user-luis", store:"honda", person_id:"roster-luis" }];
     USERS = [
       { id:"user-luis", email:"luis@x.com", user_metadata:{ claim_store:"honda", claim_person:"roster-luis" } },
@@ -162,10 +162,10 @@ test("the claims ride along, minus anybody already linked", async () => {
     USERS = [];
 });
 test("a manager of another store cannot read them", async () => {
-    PROFILE={ role:"manager", stores:["other"] };
+    PROFILE={ role:"manager", active:true, stores:["other"] };
     assert.ok(
       (await get(link,{store:"honda"})).code === 403);
-    PROFILE={ role:"manager", stores:["honda"] };
+    PROFILE={ role:"manager", active:true, stores:["honda"] };
     assert.ok(
       (await get(link,{store:"honda"}, null)).code === 401);
     assert.ok(
@@ -173,7 +173,7 @@ test("a manager of another store cannot read them", async () => {
 });
 test("reading writes nothing", async () => {
     // The GET must not be mistaken for a link attempt just because the body is empty.
-    PROFILE={ role:"manager", stores:["honda"] }; LINKS=[]; upserts=[];
+    PROFILE={ role:"manager", active:true, stores:["honda"] }; LINKS=[]; upserts=[];
     await get(link, { store:"honda" });
     assert.ok(
       upserts.length === 0, upserts);

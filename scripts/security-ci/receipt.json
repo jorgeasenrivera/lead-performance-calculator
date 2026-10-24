@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "base": "25d821a6d0a8e3c9b4a700cc5845c574e1c9b837",
+  "branch": "codex/security-authorization-ci",
+  "expectedChanges": [
+    ".github/workflows/checks.yml",
+    ".github/workflows/security-authorization.yml",
+    "api/_floor-access.mjs",
+    "api/floor-account.mjs",
+    "api/ingest-deal-event.js",
+    "api/link-person.mjs",
+    "api/queue-action.mjs",
+    "api/register-device.mjs",
+    "package.json",
+    "scripts/security-ci/offline-guard.cjs",
+    "scripts/security-ci/receipt.json",
+    "scripts/security-ci/run.mjs",
+    "scripts/security-ci/test-entry.mjs",
+    "scripts/security-ci/test-entry.test.mjs",
+    "scripts/security-ci/verify.mjs",
+    "scripts/security-ci/verify.test.mjs",
+    "scripts/security-ci/workflow.test.mjs",
+    "scripts/security-runtime.local-v1.json",
+    "scripts/verify-security-local.mjs",
+    "scripts/verify-security-local.test.mjs",
+    "test/link-person.test.mjs",
+    "test/security-authorization.test.mjs",
+    "vercel.json"
+  ],
+  "files": {
+    ".github/workflows/checks.yml": {
+      "mode": "100644",
+      "sha256": "7db8b8bddbe4b6c19bd0e712e518087a4783affff1c572f7622254b95be1f2ec"
+    },
+    ".github/workflows/security-authorization.yml": {
+      "mode": "100644",
+      "normalize": "workflow-receipt-anchor",
+      "sha256": "40541ab19a1349ecd474963c83bceca3785143efaa52768509b117e3ad020045"
+    },
+    "api/_floor-access.mjs": {
+      "mode": "100644",
+      "sha256": "b1b3ded3f81c8145e793cf27af960261f060f4057d7b8df93e44739f2500f14b"
+    },
+    "api/floor-account.mjs": {
+      "mode": "100644",
+      "sha256": "6f3f3cd57d0fe9861e1af1c8185549b289e754b21665cf3820f05d2408d483ac"
+    },
+    "api/ingest-deal-event.js": {
+      "mode": "100644",
+      "sha256": "c20ae382087f779647f1ad5363fc59cbabff8c6dfef5a2469c89a7effbcca293"
+    },
+    "api/link-person.mjs": {
+      "mode": "100644",
+      "sha256": "a71155dc8752a1d2eb4629f30735a52b0a9f97bcb46761dd0e9e9f8fa43b9724"
+    },
+    "api/queue-action.mjs": {
+      "mode": "100644",
+      "sha256": "84ebb4560970526d1f73022ff10b02cf35b982a29613e333a6d5f295de63ff68"
+    },
+    "api/register-device.mjs": {
+      "mode": "100644",
+      "sha256": "bf23dcf569d5b240fbda753760bf198c705781436cccf2570cbc446a98ae5817"
+    },
+    "package.json": {
+      "mode": "100644",
+      "sha256": "157468d339563e84bf73652740177e84465decd10dbed3beb80777e225f32516"
+    },
+    "scripts/security-ci/offline-guard.cjs": {
+      "mode": "100644",
+      "sha256": "2df0c8e4866e59d921b868be8c5b705256a1d31e9a1ac0e6d26d36903bfa5863"
+    },
+    "scripts/security-ci/run.mjs": {
+      "mode": "100644",
+      "sha256": "cb811b32e344db0cb98e223bb8d599ae3f8c6b83ec601291cca08a0c2f1b027d"
+    },
+    "scripts/security-ci/test-entry.mjs": {
+      "mode": "100644",
+      "sha256": "6d5f89fac8461ff02bf057d778fe1241130bd8b2bcd764f418b0f2c6d8a2aeac"
+    },
+    "scripts/security-ci/test-entry.test.mjs": {
+      "mode": "100644",
+      "sha256": "9fa3e2ebee0aca85b1de6d8ce4f82c9bcddd6abe6095b01bc4fb33e81d27d1b8"
+    },
+    "scripts/security-ci/verify.mjs": {
+      "mode": "100644",
+      "sha256": "af71e1e429124de34db06d765b4704fe72546392888542f977cd72ff1d723e72"
+    },
+    "scripts/security-ci/verify.test.mjs": {
+      "mode": "100644",
+      "sha256": "b3db2b778dac2551280768a23a1a4edc8f53e3bdedfc60d23adc50c6a69ba06d"
+    },
+    "scripts/security-ci/workflow.test.mjs": {
+      "mode": "100644",
+      "sha256": "1eb8496f08055055f29fff4fb2c27bb96ad11687b4d0055ea2202e27063f65bd"
+    },
+    "scripts/security-runtime.local-v1.json": {
+      "mode": "100644",
+      "sha256": "36281662c5b1190cb22ca73c39c69b2aa9a7753faf97aac9eadfc65d9bc0cd53"
+    },
+    "scripts/verify-security-local.mjs": {
+      "mode": "100644",
+      "sha256": "c1d96eaa1700466de7e8606ba2cb80b5689da23e52a7d66a6b290847cc94f163"
+    },
+    "scripts/verify-security-local.test.mjs": {
+      "mode": "100644",
+      "sha256": "4ce1d6acd43fabe7bc335d9bfa5574f30d33b8f927e0d42c98c6394fa9d93204"
+    },
+    "test/link-person.test.mjs": {
+      "mode": "100644",
+      "sha256": "7364c752058715b0417459023588b9565f23dec5cb7685c076cc91d94f2288a5"
+    },
+    "test/security-authorization.test.mjs": {
+      "mode": "100644",
+      "sha256": "6439f7f93ad0b55a89a33a4fc73e2d1ec9635bd5f16bb45c2bbbba01656c866c"
+    },
+    "vercel.json": {
+      "mode": "100644",
+      "sha256": "ccb211882bbbb6bff021a581ccdef17ffbca4df47ba05f4af31344306008123e"
+    }
+  },
+  "tests": [
+    "scripts/scheduler-performance/assignment-view.test.mjs",
+    "scripts/scheduler-performance/day-edit-state.test.mjs",
+    "scripts/scheduler-performance/day-motion.test.mjs",
+    "scripts/scheduler-performance/delivery-routing.test.mjs",
+    "scripts/scheduler-performance/demand-context.test.mjs",
+    "scripts/scheduler-performance/generation.test.mjs",
+    "scripts/scheduler-performance/haptics.test.mjs",
+    "scripts/scheduler-performance/html-finalize.test.mjs",
+    "scripts/scheduler-performance/isolation.test.mjs",
+    "scripts/scheduler-performance/mobile-roster.test.mjs",
+    "scripts/scheduler-performance/month-model.test.mjs",
+    "scripts/scheduler-performance/sage-icons.test.mjs",
+    "scripts/scheduler-performance/sales-heat.test.mjs",
+    "scripts/scheduler-performance/schedule-import.test.mjs",
+    "scripts/scheduler-performance/shared-system.test.mjs",
+    "scripts/scheduler-performance/store-editor.test.mjs",
+    "scripts/scheduler-performance/team-model.test.mjs",
+    "scripts/scheduler-performance/weekly-hours.test.mjs",
+    "scripts/scheduler-proposal/model.test.mjs",
+    "scripts/scheduler-proposal/store-editor.test.mjs",
+    "scripts/security-ci/test-entry.test.mjs",
+    "scripts/security-ci/verify.test.mjs",
+    "scripts/security-ci/workflow.test.mjs",
+    "test/account-sheet.test.mjs",
+    "test/app-errors.test.mjs",
+    "test/app-only.test.mjs",
+    "test/app-workflow.test.mjs",
+    "test/apply-decisions.test.mjs",
+    "test/arrival-prototype.test.mjs",
+    "test/arrival-scheduler.test.mjs",
+    "test/arrival-scroll-races.test.mjs",
+    "test/arrival-start.test.mjs",
+    "test/arrival-surface.test.mjs",
+    "test/backfill-stock-split.test.mjs",
+    "test/board-loader.test.mjs",
+    "test/c105-phone-pass.test.mjs",
+    "test/daily-sales-integrity-copy.test.mjs",
+    "test/daily-sales-integrity-snapshot.test.mjs",
+    "test/daily-sales-integrity.test.mjs",
+    "test/delete-account.test.mjs",
+    "test/demo-salesperson.test.mjs",
+    "test/demo-seed-day.test.mjs",
+    "test/desktop-profile.test.mjs",
+    "test/device.test.mjs",
+    "test/feel-evidence.test.mjs",
+    "test/feel-fixture-day.test.mjs",
+    "test/feel-navigation.test.mjs",
+    "test/feel-read.test.mjs",
+    "test/feel.test.mjs",
+    "test/floor-access.test.mjs",
+    "test/floor-account.test.mjs",
+    "test/floor-presence.test.mjs",
+    "test/fold-sticks.test.mjs",
+    "test/geofence.test.mjs",
+    "test/goal-standing.test.mjs",
+    "test/hero-channel-status.test.mjs",
+    "test/hours.test.mjs",
+    "test/ingest-handler.test.mjs",
+    "test/link-person.test.mjs",
+    "test/live-standing.test.mjs",
+    "test/login-performance.test.mjs",
+    "test/lost-browser.test.mjs",
+    "test/manager-performance.test.mjs",
+    "test/manager-signal.test.mjs",
+    "test/merge-gaps.test.mjs",
+    "test/merge-policy.test.mjs",
+    "test/migration-history.test.mjs",
+    "test/mock-cors.test.mjs",
+    "test/motion-compare.test.mjs",
+    "test/mtd-channels.test.mjs",
+    "test/native-permissions.test.mjs",
+    "test/no-duplicates.test.mjs",
+    "test/old-links.test.mjs",
+    "test/parsers.test.mjs",
+    "test/people-link-home.test.mjs",
+    "test/people-status.test.mjs",
+    "test/phone-action.test.mjs",
+    "test/phone-board-search.test.mjs",
+    "test/phone-rows.test.mjs",
+    "test/privacy-page.test.mjs",
+    "test/prune-schedule.test.mjs",
+    "test/push-apns-error.test.mjs",
+    "test/queue-action.test.mjs",
+    "test/queue-hook-auth.test.mjs",
+    "test/queue-notify.test.mjs",
+    "test/report-alert.test.mjs",
+    "test/rooms-hours.test.mjs",
+    "test/rooms.test.mjs",
+    "test/row-access.test.mjs",
+    "test/row-cas.test.mjs",
+    "test/security-authorization.test.mjs",
+    "test/sftp-arrival.test.mjs",
+    "test/sftp-server.test.mjs",
+    "test/stale-chunk.test.mjs",
+    "test/stated-split.test.mjs",
+    "test/station-day.test.mjs",
+    "test/station-gate.test.mjs",
+    "test/stations.test.mjs",
+    "test/store-keys.test.mjs",
+    "test/store-month.test.mjs",
+    "test/tv-rota.test.mjs",
+    "test/vitals.test.mjs"
+  ]
+}

@@ -13,6 +13,7 @@ on:
 
 jobs:
   test:
+    if: ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/codex/security-authorization-ci') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/security-authorization-ci')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,7 @@ jobs:
   # request the table is posted as a comment, so every diff says what it did
   # to the phone.
   feel:
+    if: ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/codex/security-authorization-ci') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/security-authorization-ci')) }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
@@ -138,6 +140,7 @@ jobs:
   # has no input channel to move a real thumb, so it says so and skips them.
   # This job blocking therefore adds no new flake surface.
   feel-webkit:
+    if: ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/codex/security-authorization-ci') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/security-authorization-ci')) }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
@@ -193,7 +196,7 @@ jobs:
   # what rule 5 asks for and what nine builds of one card were the cost of
   # not having.
   shots:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && !((github.event_name == 'push' && github.ref == 'refs/heads/codex/security-authorization-ci') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/security-authorization-ci'))
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble

@@ -1,0 +1,34 @@
+name: security authorization candidate
+on:
+  push:
+    branches: [codex/security-authorization-ci]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  qualify:
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/codex/security-authorization-ci') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/security-authorization-ci') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SECURITY_RECEIPT_SHA256: "c7d03cab7fe34cf2f0e66a70522b00d40f9fb1aeef58085e4e58e2d562440520"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+      - name: Verify reviewed candidate before dependencies
+        run: node scripts/security-ci/verify.mjs --receipt-sha256="$SECURITY_RECEIPT_SHA256"
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Selected offline tests
+        run: node scripts/security-ci/run.mjs tests
+      - name: Isolated offline build
+        run: node scripts/security-ci/run.mjs build
+      - name: Verify candidate remained unchanged
+        if: always()
+        run: node scripts/security-ci/verify.mjs --receipt-sha256="$SECURITY_RECEIPT_SHA256"

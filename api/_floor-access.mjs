@@ -15,7 +15,7 @@
  *             store (an HMAC under WALL_KEY_SECRET). Writes nothing.
  *   staff     signed in, and the store is theirs: an admin, the store on an
  *             approved profile, or their account linked to a person on that
- *             store's floor. The same three as `can_use_store` in the lock.
+ *             store's floor. These server checks also require an active profile.
  *             Staff ask here for a TV's key, to put in its link.
  *
  * Pure: no database, no clock of its own. Everything it decides on is passed in.
@@ -40,11 +40,23 @@ export function storeDay(at = new Date(), tz = "America/New_York") {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(at);
 }
 
-/* Staff: the same three ways in as can_use_store(). An inactive profile is
+export function accountIsActive(profile) {
+  return profile?.active === true;
+}
+
+/* Account administration is not a linked salesperson action. Pending status
+   retains its existing behavior until the management approval rule is settled. */
+export function mayManageAccounts(profile, store) {
+  if (!accountIsActive(profile)) return false;
+  return profile.role === "admin" || (profile.role === "manager"
+    && Array.isArray(profile.stores) && profile.stores.includes(store));
+}
+
+/* Staff: an inactive profile is
    out whatever else is true; a pending one gets in only through a link a
    manager made, which is how an associate's account reaches the floor. */
 export function staffMayUse({ profile, linkedStores = [] } = {}, store) {
-  if (!profile || profile.active === false) return false;
+  if (!accountIsActive(profile)) return false;
   if (profile.role === "admin") return true;
   if (!profile.pending && Array.isArray(profile.stores) && profile.stores.includes(store)) return true;
   return linkedStores.includes(store);

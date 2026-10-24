@@ -11,6 +11,7 @@
  * The person is taken from the session, never from the body: a phone that
  * could name a person_id could put somebody else at lunch.
  */
+import { accountIsActive } from "./_floor-access.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
 import { applyQueueAction, QUEUE_ACTIONS } from "./_queue-action.mjs";
@@ -55,6 +56,11 @@ export default async function handler(req, res) {
   const db = createClient(supabaseUrl(), serviceKey(), { auth: { persistSession: false } });
   const { data: who, error: whoErr } = await db.auth.getUser(jwt);
   if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid. Open Sage and sign in again." });
+
+  const { data: profile, error: profileErr } = await db.from("profiles")
+    .select("active").eq("id", who.user.id).maybeSingle();
+  if (profileErr) return res.status(500).json({ error: "could not check this account" });
+  if (!accountIsActive(profile)) return res.status(403).json({ error: "this account is not active" });
 
   const { data: links, error: linkErr } = await db
     .from("floor_people").select("person_id").eq("user_id", who.user.id).eq("store", store).limit(1);
