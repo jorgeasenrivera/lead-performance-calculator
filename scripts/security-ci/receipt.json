@@ -12,6 +12,14 @@
     "api/queue-action.mjs",
     "api/register-device.mjs",
     "package.json",
+    "scripts/browser-canary/README.md",
+    "scripts/browser-canary/canary.mjs",
+    "scripts/browser-canary/checks.mjs",
+    "scripts/browser-canary/checks.test.mjs",
+    "scripts/browser-canary/package-lock.json",
+    "scripts/browser-canary/package.json",
+    "scripts/browser-canary/run-container.sh",
+    "scripts/browser-canary/seccomp.json",
     "scripts/security-ci/offline-guard.cjs",
     "scripts/security-ci/receipt.json",
     "scripts/security-ci/run.mjs",
@@ -34,8 +42,8 @@
     },
     ".github/workflows/security-authorization.yml": {
       "mode": "100644",
-      "normalize": "workflow-receipt-anchor",
-      "sha256": "40541ab19a1349ecd474963c83bceca3785143efaa52768509b117e3ad020045"
+      "sha256": "9330afb3a287e293c0db1b9b07f5792de13fb012aa577815b3720c6d668d1678",
+      "normalize": "workflow-receipt-anchor"
     },
     "api/_floor-access.mjs": {
       "mode": "100644",
@@ -116,6 +124,38 @@
     "vercel.json": {
       "mode": "100644",
       "sha256": "ccb211882bbbb6bff021a581ccdef17ffbca4df47ba05f4af31344306008123e"
+    },
+    "scripts/browser-canary/README.md": {
+      "mode": "100644",
+      "sha256": "dde6020b71a1a5ec611b70dc2cd383641e4794aa93e753c8f0b755c5e62e188a"
+    },
+    "scripts/browser-canary/canary.mjs": {
+      "mode": "100644",
+      "sha256": "3158bb373e81313e2c6cd51999a2a8413ca8eeaa5400f12ced80d3e384d7241f"
+    },
+    "scripts/browser-canary/checks.mjs": {
+      "mode": "100644",
+      "sha256": "3c863b37188f8c84bd02bb5268a1f35ceaecd7e8a8792c5c7b45e03c52a741d8"
+    },
+    "scripts/browser-canary/checks.test.mjs": {
+      "mode": "100644",
+      "sha256": "662aa6f08f12b465f413d2b93eb82a4c8c36225fe924595b34dec632f44179d6"
+    },
+    "scripts/browser-canary/package-lock.json": {
+      "mode": "100644",
+      "sha256": "0270da7efd402e19ee85a1b22e4256e55b1c4ff61d570ffb4c73ae0a751dfacc"
+    },
+    "scripts/browser-canary/package.json": {
+      "mode": "100644",
+      "sha256": "4234eadea832d54eb3c85245a30387998c2cac9a410934634800a25301e665e2"
+    },
+    "scripts/browser-canary/run-container.sh": {
+      "mode": "100644",
+      "sha256": "512710649a3d4d4399fa7de61c4eb5d715692aee8ea9593dcf80668f6ddb9d20"
+    },
+    "scripts/browser-canary/seccomp.json": {
+      "mode": "100644",
+      "sha256": "cc3e61cabda6bbc1e53e54d27ba4d55a9d3be829b6dd1a596f4a7b31b1cc7849"
     }
   },
   "tests": [
@@ -220,6 +260,7 @@
     "test/store-keys.test.mjs",
     "test/store-month.test.mjs",
     "test/tv-rota.test.mjs",
-    "test/vitals.test.mjs"
+    "test/vitals.test.mjs",
+    "scripts/browser-canary/checks.test.mjs"
   ]
 }
