@@ -992,6 +992,7 @@ async function loadShared(key, fallback, throwOnError) {
     if (r.timedOut) throw new Error("timed out");
     if (r.error) throw r.error;
     const { data, error } = r.value;
+    if (data) observeRowPresent(key);
     if (error) throw error;
     if (REMEMBERED_SHARED.has(key) && data) cachePut("shared:" + key, data.value);
     return data ? data.value : fallback;
@@ -1146,6 +1147,7 @@ async function loadStoreStamp(key) {
   if (!supabase) return null;
   const { data, error } = await supabase.from("app_data").select("updated_at").eq("key", key).maybeSingle();
   if (error) throw error;
+  if (data) observeRowPresent(key);
   return data ? data.updated_at : null;
 }
 
@@ -1191,6 +1193,58 @@ async function saveShared(key, value, quiet) {
    from the same browser and nothing else has written in between: the revision
    says so in a few bytes, and the copy we already hold is the server's. */
 const casCache = new Map();
+/* A first save needs to know the row did not exist when the copy it is saving
+   was read. That fact belongs to one loaded copy, one store, one signed-in
+   session and one read. It is kept against the exact loaded object (never the
+   store id) and goes with a caller that clones that copy only as the issued
+   record itself, which is checked again where it is used. Any read that sees the
+   row present, and any accepted load, retires every proof for that store, whoever
+   holds it. A sign-in or sign-out ends them all. A failed read, a remembered copy,
+   an unmarked clone or a read that was overtaken carries no proof, and the merge
+   refuses. */
+const absenceAtLoad = new WeakMap();
+const issuedProofs = new WeakSet();
+const loadGeneration = new Map();      // observed-PRESENCE generation: moves only when a row is seen to exist
+const installGeneration = new Map();   // accepted-INSTALL generation, per store and slot ("screen" or "cache")
+let authEpoch = 0;
+const bumpAuthEpoch = () => { authEpoch++; };
+const storeIdOfKey = (key) => { const m = /^lpc:store:(.+):v2$/.exec(String(key)); return m && storeKey(m[1]) === key ? m[1] : null; };
+const observeRowPresent = (key) => { const id = storeIdOfKey(key); if (id) loadGeneration.set(id, (loadGeneration.get(id) || 0) + 1); };
+// Taken BEFORE a read starts: the store's presence generation and the auth epoch the read began in.
+// A read that finishes after a sign-in or sign-out answers for a session that is gone.
+const loadMark = (storeId) => ({ gen: loadGeneration.get(storeId) || 0, epoch: authEpoch });
+// Called when a read completes. It only decides whether the copy MAY carry an absence proof; the proof
+// is not usable until that exact copy is installed as a baseline (installBaseline). Two overlapping
+// absent reads that saw no row can each qualify, because neither moves the presence generation.
+const markLoad = (doc, storeId, actor, absent, readGen) => {
+  const now = loadGeneration.get(storeId) || 0;
+  const clean = absent === true && actor && doc && typeof doc === "object" && !!readGen && now === readGen.gen && readGen.epoch === authEpoch;
+  if (clean) { const p = { storeId, actor, epoch: authEpoch, gen: now, installs: {}, live: true }; issuedProofs.add(p); absenceAtLoad.set(doc, p); }
+};
+// Called at the point a copy actually becomes the baseline in a slot. A later install into the same
+// slot supersedes this copy's proof; the other slot is untouched.
+const installBaseline = (doc, storeId, slot) => {
+  const k = storeId + "|" + slot, n = (installGeneration.get(k) || 0) + 1;
+  installGeneration.set(k, n);
+  const p = doc && typeof doc === "object" ? absenceAtLoad.get(doc) : null;
+  if (p && issuedProofs.has(p) && p.storeId === storeId) p.installs[slot] = n;
+};
+// A capture is what a consumer holds: the proof, the slot it reads its baseline from and the install number of that
+// slot AT CAPTURE TIME. It is frozen and never re-read from the proof's mutable install table, so installing the
+// same object again later cannot reauthorize an intent captured before it.
+const proofHolds = (cap, storeId, actor) => {
+  const p = cap && cap.proof;
+  return !!p && issuedProofs.has(p) && !!actor && p.live === true && p.storeId === storeId
+    && p.actor === actor && p.epoch === authEpoch && p.gen === (loadGeneration.get(storeId) || 0)
+    && typeof cap.inst === "number" && p.installs[cap.slot] === cap.inst
+    && installGeneration.get(storeId + "|" + cap.slot) === cap.inst;
+};
+const absenceProof = (doc, storeId, actor, slot) => {
+  const p = doc && typeof doc === "object" && slot ? absenceAtLoad.get(doc) : null;
+  if (!p || p.installs[slot] === undefined) return null;
+  const cap = Object.freeze({ proof: p, slot, inst: p.installs[slot] });
+  return proofHolds(cap, storeId, actor) ? cap : null;
+};
 async function saveStoreCAS(key, build, tries = 8) {
   if (!supabase) { lastSaveError = "No database client"; return { ok: false, rev: null }; }
   let conflicts = 0;
@@ -1210,6 +1264,7 @@ async function saveStoreCAS(key, build, tries = 8) {
         server = row ? row.value : null;
         if (server) casCache.set(key, { rev: server.rev ?? null, value: server });
       }
+      if (server) observeRowPresent(key);   // seen present: no absence proof survives this
       const rev = (server && Number(server.rev)) || 0;
       const value = { ...build(server), rev: rev + 1 };
 
@@ -1218,7 +1273,7 @@ async function saveStoreCAS(key, build, tries = 8) {
         // create it cannot both believe they won.
         const { error } = await supabase.from("app_data").insert({ key, value });
         if (error) {
-          if (String(error.code) === "23505") { conflicts++; continue; }   // someone beat us
+          if (String(error.code) === "23505") { observeRowPresent(key); conflicts++; continue; }   // someone beat us
           throw error;
         }
         lastSaveError = null; buzz("taken");
@@ -1295,6 +1350,7 @@ async function authClaimName(claim) {
   return { error: error ? error.message : null };
 }
 async function authSignIn(email, password) {
+  bumpAuthEpoch();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   return { error: error ? error.message : null };
 }
@@ -1318,6 +1374,7 @@ async function authSignUp(email, password, name, kind, claim = null) {
   return { error: error ? error.message : null };
 }
 async function authSignOut() {
+  bumpAuthEpoch();
   if (supabase) await supabase.auth.signOut();
 }
 async function authResetPassword(email) {
@@ -1413,7 +1470,7 @@ async function markOnboarded() {
 }
 function onAuthChange(cb) {
   if (!supabase) return () => {};
-  const { data } = supabase.auth.onAuthStateChange(() => cb());
+  const { data } = supabase.auth.onAuthStateChange((event) => { if (event === "SIGNED_OUT") bumpAuthEpoch(); cb(); });
   return () => { try { data.subscription.unsubscribe(); } catch (e) {} };
 }
 async function getTokens() {
@@ -1438,6 +1495,7 @@ async function loadStrict(key) {
     const { data, error } = await supabase
       .from("app_data").select("value").eq("key", key).maybeSingle();
     if (error) throw error;
+    if (data) observeRowPresent(key);
     return { ok: true, missing: !data, value: data ? data.value : null };
   } catch (e) {
     console.error("load failed", key, e);
@@ -2032,6 +2090,7 @@ export default function LeadPerformanceCalculator() {
         // First load: pull every accessible store, cache it, pick a starting view.
         const all = {};
         for (const s of accessible) {
+          const readGen = loadMark(s.id);
           const got = await withTimeout(loadStrict(storeKey(s.id)));
           const r = got.value || { ok: false };
           let d = r.ok ? r.value : undefined;
@@ -2059,8 +2118,10 @@ export default function LeadPerformanceCalculator() {
             continue;
           }
           if (!d.__storeId) d.__storeId = s.id;   // only ever stamps a document that arrived without one
+          markLoad(d, s.id, session && session.id, r.ok === true && r.missing === true, readGen);
           all[s.id] = d;
         }
+        for (const id of Object.keys(all)) installBaseline(all[id], id, "cache");
         setAdminData(all);
         // an admin opening the tool is what triggers the daily backup
         if (session.role === "admin") runAutoBackup(config, all, session.name).catch(() => {});
@@ -2078,12 +2139,13 @@ export default function LeadPerformanceCalculator() {
         const openable = remembered && accessible.some((x) => x.id === remembered) ? remembered : null;
         if (openable) {
           setView(openable);
+          installBaseline(all[openable], openable, "screen");
           setStoreData(all[openable]);
         } else if (session.role === "overseer" && accessible.length > 1) {
           setView("combined");
         } else {
           const first = accessible[0]?.id;
-          if (first) { setView(first); setStoreData(all[first]); }
+          if (first) { setView(first); installBaseline(all[first], first, "screen"); setStoreData(all[first]); }
           else if (session.role === "admin") setView("admin");
         }
         setInitialViewReady(true);
@@ -2098,6 +2160,7 @@ export default function LeadPerformanceCalculator() {
       if (!missing.length) return;
       const add = {};
       for (const s of missing) {
+        const readGen = loadMark(s.id);
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
@@ -2107,9 +2170,10 @@ export default function LeadPerformanceCalculator() {
           continue;
         }
         if (!d.__storeId) d.__storeId = s.id;
+        markLoad(d, s.id, session && session.id, r.missing === true, readGen);
         add[s.id] = d;
       }
-      if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
+      if (Object.keys(add).length) { for (const id of Object.keys(add)) installBaseline(add[id], id, "cache"); setAdminData((p) => ({ ...p, ...add })); }
     })().catch((error) => {
       if (firstPick) setLoadErr(true);
       else console.error("store refresh failed", error);
@@ -2126,7 +2190,9 @@ export default function LeadPerformanceCalculator() {
       if (!current) return false;
       const next = JSON.parse(JSON.stringify(current));
       next.boardDisplay = display;
-      await persistStore(storeId, next, { action: "Changed board display", detail: JSON.stringify(display) });
+      // This selector reads the cache first, so the capture is for the slot it actually used.
+      const proof = absenceProof(current, storeId, session && session.id, adminData[storeId] ? "cache" : "screen");
+      await persistStore(storeId, next, { action: "Changed board display", detail: JSON.stringify(display) }, current, [], proof);
       return true;
     };
     return () => { delete window.__lpcSaveBoardDisplay; };
@@ -2218,6 +2284,7 @@ export default function LeadPerformanceCalculator() {
           setStoreData(null); setStoreLoadFailed(true);
           return;
         }
+        installBaseline(cached, view, "screen");
         setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setTab("board"); return;
       }
       /* Drop the store we were showing BEFORE fetching the next one. Without this
@@ -2235,8 +2302,10 @@ export default function LeadPerformanceCalculator() {
            there was no failure to catch, so nothing downstream ever ran. Twelve
            seconds is past any honest load and inside the stuck-screen watchdog,
            so a hung connection ends as a stated failure rather than a spinner. */
+        const fallback = emptyStoreData();
+        const readGen = loadMark(want);
         const d = await Promise.race([
-          loadStore(view, emptyStoreData(), true), // throw on a real load error
+          loadStore(view, fallback, true), // throw on a real load error
           new Promise((_, rej) => setTimeout(() => rej(new Error("The store took too long to answer (12s).")), 12000)),
         ]);
         if (dead || want !== view) return;
@@ -2264,6 +2333,11 @@ export default function LeadPerformanceCalculator() {
         }
         setStoreMismatch(null);
         d.__storeId = want;   // only ever stamps a document that arrived without one
+        // Marked only now, when this exact copy becomes the one on screen. The
+        // fallback comes back only when the read itself answered "no row", and no
+        // proof is issued if anything else observed the row since the read began.
+        markLoad(d, want, session && session.id, d === fallback, readGen);
+        installBaseline(d, want, "screen");
         setStoreData(d); setStoreLoadFailed(false); setStoreLoadError("");
       } catch (e) {
         if (dead || want !== view) return;
@@ -2364,14 +2438,29 @@ export default function LeadPerformanceCalculator() {
      Every save takes a number, and only the newest one is allowed to write
      what came back onto the screen. */
   const saveSeq = useRef(0);
-  const persistStore = (storeId, next, audit) => {
+  const persistStore = (storeId, next, audit, sourceBaseline, reportedFields = [], proof) => {
     const seq = ++saveSeq.current;
-    const run = () => persistStoreNow(storeId, next, audit, seq);
+    // Capture this render's loaded baseline before queuing, not the optimistic
+    // state set during save. Reuse the same intent through every CAS retry.
+    const slot = view === storeId && storeData?.__storeId === storeId ? "screen" : "cache";
+    const loaded = sourceBaseline !== undefined ? sourceBaseline : (slot === "screen" ? storeData : adminData[storeId]);
+    // The absence proof belongs to the loaded copy the caller started from. A caller
+    // that works from a clone passes the issued record it took from that exact copy;
+    // it is checked here and again at every attempt, never trusted.
+    const actor = session && session.id;
+    // Default selector (above): the proof is captured for the slot the baseline was read from. An explicit baseline
+    // without an explicit capture has unknown provenance and carries no proof.
+    const absence = proof !== undefined ? (proofHolds(proof, storeId, actor) ? proof : null)
+      : (sourceBaseline !== undefined ? null : absenceProof(loaded, storeId, actor, slot));
+    const baseline = loaded ? globalThis.structuredClone(loaded) : null;
+    const intended = globalThis.structuredClone(next);
+    const fields = globalThis.structuredClone(reportedFields);
+    const run = () => persistStoreNow(storeId, intended, audit, seq, baseline, fields, absence);
     const p = saveChain.current.then(run, run);
     saveChain.current = p.catch(() => {});
     return p;
   };
-  const persistStoreNow = async (storeId, next, audit, seq = saveSeq.current) => {
+  const persistStoreNow = async (storeId, next, audit, seq = saveSeq.current, baseline = null, reportedFields = [], absence = null) => {
     if (storeLoadFailed) {
       alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
       return;
@@ -2413,9 +2502,15 @@ export default function LeadPerformanceCalculator() {
     // we are mid-flight we fold into THEIR document and try again rather than
     // flattening it. Whoever loses the race loses nothing.
     next.__storeId = storeId;
-    const res = await saveStoreCAS(storeKey(storeId), (server) => mergeAgainstServer(next, server));
+    const res = await saveStoreCAS(storeKey(storeId), (server) => {
+      // Checked at every attempt: a presence seen by this save or anyone else since the read
+      // has retired the proof, and so has a sign-in or sign-out.
+      const rowAbsentAtLoad = proofHolds(absence, storeId, session && session.id);
+      return mergeAgainstServer(globalThis.structuredClone(next), server, { baseline, reportedFields, rowAbsentAtLoad });
+    });
     const ok = res.ok;
     if (ok) {
+      if (absence) absence.proof.live = false;   // spent: the row exists now, by this save
       const merged = res.value || next;
       if (seq === saveSeq.current) {
         setStoreData(merged);
@@ -2430,7 +2525,7 @@ export default function LeadPerformanceCalculator() {
     }
     // Refresh the TV row so every casted screen picks this up on its next poll.
     // Failing this must never fail the save, so it is deliberately swallowed.
-    if (config) publishBoard(config, storeId, next);
+    if (config) publishBoard(config, storeId, res.value || next);
     try { storeStampRef.current = await loadStoreStamp(storeKey(storeId)); } catch (e) {}
     if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
   };
@@ -2513,7 +2608,12 @@ export default function LeadPerformanceCalculator() {
        "today" is not in that month and its checklist reads the whole month. */
     const tickDayFor = (type) => (type === "activity" || month !== today().slice(0, 7)) ? day : today();
     try { console.log("[LPC import] activityDay=" + activityDay + " actDay=" + actDay + " month=" + month + " today=" + today() + " types=" + JSON.stringify((entries || []).map((e) => e && e.type))); } catch (e) {}
-    let next = JSON.parse(JSON.stringify(storeData));
+    // Read from the exact loaded copy before it is cloned: the clone is the immutable
+    // import baseline, and carries no proof of its own.
+    const importProof = absenceProof(storeData, view, session && session.id, "screen");   // the import always reads the screen copy
+    const importBaseline = globalThis.structuredClone(storeData);
+    const reportedFields = [];
+    let next = JSON.parse(JSON.stringify(importBaseline));
     const snapT = await takeRestorePoint(view, next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
     const M = next.months[month];
@@ -2548,6 +2648,7 @@ export default function LeadPerformanceCalculator() {
           storeName: roll.storeName, day: tickDay, at: new Date().toISOString(),
           file: fileName, source: "roll-up",
         };
+        reportedFields.push([month, "stated"]);
         if (!M.imports[tickDay]) M.imports[tickDay] = {};
         M.imports[tickDay]["store-rollup"] = true;
         log.push({ ok: true, msg: `${fileName} → ${roll.deals} deliveries at ${roll.storeName}. Filed as the store's own count; no person was changed.` });
@@ -2747,6 +2848,7 @@ export default function LeadPerformanceCalculator() {
           hist[ch] = hist[ch].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-30);
         }
         M.stats[key] = { ...prevStat, ...rec, prevPct: trend, prevUnits, pctDay, pctHistory: hist, [`${type}Updated`]: tickDay };
+        for (const field of Object.keys(rec)) reportedFields.push([month, "stats", key, field]);
         if (type !== "activity") count++;
       }
 
@@ -2811,7 +2913,7 @@ export default function LeadPerformanceCalculator() {
     await persistStore(view, next, {
       action: "Imported reports",
       detail: importedFiles.join(", ") || "nothing usable",
-    });
+    }, importBaseline, reportedFields, importProof);
   };
 
   /* Ignoring from the board does exactly what the Roster tab's bulk action does:
@@ -3370,6 +3472,9 @@ export default function LeadPerformanceCalculator() {
                 }}
                 onRestoreStore={async (storeId, snap) => {
                   const current = adminData[storeId] || emptyStoreData();
+                  // Captured here, with the copy it belongs to and before the first await: the restore-point write below
+                  // lets other work run, and a same-object reinstall during it must not reauthorize this already-selected copy.
+                  const proof = adminData[storeId] ? absenceProof(current, storeId, session && session.id, "cache") : null;   // a fresh empty copy has no provenance
                   /* The state being left becomes the restore point, so a
                      rollback is itself undoable. It goes to the restore row, not
                      into the store: that was the whole bloat. */
@@ -3388,7 +3493,7 @@ export default function LeadPerformanceCalculator() {
                   for (const list of Object.values(snap.data?.plates || {}))
                     for (const p of list || []) if (p && p.id) delete restored.plateGone[p.id];
                   for (const r of snap.data?.plateRegistry || []) if (r && r.id) delete restored.plateRegGone[r.id];
-                  await persistStore(storeId, restored, { action: "Rolled back store", detail: `${config.stores.find((s) => s.id === storeId)?.name} → ${new Date(snap.t).toLocaleString()}` });
+                  await persistStore(storeId, restored, { action: "Rolled back store", detail: `${config.stores.find((s) => s.id === storeId)?.name} → ${new Date(snap.t).toLocaleString()}` }, current, [], proof);
                 }} />
             )}
           </div>

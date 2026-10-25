@@ -32,6 +32,7 @@
  */
 import { norm } from "./_report-parsers.mjs";
 import { foldAliases } from "./_people-status.mjs";
+import { reconcileMonths } from "./_month-intent.mjs";
 
 /* =========================================================================
    Carrying out every decision, over whatever the merge just produced.
@@ -349,7 +350,9 @@ export function mergePlateRegistry(next, serverCopy) {
 /* Fold this browser's pending document into whatever the server currently holds.
    Run on every save attempt, including retries, so a save that loses a race is
    re-applied against the winner's copy rather than overwriting it. */
-export function mergeAgainstServer(next, serverCopy) {
+export function mergeAgainstServer(next, serverCopy, intent) {
+  const hasBaseline = intent && Object.hasOwn(intent, "baseline");
+  const months = hasBaseline ? reconcileMonths(intent.baseline, next, serverCopy, intent.reportedFields, { rowAbsentAtLoad: intent.rowAbsentAtLoad === true }) : null;
   if (!serverCopy || typeof serverCopy !== "object") return next;
   /* If these two documents are not the same store, merging them would blend two
      rosters into one, which is exactly the damage this is meant to prevent. Return
@@ -364,7 +367,7 @@ export function mergeAgainstServer(next, serverCopy) {
           for (const k of Object.keys(srv)) if (!(k in out)) out[k] = srv[k];
           return out;
         };
-        next.months = mergeField("months");
+        next.months = hasBaseline ? months : mergeField("months");
         next.activity = mergeField("activity");
 
         /* ---- The stale-tab problem ----
@@ -386,7 +389,7 @@ export function mergeAgainstServer(next, serverCopy) {
           return t;
         };
         if (newestImport(serverCopy) > newestImport(next)) {
-          next.months = serverCopy.months || next.months;
+          if (!hasBaseline) next.months = serverCopy.months || next.months;
           next.activity = serverCopy.activity || next.activity;
           next.activitySnaps = serverCopy.activitySnaps || next.activitySnaps;
         }
