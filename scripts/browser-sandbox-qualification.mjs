@@ -70,7 +70,9 @@ try {
   await page.goto('chrome://sandbox');
   evidence.sandboxText = await page.locator('body').innerText();
   console.log('Sandbox diagnostics:', evidence.sandboxText);
-  for (const label of ['Namespace sandbox', 'PID namespaces', 'Network namespaces', 'Seccomp-BPF sandbox']) {
+  assert(/^Layer 1 Sandbox\s+Namespace\s*$/m.test(evidence.sandboxText),
+    'Layer 1 sandbox is not Namespace');
+  for (const label of ['PID namespaces', 'Network namespaces', 'Seccomp-BPF sandbox']) {
     assert(new RegExp(`${label}\\s+Yes`, 'i').test(evidence.sandboxText), `Missing effective ${label}`);
   }
   await page.close();
