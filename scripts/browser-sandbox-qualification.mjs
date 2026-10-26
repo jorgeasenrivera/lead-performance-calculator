@@ -43,6 +43,7 @@ try {
   evidence.executable = chromium.executablePath();
   // Full Chrome exposes chrome://sandbox; no system-browser fallback is allowed.
   server = await chromium.launchServer({ executablePath: evidence.executable,
+    args: ['--enable-automation'],
     headless: true, chromiumSandbox: true, timeout: 30_000 });
   evidence.browserProcess = await processEvidence(server.process().pid);
   const browser = await chromium.connect(server.wsEndpoint());
