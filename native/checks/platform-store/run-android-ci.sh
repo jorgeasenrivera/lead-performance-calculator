@@ -12,7 +12,13 @@ avdmanager="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
 adb="$ANDROID_HOME/platform-tools/adb"
 test -x "$sdkmanager" && test -x "$avdmanager" && test -x "$adb"
 timeout 600 "$sdkmanager" 'emulator' "$image" > /dev/null
-echo no | timeout 60 "$avdmanager" create avd --force --name journal_synthetic --package "$image" > /dev/null
+# Both tools must use the same isolated AVD root, independent of user-home defaults.
+ANDROID_AVD_HOME=$(mktemp -d "$RUNNER_TEMP/journal-avds.XXXXXX")
+export ANDROID_AVD_HOME
+echo no | timeout 60 "$avdmanager" create avd --name journal_synthetic --package "$image" --path "$ANDROID_AVD_HOME/journal_synthetic.avd" > /dev/null
+test -f "$ANDROID_AVD_HOME/journal_synthetic.ini"
+test -f "$ANDROID_AVD_HOME/journal_synthetic.avd/config.ini"
+"$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx journal_synthetic
 # Refuse an existing emulator or occupied console/ADB port. Never stop one.
 devices=$("$adb" devices)
 if printf '%s\n' "$devices" | awk 'NR > 1 { print $1 }' | grep -Fxq emulator-5554; then
