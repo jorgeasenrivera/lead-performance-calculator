@@ -55,7 +55,13 @@ try {
   // Keep fresh, synthetic-run diagnostics visible without downloading artifacts.
   console.log('Browser argv evidence:', JSON.stringify({
     kernel: evidence.browserProcess.argv, cdp: evidence.cdpArgv }));
-  assert.deepEqual(evidence.cdpArgv, evidence.browserProcess.argv, 'CDP and kernel argv differ');
+  // Chrome 153 reports its startup additions after the unchanged kernel argv.
+  // Pin the entire suffix rather than ignoring unknown switches or their order.
+  const chrome153Suffix = ['--noerrdialogs', '--ozone-platform=headless',
+    '--ozone-override-screen-size=800,600', '--use-angle=swiftshader-webgl',
+    '--flag-switches-begin', '--flag-switches-end', '--enable-unsafe-swiftshader'];
+  assert.deepEqual(evidence.cdpArgv, [...evidence.browserProcess.argv, ...chrome153Suffix],
+    'CDP argv does not match kernel argv plus the pinned Chrome 153 suffix');
   const context = await browser.newContext({ serviceWorkers: 'block' });
   // All page network requests are denied. Only browser internals and inline data run.
   await context.route('**/*', route => route.abort());
@@ -63,6 +69,7 @@ try {
   page.setDefaultTimeout(10_000);
   await page.goto('chrome://sandbox');
   evidence.sandboxText = await page.locator('body').innerText();
+  console.log('Sandbox diagnostics:', evidence.sandboxText);
   for (const label of ['Namespace sandbox', 'PID namespaces', 'Network namespaces', 'Seccomp-BPF sandbox']) {
     assert(new RegExp(`${label}\\s+Yes`, 'i').test(evidence.sandboxText), `Missing effective ${label}`);
   }
@@ -74,6 +81,7 @@ try {
   for (const process of processes.filter(item => item.type === 'renderer')) {
     const renderer = await processEvidence(process.id);
     evidence.renderers.push(renderer);
+    console.log('Renderer restrictions:', JSON.stringify(renderer));
     assert.equal(renderer.Seccomp, '2', 'Renderer lacks seccomp filtering');
     assert.equal(renderer.NoNewPrivs, '1', 'Renderer can gain privileges');
     assert(/^0+$/.test(renderer.CapEff), 'Renderer has effective capabilities');
