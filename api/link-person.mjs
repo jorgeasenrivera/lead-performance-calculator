@@ -22,6 +22,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { checkLink, claimsFor } from "./_people-link.mjs";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
+import { mayManageAccounts } from "./_floor-access.mjs";
 import { serverFault } from "./_report.mjs";
 
 /* ---- why every failure below now says what went wrong ----
@@ -90,10 +91,9 @@ async function run(req, res) {
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
-  const { data: prof } = await db.from("profiles").select("role, stores").eq("id", who.user.id).maybeSingle();
-  const isAdmin = prof && prof.role === "admin";
-  const managesStore = prof && Array.isArray(prof.stores) && prof.stores.includes(store);
-  if (!prof || (!isAdmin && !managesStore)) {
+  const { data: prof, error: profileErr } = await db.from("profiles").select("role, stores, active, pending").eq("id", who.user.id).maybeSingle();
+  if (profileErr) return res.status(500).json({ error: "could not check this account" });
+  if (!mayManageAccounts(prof, store)) {
     return res.status(403).json({ error: "only a manager of this store can link accounts" });
   }
 

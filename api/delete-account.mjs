@@ -58,11 +58,12 @@ async function run(req, res) {
   const callerId = who.user.id;
   const targetId = body.user_id || callerId;
 
-  const [{ data: caller }, { data: target }, { data: admins }] = await Promise.all([
-    db.from("profiles").select("role, active").eq("id", callerId).maybeSingle(),
-    db.from("profiles").select("role, active").eq("id", targetId).maybeSingle(),
-    db.from("profiles").select("id").eq("role", "admin").eq("active", true),
+  const [{ data: caller, error: callerError }, { data: target, error: targetError }, { data: admins, error: adminsError }] = await Promise.all([
+    db.from("profiles").select("role, active, pending").eq("id", callerId).maybeSingle(),
+    db.from("profiles").select("role, active, pending").eq("id", targetId).maybeSingle(),
+    db.from("profiles").select("id").eq("role", "admin").eq("active", true).eq("pending", false),
   ]);
+  if (callerError || targetError || adminsError) return res.status(500).json({ error: "Account authorization could not be checked" });
   const otherAdmins = (admins || []).filter((a) => a.id !== targetId).length;
 
   const d = decideDelete({ callerId, caller, targetId: body.user_id, target, confirm: body.confirm, otherAdmins });

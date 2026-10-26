@@ -1,3 +1,5 @@
+import { applySummaryStated } from "./_summary-stated.mjs";
+import { publicBoard, publicDay } from "./_public-projections.mjs";
 /* =========================================================================
    LPC automated report ingest — Vercel serverless function
    POST /api/ingest  (from the Cloudflare Email Worker)
@@ -217,7 +219,7 @@ async function sbPutFloorStats(storeId, day, rows, sdata) {
      leave a day holding only its final hour. */
   const prev = await sbGet(key);
   slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
-  await sbPut(key, slim);
+  await sbPut(key, publicDay(slim));
 }
 
 /* ---------- the TV board row ----------
@@ -258,18 +260,17 @@ async function refreshBoardRow(storeId, sdata) {
   const people = ((sdata && sdata.roster) || [])
     .filter((a) => a && a.id && a.name && !gone.has(norm(a.name)))
     .map((a) => ({ id: a.id, name: a.name, roleId: a.roleId || null }));
-  await sbPut(boardKey(storeId), {
+  await sbPut(boardKey(storeId), publicBoard({
     ...prev,
     ym: month,
     roster,
     people,
     departed: [...gone],
     goals: extras.goals,
-    off: extras.off,
     boardDisplay: (sdata && sdata.boardDisplay) || prev.boardDisplay || null,
     months: { [month]: { stats } },
     updatedAt: new Date().toISOString(),
-  });
+  }));
   return { published: true, people: roster.length };
 }
 
@@ -350,18 +351,7 @@ function applyToStore(data, entries, sourceLabel) {
        the roll-up -- it counts F&I deliveries rather than deals -- so it fills the
        figure in when no roll-up has landed this month and stands aside when one
        has. */
-    if (stated && stated.total != null && M.stated?.source !== "roll-up") {
-      M.stated = {
-        deliveries: stated.total, units: stated.units, leads: stated.leads,
-        vehicles: stated.vehicles, day, at: nowISO, file: fileName, source: "summary-grid",
-      };
-    } else if (stated && stated.vehicles && M.stated) {
-      /* The roll-up wins on how many cars, because it counts deals rather than
-         F&I deliveries, but it does not say how many were new. The grid does.
-         So when a roll-up already owns the figure, the grid still hands over the
-         stock split rather than letting it die with the rest of the block. */
-      M.stated = { ...M.stated, vehicles: stated.vehicles };
-    }
+    applySummaryStated(M, stated, { day, at: nowISO, file: fileName });
     const raw = type === "delivery-summary"
       ? parseDeliverySummaryRows(rows)
       : parseReport(rows, type);
@@ -605,6 +595,13 @@ export default async function handler(req, res) {
       const text = Buffer.from(a.content).toString("utf8").replace(/^\ufeff/, "");
       const rows = Papa.parse(text, { skipEmptyLines: true }).data;
       let type = detectReportType(rows, a.filename || "");
+      // The parser's rejection marker is not an importable report type.
+      if (type === "wrong-channel-report") {
+        const why = "wrong report export; use Delivery Summary filtered by source instead";
+        skippedFiles.push({ file: a.filename, why });
+        failures.push({ file: a.filename, why });
+        continue;
+      }
       /* The store roll-up carries no people at all, and it names its own store in
          its one row, so it does not depend on the address the way the other CSVs
          do. It is the store's own count of deliveries and it is filed as that. */

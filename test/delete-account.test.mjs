@@ -17,7 +17,7 @@ process.env.SUPABASE_ANON_KEY = "anon";
 
 /* ---- the decision, with no database ---- */
 
-const admin = { role: "admin", active: true }, manager = { role: "manager", active: true };
+const admin = { role: "admin", active: true, pending: false }, manager = { role: "manager", active: true, pending: false };
 
 test("nothing is deleted without DELETE typed", () => {
   for (const confirm of [undefined, "", "delete", "yes", "DELET"]) {
@@ -73,7 +73,7 @@ globalThis.fetch = async (url, opt = {}) => {
   const table = (u.match(/\/rest\/v1\/(\w+)/) || [])[1];
   if (m === "DELETE") { calls.push([table + ".delete", u.split("?")[1]]); return j([]); }
   if (table === "profiles") {
-    if (q(u, "role") === "admin") return j(Object.values(PROFILES).filter((p) => p.role === "admin" && p.active));
+    if (q(u, "role") === "admin") return j(Object.values(PROFILES).filter((p) => p.role === "admin" && p.active && !p.pending));
     const p = PROFILES[q(u, "id")]; return j(p ? [p] : []);
   }
   if (table === "floor_people") return j(LINKS.filter((l) => l.user_id === q(u, "user_id")));
@@ -134,4 +134,10 @@ test("if the login cannot be deleted, it says so plainly, and the account still 
   const r = await call({ confirm: "DELETE" });
   assert.equal(r.status, 500); assert.match(r.out.error, /the login could not be deleted/);
   assert.deepEqual(calls[calls.length - 1][0], "auth.delete", "the login was the last thing tried");
+});
+
+test("pending admin cannot delete another account but self deletion remains", () => {
+ const pending = { ...admin, pending: true };
+ assert.equal(decideDelete({callerId:"a",caller:pending,targetId:"b",target:manager,confirm:"DELETE",otherAdmins:1}).code,403);
+ assert.equal(decideDelete({callerId:"a",caller:pending,target:pending,confirm:"DELETE",otherAdmins:1}).ok,true);
 });

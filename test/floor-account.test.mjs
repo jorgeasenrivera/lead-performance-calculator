@@ -47,11 +47,11 @@ const call = (body, jwt = "jwt") => {
 const reset = () => {
   SESSION = "mgr-1"; sessionOk = true; updates = [];
   PROFILES = {
-    "mgr-1": { role: "manager", stores: ["mazda"], active: true },
-    "mgr-other": { role: "manager", stores: ["ford"], active: true },
-    "admin-1": { role: "admin", stores: [], active: true },
-    "sales-1": { role: "manager", stores: [], active: true },
-    "overseer-1": { role: "overseer", stores: ["mazda"], active: true },
+    "mgr-1": { role: "manager", stores: ["mazda"], active: true, pending: false },
+    "mgr-other": { role: "manager", stores: ["ford"], active: true, pending: false },
+    "admin-1": { role: "admin", stores: [], active: true, pending: false },
+    "sales-1": { role: "manager", stores: [], active: true, pending: false },
+    "overseer-1": { role: "overseer", stores: ["mazda"], active: true, pending: false },
   };
   LINKS = [{ user_id: "sales-1", store: "mazda", person_id: "roster-luis" },
            { user_id: "overseer-1", store: "mazda", person_id: "roster-bdc" }];
@@ -110,7 +110,7 @@ test("nobody can switch off their own account", async () => {
   /* It locks you out of the tool with no way back that does not involve
      somebody else. */
   reset(); SESSION = "sales-1";
-  PROFILES["sales-1"] = { role: "manager", stores: ["mazda"], active: true };
+  PROFILES["sales-1"] = { role: "manager", stores: ["mazda"], active: true, pending: false };
   const r = await call({ store: "mazda", user_id: "sales-1", action: "deactivate" });
   assert.equal(r.code, 400);
   assert.equal(updates.length, 0);
@@ -149,4 +149,11 @@ test("only POST", async () => {
   const res = mkRes();
   await acct({ method: "GET", headers: {}, body: {} }, res);
   assert.equal(res.code, 405);
+});
+
+test("a floor link does not let a manager deactivate another assigned manager", async () => {
+ reset(); PROFILES["assigned-manager"]={role:"manager",stores:["mazda"],pending:false,active:true};
+ LINKS.push({user_id:"assigned-manager",store:"mazda",person_id:"synthetic-person"});
+ const r=await call({store:"mazda",user_id:"assigned-manager",action:"deactivate"});
+ assert.equal(r.code,403); assert.equal(updates.length,0);
 });

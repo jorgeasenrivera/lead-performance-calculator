@@ -1,9 +1,16 @@
+import { applySummaryStated } from "../api/_summary-stated.mjs";
+import { publicBoard, publicDay, publicDirectory } from "../api/_public-projections.mjs";
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import { watchOwnSchedule } from "./private-schedule.mjs";
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
 import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
 import { isOldCodeLink } from "./old-links.mjs";
+import { readRecoveryHash } from "./recovery-link.mjs";
+import { createRecoveryGuard, setPasswordAs, LINK_FAILED_NOTICE } from "./recovery-session.mjs";
+import { createRecoveryContinuity, RECOVERY_INTERRUPTED_NOTICE } from "./recovery-continuity.mjs";
+import { createRecoveryController } from "./recovery-controller.mjs";
 import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
 import { createArrivalScheduler } from "./arrival-scheduler.mjs";
 import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
@@ -933,9 +940,11 @@ async function loadSharedIfChanged(key, tag) {
    only fills the screen in the meantime. */
 const CACHE_NS = "lpc:cache:";
 function cacheGet(k) {
+  if (k.startsWith("row:") || k.startsWith("store:") || k === "shared:lpc:config:v2" || k === "profile") return null;
   try { const v = localStorage.getItem(CACHE_NS + k); return v ? JSON.parse(v) : null; } catch (e) { return null; }
 }
 function cachePut(k, value) {
+  if (k.startsWith("row:") || k.startsWith("store:") || k === "shared:lpc:config:v2" || k === "profile") return;
   try { localStorage.setItem(CACHE_NS + k, JSON.stringify({ at: Date.now(), value })); } catch (e) { /* full or blocked: no memory, no harm */ }
 }
 function cacheDel(k) { try { localStorage.removeItem(CACHE_NS + k); } catch (e) {} }
@@ -983,11 +992,12 @@ function useNet() {
 /* The shared rows worth remembering: the store's setup and its public slice.
    The rest are either large or somebody else's numbers, and a memory of those
    would cost more than it saves. */
+const sharedVersions = new Map();
 const REMEMBERED_SHARED = new Set(["lpc:config:v2", "lpc:board:stores:v1"]);
 async function loadShared(key, fallback, throwOnError) {
   if (!supabase) return fallback;
   try {
-    const read = supabase.from("app_data").select("value").eq("key", key).maybeSingle();
+    const read = key === CONFIG_KEY ? supabase.rpc("sage_config_read") : /^lpc:store:[^:]+:v2$/.test(key) ? supabase.rpc("sage_store_read", { p_store: key.split(":")[2] }) : supabase.from("app_data").select("value").eq("key", key).maybeSingle();
     const r = REMEMBERED_SHARED.has(key) ? await withTimeout(read) : { value: await read };
     if (r.timedOut) throw new Error("timed out");
     if (r.error) throw r.error;
@@ -998,7 +1008,7 @@ async function loadShared(key, fallback, throwOnError) {
     return data ? data.value : fallback;
   } catch (e) {
     console.error("load failed", key, e);
-    if (REMEMBERED_SHARED.has(key)) { const c = cacheGet("shared:" + key); if (c) return c.value; }
+    if (key !== CONFIG_KEY && REMEMBERED_SHARED.has(key)) { const c = cacheGet("shared:" + key); if (c) return c.value; }
     if (throwOnError) throw e; return fallback;
   }
 }
@@ -1056,32 +1066,10 @@ function recentDays(n) {
    answered from what this browser already read. */
 const actCache = new Map();     // storeId -> { key: { s: stamp, v: value } }
 async function loadActivityRows(storeId) {
-  if (!supabase) return {};
-  const prefix = `lpc:store:${storeId}:act:`;
-  const { data: stamps, error: e1 } = await supabase.from("app_data")
-    .select("key,updated_at").like("key", prefix + "%");
-  if (e1) throw e1;
-  const seen = actCache.get(storeId) || {};
-  const stampOf = {};
-  for (const r of stamps || []) stampOf[r.key] = r.updated_at || "none";
-  const keys = Object.keys(stampOf);
-  const need = keys.filter((k) => !seen[k] || seen[k].s !== stampOf[k]);
-  if (need.length) {
-    const { data: fresh, error: e2 } = await supabase.from("app_data")
-      .select("key,value").in("key", need);
-    if (e2) throw e2;
-    for (const r of fresh || []) seen[r.key] = { s: stampOf[r.key], v: r.value };
-  }
-  // A day whose row has gone must not be answered from memory.
-  for (const k of Object.keys(seen)) if (!stampOf[k]) delete seen[k];
-  actCache.set(storeId, seen);
-  const out = {};
-  for (const k of keys) {
-    const day = k.slice(prefix.length);
-    const v = (seen[k] || {}).v;
-    if (day && v) out[day] = v;
-  }
-  return out;
+  if (!supabase) throw new Error("Activity is unavailable");
+  const { data, error } = await supabase.rpc("sage_store_read", { p_store: storeId });
+  if (error) throw new Error("Activity could not be read");
+  return data?.activity || {};
 }
 
 /* Read a store as one object. Split rows win over the embedded copy for any day
@@ -1147,7 +1135,7 @@ async function saveActivityDays(storeId, next, prev) {
 // is far too big to poll, but one timestamp is nothing.
 async function loadStoreStamp(key) {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("app_data").select("updated_at").eq("key", key).maybeSingle();
+  const { data, error } = await (/^lpc:store:[^:]+:v2$/.test(key) ? supabase.rpc("sage_store_read", { p_store: key.split(":")[2] }) : supabase.from("app_data").select("updated_at").eq("key", key).maybeSingle());
   if (error) throw error;
   if (data) observeRowPresent(key);
   return data ? data.updated_at : null;
@@ -1159,14 +1147,33 @@ let lastSaveError = null;
    mean "what you just did landed", so a tidy-up that deletes three hundred
    stale rows must not buzz a phone three hundred times. The feel harness
    caught exactly that, which is what it is for. */
-async function saveShared(key, value, quiet) {
+async function saveShared(key, value, quiet, isCurrent = () => true) {
+  const epoch = authEpoch;
+  const current = () => epoch === authEpoch && isCurrent();
+  if (!current()) return false;
   if (!supabase) { lastSaveError = "No database client"; return false; }
+  let configBefore;
   try {
+    if (key === CONFIG_KEY) {
+      const before = sharedVersions.get(key);
+      configBefore = before;
+      if (!before) throw new Error("Reload the current settings before saving.");
+      const { data, error } = await supabase.rpc("sage_config_save", { p_before: before, p_after: value, p_operation_id: crypto.randomUUID() });
+      if (!current() || sharedVersions.get(key) !== before) return false;
+      if (error) throw error;
+      sharedVersions.set(key, structuredClone(data.value));
+      lastSaveError = null; if (!quiet) buzz("taken"); return true;
+    }
+    if (key === PUBLIC_STORES_KEY) value = publicDirectory(value);
+    else if (/^lpc:board:[^:]+:v1$/.test(key)) value = publicBoard(value);
+    else if (/^lpc:board:[^:]+:act:/.test(key)) value = publicDay(value);
     const { error } = await supabase.from("app_data").upsert({ key, value }, { onConflict: "key" });
+    if (!current()) return false;
     if (error) throw error;
     lastSaveError = null; if (!quiet) buzz("taken");
     return true;
   } catch (e) {
+    if (!current() || (key === CONFIG_KEY && configBefore && sharedVersions.get(key) !== configBefore)) return false;
     console.error("save failed", key, e);
     if (!quiet) buzz("refused");
     lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
@@ -1247,21 +1254,25 @@ const absenceProof = (doc, storeId, actor, slot) => {
   const cap = Object.freeze({ proof: p, slot, inst: p.installs[slot] });
   return proofHolds(cap, storeId, actor) ? cap : null;
 };
-async function saveStoreCAS(key, build, tries = 8) {
+async function saveStoreCAS(key, build, tries = 8, current = () => true) {
   if (!supabase) { lastSaveError = "No database client"; return { ok: false, rev: null }; }
   let conflicts = 0;
+  const stale = () => ({ ok: false, rev: null, conflictsResolved: conflicts, stale: true });
   for (let attempt = 0; attempt < tries; attempt++) {
     try {
+      if (!current()) return stale();
       let server;
       const cached = casCache.get(key);
       if (cached) {
         const { data: r, error: e0 } = await supabase.from("app_data").select("rev:value->>rev").eq("key", key).maybeSingle();
+        if (!current()) return stale();
         if (e0) throw e0;
         if (r && String(r.rev ?? "") === String(cached.rev ?? "")) server = cached.value;
       }
       if (server === undefined) {
         const { data: row, error: readErr } = await supabase
           .from("app_data").select("value").eq("key", key).maybeSingle();
+        if (!current()) return stale();
         if (readErr) throw readErr;
         server = row ? row.value : null;
         if (server) casCache.set(key, { rev: server.rev ?? null, value: server });
@@ -1274,6 +1285,7 @@ async function saveStoreCAS(key, build, tries = 8) {
         // First write for this store. insert, not upsert, so two browsers racing to
         // create it cannot both believe they won.
         const { error } = await supabase.from("app_data").insert({ key, value });
+        if (!current()) return stale();
         if (error) {
           if (String(error.code) === "23505") { observeRowPresent(key); conflicts++; continue; }   // someone beat us
           throw error;
@@ -1293,6 +1305,7 @@ async function saveStoreCAS(key, build, tries = 8) {
       let q = supabase.from("app_data").update({ value }).eq("key", key);
       q = (server.rev == null) ? q.is("value->>rev", null) : q.eq("value->>rev", String(rev));
       const { data: hit, error } = await q.select("key");
+      if (!current()) return stale();
       if (error) throw error;
       if (hit && hit.length) {
         lastSaveError = null; buzz("taken");
@@ -1304,11 +1317,13 @@ async function saveStoreCAS(key, build, tries = 8) {
       conflicts++;
       await new Promise((r) => setTimeout(r, 90 * (attempt + 1) + Math.random() * 120));
     } catch (e) {
+      if (!current()) return stale();
       console.error("save failed", key, e);
       buzz("refused"); lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
       return { ok: false, rev: null, conflictsResolved: conflicts };
     }
   }
+  if (!current()) return stale();
   lastSaveError = `Could not save after ${tries} attempts. Someone else may be saving this store at the same moment, or the row is being rejected by a database rule. Nothing was overwritten.`;
   console.error("save gave up after conflicts", key);
   return { ok: false, rev: null, conflictsResolved: conflicts };
@@ -1383,7 +1398,69 @@ async function authResetPassword(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin,
   });
+  /* Kept on this phone so an expired link opened here can offer a new one
+     without asking for the address again (C97). */
+  if (!error) { try { localStorage.setItem(RESET_EMAIL_KEY, email); } catch (e) {} }
   return { error: error ? error.message : null };
+}
+/* The new password is for the account the reset link was sent to and nobody
+   else's. The write is bound by TOKEN: the PUT carries the access token Supabase
+   issued for this recovery, so it cannot be authorized as anybody else whatever
+   is stored when it lands (updateUser re-reads the stored session at that
+   instant, which no look beforehand can close: second review, 30 September).
+   The look at who is signed in stays, as a refusal to even try when it is
+   already wrong. `lost` says the binding is gone, which the caller turns into
+   the expired-link card. */
+async function authSetPassword(password) {
+  return recoveryFlow.save(password);
+}
+/* ---- the reset email's link comes back here (C97) ----
+   It lands on the site's front door with the answer in the address:
+   #...type=recovery when the link is good, #error_code=otp_expired when it has
+   run out or was used. Supabase reads a good one, signs the person in and clears
+   the address, all before any screen asks, so the address is read at load, first.
+   Until C97 nothing read it at all: a good link signed the person in and never
+   asked for a new password, and a bad one did nothing anybody could see.
+
+   The address is INTENT, never proof: the reset form opens on Supabase's own
+   PASSWORD_RECOVERY event and the save is bound to the user it named (see
+   recovery-session.mjs, and why). The subscription is made here, in the same
+   pass that made the client, because Supabase sends the event a tick after it
+   finishes reading the link and a screen that subscribed later could miss it. */
+const RESET_EMAIL_KEY = "lpc:reset-email";
+const recoveryIntent = (() => {
+  try {
+    const got = readRecoveryHash(window.location.hash);
+    if (got === "expired") {
+      /* An error is not consumed by anything else: clear it, or a reload says
+         the link ran out all over again. */
+      try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
+    }
+    return got;
+  } catch (e) {}
+  return null;
+})();
+const recoveryGuard = createRecoveryGuard(recoveryIntent);
+const recoveryContinuity = createRecoveryContinuity({ storage: (() => {
+  try { return window.sessionStorage; } catch { return undefined; }
+})() });
+const recoveryFlow = createRecoveryController({ guard: recoveryGuard, continuity: recoveryContinuity,
+  getSession: () => supabase.auth.getSession(),
+  writePassword: (accessToken, password) => setPasswordAs({ url: SUPABASE_URL, apikey: SUPABASE_ANON_KEY, accessToken, password }),
+  failedNotice: LINK_FAILED_NOTICE, restoreOnBoot: !recoveryIntent });
+try {
+  const reenter = e => { if (e.persisted) recoveryFlow.reenter(); };
+  window.addEventListener("pagehide", reenter);
+  window.addEventListener("pageshow", reenter);
+} catch {}
+if (supabase) {
+  try {
+    supabase.auth.onAuthStateChange((ev, session) => recoveryFlow.onAuthEvent(ev, session));
+    /* The client is ready once it has read the address; its PASSWORD_RECOVERY
+       comes a tick after that. A second and a half on, a link it has not
+       confirmed is one it was never going to. */
+    supabase.auth.getSession().then(({ data }) => { recoveryFlow.settled(data?.session); setTimeout(() => recoveryFlow.settle(), 1500); }).catch(() => {});
+  } catch (e) {}
 }
 /* ---- the link between an account and a person on the floor ----
    Reads and writes both go through /api/link-person, which reads the caller's
@@ -1494,8 +1571,7 @@ async function getTokens() {
 async function loadStrict(key) {
   if (!supabase) return { ok: false, missing: false, value: null };
   try {
-    const { data, error } = await supabase
-      .from("app_data").select("value").eq("key", key).maybeSingle();
+    const { data, error } = await (key === CONFIG_KEY ? supabase.rpc("sage_config_read") : /^lpc:store:[^:]+:v2$/.test(key) ? supabase.rpc("sage_store_read", { p_store: key.split(":")[2] }) : supabase.from("app_data").select("value").eq("key", key).maybeSingle());
     if (error) throw error;
     if (data) observeRowPresent(key);
     return { ok: true, missing: !data, value: data ? data.value : null };
@@ -1658,9 +1734,10 @@ const departedNames = (d) => new Set((((d && d.departed) || [])).map((x) => norm
 
 
 async function appendAudit(entry) {
-  const log = await loadShared(AUDIT_KEY, []);
-  log.unshift({ t: new Date().toISOString(), ...entry });
-  await saveShared(AUDIT_KEY, log.slice(0, 400));
+  if (!supabase) throw new Error("Audit service unavailable");
+  const { error } = await supabase.rpc("sage_audit_append", { p_store: entry.store || null,
+    p_action: String(entry.action || "Note"), p_detail: String(entry.detail || ""), p_operation_id: crypto.randomUUID() });
+  if (error) throw new Error("The change was saved, but its audit note could not be recorded.");
 }
 
 
@@ -1913,6 +1990,15 @@ export default function LeadPerformanceCalculator() {
      freezes and the most watched beat of the animation stutters. The cruise is
      the loading zone; the heavy work belongs inside it. */
   const [holdMount, setHoldMount] = useState(false);
+  /* The reset link's answer (C97), from Supabase and not from the address:
+     pending while it decides, ready when it has confirmed a link for a user,
+     failed when the link is bad or the account it was for has gone. */
+  const [rec, setRec] = useState(() => recoveryFlow.snapshot());
+  useEffect(() => { setRec(recoveryFlow.snapshot()); return recoveryFlow.subscribe(setRec); }, []);
+  /* Tokens that did not check out stay in the address until somebody removes
+     them, and a reload would try them again. */
+  useEffect(() => { if (rec.status === "failed") { try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {} } }, [rec.status]);
+  const recoveryLayer = rec.status === "ready" || rec.status === "failed" || rec.status === "interrupted";
   useEffect(() => {
     const on = (e) => { if (e.detail === "cruise" || e.detail === "off") setHoldMount(false); };
     document.addEventListener(JUMP_PHASE, on);
@@ -1927,13 +2013,13 @@ export default function LeadPerformanceCalculator() {
        change must not hide it again. See the latch's comment. */
     /* Never on the TV (?qboard=): it has nobody signed in, so this hid the
        whole board, and the TV showed only the ground from 11 September. */
-    const under = !WALL_SCREEN && (!session || (jumpHold && !jumpLanded));
+    const under = !WALL_SCREEN && (!session || recoveryLayer || (jumpHold && !jumpLanded));
     document.documentElement.classList.toggle("jump-under", under);
     // Release only after React has removed the old form, never in the timer
     // that merely schedules its removal. A busy commit can leave a visible gap.
     if (!jumpHold) document.documentElement.classList.remove("signin-gone");
     return () => document.documentElement.classList.remove("jump-under");
-  }, [session, jumpHold]);
+  }, [session, jumpHold, recoveryLayer]);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
@@ -2078,8 +2164,11 @@ export default function LeadPerformanceCalculator() {
 
   // Who is signed in? Preview returns a stand-in admin; the hosted site
   // reads the real Supabase session and its matching profile row.
+  const profileRequest = useRef(0);
   const refreshProfile = useCallback(async () => {
+    const request = ++profileRequest.current;
     const r = await withTimeout(authGetProfile());
+    if (request !== profileRequest.current) return;
     if (!r.timedOut && !r.error) {
       setSession(r.value);
       if (r.value) cachePut("profile", r.value); else cacheDel("profile");
@@ -2090,7 +2179,7 @@ export default function LeadPerformanceCalculator() {
        answered. Without one, nothing to show but the truth and a retry. */
     const c = cacheGet("profile");
     if (c && c.value) { setSession(c.value); netSet(true, c.at); setAuthReady(true); return; }
-    setBootStall(true);
+    setSession(null); setBootStall(true);
   }, []);
 
   // Sign-in drops straight into the Performance dashboard. On the first sign-in of
@@ -2124,7 +2213,7 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     refreshProfile();
     const unsub = onAuthChange(() => refreshProfile());
-    return () => { try { unsub && unsub(); } catch (e) {} };
+    return () => { profileRequest.current++; try { unsub && unsub(); } catch (e) {} };
   }, [refreshProfile]);
 
   // Daily Activity is recorded per store, so the all-stores view has nothing to show.
@@ -2153,6 +2242,18 @@ export default function LeadPerformanceCalculator() {
   const [cfgWave, setCfgWave] = useState(0);
   const sessionRef = useRef(null);
   sessionRef.current = session;
+  const configSubject = JSON.stringify([session?.id || session?.email || null, session?.role, session?.active, session?.pending, session?.stores]);
+  const configSubjectRef = useRef(configSubject);
+  configSubjectRef.current = configSubject;
+  const previousConfigSubject = useRef(configSubject);
+  useEffect(() => {
+    if (previousConfigSubject.current === configSubject) return;
+    previousConfigSubject.current = configSubject;
+    sharedVersions.clear(); rowStamps.clear(); actCache.clear(); casCache.clear();
+    setSaving(false); savingRef.current = false;
+    cfgProvisional.current = true; setConfig(null); setStoreData(null); setAdminData({});
+    viewPicked.current = false; viewPickInFlight.current = false; setInitialViewReady(false); setCfgWave(w => w + 1);
+  }, [configSubject]);
   useEffect(() => {
     if (!session || !cfgProvisional.current) return;
     if (cfgReadInFlight.current) { cfgAuthReadPending.current = true; return; }
@@ -2160,6 +2261,9 @@ export default function LeadPerformanceCalculator() {
     setCfgWave((w) => w + 1);
   }, [session]);
   useEffect(() => {
+    let cancelled = false;
+    const readSubject = configSubject;
+    const current = () => !cancelled && configSubjectRef.current === readSubject;
     cfgReadInFlight.current = true;
     const authenticatedAtStart = !!sessionRef.current;
     (async () => {
@@ -2167,6 +2271,7 @@ export default function LeadPerformanceCalculator() {
       // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
       // straight over the real one, wiping every store. Bail out and say so instead.
       const got = await withTimeout(loadStrict(CONFIG_KEY));
+      if (!current()) return;
       const res = got.value || { ok: false };
       if (!res.ok) {
         /* Could not be read, or not in time. The setup the phone remembers
@@ -2181,6 +2286,7 @@ export default function LeadPerformanceCalculator() {
       let cfg = res.value;
 
       if (cfg) {
+        sharedVersions.set(CONFIG_KEY, structuredClone(cfg));
         cachePut("shared:" + CONFIG_KEY, cfg);
         let dirty = false;
         /* The positions wear the site's own warm palette now. Only the colours
@@ -2215,18 +2321,20 @@ export default function LeadPerformanceCalculator() {
           dirty = true;
         }
         if (cfg.users) { delete cfg.users; dirty = true; }
-        if (dirty) await saveShared(CONFIG_KEY, cfg);
+        if (dirty && sessionRef.current?.role === "admin" && sessionRef.current?.pending === false && sessionRef.current?.active === true) await saveShared(CONFIG_KEY, cfg);
+        if (!current()) return;
         cfgProvisional.current = !authenticatedAtStart;
         setConfig(cfg);
         /* Signed in, so this is allowed: keep the public slice current even for
            a config that was saved before the slice existed. */
-        if (authenticatedAtStart) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
+        // The database refreshes the public directory atomically with configuration saves.
         return;
       }
 
       // Genuinely absent, not merely unreadable. Check the v1 key before assuming
       // this is a brand new install.
       const old = await loadStrict("lpc:config:v1");
+      if (!current()) return;
       if (!old.ok) { setLoadErr(true); return; }
 
       cfg = old.value
@@ -2260,8 +2368,9 @@ export default function LeadPerformanceCalculator() {
           }
         } catch (e) { /* the defaults stand */ }
       }
-      setConfig(cfg);
-    })().catch(() => setLoadErr(true)).finally(() => {
+      if (current()) setConfig(cfg);
+    })().catch(() => { if (current()) setLoadErr(true); }).finally(() => {
+      if (!current()) return;
       cfgReadInFlight.current = false;
       const pending = cfgAuthReadPending.current;
       cfgAuthReadPending.current = false;
@@ -2270,11 +2379,14 @@ export default function LeadPerformanceCalculator() {
         setCfgWave((w) => w + 1);
       }
     });
+    return () => { cancelled = true; };
   }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
     if (!config || !session || cfgProvisional.current) return;
     if (!viewPicked.current && viewPickInFlight.current) return;
+    let cancelled = false; const readSubject = configSubject;
+    const current = () => !cancelled && configSubjectRef.current === readSubject;
     const firstPick = !viewPicked.current;
     if (firstPick) viewPickInFlight.current = true;
     (async () => {
@@ -2285,6 +2397,7 @@ export default function LeadPerformanceCalculator() {
         for (const s of accessible) {
           const readGen = loadMark(s.id);
           const got = await withTimeout(loadStrict(storeKey(s.id)));
+          if (!current()) return;
           const r = got.value || { ok: false };
           let d = r.ok ? r.value : undefined;
           if (!r.ok) {
@@ -2299,6 +2412,7 @@ export default function LeadPerformanceCalculator() {
           } else if (d) cachePut("store:" + s.id, d);
           if (!d) {
             const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`));
+            if (!current()) return;
             const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
@@ -2314,6 +2428,7 @@ export default function LeadPerformanceCalculator() {
           markLoad(d, s.id, session && session.id, r.ok === true && r.missing === true, readGen);
           all[s.id] = d;
         }
+        if (!current()) return;
         for (const id of Object.keys(all)) installBaseline(all[id], id, "cache");
         setAdminData(all);
         // an admin opening the tool is what triggers the daily backup
@@ -2355,6 +2470,7 @@ export default function LeadPerformanceCalculator() {
       for (const s of missing) {
         const readGen = loadMark(s.id);
         const r = await loadStrict(storeKey(s.id));
+        if (!current()) return;
         if (!r.ok) continue;
         let d = r.value;
         if (!d) { const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`)); const legacy = legacyRead.value || { ok: false }; d = (legacy.ok && legacy.value) || emptyStoreData(); }
@@ -2366,11 +2482,13 @@ export default function LeadPerformanceCalculator() {
         markLoad(d, s.id, session && session.id, r.missing === true, readGen);
         add[s.id] = d;
       }
-      if (Object.keys(add).length) { for (const id of Object.keys(add)) installBaseline(add[id], id, "cache"); setAdminData((p) => ({ ...p, ...add })); }
+      if (current() && Object.keys(add).length) { for (const id of Object.keys(add)) installBaseline(add[id], id, "cache"); setAdminData((p) => ({ ...p, ...add })); }
     })().catch((error) => {
+      if (!current()) return;
       if (firstPick) setLoadErr(true);
       else console.error("store refresh failed", error);
-    }).finally(() => { if (firstPick) viewPickInFlight.current = false; });
+    }).finally(() => { if (current() && firstPick) viewPickInFlight.current = false; });
+    return () => { cancelled = true; };
   }, [config, session]);
 
   useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
@@ -2479,6 +2597,8 @@ export default function LeadPerformanceCalculator() {
        another. Anything that resolves after the store has moved on is dropped. */
     let dead = false;
     const want = view;
+    const readSubject = configSubject;
+    const current = () => !dead && configSubjectRef.current === readSubject;
     (async () => {
       const cached = adminData[view];
       if (cached) {
@@ -2511,9 +2631,11 @@ export default function LeadPerformanceCalculator() {
           loadStore(view, fallback, true), // throw on a real load error
           new Promise((_, rej) => setTimeout(() => rej(new Error("The store took too long to answer (12s).")), 12000)),
         ]);
-        if (dead || want !== view) return;
-        try { storeStampRef.current = await loadStoreStamp(storeKey(want)); } catch (e) { storeStampRef.current = null; }
-        if (dead || want !== view) return;
+        if (!current() || want !== view) return;
+        let readStamp = null;
+        try { readStamp = await loadStoreStamp(storeKey(want)); } catch (e) {}
+        if (!current() || want !== view) return;
+        storeStampRef.current = readStamp;
         /* The stamp is evidence, and this line used to destroy it.
            A save writes __storeId onto the document. The load then overwrote it
            with whatever key it had just read from — so a document belonging to
@@ -2543,16 +2665,16 @@ export default function LeadPerformanceCalculator() {
         installBaseline(d, want, "screen");
         setStoreData(d); setStoreLoadFailed(false); setStoreLoadError("");
       } catch (e) {
-        if (dead || want !== view) return;
+        if (!current() || want !== view) return;
         console.error("store load failed", { key: want, error: e });
         // A failed load must NOT masquerade as an empty store, or the next save wipes it.
         setStoreLoadError(String((e && e.message) || e || "Unknown error"));
         setStoreData(emptyStoreData()); setStoreLoadFailed(true);
       }
-      if (!dead && want === view) setTab("board");
+      if (current() && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready, initialViewReady]); // eslint-disable-line
+  }, [view, ready, initialViewReady, configSubject]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -2599,13 +2721,16 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     if (!config || !session || view === "admin" || view === "combined") return;
     let dead = false;
+    const readSubject = configSubject;
+    const current = () => !dead && configSubjectRef.current === readSubject;
     const pull = async () => {
-      if (dead || savingRef.current || document.hidden) return;
+      if (!current() || savingRef.current || document.hidden) return;
       try {
         const stamp = await loadStoreStamp(storeKey(view));
-        if (!stamp || dead || stamp === storeStampRef.current) return;
+        if (!stamp || !current() || stamp === storeStampRef.current) return;
         const fresh = await loadStore(view, null, true);
-        if (!fresh || dead || savingRef.current) return;
+        if (!fresh || !current() || savingRef.current) return;
+        if (fresh.__storeId && fresh.__storeId !== view) throw new Error("Store identity mismatch");
         fresh.__storeId = view;
         storeStampRef.current = stamp;
         setStoreData(fresh);
@@ -2620,11 +2745,16 @@ export default function LeadPerformanceCalculator() {
   }, [view, config, session]); // eslint-disable-line
 
   const persistConfig = async (next, audit) => {
-    setConfig(next); setSaving(true);
-    await saveShared(CONFIG_KEY, next);
-    saveShared(PUBLIC_STORES_KEY, publicSlice(next)).catch(() => {});
-    if (audit) await appendAudit({ user: session?.name, ...audit });
-    setSaving(false);
+    const readSubject = configSubject;
+    setSaving(true);
+    try {
+      const ok = await saveShared(CONFIG_KEY, next, false, () => configSubjectRef.current === readSubject);
+      if (configSubjectRef.current !== readSubject) return;
+      if (!ok) { alert("Settings were not saved. " + (lastSaveError || "Reload and try again.")); return; }
+      const saved = sharedVersions.get(CONFIG_KEY) || next;
+      setConfig(saved);
+      // The configuration RPC records the actor atomically with the save.
+    } finally { if (configSubjectRef.current === readSubject) setSaving(false); }
   };
   /* ---- One save at a time from this tab ----
      Every save is read-merge-write against a revision, which is the right way to
@@ -2808,6 +2938,9 @@ export default function LeadPerformanceCalculator() {
   };
 
   const persistStoreNow = async (storeId, next, audit, seq = saveSeq.current, baseline = null, reportedFields = [], absence = null, epoch0 = authEpoch, actor0 = session && session.id) => {
+    const current = () => !!actor0 && sessionIdRef.current === actor0 && epoch0 === authEpoch && configSubjectRef.current === configSubject;
+    const onScreen = () => current() && viewRef.current === storeId && seq === saveSeq.current;
+    if (!current()) return false;
     if (storeLoadFailed) {
       alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
       return false;
@@ -2835,8 +2968,9 @@ export default function LeadPerformanceCalculator() {
        would have meant reading and rewriting every store to save a snapshot
        that is superseded the next time a report lands. */
     if (next && next.snapshots) delete next.snapshots;
-    setStoreData(next); setSaving(true); savingRef.current = true;
-    setAdminData((p) => ({ ...p, [storeId]: next }));
+    if (onScreen()) setStoreData(p => onScreen() ? next : p);
+    setSaving(true); savingRef.current = true;
+    setAdminData((p) => current() ? ({ ...p, [storeId]: next }) : p);
 
     /* Activity days go to their own rows first. They are the contended part, and
        writing them separately means an import and a manager editing anything else
@@ -2844,6 +2978,8 @@ export default function LeadPerformanceCalculator() {
        write loses a race and retries, the day data is already safely stored. */
     const prevDoc = adminData[storeId] || storeData;
     try { await saveActivityDays(storeId, next, prevDoc); } catch (e) { console.error("day rows", e); }
+
+    if (!current()) return false;
 
     // Compare and swap. The merge runs inside the loop, so if somebody saves while
     // we are mid-flight we fold into THEIR document and try again rather than
@@ -2854,14 +2990,15 @@ export default function LeadPerformanceCalculator() {
       // has retired the proof, and so has a sign-in or sign-out.
       const rowAbsentAtLoad = proofHolds(absence, storeId, session && session.id);
       return mergeAgainstServer(globalThis.structuredClone(next), server, { baseline, reportedFields, rowAbsentAtLoad });
-    });
+    }, 8, current);
+    if (!current()) return false;
     const ok = res.ok;
     if (ok) {
       if (absence) absence.proof.live = false;   // spent: the row exists now, by this save
       const merged = res.value || next;
       if (seq === saveSeq.current) {
-        setStoreData(merged);
-        setAdminData((p) => ({ ...p, [storeId]: merged }));
+        if (onScreen()) setStoreData(p => onScreen() ? merged : p);
+        setAdminData((p) => current() ? ({ ...p, [storeId]: merged }) : p);
       }
       if (res.conflictsResolved) console.info("save merged around", res.conflictsResolved, "other save(s)");
     }
@@ -2873,8 +3010,9 @@ export default function LeadPerformanceCalculator() {
     }
     // Refresh the TV row so every casted screen picks this up on its next poll.
     // Failing this must never fail the save, so it is deliberately swallowed.
-    if (config) publishBoard(config, storeId, res.value || next);
-    try { storeStampRef.current = await loadStoreStamp(storeKey(storeId)); } catch (e) {}
+    if (config) publishBoard(config, storeId, res.value || next, current);
+    try { const stamp = await loadStoreStamp(storeKey(storeId)); if (onScreen()) storeStampRef.current = stamp; } catch (e) {}
+    if (!current()) return false;
     if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
     return true;
   };
@@ -2981,7 +3119,7 @@ export default function LeadPerformanceCalculator() {
     const aliases = next.aliases || {};
     const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
 
-    for (const { rows, type, fileName } of entries) {
+    for (const { rows, type, fileName, stated } of entries) {
       const tickDay = tickDayFor(type);
       /* ---- The store's own line, which is not a person and never becomes one ----
          The Delivery Summary exports twice: one row per user, and one row for the
@@ -3007,6 +3145,9 @@ export default function LeadPerformanceCalculator() {
           ...(next.importLog || [])].slice(0, 200);
         continue;
       }
+      if (type === "delivery-summary" && applySummaryStated(M, stated, {
+        day: tickDay, at: new Date().toISOString(), file: fileName,
+      })) reportedFields.push([month, "stated"]);
       // The PDF Delivery Summary is one grid holding all four channels, so it has
       // its own reader. Everything else is the familiar column-per-metric export.
       const raw = type === "delivery-summary" ? parseDeliverySummaryRows(rows) : parseReport(rows, type);
@@ -3321,7 +3462,7 @@ export default function LeadPerformanceCalculator() {
           const ds = mapDeliverySummaryGrid(lines);
           if (ds) {
             if (wrongStore(ds.storeName)) continue;
-            ready.push({ rows: ds.rows, type: "delivery-summary", fileName: file.name }); continue;
+            ready.push({ rows: ds.rows, stated: ds.stated, type: "delivery-summary", fileName: file.name }); continue;
           }
           log.push({ ok: false, msg: `${file.name} is a PDF, but its layout isn't a Daily Activity or Delivery Summary report, so it was skipped.` });
         } catch (e) {
@@ -3448,9 +3589,15 @@ export default function LeadPerformanceCalculator() {
      for the beat between the two a returning person saw the sign-in screen
      flash up and vanish under their own arrival. The ground is what shows
      while the answer is on its way; a real sign-out still gets the screen. */
-  const signInLayer = config && authReady && (!session || jumpHold) ? (
+  /* While Supabase is still deciding about a reset link the ground shows, not the
+     sign-in card that would flip to the new-password card a moment later. A
+     failed link shows the card even with somebody signed in, because that is
+     exactly when the notice was hidden (C97, review). */
+  const signInLayer = config && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
     <div className="signin-over" key="signin">
-      <Login config={config}
+      <Login config={config} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
+        interrupted={rec.status === "interrupted"} recoveryGeneration={rec.generation}
+        onRecoveryDismissed={() => recoveryFlow.dismiss()}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
           const undo = landDashboard(() => {
@@ -3530,7 +3677,7 @@ export default function LeadPerformanceCalculator() {
       /* Their corner, through the account. The daily QR stays the second door
          into the very same screen. No ground: the phone routes draw their own. */
       return wrap(<Shell ground={false}>
-        <AssociateRooms key={home.store + ":" + doorDay} config={config} store={home.store}
+        <AssociateRooms key={configSubject + ":" + home.store + ":" + home.person_id + ":" + doorDay} config={config} store={home.store}
           date={doorDay} account={home.person_id} onSignOut={signOut} />
         <Style />
       </Shell>);
@@ -4068,12 +4215,11 @@ function buildBoardPayload(config, storeId, sdata) {
   const people = (((sdata && sdata.roster) || []))
     .filter((a) => a && a.id && a.name && !gone.has(norm(a.name)))
     .map((a) => ({ id: a.id, name: a.name, roleId: a.roleId || null }));
-  return {
+  return publicBoard({
     storeId,
     storeName: store?.name || "Store",
     icon: store?.icon || null,
     goals: extras.goals,
-    off: extras.off,
     brand: store?.brand || DEFAULT_BRAND,
     thresholds: normThresholds(store?.thresholds),
     roles: (config?.roles || []).filter((r) => r.onBoard !== false).map((r) => ({ id: r.id })),
@@ -4085,13 +4231,16 @@ function buildBoardPayload(config, storeId, sdata) {
     departed: [...gone],
     months: { [key]: { stats } },
     updatedAt: new Date().toISOString(),
-  };
+  });
 }
 
 // Publish the TV row. Called after every save so a casted screen never goes stale.
 // A failure here must never fail the save, but it must not vanish either: a board
 // row that never got written looks exactly like a board that was never opened.
-async function publishBoard(config, storeId, sdata) {
+async function publishBoard(config, storeId, sdata, isCurrent = () => true) {
+  const epoch = authEpoch;
+  const current = () => epoch === authEpoch && isCurrent();
+  if (!current()) return { ok: false, err: "Publication context changed" };
   try {
     // Today's floor figures, in the one place a signed-out phone can read them.
     const t = today();
@@ -4119,8 +4268,9 @@ async function publishBoard(config, storeId, sdata) {
            row is written many times a day and the next one puts it right; the
            hours would not have come back at all. */
         const prev = await loadShared(key, null, true);
+        if (!current()) return { ok: false, err: "Publication context changed" };
         slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
-        await saveShared(key, slim);
+        await saveShared(key, publicDay(slim), false, current);
       } catch (e) {}
     }
     /* ---- the day rows do not grow for ever ----
@@ -4132,8 +4282,10 @@ async function publishBoard(config, storeId, sdata) {
        the missed-standard record reads them three weeks back. So the window
        is generous rather than tight: anything older than the longest read,
        with a fortnight's headroom on top, goes on the way past. */
-    pruneBoardDays(storeId).catch(() => {});
-    const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
+    if (!current()) return { ok: false, err: "Publication context changed" };
+    pruneBoardDays(storeId, current).catch(() => {});
+    const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata), false, current);
+    if (!current()) return { ok: false, err: "Publication context changed" };
     if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
     return { ok, err: ok ? null : (lastSaveError || "unknown") };
   } catch (e) {
@@ -4147,17 +4299,22 @@ async function publishBoard(config, storeId, sdata) {
    cannot tidy up is still a publish, and the next one tries again. */
 const BOARD_DAYS = 45;
 let boardPruned = new Set();
-async function pruneBoardDays(storeId) {
+async function pruneBoardDays(storeId, isCurrent = () => true) {
+  const epoch = authEpoch;
+  const current = () => epoch === authEpoch && isCurrent();
+  if (!current()) return;
   if (!supabase || boardPruned.has(storeId)) return;
   boardPruned.add(storeId);                 // once per store per session is plenty
   const cutoff = dayIn(new Date(Date.now() - BOARD_DAYS * 864e5));
   try {
     const prefix = `lpc:board:${storeId}:act:`;
     const { data, error } = await supabase.from("app_data").select("key").like("key", prefix + "%");
+    if (!current()) return;
     if (error) throw error;
     for (const row of data || []) {
+      if (!current()) return;
       const day = String(row.key).slice(prefix.length);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cutoff) await saveShared(row.key, null, true);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cutoff) await saveShared(row.key, null, true, current);
     }
   } catch (e) { console.error("pruneBoardDays", e); }
 }
@@ -4858,9 +5015,9 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     if (!note) return;
     setNoteSaving(true); setNoteErr("");
     try {
-      await writeGoalNote(store, date, note);
+      const saved = await writeGoalNote(store, date, note);
       setRecord((r) => ({ ...(r || { lift: null, signedIn: new Set() }),
-        notes: notesFor(addNote((r && r.notes) || [], note)) }));
+        notes: notesFor(saved.goalNotes || []) }));
       setNoteText(""); buzz("taken");
       /* And send it to somebody. The floor row is the RECORD — it is what clears
          the flag and what a manager reads back later — but a record nobody is
@@ -5500,22 +5657,36 @@ function ClaimPicker({ config, value, onChange, onName }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed, onHandover, onJump }) {
+function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false, linkFailed = false, interrupted = false, recoveryGeneration = 0, onRecoveryDismissed }) {
   /* The other half of lpcf:boot: a phone that reached the sign-in screen
      opens on the light ground next time, not under a curtain for rooms it
      may not go back to. AssociateRooms writes "rooms" when it mounts. */
   useEffect(() => { try { localStorage.setItem("lpcf:boot", "app"); } catch (e) {} }, []);
-  const [mode, setMode] = useState("signin"); // signin | signup | forgot
+  const [mode, setMode] = useState(resetting ? "reset" : (linkFailed || interrupted) ? "forgot" : "signin"); // signin | signup | forgot | reset
   const [kind, setKind] = useState("associate");
-  const [email, setEmail] = useState("");
+  /* A link that did not work opens Forgot with the address this phone last asked for. */
+  const [email, setEmail] = useState(() => {
+    if (!linkFailed && !interrupted) return "";
+    try { return localStorage.getItem(RESET_EMAIL_KEY) || ""; } catch (e) { return ""; }
+  });
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [name, setName] = useState("");
   const [claim, setClaim] = useState({ store: "", person: null, name: "" });
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(linkFailed && !resetting ? LINK_FAILED_NOTICE : "");
   /* After Delete my account (C91): said once, on the card the person lands on. */
   const [ok, setOk] = useState(() => { try { if (sessionStorage.getItem(DELETED_KEY)) { sessionStorage.removeItem(DELETED_KEY); return "Your account is deleted."; } } catch (e) {} return ""; });
   const [busy, setBusy] = useState(false);
+  /* The recovery event can land after this screen is up. */
+  useEffect(() => { if (resetting) { setMode("reset"); setErr(""); setOk(""); } }, [resetting]);
+  /* And the link can fail under a form that is already open: the person signed
+     out, or somebody else signed in, before the save. The typed passwords go
+     with it, and the card says what to do. */
+  useEffect(() => {
+    if ((!linkFailed && !interrupted) || resetting) return;
+    setMode("forgot"); setErr(interrupted ? "" : LINK_FAILED_NOTICE); setOk(""); setPassword(""); setPassword2("");
+    try { const last = localStorage.getItem(RESET_EMAIL_KEY); if (last) setEmail((cur) => cur || last); } catch (e) {}
+  }, [linkFailed, resetting, interrupted]);
   /* The card's own 760ms deconstruction is gone with the handover it belonged
      to. The arrival takes the screen apart now, from the press, so there is
      nothing left here to run. */
@@ -5593,10 +5764,23 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     if (heldRef.current) heldRef.current(false);
   };
   useEffect(() => () => { if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
+  // A new recovery, logout or BFCache re-entry owns a new lifecycle. Old
+  // completions must not clear its fields, flash or hand it to the dashboard.
+  useEffect(() => {
+    abortJump(); signInPressed = false; setBusy(false);
+    setPassword(""); setPassword2("");
+  }, [recoveryGeneration]);
 
-  const signIn = async () => {
+  /* The press, the flight and the handover. A new password from a reset link
+     (C97) takes this same road with a different call in the middle, so there is
+     one arrival and not two. Called from a button, `authCall` is the click. */
+  const signIn = async (authCall, isCurrent = () => true) => {
+    const custom = typeof authCall === "function";
+    const { generation, sessionUserId: arrivalUser } = recoveryFlow.snapshot();
+    const callerCurrent = isCurrent;
+    isCurrent = () => recoveryFlow.snapshot().generation === generation && callerCurrent();
     setErr(""); setOk("");
-    if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
+    if (!custom && (!email.trim() || !password)) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
     /* ---- put the keyboard away BEFORE anything is measured ----
@@ -5619,6 +5803,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       if (el && typeof el.blur === "function") el.blur();
     } catch (e) {}
     await settleViewport();
+    if (!isCurrent()) return;
     /* ---- hold the screen for the length of the jump ----
        The sign-in call is not the only thing that brings the session in: the
        client fires SIGNED_IN the moment it succeeds, the app's own auth listener
@@ -5645,8 +5830,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     let flashed = false;
     let handedOver = false;
     const handOver = () => {
-      if (handedOver || !flashed || authed !== true) return;
+      if (!isCurrent() || handedOver || !flashed || authed !== true) return;
       handedOver = true;
+      if (custom) recoveryFlow.arrivalFinished(generation, arrivalUser);
       /* This is the frame the white is covering, and it is a handful of class
          names: the dashboard has been mounted and laid out since the hold. */
       if (onHandover) onHandover();
@@ -5656,7 +5842,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       onFlash: () => {
         /* Nothing to hand over to yet: hold the flash rather than dropping back
            onto a sign-in screen that has already taken itself apart. */
-        if (authed === null) document.documentElement.classList.add("sage-flash-hold");
+        if (isCurrent() && authed === null) document.documentElement.classList.add("sage-flash-hold");
       },
       onDone: () => { flashed = true; handOver(); },
     });
@@ -5666,10 +5852,11 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
        and no way back. Anything that is not a clean success puts the form back. */
     let res;
     try {
-      res = await authSignIn(email.trim().toLowerCase(), password);
+      res = await (custom ? authCall() : authSignIn(email.trim().toLowerCase(), password));
     } catch (e) {
       res = { error: "Couldn't reach sign-in. Check your connection and try again." };
     }
+    if (!isCurrent() || res?.stale) return;
     if (!res || res.error) {
       abortJump();
       signInPressed = false;
@@ -5679,6 +5866,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       return;
     }
     authed = true;
+    /* Signing in the ordinary way settles any failed reset link: the person is
+       in, and a notice about an old link must not keep the card up (C97). */
+    if (!custom && onRecoveryDismissed) onRecoveryDismissed();
     document.documentElement.classList.remove("sage-flash-hold");
     /* From here the only thing between the user and the page is the white, so
        nothing on this path is allowed to throw its way out of the handover. */
@@ -5722,7 +5912,18 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     const res = await authResetPassword(e);
     setBusy(false);
     if (res.error) { setErr(res.error); return; }
-    setOk("If that email has an account, a reset link is on its way. Check your inbox.");
+    setOk("If that email has an account, a link is on its way from no-reply@sageonline.io. Not there in a minute? Check junk.");
+  };
+
+  /* The link has already proved the address, so saving goes straight in with
+     the usual arrival (C97, A2). */
+  const saveNewPassword = () => {
+    if (busy) return;
+    setErr(""); setOk("");
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (password !== password2) { setErr("The two passwords do not match."); return; }
+    const { generation, sessionUserId } = recoveryFlow.snapshot();
+    return signIn(() => authSetPassword(password), () => recoveryFlow.snapshot().generation === generation && recoveryFlow.snapshot().sessionUserId === sessionUserId);
   };
 
   /* ---- the mark builds as the form is filled ----
@@ -5741,7 +5942,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       {/* The field belongs to this screen and lives as long as it does: held for
           the whole jump, gone with it at the handover, underneath the white. */}
       <SageField />
-      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" ? " login-launch" : "") : "")}>
+      <div className={"login-card " + (busy ? "login-busy" + (mode === "signin" || mode === "reset" ? " login-launch" : "") : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         {/* No spinner here any more. Signing in used to swap the wordmark for a
             loading indicator, which is a different object appearing in the place
@@ -5848,9 +6049,25 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
           </div>
         )}
 
+        {mode === "reset" && (
+          <div className="lf-mode" key="reset">
+            <p className="lf-note">Choose a new password</p>
+            <label className="lf-label">New password</label>
+            <input className="lf-in" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+              placeholder="At least 8 characters" autoComplete="new-password" />
+            <label className="lf-label">Confirm password</label>
+            <input className="lf-in" type="password" value={password2} onChange={(e) => { setPassword2(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && saveNewPassword()} placeholder="Repeat it" autoComplete="new-password" />
+            {err && <div className="login-err">{err}</div>}
+            <button className="lf-go lf-solo" onClick={saveNewPassword} disabled={busy}>
+              <span>{busy ? "Saving\u2026" : "Save and sign in"}</span>
+            </button>
+          </div>
+        )}
+
         {mode === "forgot" && (
           <div className="lf-mode" key="forgot">
-            <p className="lf-note">Enter your email and we will send a link to set a new password.</p>
+            <p className="lf-note">{interrupted ? RECOVERY_INTERRUPTED_NOTICE : "Enter your email and we will send a link to set a new password."}</p>
             <label className="lf-label">Work email</label>
             <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && forgot()} placeholder="you@company.com" />
@@ -5859,7 +6076,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
             <button className="lf-go lf-solo" onClick={forgot} disabled={busy}>
               <span>{busy ? "Sending\u2026" : "Send reset link"}</span>
             </button>
-            <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
+            <button className="lf-alt" onClick={() => { if ((linkFailed || interrupted) && onRecoveryDismissed) onRecoveryDismissed(); setMode("signin"); setErr(""); setOk(""); }}>{interrupted ? "Continue without resetting" : "Back to sign in"}</button>
           </div>
         )}
       </div>
@@ -7156,17 +7373,19 @@ const checklistKey = (store, date, id) => `lpcq:list:${store}:${date}:${id}`;
 
 const isTestId = (id) => id === TEST_ID;
 
-async function saveTicket(t) {
+async function saveTicket(t, update = false) {
   if (!supabase) return false;
-  /* store and qdate are NOT NULL on queue_public, and this used to send
-     neither, so the table refused every ticket ever filed (C98). */
-  const day = today();
   try {
-    const { error } = await supabase.from(QUEUE_TABLE)
-      .upsert({ id: TICKET_PREFIX + t.id, store: t.store || "", qdate: day, data: t }, { onConflict: "id" });
-    if (error) throw error;
-    return true;
-  } catch (e) { console.error("saveTicket", e); return false; }
+    if (update) {
+      const { data, error } = await supabase.rpc("sage_ticket_status", { p_id: t.id, p_status: t.status });
+      return !error && data === true;
+    }
+    t.operationId ||= crypto.randomUUID();
+    const { operationId, ...input } = t;
+    if (input.page) input.page = input.page.split("?")[0];
+    const { data, error } = await supabase.rpc("sage_ticket_submit", { p_operation_id: operationId, p_input: input });
+    return !error && data?.ok === true;
+  } catch { return false; }
 }
 
 const queueRowId = (store, date, kind) => (!kind || kind === "line" ? `${store}:${date}` : `${store}:${date}:${kind}`);
@@ -7789,7 +8008,7 @@ function SfPickList({ variant, people, taken, countLabel, onPick, onBack, typed,
 const GOAL_LOOKBACK = 21;
 async function loadGoalRecord(store, endDay, whoKey, meId) {
   const days = lastDays(GOAL_LOOKBACK, endDay);
-  const rows = await loadFloorDays(store, days[0], days[days.length - 1]);
+  const rows = await loadFloorDays(store, days[0], days[days.length - 1], "own");
   /* Read by the same code the manager's screen reads them with, so the two sides
      cannot come to different answers about the same fortnight. This picks one
      person out of it; that screen shows all of them. */
@@ -7805,12 +8024,13 @@ async function loadGoalRecord(store, endDay, whoKey, meId) {
 
 /* Append-only, like every other decision in this system: a note is added, never
    edited and never replaced. */
+async function staffCommand(store, date, room, action, input = {}, operationId = crypto.randomUUID()) {
+  const result = await apiCall("/api/room-command", { method: "POST", body: { store, date, room, action, input, operationId } });
+  if (!result?.ok || !result.row) throw new Error("The change was not confirmed. Try again.");
+  return result.row;
+}
 async function writeGoalNote(store, date, note) {
-  return mutateFloorRow(store, date, (cur) => {
-    const next = cur || { date, store, line: [], history: [] };
-    next.goalNotes = addNote(next.goalNotes, note);
-    return next;
-  });
+  return staffCommand(store, date, "floor", "goal-note", { text: note.text, forDay: note.forDay });
 }
 
 async function loadMyDays(store, endDay, nameKeys) {
@@ -8054,6 +8274,7 @@ function useLiveStanding({ config, store, date, account, room }) {
   const [tick, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick((k) => k + 1), 10000); return () => clearInterval(t); }, []);
   const env = useMemo(() => {
+    if (floorRow?.__unavailable || queueRow?.__unavailable) return null;
     if (!account || floorRow === undefined && wantFloor || queueRow === undefined && wantLine) return null;
     return liveEnvelope({ config, store, date, meId: account, floorRow: floorRow || null, queueRow: queueRow || null,
       lastRoom: room === "line" ? "line" : "floor" });
@@ -9461,10 +9682,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     fence: storeFence,
     active: !!mySeat && !!meId,
     onLeft: () => {
-      mutateQueueRow(store, date, (cur) => {
-        const r = releasePerson(cur || {}, meId, qNowIso(), "left");
-        return r.changed ? r.row : null;
-      }, variant.kind === "online" ? "online" : null)
+      staffCommand(store, date, variant.kind, "release-desk", { reason: "left" })
         .then((next) => { if (next) setRow(next); })
         .catch(() => {});
     },
@@ -9475,12 +9693,12 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   haveRow.current = row !== undefined;
   const refetch = useCallback(async (force) => {
     if (writes.current > 0) return;            // a tap is still landing; its answer is the next read
-    if (force === true || !haveRow.current) rowStamps.delete(QUEUE_TABLE + "|" + queueRowId(store, date, variant.kind));
+    if (force === true || !haveRow.current) rowStamps.delete("own|" + QUEUE_TABLE + "|" + queueRowId(store, date, variant.kind));
     const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store, date, variant.kind));
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date, variant.kind]);
-  const mutateRow = useCallback((fn) => mutateQueueRow(store, date, fn, variant.kind), [store, date, variant.kind]);
+  const mutateRow = useCallback((_fn, command) => staffCommand(store, date, variant.kind, command.action, command.input), [store, date, variant.kind]);
   const commit = useCommit(setRow, mutateRow, refetch, writes);
   const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), refetch);
   const opensAt = useScheduledOpen({ cfg, store, room: variant.kind === "line" ? "line" : "online", row, refetch });
@@ -9563,7 +9781,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   // which screen should be visible right now (drives the curtain wipe)
   let screen;
-  if (row === undefined) screen = "loading";
+  if (row?.__unavailable) screen = "unavailable";
+  else if (row === undefined) screen = "loading";
   /* A stale code is a stale code; an account is never stale, so a line the
      desk has not opened is a plain word on home rather than a refusal. */
   else if (!isToday || (!valid && !account)) screen = "invalid";
@@ -9610,10 +9829,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   /* Getting on is the screen changing under the finger, not a wait for the
      row: you are on the line at once and the write lands behind that. */
-  function joinAs(person) {
+  async function joinAs(person) {
     try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
     remember(person.id);
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
       if (!cur.line.some((p) => p.id === person.id)) {
@@ -9622,7 +9841,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self" });
       }
       return cur;
-    });
+    }, { action: "join" });
+    if (!confirmed) { setBusy(false); return; }
     setStep("done"); setBusy(false);
   }
 
@@ -9648,11 +9868,11 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     joinAs(p);
   }
 
-  function setFlag(status) {
+  async function setFlag(status) {
     if (!meId) return;
     // Back in line means the next turn should show the up-take overlay again.
     if (status === "waiting") setTookIt(false);
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -9668,28 +9888,31 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         p.status = status; p.statusAt = qNowIso();
       }
       return cur;
-    });
+    }, { action: "status", input: { status } });
+    if (!confirmed) return;
   }
   /* Getting up from a desk, from the desk. The same release the lot fence
      runs; `why` is what the day's record says about it, and `then` is the
      state they get up into. */
-  function releaseSeat(why = "out", then = null) {
+  async function releaseSeat(why = "out", then = null) {
     if (!meId) return;
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       const r = releasePerson(cur || {}, meId, qNowIso(), why);
       return r.changed ? r.row : null;
-    });
+    }, { action: "release-desk", input: { reason: why } });
+    if (!confirmed) return;
     if (then) then();
   }
-  function leave() {
+  async function leave() {
     if (!meId) return;
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
       if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", from: p.awayReason || null, id: meId, who: p.label, by: "self" }); }
       return cur;
-    });
+    }, { action: "leave" });
+    if (!confirmed) return;
     remember(null);
     setStep("name");
   }
@@ -9698,7 +9921,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const storeName = (row && row.storeName) || "Phone Line";
 
   // content is chosen by `shown`, which lags `screen` and swaps behind the curtain
-  const eff = (shown === "done" && !me) ? (account ? "home" : "name") : shown;
+  const eff = row?.__unavailable ? "unavailable" : (shown === "done" && !me) ? (account ? "home" : "name") : shown;
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
@@ -9713,7 +9936,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   let content;
 
-  if (eff === "loading") {
+  if (eff === "unavailable") {
+    content = <SfScreen spine={null} className="sf-v-wait"><p role="status">This room is unavailable. We will try again shortly.</p></SfScreen>;
+  } else if (eff === "loading") {
     content = (
       <SfScreen spine={queueSpine} className="sf-v-wait">
         <div className="sf-loading" aria-label="Loading" />
@@ -10083,9 +10308,9 @@ const FLOOR_SEG = { segFlag: "With a guest" };
    fetches the row only when the stamp has moved. "same" means nothing changed;
    undefined means the read failed and the screen should hold what it has. */
 const rowStamps = new Map();
-async function loadRowIfChanged(table, id, tag) {
+async function loadRowIfChanged(table, id, tag, view = "own") {
   if (!supabase) return undefined;
-  const k = tag || (table + "|" + id);
+  const k = view + "|" + (tag || (table + "|" + id));
   const via = viaFor(table, id);
   const read = async () => {
     /* A TV (C92): the endpoint makes the same bargain, answering "same" for
@@ -10095,6 +10320,13 @@ async function loadRowIfChanged(table, id, tag) {
       if (out.same) return "same";
       if (out.row) cachePut("row:" + table + "|" + id, out.row);
       return { row: out.row || null, stamp: out.row ? (out.stamp || "none") : "missing" };
+    }
+    if (table === FLOOR_TABLE || table === QUEUE_TABLE) {
+      const [store, date, suffix] = id.split(":");
+      const out = await apiCall("/api/floor-row", { method: "POST", body: { op: "read", store, date, room: table === FLOOR_TABLE ? "floor" : suffix === "online" ? "online" : "line", view, stamp: rowStamps.get(k) } });
+      if (out.error) throw Object.assign(new Error(out.error), { code: "42501" });
+      if (out.same) return "same";
+      return { row: out.row || null, stamp: out.stamp || "missing" };
     }
     const { data: s, error: e1 } = await supabase.from(table).select("updated_at").eq("id", id).maybeSingle();
     if (e1) throw e1;
@@ -10122,6 +10354,7 @@ async function loadRowIfChanged(table, id, tag) {
     return r.value.row;
   } catch (e) {
     console.error("poll", table, id, e);
+    if (table === FLOOR_TABLE || table === QUEUE_TABLE) { rowStamps.delete(k); return { __unavailable: true }; }
     /* The first read of the day failing used to leave the screen on its
        curtain. The line as the phone last saw it stands in, marked as of
        when, and the next poll that works replaces it. A read that fails once
@@ -10200,16 +10433,16 @@ async function mutateFloorRow(store, date, fn) {
    Nothing on the way is disabled while a round trip runs: the next tap is
    its own write, queued behind this one. */
 function useCommit(setRow, mutate, refetch, writes) {
-  return useCallback((fn) => {
+  return useCallback((fn, command) => {
     setRow((cur) => {
       if (!cur) return cur;
       const out = fn(JSON.parse(JSON.stringify(cur)));
       return out || cur;
     });
     writes.current++;
-    return mutate(fn).then(
+    return mutate(fn, command).then(
       (next) => { writes.current--; if (next && writes.current === 0) setRow(next); return next; },
-      (e) => { writes.current--; console.error("write", e); report("write", e); buzz("refused"); refetch(true); return null; });
+      (e) => { writes.current--; console.error("write", e); report("write", e); buzz("refused"); setRow(undefined); refetch(true); return null; });
   }, [setRow, mutate, refetch, writes]);
 }
 
@@ -10217,16 +10450,11 @@ function useCommit(setRow, mutate, refetch, writes) {
    A claim can only be reconciled after the day's activity report has landed, and
    the report lands the next morning, so the thing a manager reviews is always
    yesterday and older — never the day they are standing in. */
-async function loadFloorDays(store, fromDate, toDate) {
-  if (!supabase) return [];
-  try {
-    const { data, error } = await supabase.from(FLOOR_TABLE)
-      .select("fdate,data").eq("store", store)
-      .gte("fdate", fromDate).lte("fdate", toDate)
-      .order("fdate", { ascending: false }).limit(60);
-    if (error) throw error;
-    return (data || []).filter((r) => r && r.data).map((r) => ({ date: r.fdate, row: r.data }));
-  } catch (e) { console.error("loadFloorDays", e); return []; }
+async function loadFloorDays(store, fromDate, toDate, view = "manager") {
+  if (!supabase) throw new Error("Coaching history is unavailable");
+  const { data, error } = await supabase.rpc("sage_floor_days", { p_store: store, p_from: fromDate, p_to: toDate, p_view: view });
+  if (error || !Array.isArray(data)) throw new Error("Coaching history could not be read. Try again.");
+  return data;
 }
 
 /* =========================================================================
@@ -10347,29 +10575,31 @@ function AssistBlock({ meId, meName, fence, plan, row, commit }) {
     } catch (e) { /* no fix is not a reason to block the ask */ }
   };
 
-  const send = () => {
+  const send = async () => {
     if (!open) return;
     const ask = { id: uid(), t: qNowIso(), kind: open, byId: meId, byName: meName,
       table: where === "lot" ? null : where, spot: where === "lot" ? "lot" : "floor",
       note: note || null };
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       // one live ask per person: a second press replaces, never stacks
       cur.assists = [ask, ...((cur.assists || []).filter((a) => !(a.byId === meId && !a.doneAt)))].slice(0, 40);
       return cur;
-    });
+    }, { action: "assist", input: { kind: open, table: where === "lot" ? null : where, note } });
+    if (!confirmed) return;
     setOpen(null);
     buzz("sent");
   };
-  const cancel = () => {
+  const cancel = async () => {
     if (!mine) return;
     const id = mine.id;
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const x = (cur.assists || []).find((a) => a.id === id);
       if (x && !x.doneAt) { x.doneAt = qNowIso(); x.cancelled = true; }
       return cur;
-    });
+    }, { action: "cancel-assist", input: { assistId: id } });
+    if (!confirmed) return;
   };
 
   if (mine) {
@@ -10431,13 +10661,14 @@ function SeatBlock({ store, meId, plan, row, commit }) {
   const me = ((row && row.line) || []).find((p) => p.id === meId);
   const [open, setOpen] = useState(false);
   if (!me || me.status !== "customer") return null;
-  const seat = (n) => {
-    commit((cur) => {
+  const seat = async (n) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) p.table = n;
       return cur;
-    });
+    }, { action: "table", input: { table: n } });
+    if (!confirmed) return;
     try { localStorage.setItem(`lpcf:seat:${store}`, String(n)); } catch (e) {}
     setOpen(false);
     buzz(12);
@@ -10709,7 +10940,7 @@ const openToOf = (store) => {
 };
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
-                    monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
+                    monthStats, boardThr, goals, off, scheduleState = "unavailable", days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
                     line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [], still = false, host = null }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   /* Whether this corner arrived on a slide, read ONCE, at birth. The slide's
@@ -10750,6 +10981,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const scale = goal ? Math.max(goal, units || 0, pace || 0) : null;
   const pct = (v) => (scale ? Math.min(100, Math.round((v / scale) * 100)) : 0);
   const toGo = goal != null && units != null ? Math.max(0, Math.round((goal - units) * 10) / 10) : null;
+  const scheduleKnown = off !== null && off !== undefined;
   const offMine = (off && (off[norm(meFull)] || off[norm(meLabel)])) || [];
 
   // A clean day met every standard its report can grade. A missed worked day
@@ -10763,9 +10995,9 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const byDay = {};
   for (const d of (days || [])) byDay[d.day] = d.row;
   const monthPrefix = date.slice(0, 7);
-  let points = 0, streak = 0;
+  let points = scheduleKnown ? 0 : null, streak = 0;
   for (const d of (days || [])) {
-    if (!d.row || !d.day.startsWith(monthPrefix) || d.day > date || d.day === date) continue;
+    if (!scheduleKnown || !d.row || !d.day.startsWith(monthPrefix) || d.day > date || d.day === date) continue;
     if (offMine.includes(d.day)) continue;
     const pd = pointsForDay(d.row, std);
     if (!pd.noData) points += pd.points;
@@ -10784,7 +11016,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     const r = byDay[k];
     const isOffDay = offMine.includes(k);
     week.push({ wd: "SMTWTFS"[dd.getDay()], today: i === 0, k, pts: r ? pointsForDay(r, std).points : 0,
-      state: i === 0 ? "now" : (isOffDay ? "off" : (r ? (graded(r) ? "ok" : "bad") : "off")) });
+      state: !scheduleKnown ? "unknown" : i === 0 ? "now" : (isOffDay ? "off" : (r ? (graded(r) ? "ok" : "bad") : "off")) });
   }
 
   // The calendar: a dot per day on its true weekday column, warmed by how much
@@ -10819,7 +11051,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const scheduled = (d) => { const k = `${monthPrefix}-${String(d).padStart(2, "0")}`; return !offMine.includes(k) && !holidays.has(k); };
   const workDays = []; for (let d = 1; d <= daysInMonth; d++) if (scheduled(d)) workDays.push(d);
   const workedSoFar = workDays.filter((d) => d <= dayN).length;
-  const expectedBy = (d) => goal != null && workDays.length ? goal * (workDays.filter((w) => w <= d).length / workDays.length) : null;
+  const expectedBy = (d) => scheduleKnown && goal != null && workDays.length ? goal * (workDays.filter((w) => w <= d).length / workDays.length) : null;
   const expectedNow = expectedBy(dayN);
   const paceDiff = expectedNow != null && units != null ? Math.round((units - expectedNow) * 10) / 10 : null;
   const paceState = paceDiff == null ? "" : paceDiff < -1 ? "behind" : paceDiff > 1 ? "ahead" : "on";
@@ -10936,7 +11168,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     const areaUsed = pts.length ? `M${newTop.join(" L")} L${[...line1].reverse().join(" L")} Z` : "";
     const path = pts.length ? `M${line1.join(" L")}` : "";
     /* The pace as a step: flat across days off, climbing on scheduled days. */
-    const pacePath = goal != null && workDays.length
+    const pacePath = scheduleKnown && goal != null && workDays.length
       ? "M0 " + y(0) + " " + Array.from({ length: daysInMonth }, (_, i) => `L${x(i + 1)} ${y(expectedBy(i + 1))}`).join(" ")
       : "";
     return { W, H, x, y, areaNew, areaUsed, path, pacePath, hasUsed: share < 1, todayX: x(dayN), todayY: pts.length ? y(pts[pts.length - 1].v) : y(0), goalY: goal != null ? y(goal) : null, bottom: y(0) };
@@ -11001,6 +11233,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   );
   return (
     <div className={"mc" + (offDim ? " mc-off" : "") + (arrived ? " mc-still" : "")}>
+      {!scheduleKnown && <p role="status">{scheduleState === "unpublished" ? "Your schedule has not been published." : scheduleState === "forbidden" ? "Schedule access requires account approval." : "Your schedule is unavailable. Trying again."}</p>}
       {offToday && offState !== "in" && (
         <div className="mc-offc">
           <b>{offState === "no2" ? "Enjoy it." : offState === "no1" && activityNow ? "Numbers are coming in." : "Day off today"}</b>
@@ -11163,10 +11396,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       <div className="mc-cap mc-cap-p">POINTS</div>
       <div className="mc-card mc-pts">
         <div className="mc-ptshead">
-          <span className="mc-num"><LedNumber value={points} color="#F08A80" cell={6.5} gap={3} dim="transparent" /></span>
+          <span className="mc-num">{scheduleKnown ? <LedNumber value={points} color="#F08A80" cell={6.5} gap={3} dim="transparent" /> : <span>Unavailable</span>}</span>
           <span className="mc-ptslbl">
             <b>this month so far</b>
-            {streak > 0 && <span className="mc-streak">CLEAN {streak} DAY{streak === 1 ? "" : "S"} RUNNING</span>}
+            {scheduleKnown && streak > 0 && <span className="mc-streak">CLEAN {streak} DAY{streak === 1 ? "" : "S"} RUNNING</span>}
           </span>
         </div>
         <div className="mc-week">
@@ -11294,6 +11527,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                     const c = cal.find((x2) => x2 && x2.d === pickDay);
                     const r = c && c.r;
                     const lbl = `${MC_MONTHS[mo - 1]} ${pickDay}`;
+                    if (!scheduleKnown) return <div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULE UNAVAILABLE</span></div>;
                     if (c && c.isOff) return <div className="mc-scr"><span>{lbl}</span><i /><span>DAY OFF</span></div>;
                     if (!c || !c.past) return <div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULED</span></div>;
                     if (!r) return <div className="mc-scr"><span>{lbl}</span><i /><span>OFF</span></div>;
@@ -11424,7 +11658,27 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   // its percentages by these, so the wall and the phone can never disagree about
   // whether a number is green.
   const [boardThr, setBoardThr] = useState(null);
-  const [boardExtra, setBoardExtra] = useState({ goals: {}, off: {} });
+  const [boardExtra, setBoardExtra] = useState({ goals: {} });
+  const [privateSchedule, setPrivateSchedule] = useState({ state: "loading", offDates: null });
+  const scheduleMonth = date.slice(0, 7);
+  useEffect(() => {
+    if (!supabase || !account) { setPrivateSchedule({ state: "forbidden", offDates: null }); return; }
+    const identity = { store, month: scheduleMonth, person: account };
+    let stop = () => {};
+    const start = () => { stop(); stop = watchOwnSchedule({ identity,
+      read: signal => supabase.rpc("sage_schedule_read", { p_store: store, p_month: scheduleMonth }).abortSignal(signal),
+      emit: result => setPrivateSchedule({ ...result, ...identity }) }); };
+    start();
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      stop();
+      setPrivateSchedule({ state: session ? "loading" : "forbidden", offDates: null, ...identity });
+      if (session) start();
+    });
+    return () => { stop(); subscription?.subscription?.unsubscribe(); };
+  }, [store, account, scheduleMonth]);
+  const scheduleKnown = privateSchedule.state === "published" && privateSchedule.store === store
+    && privateSchedule.month === scheduleMonth && privateSchedule.person === account;
+  const publishedOff = scheduleKnown ? privateSchedule.offDates : null;
   /* The board's roster, ids and names, for the morning the floor row does not
      exist yet: an account knows its roster id and nothing else, and this is the
      one public place that turns the id back into a name. */
@@ -11438,7 +11692,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpPanel, setHelpPanel] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
-  const [offState, setOffState] = useState(() => { try { return localStorage.getItem(`lpcf:offday:${store}:${date}`) || ""; } catch { return ""; } });
+  const [offState, setOffState] = useState(() => { try { return localStorage.getItem(`lpcf:offday:v2:${store}:${account || "none"}:${date}`) || ""; } catch { return ""; } });
+  useEffect(() => { try { setOffState(localStorage.getItem(`lpcf:offday:v2:${store}:${account || "none"}:${date}`) || ""); } catch { setOffState(""); } }, [store, account, date]);
   /* The bars the browser draws around the page take their colour from this
      tag. The phone screens are the garden's dark ink, so the bars are too, and
      the light dashboard colour comes back when the screen is left. */
@@ -11484,7 +11739,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         if (dead || !b) return;
         if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
         setBoardThr(b.thresholds || null);
-        setBoardExtra({ goals: b.goals || {}, off: b.off || {} });
+        setBoardExtra({ goals: b.goals || {} });
         setBoardRoster(Array.isArray(b.roster) ? b.roster : []);
       })
       .catch(() => {});
@@ -11500,12 +11755,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   haveRow.current = row !== undefined;
   const refetch = useCallback(async (force) => {
     if (writes.current > 0) return;            // a tap is still landing; its answer is the next read
-    if (force === true || !haveRow.current) rowStamps.delete(FLOOR_TABLE + "|" + floorRowId(store, date));
+    if (force === true || !haveRow.current) rowStamps.delete("own|" + FLOOR_TABLE + "|" + floorRowId(store, date));
     const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, date));
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date]);
-  const mutateRow = useCallback((fn) => mutateFloorRow(store, date, fn), [store, date]);
+  const mutateRow = useCallback((_fn, command) => staffCommand(store, date, "floor", command.action, command.input), [store, date]);
   const commit = useCommit(setRow, mutateRow, refetch, writes);
   const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), refetch);
   const opensAt = useScheduledOpen({ cfg, store, room: "floor", row, refetch });
@@ -11531,18 +11786,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     tagDone.current = true;
     (async () => {
       try {
-        const next = await mutateFloorRow(store, date, (cur) => {
-          if (!cur) return null;
-          const q = (cur.line || []).find((x) => x.id === meId);
-          if (!q) return cur;
-          if (q.status !== "customer") {
-            cur.history = cur.history || [];
-            cur.history.push({ t: qNowIso(), action: "checkin", id: q.id, who: q.label, by: "table-tag" });
-            q.status = "customer"; q.statusAt = qNowIso(); q.awayReason = null; q.autoFlip = false;
-          }
-          q.table = tag;
-          return cur;
-        });
+        const next = await staffCommand(store, date, "floor", "table-checkin", { table: tag });
         if (next) setRow(next);
         try { localStorage.setItem(`lpcf:seat:${store}`, String(tag)); } catch (e) {}
         buzz("taken");
@@ -11622,26 +11866,18 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       else if (!localStorage.getItem(k)) localStorage.setItem(k, String(Math.floor(myUnits / 5) * 5));
     } catch (e) {}
   }, [myUnits, myGoal, meId]);   // eslint-disable-line
-  const myOff = (boardExtra.off[norm(meFull)] || boardExtra.off[norm(meLabel)] || []);
-  const offToday = myOff.includes(date);
+  const myOff = publishedOff;
+  const offToday = scheduleKnown && myOff.includes(date);
   const activityNow = !!(mine && ((mine.calls || 0) > 0 || (mine.video || 0) > 0 || (mine.units || 0) > 0));
   const answerOff = async (working) => {
     let nextState = working ? "in" : (offState === "no1" && activityNow ? "no2" : "no1");
     setOffState(nextState);
-    try { localStorage.setItem(`lpcf:offday:${store}:${date}`, nextState); } catch (e) {}
+    try { localStorage.setItem(`lpcf:offday:v2:${store}:${account || "none"}:${date}`, nextState); } catch (e) {}
     buzz(12);
     if (nextState === "no2") {
       // Twice no, with numbers on the record: the facts go where a manager reads them.
       try {
-        await mutateFloorRow(store, date, (cur) => {
-          if (!cur) return null;
-          cur.presence = cur.presence || { events: [], state: {} };
-          if (!(cur.presence.events || []).some((e) => e.kind === "offday" && e.personId === meId)) {
-            cur.presence.events.push(onOffDayWorked({ personId: meId, label: meLabel || meFull, at: Date.now(),
-              activity: { calls: mine && mine.calls, video: mine && mine.video, units: mine && mine.units } }));
-          }
-          return cur;
-        });
+        await staffCommand(store, date, "floor", "offday-denied");
       } catch (e) {}
     }
   };
@@ -11662,13 +11898,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         tasksPosted: mine && mine.tasksPosted, units: mine && mine.units, rocked: mine && mine.rocked,
         points: pointsForDay(mine || {}, std).points, asOf: mineAt || null };
       try {
-        const next = await mutateFloorRow(store, date, (cur) => {
-          if (!cur) return null;
-          const c = (cur.checkouts || []).find((x) => x && x.id === meId && x.partial);
-          if (!c) return null;
-          Object.assign(c, snap); delete c.partial;
-          return cur;
-        });
+        const next = await staffCommand(store, date, "floor", "complete-checkout");
         if (!dead && next) setRow(next);
       } catch (e) { /* the desk keeps the stub; this runs again next time */ }
       if (!dead) setLateTicket(stub.t || qNowIso());
@@ -11683,22 +11913,17 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         const snap = { calls: mine && mine.calls, video: mine && mine.video, tasks: mine && mine.tasks,
           tasksPosted: mine && mine.tasksPosted, units: mine && mine.units, rocked: mine && mine.rocked,
           points: pointsForDay(mine || {}, std).points, asOf: mineAt || null };
-        await mutateFloorRow(store, date, (cur) => {
-          if (!cur) return null;
-          cur.checkouts = (cur.checkouts || []).filter((c) => c.id !== meId);
-          cur.checkouts.push({ id: meId, who: meLabel || meFull, name: meFull || meLabel, t: qNowIso(), ...snap });
-          return cur;
-        });
+        await staffCommand(store, date, "floor", "checkout");
         setTicket("sent");
       } catch (e) { setTicket("failed"); }
     }, 2700);
     return () => clearTimeout(t);
   }, [ticket]);   // eslint-disable-line
   const daysClean = (() => {
-    if (!days) return 0;
+    if (!days || !scheduleKnown) return null;
     let n = 0;
     const sorted = days.slice().sort((a2, b2) => (a2.day < b2.day ? 1 : -1));
-    for (const d of sorted) { if (d.day >= date) continue; if (!d.row) continue; if (myOff.includes(d.day)) continue;
+    for (const d of sorted) { if (d.day >= date) continue; if (!d.row) continue; if (myOff?.includes(d.day)) continue;
       const pd = pointsForDay(d.row, std); if (pd.noData) continue; if (pd.points === 0) n++; else break; }
     return n;
   })();
@@ -11758,7 +11983,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     : null;
 
   let screen;
-  if (row === undefined || knownAs === undefined) screen = "loading";
+  if (row?.__unavailable) screen = "unavailable";
+  else if (row === undefined || knownAs === undefined) screen = "loading";
   else if (!isToday || !valid) screen = "invalid";
   else if (step === "done" && me) screen = "done";
   /* Through the door and not on the line: the corner is still home. */
@@ -11827,7 +12053,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     }
     try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
     remember(person.id);
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
       if (!cur.line.some((p) => p.id === person.id)) {
@@ -11840,7 +12066,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           detail: door.why === "inside" ? "on the lot" : door.why });
       }
       return cur;
-    });
+    }, { action: "join" });
+    if (!confirmed) { setBusy(false); return; }
     if (door.why !== "inside") setDoorNote(door);
     setStep("done"); setBusy(false);
   }
@@ -11866,11 +12093,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     setSelected(p); setMsg("");
     joinAs(p);
   }
-  function setFlag(status) {
+  async function setFlag(status) {
     if (!meId) return;
     // Back in line means the next turn should show the up-take overlay again.
     if (status === "waiting") setTookIt(false);
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -11886,12 +12113,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         p.status = status; p.statusAt = qNowIso();
       }
       return cur;
-    });
+    }, { action: "status", input: { status } });
+    if (!confirmed) return;
   }
   // accidental check-in: reverse the auto-flip (within the store's window)
-  function undoCheckin() {
+  async function undoCheckin() {
     if (!meId) return;
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -11900,17 +12128,19 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         cur.history.push({ t: qNowIso(), action: "accidental-undo", id: meId, who: p.label, by: "self" });
       }
       return cur;
-    });
+    }, { action: "undo-checkin" });
+    if (!confirmed) return;
   }
-  function leave() {
+  async function leave() {
     if (!meId) return;
-    commit((cur) => {
+    const confirmed = await commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
       if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", id: meId, who: p.label, by: "self" }); }
       return cur;
-    });
+    }, { action: "leave" });
+    if (!confirmed) return;
     // Through the door the account stays who they are; only the line entry goes.
     remember(account || null);
     setStep("name");
@@ -12002,65 +12232,30 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         else if (act === "back" || act === "done") await setFlag("waiting");
         else if (act === "take") { buzz("taken"); setTookIt(true); await setFlag("customer"); }
         else if (act === "pass") {
-          const next = await mutateFloorRow(store, date, (cur) => {
-            if (!cur) return null;
-            const idx = (cur.line || []).findIndex((x) => x.id === meId); if (idx < 0) return cur;
-            const p = cur.line[idx];
-            cur.history = cur.history || [];
-            cur.history.push({ t: qNowIso(), action: "declined", id: meId, who: p.label, by: "self" });
-            cur.line.splice(idx, 1);
-            cur.line.push({ ...p, movedAt: qNowIso() });
-            return cur;
-          });
+          const next = await staffCommand(store, date, "floor", "pass");
           if (next) setRow(next);
         }
         else if (act === "fly" || act === "to") {
           const ask = { id: uid(), t: qNowIso(), kind: act, byId: meId, byName: meFull || meLabel, table: me.table != null ? me.table : null, spot: "floor", note: null };
-          const next = await mutateFloorRow(store, date, (cur) => {
-            if (!cur) return null;
-            cur.assists = [ask, ...((cur.assists || []).filter((a) => !(a.byId === meId && !a.doneAt)))].slice(0, 40);
-            return cur;
-          });
+          const next = await staffCommand(store, date, "floor", "assist", { kind: act, table: me.table ?? null });
           if (next) setRow(next);
         }
         else if (act === "leave") { setLotAsk(false); await leave(); }
         else if (act === "cancel") {
           // Never mind, from the lock screen: the same withdrawal the page's
           // own Never mind writes, so the two cannot disagree.
-          const next = await mutateFloorRow(store, date, (cur) => {
-            if (!cur) return null;
-            const open = (cur.assists || []).find((a) => a && a.byId === meId && !a.doneAt);
-            if (!open) return null;
-            open.doneAt = qNowIso(); open.cancelled = true;
-            cur.history = cur.history || [];
-            cur.history.push({ t: qNowIso(), action: "assist-cancelled", id: meId, who: me.label, by: "self" });
-            return cur;
-          });
+          const next = await staffCommand(store, date, "floor", "cancel");
           if (next) setRow(next);
         }
         else if (act === "with-guest") {
           /* Answering the desk with a reason. Honoured either way; where the
              row says they are not with a guest the day's record keeps that,
              plainly and without counting it. */
-          const next = await mutateFloorRow(store, date, (cur) => {
-            if (!cur) return null;
-            const p = (cur.line || []).find((x) => x.id === meId); if (!p || !p.nudgedAt) return null;
-            p.nudgedAt = null; cur.history = cur.history || [];
-            const reallyWith = p.status === "customer";
-            cur.history.push({ t: qNowIso(), action: "with-guest", id: meId, who: p.label, by: "self",
-              ...(reallyWith ? {} : { unverified: true, wasStatus: p.status || "waiting" }) });
-            return cur;
-          });
+          const next = await staffCommand(store, date, "floor", "with-guest");
           if (next) setRow(next);
         }
         else if (act === "ack") {
-          const next = await mutateFloorRow(store, date, (cur) => {
-            if (!cur) return null;
-            const p = (cur.line || []).find((x) => x.id === meId); if (!p) return cur;
-            p.nudgedAt = null; cur.history = cur.history || [];
-            cur.history.push({ t: qNowIso(), action: "on-my-way", id: meId, who: p.label, by: "self" });
-            return cur;
-          });
+          const next = await staffCommand(store, date, "floor", "ack");
           if (next) setRow(next);
         }
       } catch (err) { /* the row poll tells the truth either way */ }
@@ -12070,7 +12265,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   }, [meId, me && me.status, me && me.table, store, date]); // eslint-disable-line
 
   const storeName = (row && row.storeName) || "Live Floor";
-  const eff = (shown === "done" && !me) ? (account ? "home" : "name") : shown;
+  const eff = row?.__unavailable ? "unavailable" : (shown === "done" && !me) ? (account ? "home" : "name") : shown;
   /* The salesperson shell: pill, palette and moments. On the line, or through
      the door and about to be. */
   const inShell = (eff === "done" && !!me) || eff === "home";
@@ -12113,7 +12308,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   let corner = null;
   let up = false;
 
-  if (eff === "loading") {
+  if (eff === "unavailable") {
+    content = <SfScreen spine={null} className="sf-v-wait"><p role="status">This room is unavailable. We will try again shortly.</p></SfScreen>;
+  } else if (eff === "loading") {
     content = (
       <SfScreen spine={queueSpine} className="sf-v-wait">
         <div className="sf-loading" aria-label="Loading" />
@@ -12190,7 +12387,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     corner = (
       <MyCorner still={tab !== "corner"} host={homeHost} store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
         mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
-        goals={boardExtra.goals} off={boardExtra.off} days={days}
+        goals={boardExtra.goals} off={scheduleKnown ? { [norm(meFull)]: myOff, [norm(meLabel)]: myOff } : null} scheduleState={privateSchedule.state} days={days}
         offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
         onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
         line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")}
@@ -12309,7 +12506,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     corner = (
       <MyCorner still={tab !== "corner"} host={homeHost} store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
         mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
-        goals={boardExtra.goals} off={boardExtra.off} days={days}
+        goals={boardExtra.goals} off={scheduleKnown ? { [norm(meFull)]: myOff, [norm(meLabel)]: myOff } : null} scheduleState={privateSchedule.state} days={days}
         offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
         onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
         line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")}

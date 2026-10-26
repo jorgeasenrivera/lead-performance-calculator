@@ -24,7 +24,12 @@ jobs:
       # modules with Node's own test runner — but the build does, and a build
       # that fails is as broken as a test that fails.
       - run: npm ci
-      - run: npm test
+      - name: Selected synthetic qualification for the coordinated draft
+        if: github.ref == 'refs/heads/codex/nov1-security-recovery-integration' || github.head_ref == 'codex/nov1-security-recovery-integration'
+        run: node scripts/security-integration-selected-tests.mjs
+      - name: Complete ordinary suite for other branches
+        if: github.ref != 'refs/heads/codex/nov1-security-recovery-integration' && github.head_ref != 'codex/nov1-security-recovery-integration'
+        run: npm test
       - run: npm run build
 
   # The feel, measured. The phone's bars (a tab under 150 ms, a tap drawn

@@ -1,7 +1,9 @@
 export function LEADERBOARD_HTML(p, PIX) {
+  const html = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const scriptJSON = value => JSON.stringify(value).replace(/</g, "\\u003c");
   return `<!doctype html><html><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>${p.storeName} · Leaderboard</title>
+<title>${html(p.storeName)} · Leaderboard</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
   @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -557,11 +559,13 @@ export function LEADERBOARD_HTML(p, PIX) {
   <div class="tuner-msg" id="tmsg"></div>
 </div>
 <script>
-  var CFG = ${JSON.stringify(p)};
+  var CFG = ${scriptJSON(p)};
+  function esc(value){return String(value == null ? '' : value).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function imageURL(value){var v=String(value||'');return (/^https?:/i.test(v)||['png','jpeg','gif','webp'].some(function(t){return v.startsWith('data:image/'+t+';base64,');}))?esc(v):'';}
   // The same one grid as the rest of the tool, sent whole rather than as two
   // tables the board then has to choose between. Drawn at 1em so every mark
   // scales with the row text instead of being pinned to a pixel size.
-  var PIXG = ${JSON.stringify(PIX)};
+  var PIXG = ${scriptJSON(PIX)};
   function pix(g, cls, frac){
     var rows = PIXG[g] || PIXG.dot, out = '';
     var n = rows.length;
@@ -720,7 +724,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     var root = document.getElementById('root');
     // an error is not the same as an empty store: say which, never just hang
     if (store && store.__err){
-      root.innerHTML = '<div class="empty">' + store.__err + '</div>';
+      root.innerHTML = '<div class="empty">' + esc(store.__err) + '</div>';
       return;
     }
     if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
@@ -829,7 +833,7 @@ export function LEADERBOARD_HTML(p, PIX) {
       var barw = Math.round((x.sold / maxSold) * 100);
       return '<tr class="row' + (i === 0 ? ' leader' : '') + (i < 3 ? ' pin' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
-        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="nm">' + esc(x.disp) + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
           soldMove(x.sold, x.prevSold) +
         '</td>' +
@@ -863,7 +867,7 @@ export function LEADERBOARD_HTML(p, PIX) {
       var barw = Math.max(2, Math.round(ratio * 100));
       return '<tr class="row' + (i === 0 ? ' leader' : '') + (i < 3 ? ' pin' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
-        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="nm">' + esc(x.disp) + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         cell2(x.internetPct, 'internet', x.prev.internet) +
         cell2(x.phonePct, 'phone', x.prev.phone) +
         cell2(x.showroomPct, 'showroom', x.prev.showroom) +
@@ -881,22 +885,22 @@ export function LEADERBOARD_HTML(p, PIX) {
 
     // ticker items: leader + best of each channel, plus the streaks passed from the tool
     var tickerItems = [];
-    if (people.length && people[0].sold > 0) tickerItems.push('&#128081; ' + people[0].name + ' leads with ' + people[0].sold + ' units');
+    if (people.length && people[0].sold > 0) tickerItems.push('&#128081; ' + esc(people[0].name) + ' leads with ' + people[0].sold + ' units');
     ['internetPct','phonePct','showroomPct'].forEach(function(k){
       var best = null;
       people.forEach(function(x){ if (x[k] != null && (!best || x[k] > best[k])) best = x; });
       if (best && best[k] > 0) {
         var lbl = k === 'internetPct' ? 'Top Internet' : k === 'phonePct' ? 'Top Phone' : 'Top Showroom';
-        tickerItems.push('<span class="tk-cap">' + lbl + ':</span>' + best.name + ' ' + fmtPct(best[k]));
+        tickerItems.push('<span class="tk-cap">' + lbl + ':</span>' + esc(best.name) + ' ' + fmtPct(best[k]));
       }
     });
-    (CFG.ticker || []).forEach(function(t){ tickerItems.push(t); });
+    (CFG.ticker || []).forEach(function(t){ tickerItems.push(esc(t)); });
     var tickerHtml = tickerItems.map(function(t){ return '<span class="ticker-item">' + t + '</span>'; }).join('');
     var tickDur = Math.max(25, tickerItems.length * 7);
 
     root.innerHTML =
-      '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
-      '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
+      '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+imageURL(CFG.icon)+'"/>':'')+'</div>'+
+      '<div><div class="head-title">'+esc(CFG.storeName)+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
       '<div class="head-r">'+
         '<div class="total"><div class="total-num"><span class="totnum" data-to="'+totalSold+'">0</span>'+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
         '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
@@ -1157,7 +1161,7 @@ export function LEADERBOARD_HTML(p, PIX) {
       return '<div class="cg-card" style="--d:'+(i*1.5)+'s">'
         + '<div class="cg-burst"></div>'
         + '<div class="cg-ico">&#127881;</div>'
-        + '<div class="cg-txt"><b>'+w.name+'</b><span>just delivered '+u+(w.gained==1?' unit':' units')+'</span></div>'
+        + '<div class="cg-txt"><b>'+esc(w.name)+'</b><span>just delivered '+u+(w.gained==1?' unit':' units')+'</span></div>'
         + '</div>';
     }).join('');
     document.body.appendChild(host);
@@ -1380,9 +1384,9 @@ export function LEADERBOARD_HTML(p, PIX) {
       return sibs.some(function(x){ return x.id === id; }); });
     rl.innerHTML = sibs.map(function(x){
       var on = (DISP.rotate || []).indexOf(x.id) >= 0;
-      return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
+      return '<button data-rot="' + esc(x.id) + '" class="' + (on ? 'on' : '') + '">'
         + '<span class="tick">' + (on ? '&#10003;' : '') + '</span>'
-        + '<span>' + x.name + '</span></button>';
+        + '<span>' + esc(x.name) + '</span></button>';
     }).join('');
     rl.querySelectorAll('[data-rot]').forEach(function(b){
       b.onclick = function(){

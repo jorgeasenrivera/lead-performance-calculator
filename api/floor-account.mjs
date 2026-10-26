@@ -28,6 +28,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
+import { mayManageAccounts } from "./_floor-access.mjs";
 import { serverFault } from "./_report.mjs";
 
 /* Same guard as /api/link-person, and for the same reason: without it anything
@@ -76,12 +77,12 @@ async function run(req, res) {
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
-  const { data: me } = await db.from("profiles").select("role, stores").eq("id", who.user.id).maybeSingle();
-  const isAdmin = me && me.role === "admin";
-  const managesStore = me && Array.isArray(me.stores) && me.stores.includes(store);
-  if (!me || (!isAdmin && !managesStore)) {
+  const { data: me, error: profileErr } = await db.from("profiles").select("role, stores, active, pending").eq("id", who.user.id).maybeSingle();
+  if (profileErr) return res.status(500).json({ error: "could not check this account" });
+  if (!mayManageAccounts(me, store)) {
     return res.status(403).json({ error: "only a manager of this store can do that" });
   }
+  const isAdmin = me.role === "admin";
 
   /* Turning off your own account locks you out of the tool with no way back in
      that does not involve somebody else. */
@@ -92,14 +93,17 @@ async function run(req, res) {
   /* The link is what makes somebody this store's business. A manager who is not
      an admin may only reach an account that belongs to a person on their floor. */
   if (!isAdmin) {
-    const { data: link } = await db.from("floor_people")
+    const { data: link, error: linkErr } = await db.from("floor_people")
       .select("person_id").eq("user_id", userId).eq("store", store).maybeSingle();
+    if (linkErr) return res.status(500).json({ error: "could not check this account" });
     if (!link) return res.status(403).json({ error: "that account is not linked to anybody on this floor" });
 
     /* And never at somebody who outranks the floor, even if a link exists. An
        administrator with a linked account is still an administrator. */
-    const { data: target } = await db.from("profiles").select("role").eq("id", userId).maybeSingle();
-    if (target && (target.role === "admin" || target.role === "overseer")) {
+    const { data: target, error: targetErr } = await db.from("profiles").select("role,stores,pending").eq("id", userId).maybeSingle();
+    if (targetErr) return res.status(500).json({ error: "could not check this account" });
+    if (!target) return res.status(403).json({ error: "that account has no profile" });
+    if (target && (target.role === "admin" || target.role === "overseer" || (target.role === "manager" && Array.isArray(target.stores) && target.stores.length > 0))) {
       return res.status(403).json({ error: "that account is not a floor account; an admin has to do this" });
     }
   }

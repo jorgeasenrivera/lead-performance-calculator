@@ -39,7 +39,7 @@ export function decideDelete({ callerId, caller, targetId, target, confirm, othe
 
   /* Somebody else's account is an admin's to delete and nobody else's, the
      same as the admin list it replaces. An inactive admin is not an admin. */
-  if (!self && !(caller && caller.role === "admin" && caller.active !== false)) {
+  if (!self && !(caller && caller.role === "admin" && caller.active === true && caller.pending === false)) {
     return { ok: false, code: 403, error: "Only an admin can delete somebody else's account." };
   }
 
