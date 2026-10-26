@@ -27,6 +27,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { storeKey } from "../api/_store-keys.mjs";
+import { BOARD_KEYS } from "../api/_store-merge.mjs";
 
 const app = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const once = (text, needle, label) => {
@@ -44,7 +45,7 @@ const PIECES = {
   signIn: fnAt("async function authSignIn(", "authSignIn"),
   signOut: fnAt("async function authSignOut() {", "authSignOut"),
   onAuth: fnAt("function onAuthChange(cb) {", "onAuthChange"),
-  persist: between("const persistStore = (storeId, next, audit, sourceBaseline", "const persistStoreNow = async", "persistStore"),
+  persist: (() => { const t = between("const persistStore = (storeId, next, audit, sourceBaseline", "const persistStoreNow = async", "persistStore"); const e = t.indexOf("    return p;\n  };"); assert.ok(e > 0, "persistStore end"); return t.slice(0, e + "    return p;\n  };".length); })(),
   board: (() => { const a = once(app, "window.__lpcSaveBoardDisplay = async (storeId, display) => {", "board display callback"); return app.slice(a, app.indexOf("\n    };", a) + 7); })(),
   rollback: (() => { const s = "onRestoreStore={"; const a = once(app, s + "async (storeId, snap) => {", "rollback callback") + s.length; const e = app.indexOf("\n                }} />", a); assert.ok(e > a, "rollback end anchor"); return app.slice(a, e + "\n                }".length); })(),
 };
@@ -68,7 +69,7 @@ const authApi = (P, src = {}) => {
 
 const persistApi = (P, ctx, src = PIECES.persist) => {
   const seen = [];
-  const full = { saveSeq: { current: 0 }, saveChain: { current: Promise.resolve() }, proofHolds: P.proofHolds, absenceProof: P.absenceProof,
+  const full = { authEpoch: 0, pendingSaves: { current: 0 }, saveSeq: { current: 0 }, saveChain: { current: Promise.resolve() }, proofHolds: P.proofHolds, absenceProof: P.absenceProof,
     persistStoreNow: async (...args) => { seen.push({ storeId: args[0], baseline: args[4], absence: args[6] }); }, session: { id: ACTOR }, view: STORE, storeData: null, adminData: {}, ...ctx };
   const persistStore = new Function("ctx", `with (ctx) { ${src}\nreturn persistStore; }`)(full);
   return { persistStore, seen };
@@ -127,8 +128,8 @@ const consumerChecks = async (over = {}) => {
     return a.seen[0].absence === c && a.seen[1].absence === null; });
   await run("board display reads the cache first and captures for that slot", async () => {
     const P = buildProof(over.proof); const k = read(P, doc("k"), "cache"); const s = read(P, doc("s"), "screen"); const calls = [];
-    const ctx = { window: {}, adminData: { [STORE]: k }, storeData: s, view: STORE, session: { id: ACTOR }, absenceProof: P.absenceProof, persistStore: async (...args) => { calls.push(args); } };
-    new Function("ctx", `with (ctx) { ${over.board || PIECES.board} }`)(ctx); await ctx.window.__lpcSaveBoardDisplay(STORE, { x: 1 });
+    const ctx = { window: {}, BOARD_KEYS, adminData: { [STORE]: k }, storeData: s, view: STORE, session: { id: ACTOR }, absenceProof: P.absenceProof, persistStore: async (...args) => { calls.push(args); } };
+    new Function("ctx", `with (ctx) { ${over.board || PIECES.board} }`)(ctx); await ctx.window.__lpcSaveBoardDisplay(STORE, { tscale: 1.2 });
     return calls[0][3] === k && calls[0][5] && calls[0][5].slot === "cache" && P.proofHolds(calls[0][5], STORE, ACTOR); });
   await run("rollback: a same-object reinstall during the restore-point await retires the already-selected intent", async () => {
     const P = buildProof(over.proof); const d = read(P, doc("d"), "cache"); const sent = []; let release; const gate = new Promise((r) => { release = r; });
