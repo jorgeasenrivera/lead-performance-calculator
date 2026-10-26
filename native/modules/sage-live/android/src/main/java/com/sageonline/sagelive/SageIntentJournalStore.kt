@@ -53,8 +53,14 @@ internal object SageIntentJournalStore {
         checkDirectory()
         Os.rename(temporary.path, File(directory, "journal.json").path)
         checkpoint(Step.RENAMED)
-        val dirFD = Os.open(directory.path, OsConstants.O_RDONLY or OsConstants.O_DIRECTORY or OsConstants.O_CLOEXEC or OsConstants.O_NOFOLLOW, 0)
-        try { Os.fsync(dirFD) } finally { Os.close(dirFD) }
+        val dirFD = Os.open(directory.path, OsConstants.O_RDONLY or OsConstants.O_CLOEXEC or OsConstants.O_NOFOLLOW, 0)
+        try {
+          // O_DIRECTORY is not exposed by the Android SDK. Validate the opened
+          // descriptor before syncing so replacement cannot sync another inode.
+          val info = Os.fstat(dirFD)
+          if (!OsConstants.S_ISDIR(info.st_mode) || info.st_dev != device || info.st_ino != inode) throw IOException("journal directory changed")
+          Os.fsync(dirFD)
+        } finally { Os.close(dirFD) }
       } catch (failure: Throwable) {
         // Rename might already have happened. No deletion, reset or rollback.
         poisoned = true

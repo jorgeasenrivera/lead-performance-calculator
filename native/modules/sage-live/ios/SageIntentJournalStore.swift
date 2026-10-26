@@ -162,7 +162,7 @@ final class SageIntentJournalStore {
     var keepFD = false
     defer { if !keepFD { Darwin.close(fd) } }
     guard Darwin.fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { throw SageJournalError.invalidDirectory }
-    guard Darwin.flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+    guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
       if errno == EWOULDBLOCK || errno == EAGAIN { throw SageJournalError.busy }
       throw SageJournalError.io("acquire lock", errno)
     }

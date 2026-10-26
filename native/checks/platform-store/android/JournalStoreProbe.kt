@@ -5,6 +5,7 @@ import android.app.Instrumentation
 import android.content.*
 import android.os.*
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -105,6 +106,28 @@ class JournalStoreProbe : Instrumentation() {
       }
       val orphan = File(root, "orphan"); check(orphan.mkdir()); File(orphan, "journal-stale.tmp").writeBytes(old)
       SageIntentJournalStore.acquire(orphan).use { fails { it.read() }; fails { it.replace(next) } }
+      val swapped = File(root.parentFile, root.name + "-swap")
+      var substitutionCompleted = false
+      val wrongDirectory = SageIntentJournalStore.acquire(root) { step ->
+        if (step == SageIntentJournalStore.Step.RENAMED) {
+          check(root.renameTo(swapped)); check(root.mkdir())
+          substitutionCompleted = true
+        }
+      }
+      try {
+        var rejectedDirectory = false
+        try { wrongDirectory.replace(next) }
+        catch (failure: IOException) {
+          check(failure.message == "journal directory changed")
+          rejectedDirectory = true
+        }
+        check(substitutionCompleted && rejectedDirectory)
+        fails { wrongDirectory.read() }
+      }
+      finally {
+        try { wrongDirectory.close() }
+        finally { if (swapped.exists()) { check(root.delete()); check(swapped.renameTo(root)) } }
+      }
       val moved = File(root.parentFile, root.name + "-moved")
       val displaced = SageIntentJournalStore.acquire(root); check(root.renameTo(moved))
       try { fails { displaced.read() }; displaced.close() } finally { check(moved.renameTo(root)) }
