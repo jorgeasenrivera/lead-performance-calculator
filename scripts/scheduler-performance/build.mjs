@@ -11,7 +11,7 @@ import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
   "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "eba5d1c0145db269226aeb767b9f0ca44ba0cfa7c575f19969e8f6a085a66a5c") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "2a72f748250d01e21e44a99363d2379e9f4b2272a29d235e65760422a576ed89") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');

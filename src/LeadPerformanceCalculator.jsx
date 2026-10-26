@@ -1701,9 +1701,17 @@ function FailedValue({ v, removed }) {
   return <><code>{t.slice(0, 160)}</code> <button type="button" className="btn-link fs-more" onClick={() => setAll(true)}>Show all {t.length} characters</button></>;
 }
 const FAILED_PAGE = 25;
-function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard }) {
+function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard, reviewReq }) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(FAILED_PAGE);
+  const noticeRef = useRef(null), reviewRef = useRef(null);
+  // "Review attempted changes" in the centred message: open this attempt's own list of changes and put the focus on its button. It is a click on the notice, nothing more.
+  useEffect(() => {
+    if (!reviewReq || reviewReq.id !== rec.id) return;
+    setOpen(true);
+    const el = reviewRef.current || noticeRef.current;
+    if (el) el.focus();
+  }, [reviewReq]); // eslint-disable-line
   // The confirmation takes the focus the button that opened it had, on the safe choice, and gives it back to Discard if the person keeps the change.
   const keepRef = useRef(null), discardRef = useRef(null), askedRef = useRef(false);
   useEffect(() => {
@@ -1722,7 +1730,7 @@ function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard }) {
   const t = new Date(rec.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const panel = "fs-rows-" + rec.id;
   return (
-    <div className="load-warn fs-notice" role="region" aria-label="Save not completed" onKeyDown={(e) => { if (e.key === "Escape" && open) setOpen(false); }}>
+    <div className="load-warn fs-notice" role="region" aria-label="Save not completed" data-fs-notice={rec.id} tabIndex={-1} ref={noticeRef} onKeyDown={(e) => { if (e.key === "Escape" && open) setOpen(false); }}>
       <div className="fs-head">Save not completed: {rec.action}, {t}</div>
       <div>The saved store data may not include this change. Why: {rec.reason}</div>
       <div className="fs-status" aria-live="polite">{status}{rec.discardNote ? " " + rec.discardNote : ""}</div>
@@ -1734,7 +1742,7 @@ function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard }) {
         </div>
       ) : (
         <div className="fs-actions">
-          <button type="button" className="btn secondary" aria-expanded={open} aria-controls={panel} onClick={() => setOpen(!open)}>{open ? "Hide changes" : "Review changes"}</button>
+          <button type="button" className="btn secondary" data-fs-review={rec.id} ref={reviewRef} aria-expanded={open} aria-controls={panel} onClick={() => setOpen(!open)}>{open ? "Hide changes" : "Review changes"}</button>
           <button type="button" className="btn secondary" disabled={rec.busy} onClick={() => onLoad(rec)}>Load latest saved data</button>
           <button type="button" className="btn secondary" onClick={() => onReturn(rec)}>Return to editor</button>
           <button type="button" className="btn secondary" ref={discardRef} disabled={rec.busy} onClick={() => onAskDiscard(rec, true)}>Discard</button>
@@ -1753,6 +1761,100 @@ function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard }) {
 function FailedSaveNotice({ items, ...rest }) {
   if (!items.length) return null;
   return <>{items.map((rec) => <FailedSaveItem key={rec.id} rec={rec} {...rest} />)}</>;
+}
+/* ---- The centred message for a refused save (A1R1b) ----
+   The notice on the page stays, and is the record: every refused save is kept there on its own, whatever happens to this message.
+   This message only says so, once, and nothing it does touches a kept attempt: Keep working and Escape close it and do nothing else,
+   Review attempted changes closes it, opens that attempt's own list of changes on the page and puts the focus on its button. It
+   never saves, retries, discards or loads. It is shown once per refused save (each has its own number, so a re-render or a refresh
+   of the notice is not a new one); one that arrives while it is open is counted into it, not shown again. It waits while somebody is typing, has just typed, or something else is open, so it never takes
+   the focus from newer work; the notice has been on the page the whole time. */
+const warnNext = (visible, seen, shown, held, other) => {
+  const live = shown.filter((id) => visible.some((f) => f.id === id));   // a message never outlives the records it is about
+  const fresh = visible.filter((f) => !seen.has(f.id)).map((f) => f.id);
+  // Another dialog opened after this message did: this one stops, so there are never two traps. It does not come back by itself:
+  // those records count as told and stay in the notice on the page, where the person can review them when they choose.
+  if (live.length && other) return { shown: [], mark: [...live, ...fresh] };
+  if (live.length) return { shown: [...live, ...fresh], mark: fresh };
+  if (fresh.length && !held) return { shown: fresh, mark: fresh };
+  return { shown: [], mark: [] };
+};
+const WARN_OTHER = '[role="dialog"]:not([data-fs-warn]), [aria-modal="true"]:not([data-fs-warn]), .mc-ov:not(.fsw-ov), .ru-scrim';
+// A dialog counts only if it is really open: a closed one the app keeps in the page (the manager's menu drawer is always there, hidden and inert) does not.
+// "Inert" here means inert by someone else: the app's root is inert because of this message, and a dialog opening inside it still counts.
+const warnOther = (doc) => {
+  if (doc.documentElement && doc.documentElement.classList.contains("sage-flight-owned")) return true;   // the sign-in arrival (src/arrival-surface.mjs) owns the screen
+  const list = doc.querySelectorAll(WARN_OTHER);
+  for (let i = 0; i < list.length; i++) {
+    const el = list[i], view = el.ownerDocument && el.ownerDocument.defaultView;
+    const hidden = !!view && view.getComputedStyle(el).visibility === "hidden";   // display:none and zero-size are already caught by having no box
+    if (!hidden && !el.closest('[inert]:not(#root), [aria-hidden="true"]') && el.getClientRects().length > 0) return true;
+  }
+  return false;
+};
+const warnHeld = (doc, lastEditAt, now) => {
+  const a = doc.activeElement;
+  const typing = !!a && (a.isContentEditable === true || /^(TEXTAREA|SELECT)$/.test(a.tagName) || (a.tagName === "INPUT" && !/^(button|submit|reset|checkbox|radio|range|file|image|color)$/i.test(a.type || "text")));
+  return typing || now - lastEditAt < 2500 || warnOther(doc) || warnRootBusy(doc);
+};
+// The app behind the message is made inert while it is open. If it was already inert when the message opened, it stays so when the message
+// goes: the message gives back only what it took.
+let warnInertHolds = 0, warnInertPrior = false;
+const warnInertHold = (root) => { if (root && warnInertHolds++ === 0) { warnInertPrior = root.hasAttribute("inert"); root.setAttribute("inert", ""); } };
+const warnInertRelease = (root) => { if (root && warnInertHolds > 0 && --warnInertHolds === 0 && !warnInertPrior) root.removeAttribute("inert"); };
+// The app is inert and not because of this message (the arrival, or anything else that owns it): opening now would take a second snapshot of an attribute someone else
+// will put back, so the message waits. The kept attempt is in the notice meanwhile and is presented when the screen is free.
+function warnRootBusy(doc) { const r = doc.getElementById("root"); return warnInertHolds === 0 && !!r && r.hasAttribute("inert"); }
+function FailedSaveWarning({ items, onClose, owner, ownerRef }) {
+  const headRef = useRef(null), ovRef = useRef(null), openerRef = useRef(null), howRef = useRef("keep"), ownedBy = useRef(owner);
+  useEffect(() => {
+    const a = document.activeElement;
+    openerRef.current = a && a !== document.body ? a : null;
+    const root = document.getElementById("root");
+    warnInertHold(root);
+    if (headRef.current) headRef.current.focus();
+    const onKey = (e) => {
+      if (warnOther(document)) return;   // a later dialog has the keyboard at once, before the next check has stopped this message: no Escape or Tab here may close or trap the wrong one
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose("keep"); return; }
+      if (e.key !== "Tab" || !ovRef.current) return;
+      const ring = [headRef.current, ...ovRef.current.querySelectorAll("button")].filter(Boolean);
+      const at = ring.indexOf(document.activeElement);
+      e.preventDefault();
+      ring[e.shiftKey ? (at <= 0 ? ring.length - 1 : at - 1) : (at + 1) % ring.length].focus();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      warnInertRelease(root);
+      // Review hands the focus to the attempt's own notice (FailedSaveItem). Any other way out puts it back where it was, but only
+      // while it is still the same person, store and sign-in this message opened for (the owner it captured) and the element is
+      // still on this screen and usable. If the screen has moved on the focus is left alone: the new screen sets its own, and
+      // something from before is never focused. If the same owner's element is gone, the notice or page that is there now gets it.
+      if (howRef.current !== "review" && ownerRef.current === ownedBy.current) {
+        const o = openerRef.current, now = document.activeElement;
+        if ((!now || now === document.body) && !warnOther(document)) {   // another dialog has the screen: leave the focus to it
+          const ok = o && o.isConnected && !o.disabled && !o.closest("[inert]") && !!o.closest("#root") && o.getClientRects().length > 0;
+          const t = ok ? o : (document.querySelector("[data-fs-notice]") || document.querySelector(".page"));
+          if (t) { if (!ok && !t.hasAttribute("tabindex")) t.setAttribute("tabindex", "-1"); t.focus(); }
+        }
+      }
+    };
+  }, []); // eslint-disable-line
+  const n = items.length;
+  const close = (how) => { howRef.current = how; onClose(how); };
+  return (
+    <Overlay><div className="fsw-ov" ref={ovRef} onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}>
+      <div className="fsw-sheet" role="dialog" aria-modal="true" aria-labelledby="fsw-t" aria-describedby="fsw-d" data-fs-warn="">
+        <h2 className="fsw-title" id="fsw-t" tabIndex={-1} ref={headRef}>Save not completed</h2>
+        <p className="fsw-body" id="fsw-d">Your attempted changes are kept here for review. Some updates may already have been saved.</p>
+        <p className="fsw-body fsw-sub">{n === 1 ? "1 attempt is kept in this tab." : n + " attempts are kept in this tab."}</p>
+        <div className="fsw-actions">
+          <button type="button" className="btn fsw-quiet" onClick={() => close("keep")}>Keep working</button>
+          <button type="button" className="btn fsw-primary" onClick={() => close("review")}>Review attempted changes</button>
+        </div>
+      </div>
+    </div></Overlay>
+  );
 }
 
 export default function LeadPerformanceCalculator() {
@@ -2588,10 +2690,49 @@ export default function LeadPerformanceCalculator() {
   const storeDataRef = useRef(null); storeDataRef.current = storeData;
   const adminDataRef = useRef({}); adminDataRef.current = adminData;
   useEffect(() => { setFailedSaves([]); }, [session && session.id]); // eslint-disable-line
+  /* The centred message (see FailedSaveWarning). Which kept attempts the person has been told about, which ones the open message
+     covers, and when they last typed. Records are never changed here: this only decides when to speak. Sign-in changes clear it
+     with the list, and a store or sign-in that is not this record's closes it, because it shows only this person's, this store's. */
+  const warnSeen = useRef(new Set());
+  const warnShownRef = useRef([]);
+  const lastEditAt = useRef(0);
+  const [warnShown, setWarnShown] = useState([]);
+  const [warnTick, setWarnTick] = useState(0);
+  const [reviewReq, setReviewReq] = useState(null);
+  const reviewN = useRef(0);
+  // Whose screen this is: sign-in, store and sign-in generation. The message remembers it when it opens; focus is given back only if it is unchanged when it closes.
+  const warnOwner = (session && session.id) + "|" + view + "|" + authEpoch;
+  const warnOwnerRef = useRef(warnOwner); warnOwnerRef.current = warnOwner;
+  const visibleFailed = failedSaves.filter((f) => f.storeId === view && f.actor === (session && session.id) && f.epoch === authEpoch);
+  useEffect(() => { warnSeen.current = new Set(); warnShownRef.current = []; setWarnShown([]); setReviewReq(null); }, [session && session.id]); // eslint-disable-line
+  useEffect(() => {
+    const typed = (e) => { if (e.type === "input" || (e.key && e.key !== "Escape" && e.key !== "Tab")) lastEditAt.current = Date.now(); };
+    document.addEventListener("input", typed, true); document.addEventListener("keydown", typed, true);
+    return () => { document.removeEventListener("input", typed, true); document.removeEventListener("keydown", typed, true); };
+  }, []);
+  useEffect(() => {
+    const plan = warnNext(visibleFailed, warnSeen.current, warnShown, warnHeld(document, lastEditAt.current, Date.now()), warnOther(document));
+    plan.mark.forEach((id) => warnSeen.current.add(id));
+    warnShownRef.current = plan.shown;   // what the open message covers, kept current here so a close never works from an older answer
+    if (plan.shown.join() !== warnShown.join()) setWarnShown(plan.shown);
+    // Something is waiting and the screen is busy: look again shortly. The notice on the page has been there all along.
+    const wait = !plan.shown.length && visibleFailed.some((f) => !warnSeen.current.has(f.id));
+    const t = wait ? setTimeout(() => setWarnTick((n) => n + 1), 700) : null;
+    // While the message is open, watch for another dialog opening late (it asks for a re-check only when one has; no re-render otherwise).
+    const watch = plan.shown.length ? setInterval(() => { if (warnOther(document)) setWarnTick((n) => n + 1); }, 300) : null;
+    return () => { if (t) clearTimeout(t); if (watch) clearInterval(watch); };
+  }, [failedSaves, view, session && session.id, authEpoch, warnShown, warnTick]); // eslint-disable-line
+  // The request is for one render only: the notice acts on it in that commit and it is cleared after, so a notice that mounts later (a tab change) never reopens anything.
+  useEffect(() => { if (reviewReq) setReviewReq(null); }, [reviewReq]);
+  const closeWarn = (how) => {
+    const ids = warnShownRef.current;
+    ids.forEach((id) => warnSeen.current.add(id)); warnShownRef.current = []; setWarnShown([]);
+    if (how === "review" && ids.length) setReviewReq({ id: ids[0], n: ++reviewN.current });
+  };
   const recordFailedSave = (storeId, attempted, audit, baseline, reportedFields, epoch0, actor0) => {
     // Judged by who is signed in NOW against who started the save, so a late failure
     // from an earlier sign-in is never kept for somebody else.
-    if (!actor0 || sessionIdRef.current !== actor0 || epoch0 !== authEpoch) return;
+    if (!actor0 || sessionIdRef.current !== actor0 || epoch0 !== authEpoch) return false;
     const rec = {
       id: ++failedSeq.current, storeId, actor: actor0, epoch: epoch0, at: Date.now(), action: (audit && audit.action) || "Change",
       reason: lastSaveError || "unknown", baseline: baseline ? globalThis.structuredClone(baseline) : null,
@@ -2600,6 +2741,7 @@ export default function LeadPerformanceCalculator() {
     // Checked again where the list is written: a callback from an earlier sign-in must not repopulate a list that was cleared.
     setFailedSaves((p) => (sessionIdRef.current !== actor0 || epoch0 !== authEpoch ? p : [...p, rec]));
     if (audit && audit.action === "Imported reports") setImportLog((p) => [{ ok: false, msg: "Save not completed: these reports are not saved." }, ...(Array.isArray(p) ? p : [])]);
+    return true;
   };
   const patchFailed = (id, patch) => setFailedSaves((p) => p.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   const dropFailed = (id) => setFailedSaves((p) => p.filter((f) => f.id !== id));
@@ -2725,8 +2867,8 @@ export default function LeadPerformanceCalculator() {
     }
     setSaving(false); savingRef.current = false;
     if (!ok) {
-      recordFailedSave(storeId, next, audit, baseline, reportedFields, epoch0, actor0);
-      alert("Save not completed.\n\nThe database did not accept this change. It is kept on this page, under \"Save not completed\", until you reload or sign out. Use \"Load latest saved data\" to see what is saved, then make the change again in the editor or the import. Some other parts of the action, such as daily activity rows or an import restore point, may already have been written.\n\nWhat the database said:\n" + (lastSaveError || "unknown") + "\n\nIf it happens again, use the Help button in the corner: it sends this message along with what you were doing.");
+      // A kept attempt is announced by the centred message and the notice (reason included), so there is no browser pop-up. If it was not kept, the sign-in it belonged to is gone: nothing is shown to whoever is signed in now (it is not their save and the reason may be private to the earlier sign-in), only the console.
+      if (!recordFailedSave(storeId, next, audit, baseline, reportedFields, epoch0, actor0)) console.info("a refused save was not kept: the sign-in it belonged to has ended");
       return false;
     }
     // Refresh the TV row so every casted screen picks this up on its next poll.
@@ -3779,8 +3921,9 @@ export default function LeadPerformanceCalculator() {
             {appModule === "activity" && (tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
+          {visibleFailed.some((f) => warnShown.includes(f.id)) && <FailedSaveWarning items={visibleFailed.filter((f) => warnShown.includes(f.id))} onClose={closeWarn} owner={warnOwner} ownerRef={warnOwnerRef} />}
           <div key={view + tab + appModule} className="page">
-            <FailedSaveNotice items={failedSaves.filter((f) => f.storeId === view && f.actor === (session && session.id) && f.epoch === authEpoch)}
+            <FailedSaveNotice items={visibleFailed} reviewReq={reviewReq}
               onLoad={loadLatestSaved} onReturn={returnToEditor} onDiscard={discardFailed}
               onAskDiscard={(rec, on) => patchFailed(rec.id, { confirmDiscard: on })} />
             {storeLoadFailed && (
@@ -13711,6 +13854,28 @@ html:has(.q-page.sf), body:has(.q-page.sf),
 .fs-notice .fs-more { margin-top:0; color:inherit; text-decoration:underline; }
 .fs-notice code { font-family:inherit; font-weight:600; }
 @media (max-width:480px) { .fs-notice .fs-actions .btn { flex:1 1 100%; } }
+.fs-notice:focus { outline:none; }
+/* The centred message for a refused save (A1R1b). Same card as .mc-ov and .mc-sheet (ground, width, radius, shadow, pop) in the warm
+   paper of .mc-light, in its own classes because those two are scoped to the phone shell and this one opens over any screen.
+   width:100vw because the page keeps a scrollbar gutter on desktop, which would leave the card 7px left of the middle. */
+.fsw-ov { position:fixed; inset:0; width:100vw; box-sizing:border-box; z-index:500; display:flex; align-items:center; justify-content:center;
+  padding:calc(var(--sat, 0px) + 16px) 14px calc(var(--sab, 0px) + 16px);
+  background:rgba(3,6,5,.88); animation:mcOvIn .2s ease-out both; }
+.fsw-sheet { box-sizing:border-box; width:min(430px,100%); background:#FFFDF8; color:#1F2A22; border:1px solid rgba(31,42,34,.14); border-top-color:#D0821E;
+  border-radius:24px; padding:20px 19px 22px; max-height:100%; overflow-y:auto; font-family:var(--font-ui);
+  box-shadow:0 32px 70px -20px rgba(0,0,0,.92), 0 0 0 1px rgba(0,0,0,.4); animation:mcSheet .3s cubic-bezier(.2,1.15,.35,1) both; }
+.fsw-title { margin:0 0 10px; font-size:19px; font-family:var(--font-display); font-weight:700; }
+.fsw-title:focus { outline:none; }
+.fsw-title:focus-visible { outline:2px solid #2E4A38; outline-offset:4px; border-radius:6px; }
+.fsw-body { margin:0 0 8px; font-size:15px; line-height:1.45; }
+.fsw-sub { color:#4A5A4E; font-size:14px; }
+.fsw-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.fsw-actions .btn { flex:1 1 auto; min-height:40px; padding:10px 16px; border-radius:12px; font:600 14px var(--font-ui); cursor:pointer; box-shadow:none; }
+.fsw-actions .fsw-primary { background:#2E4A38; color:#fff; border:1px solid #2E4A38; }
+.fsw-actions .fsw-quiet { background:transparent; color:#2E4A38; border:1px solid rgba(46,74,56,.35); }
+.fsw-actions .btn:focus-visible { outline:2px solid #2E4A38; outline-offset:2px; }
+@media (max-width:480px) { .fsw-actions .btn { flex:1 1 100%; } }
+@media (prefers-reduced-motion: reduce) { .fsw-ov, .fsw-sheet { animation-duration:.01ms; } }
 .pix { display:inline-block; vertical-align:middle; flex:0 0 auto; }
 @keyframes pulse { 50% { opacity:.4; } }
 /* ---------- the page assembling itself ----------
