@@ -7,8 +7,11 @@ test -r /dev/kvm && test -w /dev/kvm
 sdk=$(sed -n 's/^JOURNAL_COMPILE_SDK=//p' native/android/journal-toolchain.txt)
 [[ "$sdk" =~ ^[0-9]+$ ]]
 image="system-images;android-${sdk};google_apis;x86_64"
-timeout 600 sdkmanager 'emulator' "$image" > /dev/null
-echo no | timeout 60 avdmanager create avd --force --name journal_synthetic --package "$image" > /dev/null
+sdkmanager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
+avdmanager="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+test -x "$sdkmanager" && test -x "$avdmanager"
+timeout 600 "$sdkmanager" 'emulator' "$image" > /dev/null
+echo no | timeout 60 "$avdmanager" create avd --force --name journal_synthetic --package "$image" > /dev/null
 # Refuse an existing emulator or occupied console/ADB port. Never stop one.
 if adb devices | awk 'NR > 1 { print $1 }' | grep -Fxq emulator-5554; then
   echo 'Refusing pre-existing emulator-5554' >&2
