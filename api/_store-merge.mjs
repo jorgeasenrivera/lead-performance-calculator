@@ -32,6 +32,7 @@
  */
 import { norm } from "./_report-parsers.mjs";
 import { foldAliases } from "./_people-status.mjs";
+import { reconcileMonths } from "./_month-intent.mjs";
 
 /* =========================================================================
    Carrying out every decision, over whatever the merge just produced.
@@ -349,7 +350,64 @@ export function mergePlateRegistry(next, serverCopy) {
 /* Fold this browser's pending document into whatever the server currently holds.
    Run on every save attempt, including retries, so a save that loses a race is
    re-applied against the winner's copy rather than overwriting it. */
-export function mergeAgainstServer(next, serverCopy) {
+/* ---- The board's display settings ----
+   boardDisplay is one object the TV window saves whole. Nothing merged it, so a
+   save that started from an older copy sent its whole object and wiped whatever
+   another screen had just chosen. Only these keys are known and only they are
+   settled here. Any other key in the object follows the server exactly, and a
+   save that adds, changes or deletes one is refused.
+
+   A key this save did not change takes the server's value, so a newer choice
+   elsewhere survives. A key this save changed wins when the server still has what
+   this save started from, or already agrees. If the server changed the same key to
+   something else, neither side is a safe winner, so the save is refused and the
+   person tries again. rotate is one choice made of many entries, so it is compared
+   and replaced as a whole, never combined. */
+export const BOARD_KEYS = ["tscale", "squeeze", "pad", "style", "bg", "rotate"];
+const sameValue = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+const isPlain = (v) => v && typeof v === "object" && !Array.isArray(v);
+const hasKey = (o, k) => Object.hasOwn(o, k);
+const boardOf = (d) => (d && isPlain(d.boardDisplay) ? d.boardDisplay : {});
+/* Only the six known keys are this module's to settle. Any other key in the object is somebody else's extension: the
+   server's value for it, or its absence, is kept exactly, and a save that adds, changes or deletes one is refused rather
+   than dropped or reported as saved. Checked on every save that carries a baseline, the first save of a store included. */
+function refuseUnknownBoardChanges(next, baseline) {
+  const mine = boardOf(next), was = boardOf(baseline);
+  const changed = [];
+  for (const k of new Set([...Object.keys(mine), ...Object.keys(was)])) {
+    if (BOARD_KEYS.includes(k)) continue;
+    if (hasKey(mine, k) !== hasKey(was, k) || !sameValue(mine[k], was[k])) changed.push(k);
+  }
+  if (changed.length) throw new Error("The board settings can only change " + BOARD_KEYS.join(", ") + ", so this save was refused (" + changed.join(", ") + "). This store's board settings were left as they were.");
+}
+function mergeBoardDisplay(next, baseline, serverCopy) {
+  const mine = boardOf(next), was = boardOf(baseline), srv = boardOf(serverCopy);
+  const out = {};
+  const clashes = [];
+  for (const k of BOARD_KEYS) {
+    const ours = !sameValue(mine[k], was[k]);
+    if (!ours) {
+      // Untouched here: the server's state is the truth, including a key it no longer has. A deleted setting is not restored.
+      if (hasKey(srv, k)) out[k] = srv[k];
+      continue;
+    }
+    const theirs = !sameValue(srv[k], was[k]);
+    if (theirs && !sameValue(srv[k], mine[k])) { clashes.push(k); continue; }
+    if (hasKey(mine, k)) out[k] = mine[k];
+  }
+  // Everything else is the server's, exactly.
+  for (const k of Object.keys(srv)) if (!BOARD_KEYS.includes(k)) out[k] = srv[k];
+  if (clashes.length) {
+    throw new Error("The board settings were changed on another screen while this was saving (" + clashes.join(", ") + "). This store's board settings were left as they were. Look at the board again and choose once more.");
+  }
+  if (Object.keys(out).length) next.boardDisplay = out; else delete next.boardDisplay;
+}
+
+export function mergeAgainstServer(next, serverCopy, intent) {
+  const hasBaseline = intent && Object.hasOwn(intent, "baseline");
+  const board = hasBaseline && intent.baseline && typeof intent.baseline === "object";
+  if (board) refuseUnknownBoardChanges(next, intent.baseline);   // before any early return, so a first save cannot skip it
+  const months = hasBaseline ? reconcileMonths(intent.baseline, next, serverCopy, intent.reportedFields, { rowAbsentAtLoad: intent.rowAbsentAtLoad === true }) : null;
   if (!serverCopy || typeof serverCopy !== "object") return next;
   /* If these two documents are not the same store, merging them would blend two
      rosters into one, which is exactly the damage this is meant to prevent. Return
@@ -364,7 +422,7 @@ export function mergeAgainstServer(next, serverCopy) {
           for (const k of Object.keys(srv)) if (!(k in out)) out[k] = srv[k];
           return out;
         };
-        next.months = mergeField("months");
+        next.months = hasBaseline ? months : mergeField("months");
         next.activity = mergeField("activity");
 
         /* ---- The stale-tab problem ----
@@ -386,7 +444,7 @@ export function mergeAgainstServer(next, serverCopy) {
           return t;
         };
         if (newestImport(serverCopy) > newestImport(next)) {
-          next.months = serverCopy.months || next.months;
+          if (!hasBaseline) next.months = serverCopy.months || next.months;
           next.activity = serverCopy.activity || next.activity;
           next.activitySnaps = serverCopy.activitySnaps || next.activitySnaps;
         }
@@ -683,5 +741,6 @@ export function mergeAgainstServer(next, serverCopy) {
            class of fault that has now been found six times. */
         applyDecisions(next);
 
+  if (board) mergeBoardDisplay(next, intent.baseline, serverCopy);
   return next;
 }
