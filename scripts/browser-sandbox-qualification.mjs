@@ -52,6 +52,9 @@ try {
   const cdp = await browser.newBrowserCDPSession();
   evidence.cdpArgv = (await cdp.send('Browser.getBrowserCommandLine')).arguments;
   rejectBypass(evidence.cdpArgv);
+  // Keep fresh, synthetic-run diagnostics visible without downloading artifacts.
+  console.log('Browser argv evidence:', JSON.stringify({
+    kernel: evidence.browserProcess.argv, cdp: evidence.cdpArgv }));
   assert.deepEqual(evidence.cdpArgv, evidence.browserProcess.argv, 'CDP and kernel argv differ');
   const context = await browser.newContext({ serviceWorkers: 'block' });
   // All page network requests are denied. Only browser internals and inline data run.
