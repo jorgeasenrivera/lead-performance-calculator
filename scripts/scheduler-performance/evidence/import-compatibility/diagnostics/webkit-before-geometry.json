@@ -1,0 +1,66 @@
+{
+  "width": 390,
+  "scroll": 485,
+  "elements": [
+    {
+      "tag": "HTML",
+      "id": "",
+      "text": "Plan the month · SageReturn to manager view\n November 2026Today\n Month (YYYY-MM)",
+      "client": 390,
+      "scroll": 485,
+      "style": "block",
+      "width": 390,
+      "right": 390
+    },
+    {
+      "tag": "BODY",
+      "id": "",
+      "text": "Return to manager view\n November 2026Today\n Month (YYYY-MM)Done\n Sales keyRecord",
+      "client": 390,
+      "scroll": 485,
+      "style": "block",
+      "width": 390,
+      "right": 390
+    },
+    {
+      "tag": "MAIN",
+      "id": "app",
+      "text": "Return to manager view\n November 2026Today\n Month (YYYY-MM)Done\n Sales keyRecord",
+      "client": 390,
+      "scroll": 485,
+      "style": "flex",
+      "width": 390,
+      "right": 390
+    },
+    {
+      "tag": "SECTION",
+      "id": "import-sheet",
+      "text": "Import scheduleChoose a source, review people and known times, then apply to thi",
+      "client": 380,
+      "scroll": 480,
+      "style": "block",
+      "width": 382,
+      "right": 386
+    },
+    {
+      "tag": "LABEL",
+      "id": "",
+      "text": "Source formatExplicit person/date CSVLegacy saved off-days JSONDate-row team gri",
+      "client": 340,
+      "scroll": 460,
+      "style": "flex",
+      "width": 340,
+      "right": 365
+    },
+    {
+      "tag": "SELECT",
+      "id": "import-format",
+      "text": "Explicit person/date CSVLegacy saved off-days JSONDate-row team grid CSV",
+      "client": 338,
+      "scroll": 339,
+      "style": "block",
+      "width": 340,
+      "right": 365
+    }
+  ]
+}
