@@ -9,11 +9,13 @@ sdk=$(sed -n 's/^JOURNAL_COMPILE_SDK=//p' native/android/journal-toolchain.txt)
 image="system-images;android-${sdk};google_apis;x86_64"
 sdkmanager="${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager"
 avdmanager="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
-test -x "$sdkmanager" && test -x "$avdmanager"
+adb="$ANDROID_HOME/platform-tools/adb"
+test -x "$sdkmanager" && test -x "$avdmanager" && test -x "$adb"
 timeout 600 "$sdkmanager" 'emulator' "$image" > /dev/null
 echo no | timeout 60 "$avdmanager" create avd --force --name journal_synthetic --package "$image" > /dev/null
 # Refuse an existing emulator or occupied console/ADB port. Never stop one.
-if adb devices | awk 'NR > 1 { print $1 }' | grep -Fxq emulator-5554; then
+devices=$("$adb" devices)
+if printf '%s\n' "$devices" | awk 'NR > 1 { print $1 }' | grep -Fxq emulator-5554; then
   echo 'Refusing pre-existing emulator-5554' >&2
   exit 1
 fi
@@ -33,12 +35,12 @@ PY
 emulator_pid=$!
 # Cleanup targets only the process this script launched, never a serial lookup.
 trap 'kill "$emulator_pid" 2>/dev/null || true; wait "$emulator_pid" 2>/dev/null || true' EXIT
-timeout 240 adb -s emulator-5554 wait-for-device
+timeout 240 "$adb" -s emulator-5554 wait-for-device
 kill -0 "$emulator_pid"
-adb -s emulator-5554 emu avd name | grep -Fx journal_synthetic
-timeout 240 bash -c 'until [[ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d "\r")" == 1 ]]; do sleep 2; done'
-adb -s emulator-5554 install "$apk"
-timeout 120 adb -s emulator-5554 shell am instrument -w com.sageonline.journalprobe/com.sageonline.sagelive.JournalStoreProbe | tee "$RUNNER_TEMP/journal-instrumentation.txt"
+"$adb" -s emulator-5554 emu avd name | grep -Fx journal_synthetic
+timeout 240 bash -c 'until [[ "$("$1" -s emulator-5554 shell getprop sys.boot_completed | tr -d "\r")" == 1 ]]; do sleep 2; done' _ "$adb"
+"$adb" -s emulator-5554 install "$apk"
+timeout 120 "$adb" -s emulator-5554 shell am instrument -w com.sageonline.journalprobe/com.sageonline.sagelive.JournalStoreProbe | tee "$RUNNER_TEMP/journal-instrumentation.txt"
 # am instrument's shell exit status alone does not establish test success.
 grep -Fx 'INSTRUMENTATION_RESULT: result=PASS synthetic Android store probes' "$RUNNER_TEMP/journal-instrumentation.txt"
 grep -Fx 'INSTRUMENTATION_CODE: -1' "$RUNNER_TEMP/journal-instrumentation.txt"
