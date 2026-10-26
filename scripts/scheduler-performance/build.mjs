@@ -9,18 +9,50 @@ import { fixtures } from "../scheduler-proposal/model.mjs";
 import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
-  "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
+  "eff2ddb1fb2ab83984c3fcf85dea43c865a4fad6ae58d0f5e1dfc836cac8c447";
+// Every anchor below must appear exactly once. Zero means the source moved; two means one
+// of them would be edited and the other left behind. Either way the build stops.
+function once(source, text, name) {
+  const first = source.indexOf(text);
+  if (first < 0) throw Error(`${name} anchor not found. Re-review entry points before building.`);
+  if (source.indexOf(text, first + text.length) >= 0) throw Error(`${name} anchor is duplicated. Re-review entry points before building.`);
+  return first;
+}
+function replaceOnce(source, text, to, name) {
+  const at = once(source, text, name);
+  return source.slice(0, at) + to + source.slice(at + text.length);
+}
+// The live dashboard wraps each old phone button in `{!SCHEDULER_CALENDAR && ( ... )}`. The
+// preview still drops the button, and leaves `null` in the wrapper so the JSX stays valid.
+function nullWrappedButton(source, open, name) {
+  const wrapper = "{!SCHEDULER_CALENDAR && (\n          ";
+  const start = once(source, wrapper + open, name) + wrapper.length;
+  const end = source.indexOf("</button>", start);
+  const close = "\n          )}";
+  if (end < 0 || source.slice(end + "</button>".length, end + "</button>".length + close.length) !== close)
+    throw Error(`${name} boundary not found. Re-review entry points before building.`);
+  return source.slice(0, start) + "null" + source.slice(end + "</button>".length);
+}
 export function patchPhoneLayout(source) {
   if (createHash("sha256").update(source).digest("hex") !== "2a72f748250d01e21e44a99363d2379e9f4b2272a29d235e65760422a576ed89") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
 }
-export function patchManager(source) {
-  if (createHash("sha256").update(source).digest("hex") !== MANAGER_SHA)
+// The pin is a parameter only so a test can pin a deliberately damaged copy and reach the
+// anchor checks behind the hash. The build itself only ever uses `patchManager`, pinned to
+// the reviewed source.
+export function patchManagerPinned(pin) {
+  return function patchManager(source) {
+  if (typeof pin !== "string" || !/^[0-9a-f]{64}$/.test(pin) || createHash("sha256").update(source).digest("hex") !== pin)
     throw Error(
       "Manager source changed. Re-review entry points before building.",
     );
+  // The preview carries its own fictional calendar entry and never loads the live one: the
+  // live flag is fixed off and the live entry becomes an empty component, so no live file is
+  // imported and no second entry can render beside the preview's.
+  source = replaceOnce(source, 'const SCHEDULER_CALENDAR = import.meta.env.VITE_SCHEDULER_CALENDAR === "1";', "const SCHEDULER_CALENDAR = false;", "Live calendar flag");
+  source = replaceOnce(source, 'const SchedulerCalendarEntry = React.lazy(() => import("./scheduler-calendar.jsx").then((m) => ({ default: m.SchedulerCalendarEntry })));', "const SchedulerCalendarEntry = () => null;", "Live calendar import");
   const begin = source.indexOf("function SignalSchedule("),
     end = source.indexOf("function SignalPenaltyRank(", begin);
   if (begin < 0 || end < 0) throw Error("Schedule boundary not found");
@@ -65,33 +97,20 @@ export function patchManager(source) {
     '<div className="s2-splitwrap bloop-host" tabIndex={0}>',
     '<div className="s2-splitwrap">',
   );
-  const phoneBegin = source.indexOf(
-    '<button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>',
-  );
-  const phoneEnd = source.indexOf("</button>", phoneBegin);
-  if (phoneBegin < 0 || phoneEnd < 0)
-    throw Error("Phone calendar boundary not found");
-  source =
-    source.slice(0, phoneBegin) +
-    source.slice(phoneEnd + "</button>".length);
-  const heroBottom = '        </div>\n      </div>\n\n      {canSetGoal && !goalMonth.set';
-  if (source.split(heroBottom).length !== 2) throw Error("Phone hero bottom boundary changed");
-  source = source.replace(heroBottom, '        </div>\n        <PreviewScheduleEntry className="bp-r1"/>\n      </div>\n\n      {canSetGoal && !goalMonth.set');
-  const onoffBegin = source.indexOf(
-    '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>',
-  );
-  const onoffEnd = source.indexOf("</button>", onoffBegin);
-  if (onoffBegin < 0 || onoffEnd < 0)
-    throw Error("Phone staffing boundary not found");
-  source =
-    source.slice(0, onoffBegin) + source.slice(onoffEnd + "</button>".length);
+  source = nullWrappedButton(source, '<button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>', "Phone calendar");
+  // The live compact entry is the last row of the hero; the preview puts its own there instead.
+  const heroBottom = '        </div>\n        {SCHEDULER_CALENDAR && (\n          <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} isOff={isOff} layout="compact" /></React.Suspense>\n        )}\n      </div>\n\n      {canSetGoal && !goalMonth.set';
+  source = replaceOnce(source, heroBottom, '        </div>\n        <PreviewScheduleEntry className="bp-r1"/>\n      </div>\n\n      {canSetGoal && !goalMonth.set', "Phone hero bottom");
+  source = nullWrappedButton(source, '<button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>', "Phone staffing");
   source = deliveryRoutes(source);
   return (
     'import {storeToday as previewStoreToday,calendarCells as previewCalendarCells,salesHeat as previewSalesHeat,monthSales as previewMonthSales,createPlanner as previewCreatePlanner} from "/scripts/scheduler-performance/month-model.mjs";\n' +
     'import {fixtureAssignments as previewFixtureAssignments,assignmentSummary as previewAssignmentSummary} from "/scripts/scheduler-performance/assignment-view.mjs";\n' +
     'import {fixtures as previewFixtures} from "/scripts/scheduler-proposal/model.mjs"; const previewCalendarStore=previewFixtures()[0],previewHeroPlanner=previewCreatePlanner([previewCalendarStore],{assignmentForDay:previewFixtureAssignments}),previewHeroState={expanded:false,warnings:{}};\n' + source
   );
+  };
 }
+export const patchManager = patchManagerPinned(MANAGER_SHA);
 export async function buildPreview() {
   const seed = buildDemo(new Date("2026-10-14T16:00:00Z"));
   // One synthetic daily-sales source drives the hero roll-up and calendar.
