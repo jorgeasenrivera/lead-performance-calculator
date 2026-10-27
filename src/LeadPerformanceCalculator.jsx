@@ -1607,8 +1607,11 @@ const KEEP_BACKUPS = 14;
 // Writes a full snapshot to the database, at most once a day, whenever an admin
 // opens the tool. No server or cron needed: the admin's own visit is the trigger.
 // Snapshots are stripped out of the copy so backups can't nest inside each other.
-async function runAutoBackup(config, adminData, byName) {
+/* `isCurrent` is asked before every write and after every read that is waited for: false means the account, the recovery or the page that started this backup is no longer the one
+   in charge, and nothing more is written or deleted by it (rows it already wrote are left for pruneBackups, which spares only what the index keeps). */
+async function runAutoBackup(config, adminData, byName, isCurrent = () => true) {
   const index = await loadShared(BACKUP_INDEX_KEY, []);
+  if (!isCurrent()) return index;
   const newest = index[0] ? new Date(index[0].t).getTime() : 0;
   if (Date.now() - newest < AUTO_BACKUP_EVERY_HOURS * 3600 * 1000) return index;
 
@@ -1628,13 +1631,17 @@ async function runAutoBackup(config, adminData, byName) {
   // Each store first. If any one of them cannot be written the backup is incomplete,
   // and an incomplete backup that looks complete is worse than none at all.
   for (const sid of storeIds) {
-    const ok = await saveShared(backupStoreKey(sid, id), stores[sid], true);
+    if (!isCurrent()) return index;
+    const ok = await saveShared(backupStoreKey(sid, id), stores[sid], true, isCurrent);
     if (!ok) {
+      if (!isCurrent()) return index;   // stopped because it went stale, which is not a failed backup
       console.error("backup failed for store", sid, lastSaveError);
-      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null, true);
+      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null, true, isCurrent);
       return index;
     }
   }
+  const audit = await loadShared(AUDIT_KEY, []);
+  if (!isCurrent()) return index;
   const meta = {
     app: "lead-performance-calculator",
     version: 2,
@@ -1643,19 +1650,22 @@ async function runAutoBackup(config, adminData, byName) {
     by: byName || "auto",
     config,
     storeIds,
-    audit: await loadShared(AUDIT_KEY, []),
+    audit,
   };
-  const okMeta = await saveShared(backupMetaKey(id), meta, true);
+  const okMeta = await saveShared(backupMetaKey(id), meta, true, isCurrent);
   if (!okMeta) {
+    if (!isCurrent()) return index;
     console.error("backup meta failed", lastSaveError);
-    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null, true);
+    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null, true, isCurrent);
     return index;
   }
 
   const next = [{ id, t: exportedAt, stores: storeIds.length, storeIds, auto: true }, ...index];
   const keep = next.slice(0, KEEP_BACKUPS);
-  await saveShared(BACKUP_INDEX_KEY, keep, true);
-  await pruneBackups(keep);
+  if (!isCurrent()) return index;
+  await saveShared(BACKUP_INDEX_KEY, keep, true, isCurrent);
+  if (!isCurrent()) return keep;
+  await pruneBackups(keep, isCurrent);
   return keep;
 }
 
@@ -1673,13 +1683,14 @@ async function runAutoBackup(config, adminData, byName) {
    the ids the index is keeping are spared, and everything else goes, whatever
    put it there. The restore list already shows only what the index holds, so
    nothing a manager can see changes. */
-async function pruneBackups(keep) {
-  if (!supabase) return { kept: 0, dropped: 0 };
+async function pruneBackups(keep, isCurrent = () => true) {
+  if (!supabase || !isCurrent()) return { kept: 0, dropped: 0 };
   const alive = new Set((keep || []).map((b) => b && b.id).filter(Boolean));
   let dropped = 0;
   try {
     const { data, error } = await supabase.from("app_data").select("key").like("key", "lpc:backup:%");
     if (error) throw error;
+    if (!isCurrent()) return { kept: alive.size, dropped };
     for (const row of data || []) {
       /* lpc:backup:<store>:<id>:v1 — the id is everything between the store and
          the version, and a store id can itself contain colons in principle, so
@@ -1687,16 +1698,19 @@ async function pruneBackups(keep) {
       const parts = String(row.key).split(":");
       const id = parts.length >= 5 ? parts[parts.length - 2] : null;
       if (!id || alive.has(id)) continue;
-      if (await saveShared(row.key, null, true)) dropped++;
+      if (!isCurrent()) return { kept: alive.size, dropped };
+      if (await saveShared(row.key, null, true, isCurrent)) dropped++;
     }
     /* The per-backup meta rows are indexed the same way and were orphaned by
        the same gap. */
     const { data: metas } = await supabase.from("app_data").select("key").like("key", "lpc:config:backup:%");
+    if (!isCurrent()) return { kept: alive.size, dropped };
     for (const row of metas || []) {
       const parts = String(row.key).split(":");
       const id = parts.length >= 5 ? parts[parts.length - 2] : null;
       if (!id || alive.has(id)) continue;
-      if (await saveShared(row.key, null, true)) dropped++;
+      if (!isCurrent()) return { kept: alive.size, dropped };
+      if (await saveShared(row.key, null, true, isCurrent)) dropped++;
     }
   } catch (e) {
     console.error("pruneBackups", e);
@@ -2242,9 +2256,74 @@ export default function LeadPerformanceCalculator() {
   const [cfgWave, setCfgWave] = useState(0);
   const sessionRef = useRef(null);
   sessionRef.current = session;
+  /* ---- the daily backup waits for a password reset to be over ----
+     An admin opening the tool queues the day's backup here; it does not start while a reset link is being decided, is on screen, has failed and not been left, or was
+     interrupted (recoveryFlow's status is anything but idle). A reset session is a real session for the account, but a person who has not yet chosen a password has not
+     opened the tool, so no housekeeping runs as it. The queue outlives the first load (which flips viewPicked and will not run again), so the backup still happens once
+     after the reset is saved or left. It belongs to the account AND the profile it was queued under (id, role, active, pending, stores: configSubject): another account in, a
+     changed profile, or none, and it is discarded.
+     What a run backs up: a run that starts at once uses exactly what the first load read; one that was deferred through any recovery state, or follows a stopped run, uses what is current. A run that is stopped (a new recovery, an account change, an unmount) never revives: it is dead for
+     good and its queue entry is stripped of that snapshot, so the next run is a new ticket made from the CURRENT config and admin data (configRef, and the existing adminDataRef declared further down), and only when
+     the admin data was loaded for this same profile (adminDataFor === the entry's subject). Nothing read before a cancellation is reused after it.
+     A run clears its own entry only when it finishes still ours; a completed run is not repeated (runAutoBackup also skips a day that already has a backup); an entry queued
+     during a run is started by the run that settles. Nothing here drops an entry for any reason but the account, the profile or the mount no longer being the queued one: a run can only stop after a real
+     transition (the ticket applies the same conditions startBackup just checked), so a restart waits for the next real eligibility and cannot spin. */
+  const pendingBackup = useRef(null);
+  const backupInFlight = useRef(false);
+  const mounted = useRef(true);
+  const activeTicket = useRef(null);
+  const configRef = useRef(config); configRef.current = config;
+  const adminDataFor = useRef(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; pendingBackup.current = null; if (activeTicket.current) activeTicket.current.dead = true; }; }, []);
+  const startBackup = () => {
+    const queued = pendingBackup.current;
+    if (!queued || backupInFlight.current || !mounted.current) return;
+    const now = recoveryFlow.snapshot();
+    if (now.status !== "idle") { queued.first = null; return; }               // deferred through a recovery: what the first load read is no longer trusted, the run will use what is current
+    const who = sessionRef.current;
+    if (!who || who.role !== "admin" || who.id !== queued.userId || configSubjectRef.current !== queued.subject) { pendingBackup.current = null; return; }
+    if (supabase) {
+      if (now.sessionUserId == null) return;                                   // the client has not said who is signed in yet: wait
+      if (now.sessionUserId !== queued.userId) { pendingBackup.current = null; return; }
+    }
+    let data = queued.first;
+    if (!data) {
+      /* a run before this one was stopped: use what is current, and only if it is this profile's */
+      const all = adminDataRef.current;
+      if (!configRef.current || cfgProvisional.current || adminDataFor.current !== queued.subject || !all || Object.keys(all).length === 0) return;   // not ready: wait for the next change
+      data = { config: configRef.current, all };
+    }
+    const generation = now.generation;
+    /* One ticket per run, captured now. The first time any condition fails the ticket is dead for good: an account, role or recovery that comes back during a later await does not
+       revive this run, and a new run is a new ticket made by startBackup once this one has settled. */
+    const ticket = { dead: false, check: null };
+    const stillOurs = () => {
+      if (ticket.dead) return false;
+      const n = recoveryFlow.snapshot(), w = sessionRef.current;
+      const ok = mounted.current && n.status === "idle" && n.generation === generation && (!supabase || n.sessionUserId === queued.userId)
+        && !!w && w.role === "admin" && w.id === queued.userId && configSubjectRef.current === queued.subject;
+      if (!ok) ticket.dead = true;
+      return ok;
+    };
+    /* Observed, not only sampled: the ticket is checked the moment recovery or the account changes (below and in the effect after configSubjectRef), so a change that reverts
+       before the backup next asks still kills it. */
+    ticket.check = stillOurs; activeTicket.current = ticket;
+    const unwatch = recoveryFlow.subscribe(() => { stillOurs(); });
+    backupInFlight.current = true;
+    runAutoBackup(data.config, data.all, queued.name, stillOurs).catch(() => {}).then(() => {
+      unwatch(); if (activeTicket.current === ticket) activeTicket.current = null;
+      backupInFlight.current = false;
+      const ours = stillOurs();
+      if (ours && pendingBackup.current === queued) pendingBackup.current = null;   // finished while still ours: done (only this run's own queue entry)
+      else if (!ours && pendingBackup.current === queued) queued.first = null;      // stopped: the snapshot it carried is never reused
+      if (pendingBackup.current) startBackup();                                      // whatever is still queued (a stopped run's entry, or one queued during this run) gets its own new ticket when idle and eligible
+    });
+  };
+  useEffect(() => { startBackup(); }, [rec.status, rec.generation, rec.sessionUserId, session?.id, session?.role, adminData]);   // eslint-disable-line
   const configSubject = JSON.stringify([session?.id || session?.email || null, session?.role, session?.active, session?.pending, session?.stores]);
   const configSubjectRef = useRef(configSubject);
   configSubjectRef.current = configSubject;
+  useEffect(() => { const t = activeTicket.current; if (t && t.check) t.check(); }, [configSubject, session?.role, session?.id, session?.active, session?.pending]);   // the running backup's ticket sees a profile change as it happens
   const previousConfigSubject = useRef(configSubject);
   useEffect(() => {
     if (previousConfigSubject.current === configSubject) return;
@@ -2432,7 +2511,7 @@ export default function LeadPerformanceCalculator() {
         for (const id of Object.keys(all)) installBaseline(all[id], id, "cache");
         setAdminData(all);
         // an admin opening the tool is what triggers the daily backup
-        if (session.role === "admin") runAutoBackup(config, all, session.name).catch(() => {});
+        if (session.role === "admin") { adminDataFor.current = readSubject; pendingBackup.current = { userId: session.id, subject: readSubject, first: { config, all }, name: session.name }; startBackup(); }
         viewPicked.current = true;
         /* ---- land where you were, not on the overview ----
            An admin opened on All Stores every time, which is the one view that is

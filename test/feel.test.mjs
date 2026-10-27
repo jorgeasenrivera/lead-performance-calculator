@@ -566,7 +566,7 @@ test("five-second pass, item 2: the shortfall is drawn, and its height is the se
 
 test("the record slims down: backups prune by what is on the server, day rows have a window, restore points left the store row, no legacy stars", async () => {
   assert.ok(/async function saveShared\(key, value, quiet, isCurrent = \(\) => true\) \{/.test(core) && /lastSaveError = null; if \(!quiet\) buzz\("taken"\);/.test(core), "housekeeping writes do not buzz a phone");
-  assert.ok(/await saveShared\(row\.key, null, true, current\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true\)/.test(core), "the prunes and the backup rows are housekeeping");
+  assert.ok(/await saveShared\(row\.key, null, true, current\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true(?:, isCurrent)?\)/.test(core), "the prunes and the backup rows are housekeeping");
   // Execute the real save closure: both success and refusal stay silent for
   // housekeeping. Non-quiet controls ensure the buzzer assertion is not vacuous.
   for (const error of [null, { message: "synthetic refusal" }]) {
@@ -581,9 +581,9 @@ test("the record slims down: backups prune by what is on the server, day rows ha
       assert.deepEqual(sounds, quiet ? [] : [error ? "refused" : "taken"]);
     }
   }
-  assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
+  assert.ok(/async function pruneBackups\(keep(?:, isCurrent = \(\) => true)?\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
   assert.ok(/\.select\("key"\)\.like\("key", "lpc:config:backup:%"\)/.test(core), "the orphaned meta rows go with them");
-  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
+  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true(?:, isCurrent)?\);\n\s*(?:if \(!isCurrent\(\)\) return keep;\n\s*)?await pruneBackups\(keep(?:, isCurrent)?\);/.test(core), "every backup run prunes");
   assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId, isCurrent = \(\) => true\) \{/.test(core), "the day rows have a window");
   assert.ok(/const GOAL_LOOKBACK = 21;/.test(core), "and the window clears the longest read of them by a fortnight");
   /* A store row carries NO restore points now. It used to carry two, and before

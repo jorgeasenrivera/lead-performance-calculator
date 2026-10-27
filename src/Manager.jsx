@@ -18348,6 +18348,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
    split deal is credited in halves -- but a STORE total ending in .5 means one
    half of a split is being counted against somebody the other half is not, and
    that is worth saying out loud rather than rounding away. */
+/* A cell in the store roll-up that the report left blank, filled with spaces or marked with a dash did not say zero, it said nothing, and the screen
+   must show it as not said. Every other cell keeps exactly the reading Number() gave it: an explicit 0 and 0.5 are numbers, and text that is not a
+   number stays NaN rather than being guessed at. (The per-person units column already reads a blank or a dash this way.) */
+const csvCell = (v) => { const raw = String(v ?? "").trim(); return raw === "" || raw === "-" ? null : Number(raw); };
 function CrossCheck({ store, data, config, onClose }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -18421,10 +18425,10 @@ function CrossCheck({ store, data, config, onClose }) {
         const sDeal = shead ? shead.findIndex((c) => /^deals delivered$/i.test(c)) : -1;
         if (shead && sDeal >= 0 && rows[si + 1]) {
           const r = rows[si + 1];
-          const at = (re) => { const j = shead.findIndex((c) => re.test(c)); return j < 0 ? null : Number(r[j] || 0); };
+          const at = (re) => { const j = shead.findIndex((c) => re.test(c)); return j < 0 ? null : csvCell(r[j]); };
           setRoll({
             store: String(r[shead.findIndex((c) => /^store$/i.test(c))] || "").trim(),
-            deals: Number(r[sDeal] || 0),
+            deals: csvCell(r[sDeal]),
             sold: at(/^sold$/i),
             opps: at(/^net opportunities$/i),
             fileName: file.name,
@@ -18448,7 +18452,7 @@ function CrossCheck({ store, data, config, onClose }) {
           file2[norm(nm)] = {
             displayName: nm,
             flatUnits: raw === "" || raw === "-" ? null : Number(raw),
-            opps: oppAt >= 0 ? Number(r[oppAt] || 0) : null,
+            opps: oppAt >= 0 ? csvCell(r[oppAt]) : null,
           };
         }
       }
@@ -18484,7 +18488,8 @@ function CrossCheck({ store, data, config, onClose }) {
         roll: roll || filed,
         halfHolders,
         kind: /\.pdf$/i.test(file.name) ? "pdf" : "csv",
-        fileTotal: +sum(rows, (r) => r.fu).toFixed(2),
+        // no person in the file gave a figure: the people add to nothing the report said, which is unknown and not zero (a mix of known and unknown still sums as before)
+        fileTotal: rows.some((r) => r.fu != null) ? +sum(rows, (r) => r.fu).toFixed(2) : null,
         fileOpps: rows.some((r) => r.opps != null) ? +sum(rows, (r) => r.opps).toFixed(0) : null,
         boardTotal: +sum(boardRows, (r) => r.hu).toFixed(2),
         heldTotal: +sum(rows, (r) => r.hu).toFixed(2),
@@ -18534,7 +18539,7 @@ function CrossCheck({ store, data, config, onClose }) {
                     ? (shownRoll.source === "roll-up" ? "The store roll-up on file says" : "The Delivery Summary on file says")
                     : "The store roll-up says"}</div>
                   <div className="xc-rollrow">
-                    <span className="xc-n">{shownRoll.deals}</span>
+                    <span className="xc-n">{shownRoll.deals == null ? "\u2013" : shownRoll.deals}</span>
                     <span className="xc-note">deliveries at {shownRoll.store}{shownRoll.sold != null ? ` \u00b7 ${shownRoll.sold} sold` : ""}{shownRoll.opps != null ? ` \u00b7 ${shownRoll.opps} opportunities` : ""}</span>
                   </div>
                   <p className="xc-note">{shownRoll.emailed && shownRoll.day
@@ -18598,7 +18603,7 @@ function CrossCheck({ store, data, config, onClose }) {
                    comes out high -- opportunities most of all, which is the proof
                    it is double counting rather than disagreeing. */
                 const auth = res.roll ? res.roll.deals : res.stated ? res.stated.total : null;
-                if (auth == null) return null;
+                if (auth == null || res.fileTotal == null) return null;   // nothing to compare against, or no figure from the people
                 const over = res.fileTotal - auth;
                 if (Math.abs(over) <= 0.001) return (
                   <p className="xc-lead">The report's people add up to exactly what the store says.</p>
