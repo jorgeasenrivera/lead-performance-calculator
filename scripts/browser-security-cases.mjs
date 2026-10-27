@@ -19,6 +19,7 @@ import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { launchStrict, guardContext, pinsFromEnv, sandboxDiagnostics } from "./strict-browser-kit.mjs";
 import { createBackend, MOCK_PORT, USER_A, USER_B, makeWritePolicy as makePolicy } from "./synthetic-backend.mjs";
+import { createAnnotator } from "./safe-annotations.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => { const i = argv.indexOf("--" + name); return i >= 0 ? argv[i + 1] : fallback; };
@@ -32,6 +33,8 @@ const WRITE_PROBE = process.env.STRICT_WRITE_PROBE === "1";
 /* A discovery run is never a result: it cannot run on the hosted runner, it says so in result.json, and it always exits 1. */
 if (WRITE_PROBE && process.env.GITHUB_ACTIONS === "true") throw new Error("STRICT_WRITE_PROBE is for local discovery only and is refused on the hosted runner");
 if (!["corrected", "baseline"].includes(EXPECT)) throw new Error("--expect must be corrected or baseline");
+/* Diagnostic annotations only (scripts/safe-annotations.mjs): fixed sentences, closed ids and Y/N flags, never an error, detail, request or payload. It never throws and never changes an exit code. */
+const note = createAnnotator({ scope: EXPECT });
 if (!fs.existsSync(path.join(DIST, "index.html"))) throw new Error("No built app in " + DIST);
 if (fs.existsSync(OUT) && fs.readdirSync(OUT).length) throw new Error("The output directory must be new or empty: " + OUT);
 await mkdir(OUT, { recursive: true });
@@ -70,7 +73,8 @@ const appServer = http.createServer((req, res) => {
 await new Promise((r, j) => { appServer.once("error", j); appServer.listen(APP_PORT, "127.0.0.1", r); });
 
 const results = [];
-const record = (r) => { results.push(r); console.log(`${r.status.padEnd(8)} ${r.id}  ${r.title}${r.detail ? "\n         " + String(r.detail).split("\n").join("\n         ") : ""}`); };
+/* caught is true only at a catch block that recorded the failure; the annotator is given the id, the status and that flag, nothing else, and the stored record is unchanged. */
+const record = (r, caught) => { results.push(r); console.log(`${r.status.padEnd(8)} ${r.id}  ${r.title}${r.detail ? "\n         " + String(r.detail).split("\n").join("\n         ") : ""}`); try { note.caseRecord(caught === true ? { id: r.id, status: r.status, caught: true } : { id: r.id, status: r.status }); } catch (e) {} };
 const want = (id) => !ONLY || ONLY.has(id);
 const notRun = (id, title, why) => { if (want(id)) record({ id, title, status: "NOT RUN", detail: why }); };
 
@@ -162,7 +166,7 @@ async function case1(k) {
       .map((r) => ({ method: r.method, path: r.path, key: (() => { try { const b = JSON.parse(r.body); return (Array.isArray(b) ? b : [b]).map((x) => x.key || x.id).join(","); } catch (e) { return ""; } })() }));
     const audit = await k.auditRenderers("A1");
     record({ id, title, status: failures.length ? "FAIL" : "PASS", detail: failures.join("\n") || `topbar rendered; 1 sign-in POST; ${profileReads.length} profile read(s); ${writes.length} table write(s) after sign-in: ${writes.map((w) => `${w.method} ${w.path} [${w.key}]`).join("; ") || "none"}; app-origin calls: ${appCalls.map((c) => c.method + " " + c.path).join(", ") || "none"}; renderers audited: ${audit.length}; realtime socket attempts refused: ${s.log.filter(isExpectedRefusal).length}; page and console errors other than the planned 404s: ${realProblems(s).length}`, evidence: { requestCounts: countBy(s.backend.requests), appCalls: [...appCalls], problems: s.problems } });
-  } catch (e) { record({ id, title, status: "FAIL", detail: String(e).slice(0, 500) }); }
+  } catch (e) { record({ id, title, status: "FAIL", detail: String(e).slice(0, 500) }, true); }
   finally { await s.close(); }
 }
 const countBy = (reqs) => reqs.reduce((a, r) => { const key = `${r.method} ${r.path}`; a[key] = (a[key] || 0) + 1; return a; }, {});
@@ -279,7 +283,7 @@ async function runCrossCheck(k) {
     const unmetWrites = s.backend.writePolicy.unmet ? s.backend.writePolicy.unmet() : [];
     record({ id: "XC-session", title: "Cross-check session: nothing outside the synthetic contract, no page errors", status: unexpected.length || unmetWrites.length || realProblems(s).length || appProblems(s).length ? "FAIL" : "PASS", detail: unexpected.length ? JSON.stringify(unexpected.map((u) => u.method + " " + u.path + " " + (u.why || ""))) : unmetWrites.length ? unmetWrites.join("; ") : realProblems(s).length ? realProblems(s).join("\n") : appProblems(s).length ? appProblems(s).join("\n") : `${s.backend.requests.length} backend requests, all GET/OPTIONS or sign-in; app-origin calls: ${appCalls.map((c) => c.method + " " + c.path).join(", ") || "none"}` });
     await k.auditRenderers("XC").then((a) => record({ id: "XC-renderers", title: "Renderers during the cross-check session are sandboxed", status: "PASS", detail: `${a.length} renderer(s): Seccomp 2, NoNewPrivs 1, CapEff 0, nested PID namespace` }));
-  } catch (e) { record({ id: "XC-suite", title: "Cross-check suite", status: "FAIL", detail: String(e).slice(0, 600) }); }
+  } catch (e) { record({ id: "XC-suite", title: "Cross-check suite", status: "FAIL", detail: String(e).slice(0, 600) }, true); }
   finally { await s.close(); }
 }
 
@@ -609,7 +613,7 @@ async function scheduleCase(k, id, title, { pending = false, publish = null, exp
     const audit = await k.auditRenderers(id);
     note = `schedule reads: ${reads.length} (bodies exactly {p_store,p_month}); responses: ${[...new Set(states.map((x) => x && x.state ? x.state : "denied"))].join(",")}; floor-row reads: ${floorReads.length} (own view); banners shown: ${JSON.stringify(shown)}; renderers audited after the app loaded: ${audit.length}`;
     record({ id, title, status: failures.length ? "FAIL" : "PASS", detail: failures.join("\n") || note, evidence: { requestCounts: countBy(s.backend.requests), scheduleBodies: bodies, floorReads, shown, statesSeen: states } });
-  } catch (e) { record({ id, title, status: "FAIL", detail: failures.concat(["did not finish: " + String(e).split("\n")[0].slice(0, 300)]).join("\n") }); try { await keepStopped(s, id); } catch (e2) {} }
+  } catch (e) { record({ id, title, status: "FAIL", detail: failures.concat(["did not finish: " + String(e).split("\n")[0].slice(0, 300)]).join("\n") }, true); try { await keepStopped(s, id); } catch (e2) {} }
   finally { await s.close(); }
 }
 async function runSchedule(k) {
@@ -708,23 +712,29 @@ const rendererAudits = [];
 const PINS_COMPLETE = (() => { try { const p = pinsFromEnv(); return !!(p.playwright && p.chrome && p.cdpSuffix); } catch (e) { return false; } })();   // local runs set no pins: they are evidence about the local browser only
 let k = null, auditCalls = 0, diagnostics = null, finished = false, deadlineHit = false;
 const summary = (extra = {}) => ({ when: new Date().toISOString(), expect: EXPECT, countsAsRepairResult: EXPECT === "corrected" && !WRITE_PROBE, qualifying: !WRITE_PROBE && PINS_COMPLETE && !!diagnostics, evidenceKind: PINS_COMPLETE ? "pinned-run" : "local-unpinned-run", pinsComplete: PINS_COMPLETE, writeProbe: WRITE_PROBE, dist: DIST, browser: k ? k.evidence : null, auditCalls, rendererAudits, diagnostics, deadlineExceeded: deadlineHit, roundupDrawnOverResetForm: roundupCovered.length, expectedIds: ONLY ? null : EXPECTED_IDS, results, ...extra });
+/* The end-of-run annotation reads the same facts the exit expression reads, as booleans. It decides nothing and cannot throw. */
+const annotateEnd = (exception) => { try { const passed = new Set(results.filter((r) => r.status === "PASS").map((r) => r.id)); note.terminal({ failed: results.some((r) => r.status === "FAIL"), skipped: results.some((r) => r.status === "NOT RUN"), missing: !ONLY && EXPECTED_IDS.some((id) => !passed.has(id)), audit: auditCalls > 0, deadline: deadlineHit, exception: exception === true, probe: WRITE_PROBE, only: !!ONLY, results }); } catch (e) {} };
 const deadline = setTimeout(async () => {
   if (finished) return;
   deadlineHit = true;
+  try { note.runDeadline(); annotateEnd(false); } catch (e) {}
   console.error(`DEADLINE: the run did not finish in ${DEADLINE_MS} ms`);
   try { fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify(summary(), null, 2) + "\n"); } catch (e) {}
   try { await Promise.race([k && k.close(), new Promise((r) => setTimeout(r, 5000))]); } catch (e) {}
   process.exit(1);
 }, DEADLINE_MS);
-const bounded = (name, fn) => Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject(new Error(`group ${name} did not finish in ${GROUP_MS} ms`)), GROUP_MS))]);
+/* done is set when the group settles, so a group timer that fires later, after the group already finished, is not reported as a deadline. */
+const bounded = (name, fn) => { const run = fn(); let done = false; run.then(() => { done = true; }, () => { done = true; }); return Promise.race([run, new Promise((_, reject) => setTimeout(() => { if (!done) { try { note.groupDeadline(name); } catch (e) {} } reject(new Error(`group ${name} did not finish in ${GROUP_MS} ms`)); }, GROUP_MS))]); };
 
 let exitCode = 0;
 try {
   k = await launchStrict({ driver: opt("driver"), expect: pinsFromEnv() });
+  note.phase("KIT_LAUNCHED");
   const realAudit = k.auditRenderers; k.auditRenderers = async (label = "unlabelled") => { const r = await realAudit(); auditCalls++; rendererAudits.push({ label, at: new Date().toISOString(), renderers: r.map((x) => ({ pid: x.pid, Seccomp: x.Seccomp, NoNewPrivs: x.NoNewPrivs, CapEff: x.CapEff, NSpid: x.NSpid, bypassArgv: false })) }); return r; };
-  if (process.env.STRICT_REQUIRE_DIAGNOSTICS === "1") { diagnostics = await sandboxDiagnostics(k.browser); console.log("chrome://sandbox diagnostics verified"); }
-  for (const [name, fn] of [["login", case1], ["cross-check", runCrossCheck], ["recovery", runRecovery], ["backup", runBackups], ["schedule", runSchedule]]) await bounded(name, () => fn(k));
-} catch (e) { console.error("RUNNER ERROR", e); exitCode = 1; record({ id: "RUNNER", title: "The run itself", status: "FAIL", detail: String(e && e.message || e).slice(0, 500) }); }
+  if (process.env.STRICT_REQUIRE_DIAGNOSTICS === "1") { diagnostics = await sandboxDiagnostics(k.browser); console.log("chrome://sandbox diagnostics verified"); note.phase("DIAGNOSTICS_OK"); }
+  for (const [name, fn] of [["login", case1], ["cross-check", runCrossCheck], ["recovery", runRecovery], ["backup", runBackups], ["schedule", runSchedule]]) { note.group(name); await bounded(name, () => fn(k)); }
+  note.phase("CASES_END");
+} catch (e) { console.error("RUNNER ERROR", e); exitCode = 1; try { note.runnerException(); } catch (e2) {} record({ id: "RUNNER", title: "The run itself", status: "FAIL", detail: String(e && e.message || e).slice(0, 500) }, !note.groupDeadlineFired()); }
 finally {
   finished = true; clearTimeout(deadline);
   if (WRITE_PROBE) try { await writeFile(path.join(OUT, "write-probe.json"), JSON.stringify(probeWrites, null, 2) + "\n"); } catch (e) {}
@@ -737,6 +747,7 @@ const passedIds = new Set(results.filter((r) => r.status === "PASS").map((r) => 
 const missing = ONLY ? [] : EXPECTED_IDS.filter((id) => !passedIds.has(id));
 if (missing.length) console.error("MISSING OR NOT PASSING: " + missing.join(", "));
 if (!auditCalls) console.error("NO RENDERER AUDIT RAN: no proof the application renderers were sandboxed");
+annotateEnd(exitCode !== 0 && !note.groupDeadlineFired());
 console.log(`\n${passedIds.size} passed, ${failed} failed, ${skipped} not run (${EXPECT})${EXPECT === "baseline" ? " - CHARACTERIZATION of the unmodified head, never a repair result" : ""}`);
 if (WRITE_PROBE) console.error("NON-QUALIFYING: STRICT_WRITE_PROBE run (every table write allowed); discovery output only");
 process.exit(WRITE_PROBE || failed || skipped || exitCode || missing.length || !auditCalls ? 1 : 0);
