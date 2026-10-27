@@ -500,7 +500,7 @@ test("five-second pass, items 6 to 12: plain words, one verdict per row, the emp
   assert.ok(/\[QUEUE_TAB, "Rooms", "door"\]/.test(mgr), "the dock's third slot is Rooms");
   assert.ok(/<SignalCopy full=\{" working today"\} short=\{" on today"\} \/>\{offToday\.length/.test(mgr) && !/to hit`|to hit<\/span>|to hit<\/button>/.test(mgr), "approved on-today copy retains the off count; goal, never to hit");
   assert.ok(/Most penalty points this month/.test(mgr) && !/Biggest Loser · most points/.test(mgr), "penalty points say so");
-  assert.ok(/`\$\{behindCount\} not signed in`/.test(mgr) && /"TV link"/.test(mgr) && !/"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
+  assert.ok(/`\$\{behindCount\} behind the standard`/.test(mgr) && /"TV link"/.test(mgr) && !/"Salesperson link"/.test(mgr) && /Lead cap reached · \{limitCount\}/.test(mgr) && /Month so far/.test(mgr), "the floor's words are a manager's words");
   assert.ok(!/"Never ours"|>Never ours</.test(mgr) && /Not this store's/.test(mgr), "not this store's, everywhere");
   assert.ok(!/if \(!l\) return <span className="(?:fr-st pe-noacct|pp-noacct)">no account<\/span>;/.test(mgr), "no account is a count with an action, not a chip on every row");
   assert.ok(/Monthly grace: colours stay off during the first days of each month\./.test(mgr), "monthly grace explains the actual monthly rule");

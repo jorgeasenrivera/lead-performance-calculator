@@ -61,6 +61,9 @@ const SESSION = {
     app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() },
 };
 
+/* A filter the mock will not guess at. match() throws it and the request handler answers 400. */
+class Refused extends Error {}
+
 /* PostgREST filters, only the forms the app sends. */
 function match(rows, params) {
   let out = rows;
@@ -71,6 +74,15 @@ function match(rows, params) {
     else if (v.startsWith("in.")) {
       const set = new Set(v.slice(3).replace(/^\(|\)$/g, "").split(",").map((s) => s.replace(/^"|"$/g, "")));
       out = out.filter((r) => set.has(String(r[k])));
+    }
+    else if (v.startsWith("like.")) {
+      /* The app only asks for a literal prefix and one trailing %: the backup lists, a store's day
+         rows, the store list. This used to fall through unfiltered, so every like answered every row,
+         and backup pruning read the activity rows as old backups and wrote null over them. A shape
+         that needs real pattern matching is refused rather than guessed at. */
+      const prefix = /^([^%_*\\]+)%$/.exec(v.slice(5));
+      if (!prefix) throw new Refused(`the mock handles like only as a literal prefix and one trailing %, got ${JSON.stringify(v.slice(5))}`);
+      out = out.filter((r) => r[k] != null && String(r[k]).startsWith(prefix[1]));
     }
   }
   return out;
@@ -87,6 +99,16 @@ http.createServer((req, res) => {
       "access-control-allow-headers": "authorization, apikey, content-type, x-client-info, x-supabase-api-version, accept-profile, content-profile, prefer",
       "access-control-allow-methods": "*" });
     res.end(body === undefined ? "" : JSON.stringify(body));
+  };
+  /* A filter the mock refuses answers 400 in PostgREST's error shape, so a query it cannot honour
+     fails where it is made and not three steps later. */
+  const matched = (table) => {
+    try { return match(table, [...u.searchParams.entries()]); }
+    catch (e) {
+      if (!(e instanceof Refused)) throw e;
+      send(400, { code: "PGRST100", message: e.message, details: null, hint: null });
+      return null;
+    }
   };
   if (req.method === "OPTIONS") return send(204);
 
@@ -113,7 +135,9 @@ http.createServer((req, res) => {
       let patch = {};
       try { patch = JSON.parse(bodyText || "{}"); } catch (e) {}
       const table = TABLES[m[1]];
-      const hit = new Set(match(table, [...u.searchParams.entries()]));
+      const found = matched(table);
+      if (!found) return;
+      const hit = new Set(found);
       const out = [];
       for (let i = 0; i < table.length; i++) if (hit.has(table[i])) { table[i] = { ...table[i], ...patch }; out.push(table[i]); }
       send(200, out);
@@ -146,7 +170,8 @@ http.createServer((req, res) => {
     return;
   }
   if (m && TABLES[m[1]]) {
-    const rows = match(TABLES[m[1]], [...u.searchParams.entries()]);
+    const rows = matched(TABLES[m[1]]);
+    if (!rows) return;
     const single = (req.headers.accept || "").includes("pgrst.object");
     const reply = () => {
       if (single) {

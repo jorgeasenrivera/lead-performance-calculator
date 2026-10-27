@@ -24,6 +24,8 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
   const fixture=row=>{
     row=addStore(row);
+    /* The split day rows win over the embedded copy on read, so the fixed upload stamp has to be on them as well. */
+    if(/^lpc:store:[^:]+:act:\d{4}-\d{2}-\d{2}$/.test(row?.key||'')&&row.value&&typeof row.value==='object')row={...row,value:Object.fromEntries(Object.entries(row.value).map(([name,r])=>[name,r&&typeof r==='object'?{...r,uploadedAt:stamp}:r]))};
     if(row?.value?.months){const v=row.value;row={...row,value:{...v,importLog:stamp?[{t:importStamp||stamp}]:[],activity:Object.fromEntries(Object.entries(v.activity||{}).map(([d,rows])=>[d,Object.fromEntries(Object.entries(rows).map(([name,r])=>[name,{...r,uploadedAt:stamp}]))]))}};}
 
     if(!dockFixture || !row?.value)return row;
