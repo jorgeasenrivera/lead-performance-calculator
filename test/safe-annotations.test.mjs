@@ -274,7 +274,9 @@ test("exit invariance: the exit expression, the deadline exit, the timeouts and 
   assert.equal(RUNNER.split("process.exit(").length - 1, 2, "a new exit was added");
   assert.ok(RUNNER.includes("  process.exit(1);\n}, DEADLINE_MS);"));
   assert.ok(RUNNER.includes('Number(process.env.STRICT_GROUP_TIMEOUT_MS || 150_000), DEADLINE_MS = Number(process.env.STRICT_DEADLINE_MS || 480_000)'));
-  assert.equal((RUNNER.match(/exitCode = 1/g) || []).length, 2, "the places that set the exit code changed");
+  // Strict cleanup delta: exactly ONE place was added on purpose, a cleanup that failed, timed out or never completed. The other two are the head's own.
+  assert.equal((RUNNER.match(/exitCode = 1/g) || []).length, 3, "the places that set the exit code changed");
+  assert.ok(RUNNER.includes('if (cleanupFailed(cleanup.outcome())) { exitCode = 1; console.error("CLEANUP FAILED: " + cleanup.outcome().reasons.join(", ")); }'));
   assert.ok(RUNNER.includes('if (WRITE_PROBE && process.env.GITHUB_ACTIONS === "true") throw new Error('));
   assert.ok(RUNNER.includes("const failed = results.filter((r) => r.status === \"FAIL\").length, skipped = results.filter((r) => r.status === \"NOT RUN\").length;"));
   assert.ok(RUNNER.includes('const missing = ONLY ? [] : EXPECTED_IDS.filter((id) => !passedIds.has(id));'));

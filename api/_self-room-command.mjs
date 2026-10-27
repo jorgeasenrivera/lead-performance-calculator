@@ -3,6 +3,7 @@ import { applyPhoneAction, isPhoneAction } from './_phone-action.mjs';
 import { releasePerson, stationOf } from './_stations.mjs';
 import { pointsForDay, stampLineMoves } from './_phone-rows.mjs';
 export const SELF_COMMANDS = ['join','status','table','table-checkin','undo-checkin','checkout','complete-checkout','assist','cancel-assist','goal-note','heartbeat','leave','release-desk','offday-denied'];
+const tableValue = t => typeof t === 'string' || typeof t === 'number';
 const fail = why => { throw Object.assign(new Error(why), { status: 400 }); };
 /* Caller passes authenticated link, current authoritative row/config and figures.
    No actor, label, counts, timestamp or replacement JSON is accepted from input. */
@@ -63,7 +64,7 @@ export function selfRoomCommand({ room, row, personId, action, input = {}, now, 
     next.checkouts=[...(next.checkouts||[]).filter(c=>c.id!==personId),entry];
   } else if(action==='assist') {
     if(!me || !['to','fly'].includes(input.kind)) return fail('Invalid assistance request');
-    if(input.table!=null && !allowedTables.map(String).includes(String(input.table))) return fail('Unknown table');
+    if(input.table!=null && (!tableValue(input.table)||!allowedTables.map(String).includes(String(input.table)))) return fail('Unknown table');
     if(input.note!=null && (typeof input.note!=='string'||input.note.length>500)) return fail('Invalid note');
     next.assists=[{id:`${personId}:${now}`,t:now,kind:input.kind,byId:personId,byName:roster.name,table:input.table??null,spot:input.table==null?'lot':'floor',note:input.note||null},...(next.assists||[]).filter(a=>a.byId!==personId||a.doneAt)].slice(0,40);
   } else if(action==='cancel-assist') {
@@ -75,7 +76,7 @@ export function selfRoomCommand({ room, row, personId, action, input = {}, now, 
       if(!(room==='floor'?['waiting','customer','lunch','away']:['waiting','lunch','away']).includes(input.status)) return fail('Invalid status');
       me.awayReason=input.status==='waiting'?null:input.status;me.status=input.status;me.statusAt=now;log(input.status==='waiting'?'back':input.status);
     } else if(action==='table'||action==='table-checkin') {
-      if(room!=='floor'||!allowedTables.map(String).includes(String(input.table))) return fail('Unknown table');
+      if(room!=='floor'||!tableValue(input.table)||!allowedTables.map(String).includes(String(input.table))) return fail('Unknown table');
       if(action==='table'&&me.status!=='customer') return fail('Take a customer before choosing a table');
       if(action==='table-checkin'&&me.status!=='customer'){me.status='customer';me.statusAt=now;me.awayReason=null;me.autoFlip=false;log('checkin');}
       me.table=input.table;

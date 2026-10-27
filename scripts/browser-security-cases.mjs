@@ -20,6 +20,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { launchStrict, guardContext, pinsFromEnv, sandboxDiagnostics } from "./strict-browser-kit.mjs";
 import { createBackend, MOCK_PORT, USER_A, USER_B, makeWritePolicy as makePolicy } from "./synthetic-backend.mjs";
 import { createAnnotator } from "./safe-annotations.mjs";
+import { createCleanup, cleanupFailed } from "./strict-cleanup.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name, fallback) => { const i = argv.indexOf("--" + name); return i >= 0 ? argv[i + 1] : fallback; };
@@ -710,8 +711,10 @@ const GROUP_MS = Number(process.env.STRICT_GROUP_TIMEOUT_MS || 150_000), DEADLIN
 const EXPECTED_IDS = ["A1", ...XC.map((c) => c.id), "XC-reopen", "XC-session", "XC-renderers", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
 const rendererAudits = [];
 const PINS_COMPLETE = (() => { try { const p = pinsFromEnv(); return !!(p.playwright && p.chrome && p.cdpSuffix); } catch (e) { return false; } })();   // local runs set no pins: they are evidence about the local browser only
-let k = null, auditCalls = 0, diagnostics = null, finished = false, deadlineHit = false;
-const summary = (extra = {}) => ({ when: new Date().toISOString(), expect: EXPECT, countsAsRepairResult: EXPECT === "corrected" && !WRITE_PROBE, qualifying: !WRITE_PROBE && PINS_COMPLETE && !!diagnostics, evidenceKind: PINS_COMPLETE ? "pinned-run" : "local-unpinned-run", pinsComplete: PINS_COMPLETE, writeProbe: WRITE_PROBE, dist: DIST, browser: k ? k.evidence : null, auditCalls, rendererAudits, diagnostics, deadlineExceeded: deadlineHit, roundupDrawnOverResetForm: roundupCovered.length, expectedIds: ONLY ? null : EXPECTED_IDS, results, ...extra });
+let k = null, auditCalls = 0, diagnostics = null, finished = false, deadlineHit = false, cleanup = null;
+/* One cleanup for the whole run (scripts/strict-cleanup.mjs): created when first needed so it knows whether the kit launched; the end of the run and the deadline share it. */
+const makeCleanup = () => (cleanup = cleanup || createCleanup({ closeKit: k ? () => k.close() : null, closeServer: () => new Promise((resolve, reject) => appServer.close((e) => (e ? reject(e) : resolve()))) }));
+const summary = (extra = {}) => ({ when: new Date().toISOString(), expect: EXPECT, countsAsRepairResult: EXPECT === "corrected" && !WRITE_PROBE, qualifying: !WRITE_PROBE && PINS_COMPLETE && !!diagnostics, evidenceKind: PINS_COMPLETE ? "pinned-run" : "local-unpinned-run", pinsComplete: PINS_COMPLETE, writeProbe: WRITE_PROBE, dist: DIST, browser: k ? k.evidence : null, auditCalls, rendererAudits, diagnostics, deadlineExceeded: deadlineHit, cleanup: cleanup ? cleanup.outcome() : null, roundupDrawnOverResetForm: roundupCovered.length, expectedIds: ONLY ? null : EXPECTED_IDS, results, ...extra });
 /* The end-of-run annotation reads the same facts the exit expression reads, as booleans. It decides nothing and cannot throw. */
 const annotateEnd = (exception) => { try { const passed = new Set(results.filter((r) => r.status === "PASS").map((r) => r.id)); note.terminal({ failed: results.some((r) => r.status === "FAIL"), skipped: results.some((r) => r.status === "NOT RUN"), missing: !ONLY && EXPECTED_IDS.some((id) => !passed.has(id)), audit: auditCalls > 0, deadline: deadlineHit, exception: exception === true, probe: WRITE_PROBE, only: !!ONLY, results }); } catch (e) {} };
 const deadline = setTimeout(async () => {
@@ -719,8 +722,8 @@ const deadline = setTimeout(async () => {
   deadlineHit = true;
   try { note.runDeadline(); annotateEnd(false); } catch (e) {}
   console.error(`DEADLINE: the run did not finish in ${DEADLINE_MS} ms`);
+  try { await makeCleanup().close(); } catch (e) {}
   try { fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify(summary(), null, 2) + "\n"); } catch (e) {}
-  try { await Promise.race([k && k.close(), new Promise((r) => setTimeout(r, 5000))]); } catch (e) {}
   process.exit(1);
 }, DEADLINE_MS);
 /* done is set when the group settles, so a group timer that fires later, after the group already finished, is not reported as a deadline. */
@@ -738,9 +741,10 @@ try {
 finally {
   finished = true; clearTimeout(deadline);
   if (WRITE_PROBE) try { await writeFile(path.join(OUT, "write-probe.json"), JSON.stringify(probeWrites, null, 2) + "\n"); } catch (e) {}
+  /* Close first, once; the result is written only AFTER it, so it carries the cleanup outcome. A cleanup that failed, timed out or never completed is a failed run. */
+  await makeCleanup().close();
+  if (cleanupFailed(cleanup.outcome())) { exitCode = 1; console.error("CLEANUP FAILED: " + cleanup.outcome().reasons.join(", ")); }
   try { await writeFile(path.join(OUT, "result.json"), JSON.stringify(summary(), null, 2) + "\n"); } catch (e) { console.error("could not write result.json", e); exitCode = 1; }
-  if (k) { try { await k.close(); } catch (e) {} }
-  appServer.close();
 }
 const failed = results.filter((r) => r.status === "FAIL").length, skipped = results.filter((r) => r.status === "NOT RUN").length;
 const passedIds = new Set(results.filter((r) => r.status === "PASS").map((r) => r.id));

@@ -67,7 +67,7 @@ test('source keeps interrupted reset in recovery layer and threads generation in
  assert.ok(app.includes('return signIn(() => authSetPassword(password), () => recoveryFlow.snapshot().generation === generation && recoveryFlow.snapshot().sessionUserId === sessionUserId);'), 'custom arrival preserves both ownership checks');
 });
 test('source sign-in continuation checks context after waits and before handover',()=>{
- assert.match(app,/await settleViewport\(\);\s*if \(!isCurrent\(\)\) return;/);
+ assert.match(app,/await settleViewport\(\);\s*if \(!isCurrent\(\) \|\| !mine\(\)\) return;/);
  assert.match(app,/const handOver = \(\) => \{\s*if \(!isCurrent\(\)/);
- assert.match(app,/if \(!isCurrent\(\) \|\| res\?\.stale\) return;/);
+ assert.match(app,/if \(!mine\(\) \|\| !isCurrent\(\) \|\| res\?\.stale\) return;/);
 });

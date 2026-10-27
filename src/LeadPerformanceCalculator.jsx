@@ -11,6 +11,7 @@ import { readRecoveryHash } from "./recovery-link.mjs";
 import { createRecoveryGuard, setPasswordAs, LINK_FAILED_NOTICE } from "./recovery-session.mjs";
 import { createRecoveryContinuity, RECOVERY_INTERRUPTED_NOTICE } from "./recovery-continuity.mjs";
 import { createRecoveryController } from "./recovery-controller.mjs";
+import { createHoldAttempt } from "./arrival-hold.mjs";
 import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
 import { createArrivalScheduler } from "./arrival-scheduler.mjs";
 import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
@@ -1368,8 +1369,10 @@ async function authClaimName(claim) {
 }
 async function authSignIn(email, password) {
   bumpAuthEpoch();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  return { error: error ? error.message : null };
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  /* Who the accepted response is for. The sign-in screen binds its arrival to this id, never to the first identity event after the press and never to the profile. */
+  const userId = !error && data && data.user && typeof data.user.id === "string" && data.user.id ? data.user.id : null;
+  return { error: error ? error.message : null, userId };
 }
 /* Two kinds of person sign up here and they need opposite things. A manager
    needs a store to look at, which only an admin can grant. A salesperson needs
@@ -3672,9 +3675,10 @@ export default function LeadPerformanceCalculator() {
      sign-in card that would flip to the new-password card a moment later. A
      failed link shows the card even with somebody signed in, because that is
      exactly when the notice was hidden (C97, review). */
-  const signInLayer = config && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
+  const loginConfig = loginConfigFor(config, jumpHold);
+  const signInLayer = loginConfig && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
     <div className="signin-over" key="signin">
-      <Login config={config} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
+      <Login config={loginConfig} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
         interrupted={rec.status === "interrupted"} recoveryGeneration={rec.generation}
         onRecoveryDismissed={() => recoveryFlow.dismiss()}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
@@ -5736,6 +5740,12 @@ function ClaimPicker({ config, value, onChange, onName }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
+/* What the sign-in layer shows while a legitimate arrival keeps it mounted (jumpHold) but the real config has been cleared, as it is when the account changes (the configSubject effect
+   in App). It is empty on purpose and is never built from any earlier config: no approved domain, registration closed, no store list. Registration stays unavailable until the current
+   real config arrives. It exists only so the one keyed Login that owns the running jump is not unmounted (which would end the jump through its cleanup). */
+const HELD_LOGIN_CONFIG = Object.freeze({ approvedDomains: Object.freeze([]), registrationOpen: false, stores: Object.freeze([]) });
+const loginConfigFor = (config, jumpHold) => config || (jumpHold ? HELD_LOGIN_CONFIG : null);
+
 function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false, linkFailed = false, interrupted = false, recoveryGeneration = 0, onRecoveryDismissed }) {
   /* The other half of lpcf:boot: a phone that reached the sign-in screen
      opens on the light ground next time, not under a curtain for rooms it
@@ -5842,10 +5852,29 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
     if (jumping.current) { jumping.current(); jumping.current = null; }
     if (heldRef.current) heldRef.current(false);
   };
-  useEffect(() => () => { if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
+  /* One attempt per press (src/arrival-hold.mjs): its ordered identity history, its own unsubscribe, and the rule that only the CURRENT attempt may touch the hold, the flash class, busy or
+     the jump. An old attempt that is killed, overtaken or finished ends quietly and never clears a newer hold. */
+  const attemptRef = useRef(null);
+  const endAttempt = (a) => { if (a.unsub) { a.unsub(); a.unsub = null; } a.done = true; };
+  /* How an attempt is retired from outside (a kill, a new press, a new generation, an unmount). The success and error paths end their own attempt with endAttempt, on purpose. The flash
+     class is global, so only the attempt that is STILL current may take it down, and it does so before it lets go: an attempt that was already overtaken never clears a newer attempt's
+     flash. No React state is touched here, so it is safe in an unmount cleanup. */
+  const retireAttempt = (a) => {
+    a.hold.kill();
+    if (attemptRef.current === a) document.documentElement.classList.remove("sage-flash-hold");
+    endAttempt(a);
+  };
+  const killAttempt = (a) => {
+    const owned = attemptRef.current === a;
+    retireAttempt(a);
+    if (!owned) return;
+    abortJump(); signInPressed = false; setBusy(false);
+  };
+  useEffect(() => () => { const a = attemptRef.current; if (a) retireAttempt(a); if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
   // A new recovery, logout or BFCache re-entry owns a new lifecycle. Old
   // completions must not clear its fields, flash or hand it to the dashboard.
   useEffect(() => {
+    { const a = attemptRef.current; if (a) retireAttempt(a); }
     abortJump(); signInPressed = false; setBusy(false);
     setPassword(""); setPassword2("");
   }, [recoveryGeneration]);
@@ -5862,6 +5891,15 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
     if (!custom && (!email.trim() || !password)) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
+    /* A new press overtakes an unfinished one: its attempt ends, its jump goes, its late results are ignored. */
+    const prev = attemptRef.current;
+    if (prev && !prev.done) { retireAttempt(prev); if (jumping.current) { jumping.current(); jumping.current = null; } }
+    const a = { hold: createHoldAttempt({ baseline: arrivalUser, custom }), unsub: null, done: false };
+    attemptRef.current = a;
+    const mine = () => attemptRef.current === a && !a.done && !a.hold.isDead();
+    const liveSubject = () => recoveryFlow.snapshot().sessionUserId || null;
+    a.unsub = recoveryFlow.subscribe((snap) => { if (a.done) return; if (!a.hold.observe(snap.sessionUserId)) killAttempt(a); });
+    if (a.hold.isDead()) { killAttempt(a); return; }
     /* ---- put the keyboard away BEFORE anything is measured ----
        On a phone the press that starts all of this happens with the keyboard
        up, which means the viewport is roughly half the screen. The jump
@@ -5882,7 +5920,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
       if (el && typeof el.blur === "function") el.blur();
     } catch (e) {}
     await settleViewport();
-    if (!isCurrent()) return;
+    if (!isCurrent() || !mine()) return;
     /* ---- hold the screen for the length of the jump ----
        The sign-in call is not the only thing that brings the session in: the
        client fires SIGNED_IN the moment it succeeds, the app's own auth listener
@@ -5910,7 +5948,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
     let handedOver = false;
     const handOver = () => {
       if (!isCurrent() || handedOver || !flashed || authed !== true) return;
-      handedOver = true;
+      /* Released only for the subject that started it: a live attempt, still the current one, and the live subject is the one bound from this press. */
+      if (!mine() || !a.hold.canHandOver(liveSubject())) { if (attemptRef.current === a) killAttempt(a); return; }
+      handedOver = true; endAttempt(a);
       if (custom) recoveryFlow.arrivalFinished(generation, arrivalUser);
       /* This is the frame the white is covering, and it is a handful of class
          names: the dashboard has been mounted and laid out since the hold. */
@@ -5921,7 +5961,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
       onFlash: () => {
         /* Nothing to hand over to yet: hold the flash rather than dropping back
            onto a sign-in screen that has already taken itself apart. */
-        if (isCurrent() && authed === null) document.documentElement.classList.add("sage-flash-hold");
+        if (mine() && isCurrent() && authed === null) document.documentElement.classList.add("sage-flash-hold");
       },
       onDone: () => { flashed = true; handOver(); },
     });
@@ -5935,8 +5975,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
     } catch (e) {
       res = { error: "Couldn't reach sign-in. Check your connection and try again." };
     }
-    if (!isCurrent() || res?.stale) return;
+    if (!mine() || !isCurrent() || res?.stale) return;
     if (!res || res.error) {
+      endAttempt(a);
       abortJump();
       signInPressed = false;
       document.documentElement.classList.remove("sage-flash-hold");
@@ -5944,6 +5985,8 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
       setBusy(false); setErr((res && res.error) || "Sign-in didn't complete. Try again.");
       return;
     }
+    /* Accept the attempt for the user the RESPONSE names, and only if that is who is signed in now and the history since the press is baseline then that user (custom: the known recovery subject). */
+    if (!custom && !a.hold.accept(res.userId, liveSubject())) { killAttempt(a); return; }
     authed = true;
     /* Signing in the ordinary way settles any failed reset link: the person is
        in, and a notice about an old link must not keep the card up (C97). */
@@ -5958,6 +6001,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
        for, which is far too late for the flash to cover it. By the time the white
        is up the session is already in hand and the swap is a state flip. */
     try { await onAuthed(); } catch (e) { console.error("profile load at handover", e); }
+    if (!mine()) return;   // the profile that came back is not an input to the hold; only the attempt's own state is
     handOver();
   };
 

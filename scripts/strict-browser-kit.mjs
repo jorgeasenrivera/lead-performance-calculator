@@ -125,34 +125,62 @@ async function startServerAsUser(user, dir, executablePath, timeout) {
   return { ...info, user, uid: Number(uid.stdout), stop: () => new Promise((resolve) => { child.once("exit", resolve); child.kill("SIGTERM"); setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 8000); }) };
 }
 
-export async function launchStrict({ driver, expect = {} } = {}) {
+/* Waits for one owned close, but never longer than `ms`: a close that hangs is abandoned (it is not called again and not killed twice) so the NEXT owned handle is still attempted. It never rejects. */
+function boundedStep(fn, ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    Promise.resolve().then(fn).then(() => { clearTimeout(timer); resolve(); }, () => { clearTimeout(timer); resolve(); });
+  });
+}
+
+export async function launchStrict({ driver, expect = {}, cleanupStepMs = 10_000 } = {}) {
   assert.equal(process.platform, "linux", "The strict browser kit is for Linux");
   const { dir, chromium, version: playwright } = resolveDriver(driver);
   if (expect.playwright) assert.equal(playwright, expect.playwright, "Playwright version is not the pinned one");
   const executablePath = chromium.executablePath();
   assert(executablePath, "No Chromium executable: install it through the official Playwright route; no system-browser fallback is used");
   const evidence = { playwright, executable: executablePath, runAs: null, qualified: false };
-  let server = null, stopper = null, wsEndpoint, serverPid;
-  if (process.getuid() === 0) {
-    const user = process.env.STRICT_BROWSER_RUN_AS;
-    assert(user, "FAIL CLOSED: Chromium refuses its sandbox as root. Run unprivileged, or name an existing unprivileged user in STRICT_BROWSER_RUN_AS so only the browser runs as that user. The sandbox is never turned off.");
-    const s = await startServerAsUser(user, dir, executablePath, 30_000);
-    wsEndpoint = s.ws; serverPid = s.pid; stopper = s.stop; evidence.runAs = { user: s.user, uid: s.uid };
-  } else {
-    server = await chromium.launchServer({ executablePath, args: ["--enable-automation"], headless: true, chromiumSandbox: true, timeout: 30_000 });
-    wsEndpoint = server.wsEndpoint(); serverPid = server.process().pid; evidence.runAs = { user: "current", uid: process.getuid() };
+  let server = null, stopper = null, browser = null, wsEndpoint, serverPid, closing = null;
+  /* One close for everything this launch owns (the browser connection, the in-process server, the unprivileged server's stopper). It is shared by the failure path below and by the close that is
+     returned, and it runs once: a second call gets the same promise, so nothing is terminated twice. As before, a browser.close error is swallowed; the server and the stopper are both attempted
+     even if the first fails, and the first of their errors is thrown after the last attempt. */
+  const stepMs = Number.isFinite(cleanupStepMs) && cleanupStepMs > 0 ? cleanupStepMs : 10_000;
+  /* `bounded` is true ONLY on the launch-failure path below: each owned handle then gets at most `stepMs`, and a handle that hangs or fails is skipped so the next one is still closed. The close that is
+     returned to the caller on success is not bounded and keeps its semantics exactly. */
+  const closeAll = (bounded) => closing || (closing = (async () => {
+    const run = (fn) => (bounded ? boundedStep(fn, stepMs) : fn());
+    if (browser) { try { await run(() => browser.close()); } catch (e) {} }
+    let hasError = false, first;   // a boolean, not the value: a falsy rejection (undefined, null, 0, false) is still an error, as it was with a plain await
+    if (server) { try { await run(() => server.close()); } catch (e) { if (!hasError) { hasError = true; first = e; } } }
+    if (stopper) { try { await run(() => stopper()); } catch (e) { if (!hasError) { hasError = true; first = e; } } }
+    if (hasError) throw first;
+  })());
+  const close = () => closeAll(false);
+  try {
+    if (process.getuid() === 0) {
+      const user = process.env.STRICT_BROWSER_RUN_AS;
+      assert(user, "FAIL CLOSED: Chromium refuses its sandbox as root. Run unprivileged, or name an existing unprivileged user in STRICT_BROWSER_RUN_AS so only the browser runs as that user. The sandbox is never turned off.");
+      const s = await startServerAsUser(user, dir, executablePath, 30_000);
+      wsEndpoint = s.ws; serverPid = s.pid; stopper = s.stop; evidence.runAs = { user: s.user, uid: s.uid };
+    } else {
+      server = await chromium.launchServer({ executablePath, args: ["--enable-automation"], headless: true, chromiumSandbox: true, timeout: 30_000 });
+      wsEndpoint = server.wsEndpoint(); serverPid = server.process().pid; evidence.runAs = { user: "current", uid: process.getuid() };
+    }
+    evidence.browserProcess = await processEvidence(serverPid);
+    browser = await chromium.connect(wsEndpoint);
+    evidence.version = browser.version();
+    if (expect.chrome) assert.equal(evidence.version, expect.chrome, "Chrome version is not the pinned one");
+    const cdp = await browser.newBrowserCDPSession();
+    evidence.cdpArgv = (await cdp.send("Browser.getBrowserCommandLine")).arguments;
+    rejectBypass(evidence.cdpArgv);
+    if (expect.cdpSuffix) assert.deepEqual(evidence.cdpArgv, [...evidence.browserProcess.argv, ...expect.cdpSuffix], "CDP argv does not match kernel argv plus the pinned suffix");
+    else evidence.cdpArgvPinned = false;
+    return { browser, cdp, evidence, close, auditRenderers: () => auditRenderers(cdp, evidence) };
+  } catch (e) {
+    /* Launch failed after something was started: close what this launch owns, then rethrow the ORIGINAL error (a cleanup error or a hanging close never replaces it, and never blocks the next owned handle past `cleanupStepMs`). Nothing here relaxes a pin or a sandbox check. */
+    try { await closeAll(true); } catch (e2) {}
+    throw e;
   }
-  evidence.browserProcess = await processEvidence(serverPid);
-  const browser = await chromium.connect(wsEndpoint);
-  evidence.version = browser.version();
-  if (expect.chrome) assert.equal(evidence.version, expect.chrome, "Chrome version is not the pinned one");
-  const cdp = await browser.newBrowserCDPSession();
-  evidence.cdpArgv = (await cdp.send("Browser.getBrowserCommandLine")).arguments;
-  rejectBypass(evidence.cdpArgv);
-  if (expect.cdpSuffix) assert.deepEqual(evidence.cdpArgv, [...evidence.browserProcess.argv, ...expect.cdpSuffix], "CDP argv does not match kernel argv plus the pinned suffix");
-  else evidence.cdpArgvPinned = false;
-  const close = async () => { try { await browser.close(); } catch (e) {} if (server) await server.close(); if (stopper) await stopper(); };
-  return { browser, cdp, evidence, close, auditRenderers: () => auditRenderers(cdp, evidence) };
 }
 
 /* Every renderer that exists right now, read from the kernel. Called again after pages have loaded so renderers created for the application are covered too. */

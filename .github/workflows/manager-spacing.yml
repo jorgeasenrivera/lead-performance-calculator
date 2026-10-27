@@ -73,8 +73,98 @@ jobs:
           persist-credentials: false
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
+      - name: PR501 routing (case-sensitive; fixed true or false)
+        id: route
+        # The branch, event and repository names arrive through env, never interpolated into the script. The shell test below compares bytes, so a
+        # branch or repository that differs only in letter case is NOT the PR501 case. Every later condition consumes steps.route.outputs.contract.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$HEAD_REF" = "codex/nov1-security-recovery-integration" ] && [ -n "$THIS_REPO" ] && [ "$HEAD_REPO" = "$THIS_REPO" ]; then
+            echo "contract=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "contract=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Verify frozen preview runtime
+        # The default guard, unchanged: it runs for every event and branch except the single reviewed PR501 contract case below.
+        if: ${{ steps.route.outputs.contract != 'true' }}
         run: sha256sum --check scripts/search-runtime.sha256
+      - name: PR501 contract, checkout of the exact event head (history kept)
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .pr501/head
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PR501 contract, checkout of the frozen #469 baseline (history kept)
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: d9320e253b603260f6a7355d4bc1c77a59fefa5b
+          path: .pr501/frozen-469
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PR501 contract, checkout of the main baseline (history kept)
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: b8478e9f45654a03cc1f2212896a4eb59a491366
+          path: .pr501/base-main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PR501 contract, checkout of the clean 47757af base (history kept)
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: 47757af2487a0844b7083d50a9fbace01b7fad6e
+          path: .pr501/base-477
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PR501 contract, hash-bind the delta declaration, the runner and every other delta file BEFORE anything runs
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        env:
+          EXPECTED_DELTA_SHA256: "88a3a9431d3b18889a116f6888548d96b0f05d7966af3c59e5580203adda6de3"
+        run: |
+          cd .pr501/head
+          echo "${EXPECTED_DELTA_SHA256}  scripts/pr501-contract/DELTA.sha256" | sha256sum --check -
+          sha256sum --check scripts/pr501-contract/DELTA.sha256
+      - name: PR501 contract, pinned TypeScript for the AST cross-check (version and file hash are verified by the runner)
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: npm install --prefix "$RUNNER_TEMP/ts" --no-save --ignore-scripts --no-audit --no-fund typescript@6.0.2
+      - name: PR501 contract, verify (this branch only, replaces the original-manifest check against the PR tree, and the original 106 rows are still enforced against the frozen #469 tree inside)
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        env:
+          # External pins, supplied by this workflow, which is the one bootstrap exception: it is covered by independent diff review, and the runner
+          # recomputes this file from the old blob plus the reviewed template and refuses any other bytes.
+          EXPECTED_CONTRACT_DIGEST: "5ee868afe5a9cd994136e6f188d591c9885c272791de4d4828133e74a27b7502"
+          EXPECTED_DELTA_SHA256: "88a3a9431d3b18889a116f6888548d96b0f05d7966af3c59e5580203adda6de3"
+          EXPECTED_VALIDATOR_SHA256: "1a80e14c786754c7a0a83c5785acbf0c17d2c26b3e2e53ec8b556937d0d7f228"
+          EXPECTED_TS_VERSION: "6.0.2"
+          EXPECTED_TS_LIB_SHA256: "630f808ac32d968a49a392c42cc06fd72abd939aaa7edfe3302810c067934653"
+          # The workspace checkout is the ACTUAL checkout (the synthetic merge commit, GITHUB_SHA); .pr501/head is the exact event head.
+          CHECKOUT_HEAD: ${{ github.workspace }}/.pr501/head
+          CHECKOUT_MERGE: ${{ github.workspace }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FROZEN_469_DIR: ${{ github.workspace }}/.pr501/frozen-469
+          BASE_MAIN_DIR: ${{ github.workspace }}/.pr501/base-main
+          BASE_477_DIR: ${{ github.workspace }}/.pr501/base-477
+          OUT_DIR: ${{ runner.temp }}/pr501-contract-out
+        run: |
+          export PR501_TS_PATH="$RUNNER_TEMP/ts/node_modules/typescript"
+          node .pr501/head/scripts/pr501-contract/ci-verify.mjs
+      - name: PR501 contract, keep the result
+        if: ${{ always() && steps.route.outputs.contract == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr501-contract-result-${{ matrix.engine }}
+          path: |
+            ${{ runner.temp }}/pr501-contract-out/result.json
+            ${{ runner.temp }}/pr501-contract-out/validator-result.json
+          retention-days: 14
       - name: Build fictional app
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local

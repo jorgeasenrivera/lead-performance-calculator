@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 
-// The feel server uses the salesperson fixture. Give this separate context
-// the same mock account as a manager; never change the server or real data.
+// Two ways to be a manager, chosen by FEEL_MANAGER_ACTOR.
+//   unset: the ordinary mock has one account, so this context rewrites the profile
+//     response in the browser. The server never learns of it.
+//   "fixture": the backend has a second, approved manager of its own (the fixture started
+//     with SHOTS_FIXTURE_MANAGER_ACTOR=1). This context signs in as that account and the
+//     profile it reads is the one the backend holds; nothing is rewritten, so the manager
+//     panels' calls are answered for who is really asking.
+export const FIXTURE_MANAGER_EMAIL = "manager.demo@sageonline.app";
 export async function verifyManagerPhoneSearch(browser, url) {
+  const genuine = process.env.FEEL_MANAGER_ACTOR === "fixture";
   assert.equal(new URL(url).hostname, "127.0.0.1", "manager probe requires the local mock app");
   await mkdir("manager-phone-search", { recursive: true });
   const context = await browser.newContext({
@@ -15,24 +22,39 @@ export async function verifyManagerPhoneSearch(browser, url) {
   });
   const errors = [];
   let page;
-  let stage = "sign in", profileReads = 0;
+  let stage = "sign in", profileReads = 0, managerReads = 0;
   try {
-    await context.route("http://127.0.0.1:5433/rest/v1/profiles?**", async (route) => {
-      const response = await route.fetch();
-      const body = await response.json();
-      profileReads++;
-      const manager = (profile) => ({ ...profile, role: "manager", wants: "manager", onboarded: true });
-      await route.fulfill({ response, json: Array.isArray(body) ? body.map(manager) : manager(body) });
-    });
+    if (!genuine) {
+      await context.route("http://127.0.0.1:5433/rest/v1/profiles?**", async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        profileReads++;
+        const manager = (profile) => ({ ...profile, role: "manager", wants: "manager", onboarded: true });
+        await route.fulfill({ response, json: Array.isArray(body) ? body.map(manager) : manager(body) });
+      });
+    }
     page = await context.newPage();
+    if (genuine) {
+      // Only counts what the backend sent. Role is read from the response, never set.
+      page.on("response", async (response) => {
+        if (!/^http:\/\/127\.0\.0\.1:5433\/rest\/v1\/profiles\?/.test(response.url()) || response.status() !== 200) return;
+        try {
+          const body = await response.json();
+          const rows = Array.isArray(body) ? body : [body];
+          profileReads++;
+          if (rows.some((p) => p && p.role === "manager" && p.active === true && p.pending === false)) managerReads++;
+        } catch (e) { /* a body that is not JSON counts as a read that was not a manager's */ }
+      });
+    }
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.locator('input[type="email"], input[autocomplete="username"]').fill("demo@sageonline.app");
+    await page.locator('input[type="email"], input[autocomplete="username"]').fill(genuine ? FIXTURE_MANAGER_EMAIL : "demo@sageonline.app");
     await page.locator('input[type="password"]').fill("x");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     stage = "initial phone rows";
     await page.locator(".bp-row").first().waitFor({ state: "visible", timeout: 40000 });
     assert.ok(profileReads > 0, "the manager profile fixture must be exercised");
+    if (genuine) assert.ok(managerReads > 0, "the backend itself must have returned an approved manager profile");
     const field = page.getByPlaceholder("Search associates", { exact: true });
     for (const width of [390, 720, 760]) {
       await page.setViewportSize({ width, height: 844 });
@@ -90,7 +112,7 @@ export async function verifyManagerPhoneSearch(browser, url) {
     assert.deepEqual(errors, [], "manager page has no uncaught errors");
   } catch (error) {
     if (page) await page.screenshot({ path: "manager-phone-search/failure.png", fullPage: true }).catch(() => {});
-    console.error("manager phone search diagnostic:", JSON.stringify({ stage, profileReads, errors,
+    console.error("manager phone search diagnostic:", JSON.stringify({ stage, profileReads, managerReads, genuine, errors,
       page: page && await page.evaluate(() => ({ width: innerWidth,
         phone: matchMedia("(max-width: 700px)").matches,
         rows: document.querySelectorAll(".bp-row").length,
