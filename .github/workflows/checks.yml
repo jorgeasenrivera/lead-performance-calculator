@@ -181,9 +181,11 @@ jobs:
       VITE_SUPABASE_ANON_KEY: mock-anon-key
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        id: co
         with:
           persist-credentials: false
       - name: Preflight, not root
+        id: pre
         run: |
           if ! uid=$(id -u); then echo "could not read the uid" >&2; exit 1; fi
           test "$uid" -gt 0 && test -z "${STRICT_BROWSER_RUN_AS:-}"
@@ -191,15 +193,19 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
+        id: deps
       - name: Install the pinned driver and its full Chromium through the official route
+        id: drv
         run: |
           npm install --prefix "$RUNNER_TEMP/sandbox-driver" --ignore-scripts --no-audit --no-fund --package-lock=false playwright@1.63.0
           "$RUNNER_TEMP/sandbox-driver/node_modules/.bin/playwright" install --no-shell chromium
       - name: Record and check the toolchain
+        id: tc
         env:
           STRICT_BROWSER_DRIVER: ${{ runner.temp }}/sandbox-driver/node_modules/playwright
         run: node scripts/shots-fixture-verdict.mjs toolchain fixture-run
       - name: Build against the fixture's origins
+        id: bld
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
           npm run build
@@ -215,7 +221,11 @@ jobs:
           ADAPTER_LABEL: candidate
           ADAPTER_REQUIRE_PINS: '1'
         run: |
-          scripts/ci-fixture.sh up
+          # Same command and same exit; the code is also kept in a one-number file for the stage receipt.
+          mkdir -p fixture-run
+          up_rc=0; scripts/ci-fixture.sh up || up_rc=$?
+          echo "$up_rc" > fixture-run/up-rc.txt
+          if [ "$up_rc" != 0 ]; then exit "$up_rc"; fi
           export FEEL_MANAGER_ACTOR=fixture
           set +e
           FEEL_EVIDENCE_DIR=feel-evidence FEEL_FICTIONAL_FIXTURE=1 FEEL_URL=http://127.0.0.1:5178/ npm run feel 2>&1 | tee feel.txt
@@ -238,6 +248,23 @@ jobs:
         id: verdict
         if: always()
         run: node scripts/shots-fixture-verdict.mjs verdict fixture-run chromium
+      - name: Stage receipt (fixed fields only)
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          O_CHECKOUT: ${{ steps.co.outcome }}
+          O_PREFLIGHT: ${{ steps.pre.outcome }}
+          O_DEPENDENCIES: ${{ steps.deps.outcome }}
+          O_DRIVER: ${{ steps.drv.outcome }}
+          O_TOOLCHAIN: ${{ steps.tc.outcome }}
+          O_BUILD: ${{ steps.bld.outcome }}
+          O_FEEL: ${{ steps.feel.outcome }}
+          O_VERDICT: ${{ steps.verdict.outcome }}
+          O_STOP: ${{ steps.stop.outcome }}
+          FEEL_CODE: ${{ steps.feel.outputs.code }}
+        run: |
+          TREE_SHA="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)" node scripts/ci-stage-receipt.mjs fixture-run >> "$GITHUB_STEP_SUMMARY"
       - name: Keep bounded evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -254,6 +281,7 @@ jobs:
             fixture-run/fixture-receipt.json
             fixture-run/pins.json
             fixture-run/adapter/adapter-evidence.json
+            fixture-run/stage-receipt.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -286,6 +314,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: WebKit has no reviewed strict path (candidate branch only)
+        if: env.CANDIDATE == '1'
+        env:
+          CI_ENGINE: webkit
+        run: scripts/ci-fixture.sh up
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Record the toolchain (candidate branch only)
@@ -368,6 +401,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+      - name: WebKit has no reviewed strict path (candidate branch only)
+        if: env.CANDIDATE == '1'
+        env:
+          CI_ENGINE: webkit
+        run: scripts/ci-fixture.sh up
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Record the toolchain (candidate branch only)

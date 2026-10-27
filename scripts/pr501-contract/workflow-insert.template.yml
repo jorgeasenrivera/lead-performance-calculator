@@ -17,7 +17,11 @@
         # The default guard, unchanged: it runs for every event and branch except the single reviewed PR501 contract case below.
         if: ${{ steps.route.outputs.contract != 'true' }}
         run: sha256sum --check scripts/search-runtime.sha256
+      - name: PR501 diagnostics, mark the stage, checkout
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: echo "::notice title=PR501_STAGE::Stage starting, checkout."
       - name: PR501 contract, checkout of the exact event head (history kept)
+        id: ck_head
         if: ${{ steps.route.outputs.contract == 'true' }}
         uses: actions/checkout@v4
         with:
@@ -26,6 +30,7 @@
           fetch-depth: 0
           persist-credentials: false
       - name: PR501 contract, checkout of the frozen #469 baseline (history kept)
+        id: ck_frozen
         if: ${{ steps.route.outputs.contract == 'true' }}
         uses: actions/checkout@v4
         with:
@@ -34,6 +39,7 @@
           fetch-depth: 0
           persist-credentials: false
       - name: PR501 contract, checkout of the main baseline (history kept)
+        id: ck_main
         if: ${{ steps.route.outputs.contract == 'true' }}
         uses: actions/checkout@v4
         with:
@@ -42,6 +48,7 @@
           fetch-depth: 0
           persist-credentials: false
       - name: PR501 contract, checkout of the clean 47757af base (history kept)
+        id: ck_477
         if: ${{ steps.route.outputs.contract == 'true' }}
         uses: actions/checkout@v4
         with:
@@ -49,7 +56,11 @@
           path: .pr501/base-477
           fetch-depth: 0
           persist-credentials: false
+      - name: PR501 diagnostics, mark the stage, hash
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: echo "::notice title=PR501_STAGE::Stage starting, hash."
       - name: PR501 contract, hash-bind the delta declaration, the runner and every other delta file BEFORE anything runs
+        id: hash
         if: ${{ steps.route.outputs.contract == 'true' }}
         env:
           EXPECTED_DELTA_SHA256: "@@EXPECTED_DELTA_SHA256@@"
@@ -57,10 +68,18 @@
           cd .pr501/head
           echo "${EXPECTED_DELTA_SHA256}  scripts/pr501-contract/DELTA.sha256" | sha256sum --check -
           sha256sum --check scripts/pr501-contract/DELTA.sha256
+      - name: PR501 diagnostics, mark the stage, install
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: echo "::notice title=PR501_STAGE::Stage starting, install."
       - name: PR501 contract, pinned TypeScript for the AST cross-check (version and file hash are verified by the runner)
+        id: ts_install
         if: ${{ steps.route.outputs.contract == 'true' }}
         run: npm install --prefix "$RUNNER_TEMP/ts" --no-save --ignore-scripts --no-audit --no-fund typescript@@@EXPECTED_TS_VERSION@@
+      - name: PR501 diagnostics, mark the stage, verify
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: echo "::notice title=PR501_STAGE::Stage starting, verify."
       - name: PR501 contract, verify (this branch only, replaces the original-manifest check against the PR tree, and the original 106 rows are still enforced against the frozen #469 tree inside)
+        id: verify
         if: ${{ steps.route.outputs.contract == 'true' }}
         env:
           # External pins, supplied by this workflow, which is the one bootstrap exception: it is covered by independent diff review, and the runner
@@ -80,7 +99,17 @@
           OUT_DIR: ${{ runner.temp }}/pr501-contract-out
         run: |
           export PR501_TS_PATH="$RUNNER_TEMP/ts/node_modules/typescript"
-          node .pr501/head/scripts/pr501-contract/ci-verify.mjs
+          # The runner's own exit status is kept exactly (exit "$rc"); the annotation names only a closed class of it, never output.
+          rc=0
+          node .pr501/head/scripts/pr501-contract/ci-verify.mjs || rc=$?
+          case "$rc" in
+            0) echo "::notice title=PR501_RUNNER::Runner exit class. exit=0." ;;
+            1) echo "::error title=PR501_RUNNER::Runner exit class. exit=1." ;;
+            2) echo "::error title=PR501_RUNNER::Runner exit class. exit=2." ;;
+            3) echo "::error title=PR501_RUNNER::Runner exit class. exit=3." ;;
+            *) echo "::error title=PR501_RUNNER::Runner exit class. exit=other." ;;
+          esac
+          exit "$rc"
       - name: PR501 contract, keep the result
         if: ${{ always() && steps.route.outputs.contract == 'true' }}
         uses: actions/upload-artifact@v4
@@ -90,3 +119,6 @@
             ${{ runner.temp }}/pr501-contract-out/result.json
             ${{ runner.temp }}/pr501-contract-out/validator-result.json
           retention-days: 14
+      - name: PR501 diagnostics, mark the stage, build
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: echo "::notice title=PR501_STAGE::Stage starting, build."

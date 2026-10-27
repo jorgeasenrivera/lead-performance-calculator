@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import * as ID from "./integration-delta.mjs";
+import * as WC from "./workflow-compose.mjs";
 
 const env = process.env;
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
@@ -31,10 +32,9 @@ const blobSha1 = (b) => createHash("sha1").update(Buffer.concat([Buffer.from(`bl
 const CONTRACT = "scripts/pr501-contract";
 const WORKFLOW_MODIFIED = ".github/workflows/manager-spacing.yml";   // the EXISTING job, edited in place for this branch only
 // The workflow supplies the pins, so it is the ONE bootstrap exception: it is covered by independent diff review and cannot be hash-pinned from inside the repository
-// without a cycle. The runner therefore does not trust it; it RECOMPUTES it: the exact old blob below, with the one reviewed insertion (workflow-insert.template.yml, itself
-// hash-bound by the delta declaration) rendered with the pins it was given, must equal the head file byte for byte. Any other byte, step or condition is refused.
+// without a cycle. The runner therefore does not trust it; it RECOMPUTES it: the exact old blob below, with the three reviewed insertions (workflow-insert*.yml, themselves
+// hash-bound by the delta declaration; see workflow-compose.mjs) rendered with the pins it was given, must equal the head file byte for byte. Any other byte, step or condition is refused.
 const OLD_WORKFLOW_BLOB = "6d3044a40378082789b0f9ba05b0a6e418a36853";   // git blob of manager-spacing.yml at 47757af and in the composed tree
-const WORKFLOW_ANCHOR = "      - name: Verify frozen preview runtime\n        run: sha256sum --check scripts/search-runtime.sha256\n";
 const req = (k) => { if (!env[k]) { console.error(`missing ${k}`); process.exit(2); } return env[k]; };
 const OUT = path.resolve(req("OUT_DIR"));
 fs.mkdirSync(OUT);                                          // throws if it exists: never reuse an output directory
@@ -172,14 +172,14 @@ try {
     else {
       const p = WORKFLOW_MODIFIED;
       const oldText = fs.readFileSync(path.join(comp.proof.root, p), "utf8"), headText = (blobAt(HEAD_DIR, headSha, p) || Buffer.alloc(0)).toString("utf8");
-      const parts = oldText.split(WORKFLOW_ANCHOR), tpl = (cb("workflow-insert.template.yml") || Buffer.alloc(0)).toString("utf8");
+      const tpl = (n) => (cb(n) || Buffer.alloc(0)).toString("utf8");
       const pinsNow = { EXPECTED_CONTRACT_DIGEST: EXPECTED_DIGEST, EXPECTED_DELTA_SHA256: EXPECTED_DELTA, EXPECTED_VALIDATOR_SHA256: EXPECTED_VALIDATOR, EXPECTED_TS_VERSION: env.EXPECTED_TS_VERSION, EXPECTED_TS_LIB_SHA256: env.EXPECTED_TS_LIB_SHA256 };
-      const rendered = tpl.replace(/@@([A-Z0-9_]+)@@/g, (m, k) => (pinsNow[k] ?? m));
+      let rebuilt = null, why = null;
+      try { rebuilt = WC.composeWorkflow({ oldText, tplA: tpl("workflow-insert.template.yml"), tplB: tpl("workflow-insert-measure.yml"), tplC: tpl("workflow-insert-final.yml"), pins: pinsNow }); } catch (e) { why = e.message; }
       if (e.blob !== OLD_WORKFLOW_BLOB) viol.push(`${p}: the composed (old) blob ${e.blob} is not the reviewed ${OLD_WORKFLOW_BLOB}`);
-      else if (parts.length !== 2) viol.push(`${p}: the old file does not contain the reviewed anchor exactly once`);
-      else if (/@@[A-Z0-9_]+@@/.test(rendered)) viol.push(`${p}: the template has an unfilled pin`);
+      else if (why) viol.push(`${p}: ${why}`);
       else if (h.mode !== e.mode) viol.push(`${p}: mode changed`);
-      else if (headText !== parts[0] + rendered + parts[1]) viol.push(`${p}: differs from the old blob plus the one reviewed insertion rendered with the supplied pins`);
+      else if (headText !== rebuilt) viol.push(`${p}: differs from the old blob plus the three reviewed insertions rendered with the supplied pins`);
       else result.binding.workflow = { oldBlob: e.blob, headSha256: sha256(Buffer.from(headText)), matchesReviewedRender: true };
     } }
   // Every other composed path is identical in head unless the reviewed map lists its exact old and new entry. No wildcard, no allowlist of kinds of change.
