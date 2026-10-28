@@ -3200,6 +3200,14 @@ export default function LeadPerformanceCalculator() {
 
     const aliases = next.aliases || {};
     const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
+    const additiveFields = new Set([
+      "opps", "sold", "unitsDelivered", "internetUnits", "internetLeads", "phoneUnits", "phoneLeads",
+      "showroomUnits", "showroomLeads", "campaignUnits", "campaignLeads", "showroomUps", "showroomUnsold",
+      "showroomBeBacks", "newUnits", "usedUnits", "otherUnits", "apptTotalCreated", "apptTotalScheduled", "apptTotalShow",
+      "actCalls", "actCallContacted", "actVideo", "actText", "actEmail", "actApptCreated", "actApptShow",
+      "actOppsTotal", "actCompletedTasks", "actVisits", "actOpenTasks", "actSold", "actUnits", "actOppShowroom",
+      "actOppPhone", "actOppInternet", "actOppCampaign", "actApptScheduled", "actApptConfirmed", "actApptNoShow",
+    ]);
 
     for (const { rows, type, fileName, stated } of entries) {
       const tickDay = tickDayFor(type);
@@ -3244,7 +3252,23 @@ export default function LeadPerformanceCalculator() {
       for (const [k, v] of Object.entries(raw)) {
         if (excluded.has(k)) { skipped++; continue; }
         const c = canon(k);
-        parsed[c] = { ...(parsed[c] || {}), ...v };
+        if (!parsed[c]) { parsed[c] = { ...v }; continue; }
+        // Combine aliases within this report only. The resulting snapshot still
+        // replaces stored figures, so reimporting never adds the report twice.
+        const prior = parsed[c], combined = {};
+        for (const field of new Set([...Object.keys(prior), ...Object.keys(v)])) {
+          if (field === "displayName") {
+            combined[field] = next.roster.find((a) => norm(a.name) === c)?.name || raw[c]?.displayName || c;
+          } else if (additiveFields.has(field)) {
+            const total = Number.isFinite(prior[field]) && Number.isFinite(v[field]) ? prior[field] + v[field] : null;
+            combined[field] = Number.isFinite(total) ? total : null;
+          } else {
+            // Different rates need report-specific weighting. Keep agreement
+            // rather than guessing or adding percentages.
+            combined[field] = Number.isFinite(prior[field]) && Object.is(prior[field], v[field]) ? prior[field] : null;
+          }
+        }
+        parsed[c] = combined;
       }
 
       /* ---- Nobody joins this store's books by turning up in a file ----
@@ -3721,6 +3745,9 @@ export default function LeadPerformanceCalculator() {
      cannot be seen. */
   /* Nothing but the ground while there is no session: the sign-in screen itself
      is the layer above, and it is already on screen. */
+  // Recovery owns the screen until it is dismissed or completed. A mounted
+  // dashboard can otherwise open its round-up above the recovery controls.
+  if (rec.status !== "idle") return wrap(<Shell><Style /></Shell>);
   if (!session || holdMount) return wrap(<Shell><Style /></Shell>);
 
   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).

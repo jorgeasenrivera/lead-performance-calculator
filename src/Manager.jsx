@@ -18460,6 +18460,9 @@ function CrossCheck({ store, data, config, onClose }) {
       const held = M?.stats || {};
 
       const rows = [];
+      // A summed zero cannot tell an absent channel from an explicit zero.
+      // Keep totals unchanged, but require every raw channel for a match claim.
+      const knownUnits = (r) => ["internetUnits", "phoneUnits", "showroomUnits", "campaignUnits"].every((key) => Number.isFinite(r?.[key]));
       const keys = new Set([...Object.keys(file2), ...Object.keys(held)]);
       for (const k of keys) {
         const f = file2[k], h = held[k];
@@ -18469,6 +18472,7 @@ function CrossCheck({ store, data, config, onClose }) {
         const name = f?.displayName || h?.displayName || k;
         rows.push({
           k, name, fu, hu,
+          comparable: !!f && !!h && (f.flatUnits !== undefined ? Number.isFinite(f.flatUnits) : knownUnits(f)) && knownUnits(h),
           onBoard: onRoster.has(k),
           opps: f?.opps ?? null,
           diff: fu != null && hu != null ? +(fu - hu).toFixed(2) : null,
@@ -18496,6 +18500,7 @@ function CrossCheck({ store, data, config, onClose }) {
         offBoard: rows.filter((r) => r.fu != null && !r.onBoard && r.fu > 0),
         missing: rows.filter((r) => r.fu == null && r.onBoard && (r.hu ?? 0) > 0),
         moved: rows.filter((r) => r.diff != null && Math.abs(r.diff) > 0.001),
+        complete: rows.length > 0 && rows.every((r) => r.onBoard && r.comparable && Number.isFinite(r.fu) && Number.isFinite(r.hu)),
         fileName: file.name,
         month: monthLabel(ym()),
       });
@@ -18636,7 +18641,7 @@ function CrossCheck({ store, data, config, onClose }) {
                 rows={res.moved} col={(r) => `${n(r.hu)} → ${n(r.fu)}`} />
 
               {!res.offBoard.length && !res.missing.length && !res.moved.length && (
-                <p className="xc-clean"><PixIcon glyph="check" size={13} /> Every name and every figure matches.</p>
+                <p className="xc-clean" style={res.complete ? undefined : { color: "var(--ink-3)" }}><PixIcon glyph={res.complete ? "check" : "warn"} size={13} /> {res.complete ? "Every name and every figure matches." : "Some names or figures could not be compared."}</p>
               )}
 
               <div className="xc-actions">

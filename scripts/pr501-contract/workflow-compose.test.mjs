@@ -8,18 +8,22 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { composeWorkflow, ANCHOR_A, ANCHOR_B } from "./workflow-compose.mjs";
+import { composeWorkflow, ANCHOR_A, ANCHOR_B, ANCHOR_P } from "./workflow-compose.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (n) => fs.readFileSync(path.join(here, n), "utf8");
 const A = read("workflow-insert.template.yml"), B = read("workflow-insert-measure.yml"), C = read("workflow-insert-final.yml");
+const TPL_P = read("workflow-insert-paths.yml");
 const PINS = { EXPECTED_CONTRACT_DIGEST: "d", EXPECTED_DELTA_SHA256: "e", EXPECTED_VALIDATOR_SHA256: "v", EXPECTED_TS_VERSION: "6.0.2", EXPECTED_TS_LIB_SHA256: "l" };
-const OLD = `jobs:\n  spacing:\n    steps:\n      - run: npm ci\n${ANCHOR_A}      - name: Build fictional app\n        run: npm run build\n${ANCHOR_B}        run: node scripts/manager-spacing.mjs\n      - uses: actions/upload-artifact@v4\n        with:\n          name: x\n`;
+const OLD = `on:\n  pull_request:\n    paths:\n      - src/Manager.jsx\n${ANCHOR_P}jobs:\n  spacing:\n    steps:\n      - run: npm ci\n${ANCHOR_A}      - name: Build fictional app\n        run: npm run build\n${ANCHOR_B}        run: node scripts/manager-spacing.mjs\n      - uses: actions/upload-artifact@v4\n        with:\n          name: x\n`;
+
+// The old file carries anchor P (the runner reads it that way). OLD_WITH_P is the same file once the reviewed path lines are in place, which is what W01 compares its output with.
+const OLD_WITH_P = OLD.replace(ANCHOR_P, ANCHOR_P + TPL_P);
 
 // ---- composition ----
 test("W01 composition places A for the guard step, B before the measure step (kept), C last, and nothing else changes", () => {
-  const out = composeWorkflow({ oldText: OLD, tplA: A, tplB: B, tplC: C, pins: PINS });
-  const [pre, post] = OLD.split(ANCHOR_A);
+  const out = composeWorkflow({ oldText: OLD, tplA: A, tplB: B, tplC: C, tplP: TPL_P, pins: PINS });
+  const [pre, post] = OLD_WITH_P.split(ANCHOR_A);
   assert.ok(out.startsWith(pre + A.replace(/@@EXPECTED_DELTA_SHA256@@/g, "e").replace(/@@EXPECTED_CONTRACT_DIGEST@@/g, "d").replace(/@@EXPECTED_VALIDATOR_SHA256@@/g, "v").replace(/@@EXPECTED_TS_VERSION@@/g, "6.0.2").replace(/@@EXPECTED_TS_LIB_SHA256@@/g, "l")));
   assert.ok(out.endsWith(C));
   assert.equal(out.split(ANCHOR_B).length, 2);
@@ -27,12 +31,12 @@ test("W01 composition places A for the guard step, B before the measure step (ke
   assert.ok(out.includes(post.split(ANCHOR_B)[0] + B + ANCHOR_B + post.split(ANCHOR_B)[1]));
 });
 test("W02 anchors: missing or duplicated A or B, B before A, no trailing newline, and unfilled pins are all refused", () => {
-  const bad = (oldText, tplA = A, pins = PINS) => assert.throws(() => composeWorkflow({ oldText, tplA, tplB: B, tplC: C, pins }));
+  const bad = (oldText, tplA = A, pins = PINS) => assert.throws(() => composeWorkflow({ oldText, tplA, tplB: B, tplC: C, tplP: TPL_P, pins }));
   bad(OLD.replace(ANCHOR_A, ""));
   bad(OLD + ANCHOR_A);
   bad(OLD.replace(ANCHOR_B, ""));
   bad(OLD + ANCHOR_B);
-  bad(`${ANCHOR_B}${OLD}`);
+  bad(OLD.replace(ANCHOR_P, ANCHOR_P + ANCHOR_B));
   bad(OLD.slice(0, -1));
   bad(OLD, A, { ...PINS, EXPECTED_DELTA_SHA256: undefined });
 });
@@ -322,4 +326,80 @@ test("W27 an ambient protected safe.directory (system, global or XDG) hides the 
   const me = fs.readFileSync(fileURLToPath(import.meta.url), "utf8"), block = me.slice(me.indexOf('test("W15 '), me.indexOf('test("W16 '));
   for (const needle of ["assert.equal(plain.status, 128)", "assert.equal(ok.status, 0)", "assert.equal(leak.status, 128)"]) assert.ok(block.includes(needle), needle);
   assert.ok(!/skip|\[0, 128\]|status, 0 \|\||todo/i.test(block), "no skip or alternative accepted code in W15");
+});
+
+// ---- insertion P (the two path-filter lines): added tests; W01 to W27 keep their assertions ----
+const composeP = (over = {}) => composeWorkflow({ oldText: OLD, tplA: A, tplB: B, tplC: C, tplP: TPL_P, pins: PINS, ...over });
+test("W28 anchor P missing from the old file is refused", () => {
+  assert.throws(() => composeP({ oldText: OLD.replace(ANCHOR_P, "") }), /anchor P exactly once/);
+});
+test("W29 anchor P duplicated in the old file is refused", () => {
+  assert.throws(() => composeP({ oldText: OLD.replace(ANCHOR_P, ANCHOR_P + ANCHOR_P) }), /anchor P exactly once/);
+});
+test("W30 anchor P after a step anchor is refused", () => {
+  const noP = OLD.replace(ANCHOR_P, "");
+  assert.throws(() => composeP({ oldText: noP.replace(ANCHOR_A, ANCHOR_A + ANCHOR_P) }), /anchor P comes after a step anchor/);
+  assert.throws(() => composeP({ oldText: noP.replace(ANCHOR_B, ANCHOR_B + ANCHOR_P) }), /anchor P comes after a step anchor/);
+});
+test("W31 a missing or non-string insertion P is refused, even with the empty-insertion flag", () => {
+  for (const bad of [undefined, null, 1, {}, []]) {
+    assert.throws(() => composeP({ tplP: bad }), /insertion P template is missing/);
+    assert.throws(() => composeP({ tplP: bad, allowEmptyP: true }), /insertion P template is missing/);
+  }
+  const args = { oldText: OLD, tplA: A, tplB: B, tplC: C, pins: PINS };
+  assert.throws(() => composeWorkflow(args), /insertion P template is missing/);
+  assert.throws(() => composeWorkflow({ ...args, allowEmptyP: true }), /insertion P template is missing/);
+});
+test("W32 an empty insertion P is refused unless allowEmptyP is exactly true", () => {
+  for (const flag of [undefined, false, null, 0, 1, "true", "yes", {}]) assert.throws(() => composeP({ tplP: "", allowEmptyP: flag }), /insertion P template is empty/);
+  assert.equal(typeof composeP({ tplP: "", allowEmptyP: true }), "string");
+});
+test("W33 an unfilled placeholder in insertion P is refused", () => {
+  assert.throws(() => composeP({ tplP: "      - @@NOPE@@\n" }), /an insertion has an unfilled pin/);
+  assert.throws(() => composeP({ tplP: "      - @@NOPE@@\n", allowEmptyP: true }), /an insertion has an unfilled pin/);
+});
+test("W34 the output is the old composition plus exactly the two path lines, right after anchor P", () => {
+  const without = composeP({ tplP: "", allowEmptyP: true }), out = composeP();
+  const i = without.indexOf(ANCHOR_P) + ANCHOR_P.length;
+  assert.equal(without.indexOf(ANCHOR_P), without.lastIndexOf(ANCHOR_P));
+  assert.equal(out, without.slice(0, i) + TPL_P + without.slice(i));
+  assert.deepEqual(TPL_P.split("\n"), ["      - scripts/rpc-fixture-adapter.mjs", "      - test/rpc-fixture-adapter.test.mjs", "      - test/manual-alias-snapshot.test.mjs", ""]);
+});
+test("W35 every byte outside the four insertions equals the old file", () => {
+  const out = composeP();
+  assert.equal(out.split(TPL_P).length, 2);
+  const [before, rest] = OLD.split(ANCHOR_A), [mid, tail] = rest.split(ANCHOR_B);
+  const renderedA = A.replace(/@@([A-Z0-9_]+)@@/g, (m, k) => PINS[k] ?? m);
+  assert.equal(out.replace(TPL_P, ""), before + renderedA + mid + B + ANCHOR_B + tail + C);
+});
+function pathsHistoricalCompose({ oldText, tplA, tplB, tplC, pins }) {
+  const once = (text, needle) => text.split(needle).length === 2;
+  const render = (t) => t.replace(/@@([A-Z0-9_]+)@@/g, (m, k) => (pins[k] ?? m));
+  const [a, b, c] = [render(tplA), render(tplB), render(tplC)];
+  if ([a, b, c].some((t) => /@@[A-Z0-9_]+@@/.test(t))) throw new Error("an insertion has an unfilled pin");
+  if (!oldText.endsWith("\n")) throw new Error("the old file does not end with a newline");
+  if (!once(oldText, ANCHOR_A)) throw new Error("the old file does not contain anchor A exactly once");
+  if (!once(oldText, ANCHOR_B)) throw new Error("the old file does not contain anchor B exactly once");
+  const [before, rest] = oldText.split(ANCHOR_A);
+  if (before.includes(ANCHOR_B)) throw new Error("anchor B comes before anchor A");
+  const [mid, tail] = rest.split(ANCHOR_B);
+  return before + a + mid + b + ANCHOR_B + tail + c;
+}
+test("W36 historical v1 control: an explicit empty insertion P with allowEmptyP === true reproduces the previous composer", () => {
+  assert.equal(composeP({ tplP: "", allowEmptyP: true }), pathsHistoricalCompose({ oldText: OLD, tplA: A, tplB: B, tplC: C, pins: PINS }));
+});
+test("W37 the production runner supplies the pinned template and never the empty-insertion flag", () => {
+  const src = read("ci-verify.mjs");
+  assert.equal(src.split("composeWorkflow(").length, 2);
+  assert.ok(src.includes('tplP: tpl("workflow-insert-paths.yml")'));
+  assert.ok(!src.includes("allowEmptyP"));
+});
+test("W38 the shipped insertion P template is exactly the two path lines", () => {
+  assert.equal(read("workflow-insert-paths.yml"), "      - scripts/rpc-fixture-adapter.mjs\n      - test/rpc-fixture-adapter.test.mjs\n      - test/manual-alias-snapshot.test.mjs\n");
+});
+
+test("W39 anchor B before anchor A is refused for its own reason", () => {
+  const reordered = OLD.replace(ANCHOR_B, "").replace(ANCHOR_A, ANCHOR_B + ANCHOR_A);
+  for (const [name, needle] of [["A", ANCHOR_A], ["B", ANCHOR_B], ["P", ANCHOR_P]]) assert.equal(reordered.split(needle).length, 2, `anchor ${name} must occur exactly once in the reordered fixture`);
+  assert.throws(() => composeP({ oldText: reordered }), /anchor B comes before anchor A/);
 });
