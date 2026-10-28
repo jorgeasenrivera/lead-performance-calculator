@@ -4,6 +4,7 @@
  "existing": [
   {"path": ".github/workflows/checks.yml", "oldGitMode": "100644", "oldGitBlob": "b264f45731b650759d9d62efaa0935737244c056", "newGitMode": "100644", "newSha256": "1cf7e69dfb2ecd8765255b470407a03fe219a1d6f8272dfb0167e2c601de93bc"},
   {"path": "scripts/manager-phone-search.mjs", "oldGitMode": "100644", "oldGitBlob": "b5d42b78efac6c2c9c1a28f2024480ef2c822ff0", "newGitMode": "100644", "newSha256": "1afb520cd17f9bed181bc07434eeba0b9fcc67f87e028aa2e7710d0afcb4ea1b"},
+  {"path": "scripts/manager-spacing.mjs", "oldGitMode": "100644", "oldGitBlob": "76a5bc63b0a96c4a4f34edc8784b5b24a79cb49f", "newGitMode": "100644", "newSha256": "5bcffe810fbfc1f9829195db6e2e02f313e3a2135d2695a24634370e2c0034e8"},
   {"path": "scripts/shots.mjs", "oldGitMode": "100644", "oldGitBlob": "0fae351db908afdff4252ee868d8eea56470cb79", "newGitMode": "100644", "newSha256": "ac1312b29e785267aaeb5cd78f2ca13b771dcf986dbf99d82134c85590e4e48d"},
   {"path": "scripts/strict-browser-kit.mjs", "oldGitMode": "100644", "oldGitBlob": "5558b42eaa9c043a402acf2908a960e95eacb978", "newGitMode": "100644", "newSha256": "1f0427d009b15b7771f939f75b88186cadf7b76b28116884c1b7533bbb92d9ff"},
   {"path": "test/lost-browser.test.mjs", "oldGitMode": "100644", "oldGitBlob": "9ed8c7eeb088aa7fd6018668cae098c476ec090a", "newGitMode": "100644", "newSha256": "d642e283ff39a5cd187fded23a4173fbfcd0232c93b19622d78b38b2caca1104"}
@@ -12,10 +13,13 @@
   {"path": "scripts/ci-fixture.sh", "mode": "100755", "sha256": "742fc6a17a997e67e2f3fe66ba26e5218ed943db5a6a0fccf17072072e50230f"},
   {"path": "scripts/ci-stage-receipt.mjs", "mode": "100644", "sha256": "2db559dfcac2bc73c81b0fb73e26a2ebdf0c114f1eb55aa14339b44bbf58fbc1"},
   {"path": "scripts/diagnostics/strict-adapter/index.mjs", "mode": "100644", "sha256": "f0f51b1ea161c2a156c0643260a8690bfff9c3f7e0eca21bcbdb597f1c36ee4d"},
+  {"path": "scripts/manager-spacing-fixture.mjs", "mode": "100644", "sha256": "d339b21821796d4870e3ea1b93f29d28bdc2b0e7318bcae8781d98a2b31767eb"},
   {"path": "scripts/shots-evidence.mjs", "mode": "100644", "sha256": "445e37e3f8b58442d188ed4a926ca792ff4f2989ed45fb9e9a337eea13bd0497"},
   {"path": "scripts/shots-fixture-verdict.mjs", "mode": "100644", "sha256": "95e5b0d596c3736e4e95978783062f802c3724636cd8c647674d0e8430f79e4a"},
   {"path": "scripts/shots-fixture.mjs", "mode": "100644", "sha256": "25d6176c7f04c02418dc602ffd8e1d10a0833c09cb9a9cc37af4a7758c80e4b7"},
   {"path": "test/ci-stage-receipt.test.mjs", "mode": "100644", "sha256": "98c504f0f30e84833be553ba6e02b91bda2db49ef03e14801b5541d270b147bf"},
+  {"path": "test/manager-spacing-fixture.test.mjs", "mode": "100644", "sha256": "d6d5feec5b53d1f90e9863f983be242367dd8e313f53b0be64251bdfe7ab54f0"},
+  {"path": "test/manager-spacing-verdict.test.mjs", "mode": "100644", "sha256": "be9d0ed60e8ee4db43465157f1faafd5590e025c7c57301ae17ba03787e5e0dc"},
   {"path": "test/shots-evidence.test.mjs", "mode": "100644", "sha256": "d14c8dd460ab3a751a6b6122814ff8a7157b73d93b01ff1a0534e351ab44687e"},
   {"path": "test/shots-fixture-verdict.test.mjs", "mode": "100644", "sha256": "7d177a2bac7f98aab3c74ff832c250f4f454967742767f9fc77334cc778cae35"},
   {"path": "test/shots-fixture.test.mjs", "mode": "100644", "sha256": "707f37b6d881c7d704c0fd8f5e25d3996e954211d3d006a2d24562cddac342a1"},

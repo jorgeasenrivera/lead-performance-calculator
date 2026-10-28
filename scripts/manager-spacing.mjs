@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium, webkit } from 'playwright';
+import { installSpacingRoutes } from './manager-spacing-fixture.mjs';
 
 const baseline = '5bf65105003b3e01227c774ea82e08d5d595bb68';
 const before = await readFile(process.env.SPACING_BEFORE_CSS || '.spacing-baseline/src/manager-signal.css', 'utf8');
@@ -23,27 +24,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => 
     stores:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
-await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
-  const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
-  const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
-  const data=await response.json();
-  const addStore=row=>row?.value?.stores ? {...row,value:{...row.value,
-    stores:[...row.value.stores,{...row.value.stores[0],id:'spacing-demo-2',name:'Second Fictional Store'}],
-    standards:{...row.value.standards,'spacing-demo-2':row.value.standards?.['sage-demo']}}}
-    :second && row?.value ? {...row,key:row.key?.replace('sage-demo','spacing-demo-2'),value:{...row.value,__storeId:'spacing-demo-2'}}:row;
-  const fixture=row=>{
-    row=addStore(row);
-    if(!dockFixture || !row?.value)return row;
-    if(row.value.stores)return {...row,value:{...row.value,stores:row.value.stores.map(st=>({...st,rooms:{floor:true,line:dockFixture.rooms===2}}))}};
-    if(row.value.months){
-      const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date()), month=day.slice(0,7);
-      const m=row.value.months[month]||{};
-      return {...row,value:{...row.value,months:{...row.value.months,[month]:{...m,imports:{...m.imports,[day]:dockFixture.done===2?{appointment:true,video:true,activity:true}:dockFixture.done===1?{appointment:true}:{}}}}}};
-    }
-    return row;
-  };
-  await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
-});
+const spacingFx = await installSpacingRoutes(context, { dock: () => dockFixture });
 const page = await context.newPage(), errors = [], results = [], pillFailures=[], keyboardFailures=[];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
@@ -491,10 +472,12 @@ try {
   assert.deepEqual(keyboardFailures,[],'keyboard requirements are retained, not waived');
   assert.deepEqual(pillFailures,[],'all fixed-header checks pass; retained failures are not waived');
   assert.deepEqual(errors,[]);
-  console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');
+  spacingFx.assertNoRefusals();
 } finally {
   console.log(JSON.stringify({engine,baseline,results,errors}));
-  await writeFile('manager-spacing/geometry.json',JSON.stringify({engine,baseline,results,errors},null,2));
+  await writeFile('manager-spacing/geometry.json',JSON.stringify({engine,baseline,results,errors,fixtureRefusals:{scope:'until-geometry-write',...spacingFx.refusals()}},null,2));
   await page.screenshot({path:'manager-spacing/final.png'}).catch(()=>{});
   await context.close(); await browser.close();
 }
+spacingFx.assertNoRefusals();
+console.log('Keyboard/navigation passed: last row Enter/Escape, search clear, Summary return, dealer switching, People reachability and 150% text');

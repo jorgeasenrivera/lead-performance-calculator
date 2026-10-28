@@ -159,9 +159,16 @@ test("W14 the markers are single fixed echo lines that exit 0", () => {
 
 // ---- the scoped Git trust exception ----
 const refused = (r, word) => { assert.equal(r.status, 1); assert.equal(r.stdout.trim(), `::error title=PR501_RUNNER::Trust precondition refused. check=${word}.`); assert.ok(!r.stderr.includes("GC="), "node must not have run"); };
+// Every Git child of W15 and W27 gets a private, empty configuration: no system file (GIT_CONFIG_NOSYSTEM), a private empty global file (GIT_CONFIG_GLOBAL), a private HOME and XDG.
+// An ambient protected safe.directory (a system or global file on a runner, say) would otherwise hide the very ownership refusal W15 asserts.
+function isolatedGitEnv() {
+  const home = fs.realpathSync(mkdir("pr501-home-")), xdg = path.join(home, "xdg"), empty = path.join(home, "empty.gitconfig");
+  fs.mkdirSync(xdg); fs.writeFileSync(empty, "");
+  return { PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: xdg, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: empty };
+}
 test("W15 ownership reproduction: git refuses a differently owned checkout; exactly the three scoped variables let that one checkout through and no other", () => {
-  const home = mkdir("pr501-home-"), id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
-  const git = (cwd, args, env = {}) => spawnSync("git", args, { cwd, env: { PATH: process.env.PATH, HOME: home, ...id, ...env }, encoding: "utf8" });
+  const iso = isolatedGitEnv(), id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
+  const git = (cwd, args, env = {}) => spawnSync("git", args, { cwd, env: { ...iso, ...id, ...env }, encoding: "utf8" });
   const mk = () => { const d = fs.realpathSync(mkdir("pr501-repo-")); assert.equal(git(d, ["init", "-q"]).status, 0); assert.equal(git(d, ["-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "x"]).status, 0); return d; };
   const [a, b] = [mk(), mk()];
   const other = { GIT_TEST_ASSUME_DIFFERENT_OWNER: "1" };       // git's own test hook: every repository looks owned by someone else (no chown, no permission change)
@@ -283,4 +290,36 @@ test("W26 every command substitution in the verify script either feeds a compari
   const subs = VERIFY.split("\n").filter((l) => l.includes("$("));
   for (const l of subs) assert.ok(/\|\| refuse \w+$/.test(l.trim()) || /^\[ "\$\(cd "\$CHECKOUT_MERGE" && pwd -P\)" = "\$CHECKOUT_MERGE" \] \|\| refuse path$/.test(l.trim()), l);
   assert.equal(subs.length, 3);
+});
+
+test("W27 an ambient protected safe.directory (system, global or XDG) hides the ownership refusal in an unisolated Git child and cannot in the isolated one; W15 keeps its 128 / 0 / 128", () => {
+  const iso = isolatedGitEnv(), id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
+  const run = (cwd, args, env) => spawnSync("git", args, { cwd, env, encoding: "utf8" });
+  const repo = fs.realpathSync(mkdir("pr501-repo-"));
+  assert.equal(run(repo, ["init", "-q"], { ...iso, ...id }).status, 0);
+  assert.equal(run(repo, ["-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "x"], { ...iso, ...id }).status, 0);
+  const probe = ["rev-parse", "--verify", "HEAD^{commit}"], other = { GIT_TEST_ASSUME_DIFFERENT_OWNER: "1" };
+  const contam = "[safe]\n\tdirectory = *\n";                       // what a runner's system or global file may carry; emulated with private files, nothing outside this test is touched
+  const sysFile = path.join(fs.realpathSync(mkdir("pr501-cs-")), "system.gitconfig"); fs.writeFileSync(sysFile, contam);
+  const badHome = fs.realpathSync(mkdir("pr501-ch-")); fs.writeFileSync(path.join(badHome, ".gitconfig"), contam);
+  const badXdg = fs.realpathSync(mkdir("pr501-cx-")); fs.mkdirSync(path.join(badXdg, "git")); fs.writeFileSync(path.join(badXdg, "git", "config"), contam);
+  const cleanHome = fs.realpathSync(mkdir("pr501-cl-"));
+  const emptySys = path.join(fs.realpathSync(mkdir("pr501-es-")), "empty.system.gitconfig"); fs.writeFileSync(emptySys, "");      // the old shape must not inherit the real system config either
+  // before isolation (the shape W15 used): the contamination wins and the refusal disappears (the "expected 128, actual 0" failure)
+  const oldShape = (extra) => ({ PATH: process.env.PATH, HOME: cleanHome, GIT_CONFIG_SYSTEM: emptySys, ...other, ...extra });
+  assert.equal(oldShape({}).GIT_CONFIG_SYSTEM, emptySys); assert.notEqual(emptySys, sysFile);
+  assert.ok(fs.statSync(emptySys).isFile() && fs.statSync(emptySys).size === 0, "the default system file is a private empty regular file");
+  assert.equal(run(repo, probe, oldShape({})).status, 128);                                              // control: with no contamination the refusal is there
+  assert.equal(run(repo, probe, oldShape({ GIT_CONFIG_SYSTEM: sysFile })).status, 0);                     // an ambient system file
+  assert.equal(run(repo, probe, oldShape({ HOME: badHome })).status, 0);                                 // an ambient global file
+  assert.equal(run(repo, probe, oldShape({ XDG_CONFIG_HOME: badXdg })).status, 0);                       // an ambient XDG file
+  // after isolation: the same contamination is ignored and the refusal stands, with the message W15 matches
+  for (const extra of [{}, { GIT_CONFIG_SYSTEM: sysFile }, { HOME: badHome }, { XDG_CONFIG_HOME: badXdg }]) {
+    const r = run(repo, probe, { ...iso, ...other, ...extra });
+    assert.equal(r.status, 128); assert.match(r.stderr, /dubious ownership/);
+  }
+  // W15's own assertions are not loosened: the three ownership assertions and their codes are still present in its block
+  const me = fs.readFileSync(fileURLToPath(import.meta.url), "utf8"), block = me.slice(me.indexOf('test("W15 '), me.indexOf('test("W16 '));
+  for (const needle of ["assert.equal(plain.status, 128)", "assert.equal(ok.status, 0)", "assert.equal(leak.status, 128)"]) assert.ok(block.includes(needle), needle);
+  assert.ok(!/skip|\[0, 128\]|status, 0 \|\||todo/i.test(block), "no skip or alternative accepted code in W15");
 });
