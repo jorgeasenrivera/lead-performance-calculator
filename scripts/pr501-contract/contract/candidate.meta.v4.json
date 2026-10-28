@@ -1,0 +1,60 @@
+{
+ "label": "CONDITIONAL v4 on the composed tree 2a0a9c45deafcbe405fbc462bfef4bd9cc0844ee (47757af + canonical patch f5ea837a...). v1, v2 and v3 stay frozen; this version adds the reviewed ingestion revision (the five paths api/_report-parsers.mjs, api/ingest.mjs and three tests) to the composed source, which changes the Git blobs of exactly the two protected API rows. Computed digest is CONDITIONAL, PENDING INDEPENDENT REVIEW; not an approval.",
+ "base": "b8478e9f45654a03cc1f2212896a4eb59a491366",
+ "head": "47757af2487a0844b7083d50a9fbace01b7fad6e",
+ "frozenBaseline": "d9320e253b603260f6a7355d4bc1c77a59fefa5b",
+ "originalManifestSha256": "5cc466b968535b7544c0885c91ca68fcdc718c50bd31df87d58478082e35c78c",
+ "originalCount": 106,
+ "candidateCount": 119,
+ "changedRows": [
+  "src/LeadPerformanceCalculator.jsx",
+  "src/Manager.jsx",
+  "src/leaderboard-template.mjs",
+  "vercel.json",
+  "api/_account-delete.mjs",
+  "api/_floor-access.mjs",
+  "api/_report-parsers.mjs",
+  "api/_store-merge.mjs",
+  "api/delete-account.mjs",
+  "api/floor-account.mjs",
+  "api/floor-row.mjs",
+  "api/ingest-deal-event.js",
+  "api/ingest.mjs",
+  "api/link-person.mjs",
+  "api/open-room.mjs",
+  "api/queue-action.mjs",
+  "api/register-device.mjs"
+ ],
+ "additions": [
+  "api/_month-intent.mjs",
+  "api/_public-projections.mjs",
+  "api/_room-projection.mjs",
+  "api/_self-room-command.mjs",
+  "api/_summary-stated.mjs",
+  "api/_value-equality.mjs",
+  "api/room-command.mjs",
+  "src/arrival-hold.mjs",
+  "src/private-schedule.mjs",
+  "src/recovery-continuity.mjs",
+  "src/recovery-controller.mjs",
+  "src/recovery-link.mjs",
+  "src/recovery-session.mjs"
+ ],
+ "pins": {
+  "buildFile": "scripts/scheduler-performance/build.mjs",
+  "coreRow": "src/LeadPerformanceCalculator.jsx",
+  "managerRow": "src/Manager.jsx"
+ },
+ "hostingGuard": {
+  "file": "vercel.json",
+  "branch": "codex/nov1-security-recovery-integration"
+ },
+ "closureRoots": {
+  "html": "index.html",
+  "apiDir": "api",
+  "extra": [
+   "workers/lpc-mail.js"
+  ]
+ },
+ "headProofKind": "composed"
+}

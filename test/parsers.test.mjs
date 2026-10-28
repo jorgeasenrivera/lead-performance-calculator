@@ -327,3 +327,26 @@ test("a grid with no stock rows leaves the split alone rather than inventing a z
   assert.equal(got.stated.vehicles, undefined,
     "no stock rows means no vehicles key, so the reader falls back rather than reading a zero as a fact");
 });
+
+test("exact normalized store names and IDs beat longer truncated candidates", () => {
+  const short = { id: "store-100", name: "Classic Mazda" };
+  const long = { id: "store-100-north", name: "Classic Mazda North" };
+  for (const stores of [[short, long], [long, short]]) {
+    for (const heading of ["CLASSIC-MAZDA", "STORE--100"]) {
+      assert.deepEqual(P.matchStoreByName(stores, heading), { store: short, quality: "exact" });
+      assert.equal(P.reportBelongsElsewhere(stores, heading, short.id), null);
+      assert.equal(P.reportBelongsElsewhere(stores, heading, long.id), short);
+    }
+    assert.deepEqual(P.matchStoreByName(stores, "Classic Mazda North Monthly"), { store: long, quality: "prefix" });
+    assert.deepEqual(P.matchStoreByName([long], "Classic Mazda"), { store: long, quality: "truncated" });
+    assert.equal(P.matchStoreByName(stores, "Unrelated Store"), null);
+  }
+});
+
+test("strict email routing distinguishes ambiguity from an absent match", () => {
+  const stores = [{ id: "north", name: "Classic Mazda North" }, { id: "south", name: "Classic Mazda South" }];
+  assert.deepEqual(P.matchStoreByName(stores, "Classic Mazda", { rejectAmbiguous: true }), { store: null, quality: "ambiguous" });
+  assert.equal(P.matchStoreByName(stores, "Unrelated Store", { rejectAmbiguous: true }), null);
+  const sameStore = { id: "classic-mazda", name: "Classic Mazda" };
+  assert.deepEqual(P.matchStoreByName([sameStore], "Classic Mazda", { rejectAmbiguous: true }), { store: sameStore, quality: "exact" });
+});

@@ -577,13 +577,18 @@ function parseDeliverySummaryRows(rows) {
    Lives here because both the pipeline and the app need it now: the pipeline to
    route an emailed report, and the app to refuse a PDF a manager drops into the
    wrong store. */
-function matchStoreByName(stores, parsedName) {
+function matchStoreByName(stores, parsedName, { rejectAmbiguous = false } = {}) {
   const P = squashT(parsedName);
   if (!P) return null;
   let best = null;
+  const matches = [];
   const consider = (s, cand, quality) => {
     if (!cand) return;
-    if (!best || cand.length > best.len) best = { store: s, len: cand.length, quality };
+    const match = { store: s, len: cand.length, quality };
+    matches.push(match);
+    // An exact heading must win even when another store has a longer name.
+    if (!best || (quality === "exact" && best.quality !== "exact") ||
+        ((quality === "exact") === (best.quality === "exact") && cand.length > best.len)) best = match;
   };
   for (const s of stores || []) {
     for (const cand of [squashT(s.name), squashT(s.id)]) {
@@ -593,6 +598,15 @@ function matchStoreByName(stores, parsedName) {
       if (P.startsWith(cand) && cand.length >= 6) { consider(s, cand, "prefix"); continue; }
       // the heading was truncated, but is long enough to be unambiguous
       if (cand.startsWith(P) && P.length >= 10) consider(s, cand, "truncated");
+    }
+  }
+  if (best && rejectAmbiguous) {
+    const rivals = matches.filter((m) => best.quality === "exact"
+      ? m.quality === "exact"
+      : best.quality === "truncated" || m.quality === "truncated" || m.len === best.len);
+    if (new Set(rivals.map((m) => m.store.id)).size > 1) {
+      // Distinct from no match: email callers must not fall back to the address.
+      return { store: null, quality: "ambiguous" };
     }
   }
   return best ? { store: best.store, quality: best.quality } : null;

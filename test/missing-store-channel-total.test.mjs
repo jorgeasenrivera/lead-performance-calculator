@@ -35,7 +35,7 @@ test('missing stock side remains null at parser boundary; explicit stock zero st
 
 // Execute unchanged production merge, fixed date, without backend access.
 const ingest = readFileSync(new URL('../api/ingest.mjs', import.meta.url), 'utf8');
-const body = ingest.slice(ingest.indexOf('function applyToStore('), ingest.indexOf('/* ---------- routing helpers'));
+const body = ingest.slice(ingest.indexOf('const ALIAS_COUNTS ='), ingest.indexOf('/* ---------- routing helpers'));
 class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-22T15:00:00Z'])); } }
 const apply = new Function('ymET', 'todayET', 'norm', 'uid', 'parseReport', 'parseDeliverySummaryRows', 'admitsEveryone', 'holdPerson', 'Date', 'applySummaryStated', body + '\nreturn applyToStore;')(
   () => '2026-10', () => '2026-10-22', norm, () => 'fixture-id', parseReport, parseDeliverySummaryRows, admitsEveryone, holdPerson, FixedDate, applySummaryStated);
