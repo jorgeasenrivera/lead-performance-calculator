@@ -138,7 +138,7 @@ jobs:
         id: hash
         if: ${{ steps.route.outputs.contract == 'true' }}
         env:
-          EXPECTED_DELTA_SHA256: "d7bad438a9173f8d666262ed42048da5a2c6dd34a73be153b61c03bd8ff8d1da"
+          EXPECTED_DELTA_SHA256: "62fbae61e079179ca5a28645546cac534d897a9f9b768dd2852b40341b186178"
         run: |
           cd .pr501/head
           echo "${EXPECTED_DELTA_SHA256}  scripts/pr501-contract/DELTA.sha256" | sha256sum --check -
@@ -160,7 +160,7 @@ jobs:
           # External pins, supplied by this workflow, which is the one bootstrap exception: it is covered by independent diff review, and the runner
           # recomputes this file from the old blob plus the reviewed template and refuses any other bytes.
           EXPECTED_CONTRACT_DIGEST: "5ee868afe5a9cd994136e6f188d591c9885c272791de4d4828133e74a27b7502"
-          EXPECTED_DELTA_SHA256: "d7bad438a9173f8d666262ed42048da5a2c6dd34a73be153b61c03bd8ff8d1da"
+          EXPECTED_DELTA_SHA256: "62fbae61e079179ca5a28645546cac534d897a9f9b768dd2852b40341b186178"
           EXPECTED_VALIDATOR_SHA256: "1a80e14c786754c7a0a83c5785acbf0c17d2c26b3e2e53ec8b556937d0d7f228"
           EXPECTED_TS_VERSION: "6.0.2"
           EXPECTED_TS_LIB_SHA256: "630f808ac32d968a49a392c42cc06fd72abd939aaa7edfe3302810c067934653"
@@ -172,11 +172,27 @@ jobs:
           BASE_MAIN_DIR: ${{ github.workspace }}/.pr501/base-main
           BASE_477_DIR: ${{ github.workspace }}/.pr501/base-477
           OUT_DIR: ${{ runner.temp }}/pr501-contract-out
+        shell: bash
         run: |
           export PR501_TS_PATH="$RUNNER_TEMP/ts/node_modules/typescript"
+          # Git refuses a checkout owned by another user ("dubious ownership"), and the workspace checkout is one in this container. The exception below names ONLY that one
+          # checkout and exists ONLY in the environment of the one node process: not in the step, the job or any global configuration. Every precondition is checked first
+          # and a failed one stops the step with a fixed word (never an echo of any value); an inherited git configuration variable is refused, never overwritten. The step runs
+          # under an explicit bash (the guard uses a bash builtin); if the list of variables cannot be read at all, that is itself a refusal.
+          refuse() { echo "::error title=PR501_RUNNER::Trust precondition refused. check=$1."; exit 1; }
+          vars=$(compgen -e) || refuse guard
+          for v in $vars; do case "$v" in GIT_CONFIG*) refuse inherited ;; esac; done
+          [ "${GITHUB_REPOSITORY-}" = "jorgeasenrivera/lead-performance-calculator" ] || refuse repo
+          [ -n "${GITHUB_WORKSPACE-}" ] && [ "${CHECKOUT_MERGE-}" = "$GITHUB_WORKSPACE" ] || refuse path
+          [ -d "$CHECKOUT_MERGE" ] && [ ! -L "$CHECKOUT_MERGE" ] || refuse symlink
+          [ "$(cd "$CHECKOUT_MERGE" && pwd -P)" = "$CHECKOUT_MERGE" ] || refuse path
+          [ -d "$CHECKOUT_MERGE/.git" ] && [ ! -L "$CHECKOUT_MERGE/.git" ] && [ -f "$CHECKOUT_MERGE/.git/config" ] && [ ! -L "$CHECKOUT_MERGE/.git/config" ] || refuse symlink
+          if grep -qi '^[[:space:]]*\[include' "$CHECKOUT_MERGE/.git/config"; then refuse include; fi
+          origin=$(git config --no-includes --file "$CHECKOUT_MERGE/.git/config" --get-all remote.origin.url) || refuse origin
+          [ "$origin" = "https://github.com/jorgeasenrivera/lead-performance-calculator" ] || refuse origin
           # The runner's own exit status is kept exactly (exit "$rc"); the annotation names only a closed class of it, never output.
           rc=0
-          node .pr501/head/scripts/pr501-contract/ci-verify.mjs || rc=$?
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$CHECKOUT_MERGE" node .pr501/head/scripts/pr501-contract/ci-verify.mjs || rc=$?
           case "$rc" in
             0) echo "::notice title=PR501_RUNNER::Runner exit class. exit=0." ;;
             1) echo "::error title=PR501_RUNNER::Runner exit class. exit=1." ;;
