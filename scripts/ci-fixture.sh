@@ -14,8 +14,46 @@ TICKS="${CI_FIXTURE_WAIT_TICKS:-100}"
 NODE="${CI_FIXTURE_NODE:-node}"
 ID_CMD="${CI_FIXTURE_ID_CMD:-id}"   # a stand-in for tests only; the workflow never sets it
 
-# A zombie (exited, not yet reaped by a parent that is busy) is gone for our purposes.
-alive() { kill -0 "$1" 2>/dev/null && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status" 2>/dev/null; }
+STOP_TICKS=25   # fixed; not read from the environment
+
+# Liveness has three answers, not two: live, gone, unknown. A zombie (exited, not yet reaped by a parent that is busy) is
+# gone for our purposes. Unknown means we could not tell, and it is never read as gone: a status file that cannot be read
+# is not the same as a process that is not a zombie. The probes below are the only places that touch /proc or signal 0.
+probe_signal() { kill -0 "$1" 2>/dev/null; }
+probe_state() {
+  local l s=
+  { while IFS= read -r l; do case "$l" in State:*) s="${l#State:}"; break ;; esac; done; } 2>/dev/null < "/proc/$1/status" || true
+  s="${s#"${s%%[![:space:]]*}"}"
+  STATE="${s:0:1}"
+}
+probe_absent() { [ -r /proc/self/status ] && [ ! -e "/proc/$1" ]; }
+# Sets VERDICT to live, gone or unknown. No subshell, so a caller sees exactly one sample.
+sample() {
+  if probe_signal "$1"; then
+    probe_state "$1"
+    case "$STATE" in
+      Z|X) VERDICT=gone ;;
+      "") if probe_signal "$1"; then VERDICT=unknown; elif probe_absent "$1"; then VERDICT=gone; else VERDICT=unknown; fi ;;
+      *) VERDICT=live ;;
+    esac
+  elif probe_absent "$1"; then VERDICT=gone
+  else VERDICT=unknown; fi
+}
+alive() { sample "$1"; [ "$VERDICT" = live ]; }
+send_signal() { kill -"$1" "$2" 2>/dev/null || true; }
+pause() { sleep "$TICK"; }
+# Waits a bounded number of ticks for the process to be gone. 0 gone, 1 still live, 2 unknown. The last sample taken here
+# is the answer: nothing samples again afterwards, so a later reused or unreadable pid cannot contradict it.
+wait_gone() {
+  local i
+  for ((i = 0; i < STOP_TICKS; i++)); do
+    sample "$1"
+    case "$VERDICT" in gone) return 0 ;; unknown) return 2 ;; esac
+    pause
+  done
+  sample "$1"
+  case "$VERDICT" in gone) return 0 ;; unknown) return 2 ;; *) return 1 ;; esac
+}
 # Start time (clock ticks since boot, field 22 of /proc/PID/stat, read after the last ")" because the name may hold spaces) and working directory.
 starttime() { sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
 workdir() { readlink "/proc/$1/cwd" 2>/dev/null; }
@@ -37,16 +75,28 @@ reason() {
 
 stop_owned() {
   [ -f "$DIR/fixture.pid" ] || { echo "ci-fixture: nothing was started" >&2; return 0; }
-  local pid st cwd
+  local pid st cwd r
   { read -r pid; read -r st; read -r cwd; } < "$DIR/fixture.pid" || true
   [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$st" =~ ^[0-9]+$ ]] && [ -n "$cwd" ] || { echo "ci-fixture: pid file is malformed" >&2; return 3; }
-  if alive "$pid"; then
-    owned "$pid" "$st" "$cwd" || { echo "ci-fixture: pid $pid is not the process that was started; not touching it" >&2; return 3; }
-    kill -TERM "$pid" 2>/dev/null || true
-    for _ in $(seq 1 25); do alive "$pid" || break; sleep "$TICK"; done
-    if alive "$pid"; then kill -KILL "$pid" 2>/dev/null || true; for _ in $(seq 1 25); do alive "$pid" || break; sleep "$TICK"; done; fi
-    alive "$pid" && { echo "ci-fixture: pid $pid did not exit" >&2; return 4; }
-  fi
+  sample "$pid"
+  case "$VERDICT" in
+    unknown) echo "ci-fixture: cannot tell whether pid $pid is still running; that is a failure, not a pass" >&2; return 4 ;;
+    live)
+      owned "$pid" "$st" "$cwd" || { echo "ci-fixture: pid $pid is not the process that was started; not touching it" >&2; return 3; }
+      send_signal TERM "$pid"
+      wait_gone "$pid" && r=0 || r=$?
+      if [ "$r" = 1 ]; then
+        # The pid may have been reused while we waited: the same identity check, immediately before the harder signal.
+        owned "$pid" "$st" "$cwd" || { echo "ci-fixture: pid $pid changed identity before escalation; not touching it" >&2; return 3; }
+        send_signal KILL "$pid"
+        wait_gone "$pid" && r=0 || r=$?
+      fi
+      case "$r" in
+        0) ;;
+        2) echo "ci-fixture: could not tell whether pid $pid exited; that is a failure, not a pass" >&2; return 4 ;;
+        *) echo "ci-fixture: pid $pid did not exit" >&2; return 4 ;;
+      esac ;;
+  esac
   "$NODE" scripts/shots-fixture-verdict.mjs ports-free 5433 5178 || { echo "ci-fixture: a fixture port is not confirmed free after stop" >&2; return 4; }
 }
 

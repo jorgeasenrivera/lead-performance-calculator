@@ -67,6 +67,12 @@ function match(rows, params) {
   for (const [k, v] of params) {
     if (["select", "order", "limit", "offset", "apikey"].includes(k)) continue;
     if (v.startsWith("eq.")) { const want = v.slice(3); out = out.filter((r) => String(r[k]) === want); }
+    else if (v.startsWith("like.")) {
+      const pattern = v.slice(5);
+      const escaped = [...pattern].map(c => c === "%" || c === "*" ? ".*" : c === "_" ? "." : c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("");
+      const re = new RegExp("^" + escaped + "$", "s");
+      out = out.filter(r => r[k] != null && re.test(String(r[k])));
+    }
     else if (v === "is.null") out = out.filter((r) => r[k] == null);
     else if (v.startsWith("in.")) {
       const set = new Set(v.slice(3).replace(/^\(|\)$/g, "").split(",").map((s) => s.replace(/^"|"$/g, "")));
