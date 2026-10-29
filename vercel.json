@@ -32,7 +32,8 @@
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md' ':(exclude)scripts' ':(exclude)test' ':(exclude).github' ':(exclude)native' ':(exclude)supabase'",
   "git": {
     "deploymentEnabled": {
-      "codex/nov1-security-recovery-integration": false
+      "codex/nov1-security-recovery-integration": false,
+      "codex/pdf-interop-handoff-20261029": false
     }
   }
 }
