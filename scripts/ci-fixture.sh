@@ -44,15 +44,16 @@ send_signal() { kill -"$1" "$2" 2>/dev/null || true; }
 pause() { sleep "$TICK"; }
 # Waits a bounded number of ticks for the process to be gone. 0 gone, 1 still live, 2 unknown. The last sample taken here
 # is the answer: nothing samples again afterwards, so a later reused or unreadable pid cannot contradict it.
+# A transient unknown may resolve within this same bound. If it does not resolve to gone, uncertainty forbids escalation.
 wait_gone() {
-  local i
+  local i uncertain=0
   for ((i = 0; i < STOP_TICKS; i++)); do
     sample "$1"
-    case "$VERDICT" in gone) return 0 ;; unknown) return 2 ;; esac
+    case "$VERDICT" in gone) return 0 ;; unknown) uncertain=1 ;; esac
     pause
   done
   sample "$1"
-  case "$VERDICT" in gone) return 0 ;; unknown) return 2 ;; *) return 1 ;; esac
+  case "$VERDICT" in gone) return 0 ;; unknown) return 2 ;; *) [ "$uncertain" = 0 ] && return 1 || return 2 ;; esac
 }
 # Start time (clock ticks since boot, field 22 of /proc/PID/stat, read after the last ")" because the name may hold spaces) and working directory.
 starttime() { sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $20}'; }
