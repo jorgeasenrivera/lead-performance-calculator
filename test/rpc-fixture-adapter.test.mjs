@@ -1,6 +1,6 @@
 /* Pure checks for scripts/rpc-fixture-adapter.mjs and its seven consumers. No browser, no server, no network, no script is imported.
 
-   The oracle is EXTRACT-ONLY. Each consumer's own app_data callback is cut out of its file by line shape, its body is bound to the sha256 of the original (6c76cff) body, and
+   The oracle is EXTRACT-ONLY. Each consumer's own app_data callback is cut out of its file by line shape, its body reverses the exact declared freshness insertion before binding to the original (6c76cff) body hash, and
    it is run in a bare vm context that is given only the live variables that script declares. Any other free name is a ReferenceError. The declared edits are then reversed
    on the whole file and the result must hash to the original file, so nothing else changed. */
 import test from 'node:test';
@@ -60,7 +60,18 @@ function split(name) {
   assert.ok(close > open, `${name}: callback closing line`);
   return { L, open, close, body: L.slice(open + 1, close) };
 }
+// The only callback-body change after the frozen originals: stamp split fictional
+// activity just as the embedded copy is stamped. Reverse these exact bytes only.
+const FRESHNESS_SPLIT_STAMP = "    if (/^lpc:store:(sage-demo|spacing-demo-2):act:\\d{4}-\\d{2}-\\d{2}$/.test(row?.key || '') && row?.value && typeof row.value === 'object' && !Array.isArray(row.value)) {\n      row = {...row, value:Object.fromEntries(Object.entries(row.value).map(([name,r]) => [name, r && typeof r === 'object' && !Array.isArray(r) ? {...r, uploadedAt:stamp} : r]))};\n    }\n";
+function originalCallback(name, text) {
+  if (name !== 'hero-freshness') return text;
+  assert.equal(text.split(FRESHNESS_SPLIT_STAMP).length, 2, 'one exact split-stamp insertion');
+  assert.ok(text.includes(FRESHNESS_SPLIT_STAMP + '    if(!dockFixture || !row?.value)return row;'), 'insertion at its reviewed anchor');
+  return text.replace(FRESHNESS_SPLIT_STAMP, '');
+}
+
 function reverse(name, text) {
+  text = originalCallback(name, text);
   const s = SPEC[name];
   let L = linesOf(text);
   const tail = s.log ? [VERDICT, s.log] : [VERDICT];
@@ -158,9 +169,9 @@ for (const name of NAMES) {
   test(`${name}: the declared edits reversed give the original file byte for byte`, () => {
     assert.equal(sha(reverse(name, read(name))), SPEC[name].file);
   });
-  test(`${name}: the callback body is the original body (extract-only), and it is registered by name once`, () => {
+  test(`${name}: the callback body reverses exactly to the frozen original, and it is registered by name once`, () => {
     const { L, body } = split(name);
-    assert.equal(sha(body.join('\n') + '\n'), SPEC[name].body);
+    assert.equal(sha(originalCallback(name, body.join('\n') + '\n')), SPEC[name].body);
     assert.equal(L.filter((l) => l.includes('installRpcAdapter(')).length, 1);
     assert.equal(L.filter((l) => l === VERDICT).length, 1);
   });
@@ -523,4 +534,56 @@ test('limit, not a guarantee: a cleanup that throws replaces the primary error, 
   const events = [];
   await assert.rejects(scriptLike(fx, { body: async () => { throw primary; }, cleanup: async () => { throw cleanupFailure; }, log: () => events.push('log') }), (e) => e === cleanupFailure);
   assert.deepEqual(events, []);
+});
+
+/* The freshness fixture must own both storage forms. A real stale timestamp is
+   represented by the stale fixture stamp, never promoted to the fixed clock. */
+test('freshness split stamps survive actual loadStore precedence: fresh, different, stale, missing and missed', async () => {
+  const core = readFileSync(new URL('../src/LeadPerformanceCalculator.jsx', import.meta.url), 'utf8');
+  const start = core.indexOf('async function loadStore(');
+  assert.ok(start >= 0);
+  const loadSource = core.slice(start, core.indexOf('\n}', start) + 2);
+  for (const [state, stamp, importStamp] of [
+    ['fresh', '2026-10-14T09:35:00Z', null],
+    ['different', '2026-10-14T09:35:00Z', '2026-10-14T10:15:00Z'],
+    ['stale', '2026-10-13T17:05:00Z', null], ['missing', null, null], ['missed', null, null],
+  ]) for (const id of [BASE_STORE, SECOND_STORE]) {
+    const table = makeTable();
+    for (const row of table.filter(r => r.key.startsWith(`lpc:store:${BASE_STORE}:act:`))) {
+      row.value['dev okonjo'].uploadedAt = '2026-10-29T17:00:00Z';
+    }
+    const { handler, fx } = await install(oracle('hero-freshness', { dockFixture: null, stamp, importStamp }), { table });
+    const rpc = async () => {
+      const route = rpcRoute({ name: 'sage_store_read', body: storeBody(id) });
+      await handler(route);
+      assert.equal(route.calls.abort.length, 0, `${state}/${id}`);
+      assert.equal(route.calls.fulfill.length, 1);
+      return J(route.calls.fulfill[0].json);
+    };
+    const load = vm.runInNewContext(loadSource + ';loadStore;', {
+      storeKey: sid => sid, loadShared: async () => (await rpc()).value,
+      loadActivityRows: async () => (await rpc()).activity, console,
+    });
+    const data = await load(id);
+    assert.deepEqual(J(data.__splitDays), ['2026-10-12', '2026-10-13']);
+    for (const rows of Object.values(data.activity)) assert.equal(rows['dev okonjo'].uploadedAt, stamp, `${state}/${id}`);
+    assert.equal(data.activity['2026-10-13']['dev okonjo'].calls, 5);
+    assert.deepEqual(J(data.importLog), stamp ? [{ t: importStamp || stamp }] : []);
+    fx.assertNoRefusals();
+  }
+});
+
+test('freshness stamping does not hide malformed raw split rows or invalid dates', async () => {
+  for (const id of [BASE_STORE, SECOND_STORE]) for (const bad of [null, [], 'invalid', 'invalid-day']) {
+    const table = makeTable(), row = table.find(r => r.key.includes(':act:'));
+    if (bad === 'invalid-day') row.key = `lpc:store:${BASE_STORE}:act:2026-02-30`;
+    else row.value = bad;
+    const { handler, fx } = await install(oracle('hero-freshness', { dockFixture: null, stamp: '2026-10-14T09:35:00Z', importStamp: null }), { table });
+    const route = rpcRoute({ name: 'sage_store_read', body: storeBody(id) });
+    await handler(route);
+    assert.equal(route.calls.fulfill.length, 0);
+    assert.equal(route.calls.abort.length, 1);
+    assert.equal(fx.refusals().counts['read-shape'], 1);
+    assert.throws(() => fx.assertNoRefusals());
+  }
 });

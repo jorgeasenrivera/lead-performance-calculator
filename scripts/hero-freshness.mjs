@@ -27,6 +27,9 @@ const appDataRoute = async route => {
     row=addStore(row);
     if(row?.value?.months){const v=row.value;row={...row,value:{...v,importLog:stamp?[{t:importStamp||stamp}]:[],activity:Object.fromEntries(Object.entries(v.activity||{}).map(([d,rows])=>[d,Object.fromEntries(Object.entries(rows).map(([name,r])=>[name,{...r,uploadedAt:stamp}]))]))}};}
 
+    if (/^lpc:store:(sage-demo|spacing-demo-2):act:\d{4}-\d{2}-\d{2}$/.test(row?.key || '') && row?.value && typeof row.value === 'object' && !Array.isArray(row.value)) {
+      row = {...row, value:Object.fromEntries(Object.entries(row.value).map(([name,r]) => [name, r && typeof r === 'object' && !Array.isArray(r) ? {...r, uploadedAt:stamp} : r]))};
+    }
     if(!dockFixture || !row?.value)return row;
     if(row.value.stores)return {...row,value:{...row.value,stores:row.value.stores.map(st=>({...st,rooms:{floor:true,line:dockFixture.rooms===2}}))}};
     if(row.value.months){
