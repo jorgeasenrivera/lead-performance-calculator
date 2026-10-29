@@ -24,7 +24,7 @@ globalThis.fetch=async(input,options={})=>{
  if(table==='app_data'){
   if(q.get('key')==='eq.lpc:store:alpha:v2'&&state.figuresError)return response({message:'synthetic figures failure'},500);
   if(q.get('key')==='eq.lpc:store:alpha:v2'&&state.figuresMissing)return response([{}]);
-  return response([{value:q.get('key')==='eq.lpc:config:v2'?state.config:{roster:[]}}]);
+  return response([{value:q.get('key')==='eq.lpc:config:v2'?state.config:(state.figures||{roster:[]})}]);
  }
  if(['floor_public','queue_public'].includes(table)){
   const dc=table==='floor_public'?'fdate':'qdate';
@@ -65,3 +65,14 @@ test('floor-row mismatched scope never acknowledges supplied matching stamp',asy
 for(const failure of ['figuresError','figuresMissing'])test(`phoneGate ${failure} on second app_data read refuses without PATCH`,async()=>{state[failure]=true;state.row={line:[{id:'self',label:'Synthetic',status:'waiting'}],history:[]};const r=await call(action,{store:'alpha',date:'2026-10-24',action:'take-desk'});assert.equal(r.code,500);const reads=state.requests.filter(x=>x.u.pathname==='/rest/v1/app_data');assert.equal(reads.length,2);assert.equal(reads[0].u.searchParams.get('key'),'eq.lpc:config:v2');assert.equal(reads[1].u.searchParams.get('key'),'eq.lpc:store:alpha:v2');assert.equal(state.requests.filter(x=>x.m==='PATCH').length,0);});
 
 test('legacy native action surfaces transactional authorization refusal without raw PATCH',async()=>{state.denyCommit=true;state.row={line:[{id:'self',status:'waiting'}],history:[]};const r=await call(action,{store:'alpha',date:'2026-10-24',action:'lunch'});assert.equal(r.code,403);assert.equal(state.requests.filter(x=>x.m==='PATCH').length,0);});
+
+for (const kind of ['below-standard', 'already waiting']) test(`native queue acknowledgment ${kind} is a completed no-op without a write`, async () => {
+ state.config.stores[0].graceDays=0;
+ state.row={line:[{id:'self',label:'Synthetic',status:'waiting'}],roster:[{id:'self',name:'Synthetic'}],history:[]};
+ const {storeDay}=await import('../api/_floor-access.mjs');
+ state.figures={months:{[storeDay().slice(0,7)]:{stats:{synthetic:{phoneLeads:20,phoneUnits:0}}}}};
+ const before=structuredClone(state.row);
+ const r=await call(action,{store:'alpha',date:'2026-10-24',action:kind==='below-standard'?'take-desk':'back-line'});
+ assert.equal(r.code,200); assert.equal(r.body.ok,true); assert.equal(r.body.changed,false); assert.equal(r.body.why,kind);
+ assert.equal(state.writes.length,0); assert.deepEqual(state.row,before);
+});
