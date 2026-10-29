@@ -93,11 +93,19 @@ expect unreadable-reaped 0 "sig0,state:,sig0,absent,ports" "" "send:TERM"
 scenario refused-but-present "$P" 2 sig="fail" absent="no" owned="yes" ports="free"
 expect refused-but-present 4 "sig0,absent" "cannot tell whether pid 4242" "ports"
 
-# Unknown in the middle of the wait: stop, no KILL, no port check.
+# Persistent unknown in the wait: use the existing bound, then fail without KILL or a port check.
 scenario unknown-mid-wait "$P" 2 sig="ok ok ok" state="S -" owned="yes" ports="free"
-expect unknown-mid-wait 4 "sig0,state:S,owned,send:TERM,sig0,state:,sig0" "could not tell whether pid 4242 exited" "send:KILL"
+expect unknown-mid-wait 4 "sig0,state:S,owned,send:TERM,sig0,state:,sig0,pause,sig0,state:,sig0,pause,sig0,state:,sig0" "could not tell whether pid 4242 exited" "send:KILL"
 
 # Stubborn live: TERM, waited, identity re-checked, KILL, waited, then the same failure. No port check hides it.
+# A transient unreadable status after TERM is not exit evidence; the later zombie is.
+scenario transient-unknown-then-zombie "$P" 2 sig="ok" state="S - Z" owned="yes" ports="free"
+expect transient-unknown-then-zombie 0 "sig0,state:S,owned,send:TERM,sig0,state:,sig0,pause,sig0,state:Z,ports" "" "send:KILL"
+scenario transient-unknown-then-live "$P" 2 sig="ok" state="S - S" owned="yes" ports="free"
+expect transient-unknown-then-live 4 "sig0,state:S,owned,send:TERM,sig0,state:,sig0,pause,sig0,state:S,pause,sig0,state:S" "could not tell whether pid 4242 exited" "send:KILL"
+scenario transient-unknown-then-zombie-busy "$P" 2 sig="ok" state="S - Z" owned="yes" ports="busy"
+expect transient-unknown-then-zombie-busy 4 "sig0,state:S,owned,send:TERM,sig0,state:,sig0,pause,sig0,state:Z,ports" "a fixture port is not confirmed free" "send:KILL"
+
 scenario stubborn "$P" 2 sig="ok" state="S" owned="yes yes" ports="busy"
 expect stubborn 4 "sig0,state:S,owned,send:TERM,$W,owned,send:KILL,$W" "pid 4242 did not exit" "ports"
 
