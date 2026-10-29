@@ -1,3 +1,4 @@
       - scripts/rpc-fixture-adapter.mjs
       - test/rpc-fixture-adapter.test.mjs
       - test/manual-alias-snapshot.test.mjs
+      - test/staff-arrival.test.mjs

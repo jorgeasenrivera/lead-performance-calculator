@@ -19,6 +19,7 @@ on:
       - scripts/rpc-fixture-adapter.mjs
       - test/rpc-fixture-adapter.test.mjs
       - test/manual-alias-snapshot.test.mjs
+      - test/staff-arrival.test.mjs
 jobs:
   spacing:
     runs-on: ubuntu-latest
@@ -141,7 +142,7 @@ jobs:
         id: hash
         if: ${{ steps.route.outputs.contract == 'true' }}
         env:
-          EXPECTED_DELTA_SHA256: "e8daa6f7e0d9d2be2dac996446269bdb07499ec716ff0bc0bde02cb0170e437d"
+          EXPECTED_DELTA_SHA256: "212da60c26bc6f2534d178a9ce1f12c8721ff70bcbd8a50ffc7d072ec3c46e4c"
         run: |
           cd .pr501/head
           echo "${EXPECTED_DELTA_SHA256}  scripts/pr501-contract/DELTA.sha256" | sha256sum --check -
@@ -162,8 +163,8 @@ jobs:
         env:
           # External pins, supplied by this workflow, which is the one bootstrap exception: it is covered by independent diff review, and the runner
           # recomputes this file from the old blob plus the reviewed template and refuses any other bytes.
-          EXPECTED_CONTRACT_DIGEST: "59ba9bb0961097dd3397ecb6be583c7159e441a49227338e61b4e9a62c5e916d"
-          EXPECTED_DELTA_SHA256: "e8daa6f7e0d9d2be2dac996446269bdb07499ec716ff0bc0bde02cb0170e437d"
+          EXPECTED_CONTRACT_DIGEST: "43d189a49c7dcb23825b037bc5a4ad472aa13a776372201560f73240776725f9"
+          EXPECTED_DELTA_SHA256: "212da60c26bc6f2534d178a9ce1f12c8721ff70bcbd8a50ffc7d072ec3c46e4c"
           EXPECTED_VALIDATOR_SHA256: "1a80e14c786754c7a0a83c5785acbf0c17d2c26b3e2e53ec8b556937d0d7f228"
           EXPECTED_TS_VERSION: "6.0.2"
           EXPECTED_TS_LIB_SHA256: "630f808ac32d968a49a392c42cc06fd72abd939aaa7edfe3302810c067934653"

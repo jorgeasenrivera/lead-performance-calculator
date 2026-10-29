@@ -358,12 +358,12 @@ test("W33 an unfilled placeholder in insertion P is refused", () => {
   assert.throws(() => composeP({ tplP: "      - @@NOPE@@\n" }), /an insertion has an unfilled pin/);
   assert.throws(() => composeP({ tplP: "      - @@NOPE@@\n", allowEmptyP: true }), /an insertion has an unfilled pin/);
 });
-test("W34 the output is the old composition plus exactly the two path lines, right after anchor P", () => {
+test("W34 the output is the old composition plus exactly the four path lines, right after anchor P", () => {
   const without = composeP({ tplP: "", allowEmptyP: true }), out = composeP();
   const i = without.indexOf(ANCHOR_P) + ANCHOR_P.length;
   assert.equal(without.indexOf(ANCHOR_P), without.lastIndexOf(ANCHOR_P));
   assert.equal(out, without.slice(0, i) + TPL_P + without.slice(i));
-  assert.deepEqual(TPL_P.split("\n"), ["      - scripts/rpc-fixture-adapter.mjs", "      - test/rpc-fixture-adapter.test.mjs", "      - test/manual-alias-snapshot.test.mjs", ""]);
+  assert.deepEqual(TPL_P.split("\n"), ["      - scripts/rpc-fixture-adapter.mjs", "      - test/rpc-fixture-adapter.test.mjs", "      - test/manual-alias-snapshot.test.mjs", "      - test/staff-arrival.test.mjs", ""]);
 });
 test("W35 every byte outside the four insertions equals the old file", () => {
   const out = composeP();
@@ -394,8 +394,8 @@ test("W37 the production runner supplies the pinned template and never the empty
   assert.ok(src.includes('tplP: tpl("workflow-insert-paths.yml")'));
   assert.ok(!src.includes("allowEmptyP"));
 });
-test("W38 the shipped insertion P template is exactly the two path lines", () => {
-  assert.equal(read("workflow-insert-paths.yml"), "      - scripts/rpc-fixture-adapter.mjs\n      - test/rpc-fixture-adapter.test.mjs\n      - test/manual-alias-snapshot.test.mjs\n");
+test("W38 the shipped insertion P template is exactly the four path lines", () => {
+  assert.equal(read("workflow-insert-paths.yml"), "      - scripts/rpc-fixture-adapter.mjs\n      - test/rpc-fixture-adapter.test.mjs\n      - test/manual-alias-snapshot.test.mjs\n      - test/staff-arrival.test.mjs\n");
 });
 
 test("W39 anchor B before anchor A is refused for its own reason", () => {

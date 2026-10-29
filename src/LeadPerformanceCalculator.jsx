@@ -2663,7 +2663,7 @@ export default function LeadPerformanceCalculator() {
     }
     const landable = !!session && !!config && arrivalDestinationReady && !cfgProvisional.current && iconReady
       && (wantsFloor || !atStore || !!storeData || !!storeMismatch || storeLoadFailed);
-    arrivalFailed = loadErr || bootStall || (!!storeLoadFailed && !storeMismatch);
+    arrivalFailed = loadErr || bootStall || (!wantsFloor && !!storeLoadFailed && !storeMismatch);
     tellArrivalReady(landable, store
       ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
       : null);

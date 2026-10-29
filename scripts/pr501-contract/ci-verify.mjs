@@ -119,8 +119,8 @@ try {
   if (result.failures.length) finish(1);
 
   // 0. BASELINE EXPORTS: tracked-only, from the exact commits, into NEW directories under OUT_DIR ----------------------------------
-  const meta = JSON.parse(cb("contract/candidate.meta.v5.json").toString("utf8"));
-  const sc = JSON.parse(cb("contract/composed-scalars.v5.json").toString("utf8"));
+  const meta = JSON.parse(cb("contract/candidate.meta.v6.json").toString("utf8"));
+  const sc = JSON.parse(cb("contract/composed-scalars.v6.json").toString("utf8"));
   const EXP = path.join(OUT, "exports"); fs.mkdirSync(EXP);
   const exportAt = (dir, sha, label) => {
     if (!fs.existsSync(path.join(dir, ".git"))) return { dir, exported: false };   // already a plain tracked-only directory: the validator still proves its tree id equals the commit's
@@ -145,7 +145,7 @@ try {
 
   // 4. CONTRACT: rebuild the composed tree in an isolated directory, validate with the unchanged validator --------------------
   const V = await import(pathToFileURL(path.resolve(valPath)).href);
-  const patch = cb("contract/composed.v5.canonical.git.patch");
+  const patch = cb("contract/composed.v6.canonical.git.patch");
   const snapFrozen = V.verifySnapshots(FROZEN, { frozen: { commit: meta.frozenBaseline, dir: eFrozen.dir } });
   const snapMain = V.verifySnapshots(BASE_MAIN, { base: { commit: meta.base, dir: eMain.dir } });
   const snap = { proofs: { frozen: snapFrozen.proofs.frozen, base: snapMain.proofs.base }, errors: [...snapFrozen.errors, ...snapMain.errors] };   // both proofs are issued by the validator
@@ -155,7 +155,7 @@ try {
     approvedTreeId: sc.approvedTreeId, approvedPaths: sc.approvedPaths, approvedFileHashes: sc.approvedFileHashes, workRoot: work });
   if (!comp.proof || snap.errors.length) { bad("composed proof", [...comp.errors, ...snap.errors]); finish(1); }
   ok("composed proof", `tree ${comp.proof.tree}`);
-  const v = V.validate({ meta, originalText: originalRef.toString("utf8"), candidateText: cb("contract/search-runtime.pr501-final3-v5.sha256").toString("utf8"), approvedVercel,
+  const v = V.validate({ meta, originalText: originalRef.toString("utf8"), candidateText: cb("contract/search-runtime.pr501-final3-v6.sha256").toString("utf8"), approvedVercel,
     head: V.treeReader(comp.proof.root), orig: V.treeReader(eFrozen.dir), snapshots: { head: comp.proof, base: snap.proofs.base, frozen: snap.proofs.frozen }, expectedDigest: EXPECTED_DIGEST });
   wx("validator-result.json", v);
   v.status === V.PASS_COMPOSED ? ok("validator against the external contract digest", `${v.status} digest ${v.digest}`) : bad("validator against the external contract digest", { status: v.status, errors: v.errors.slice(0, 10), unqualified: v.unqualified });
@@ -163,7 +163,7 @@ try {
 
   // 5. DELTA: head tracked tree = composed tree + the declared tooling files + the reviewed integration-delta map, exactly ------
   const headList = listCommit(HEAD_DIR, headSha), compList = listDir(comp.proof.root);
-  const rowPaths = V.parseManifest(cb("contract/search-runtime.pr501-final3-v5.sha256").toString("utf8")).rows.map((r) => r[1]);
+  const rowPaths = V.parseManifest(cb("contract/search-runtime.pr501-final3-v6.sha256").toString("utf8")).rows.map((r) => r[1]);
   const origPaths = V.parseManifest(originalRef.toString("utf8")).rows.map((r) => r[1]);
   const viol = [];
   // The one reviewed exception, kept separate and unchanged: the workflow is the old blob plus the template rendered with the supplied pins.
