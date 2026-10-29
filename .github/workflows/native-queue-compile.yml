@@ -1,0 +1,86 @@
+name: Native queue unsigned compile
+on:
+  push:
+    branches: [codex/native-queue-ack-handoff-20261029]
+    paths: ['.github/workflows/native-queue-compile.yml']
+permissions:
+  contents: read
+concurrency:
+  group: native-queue-unsigned-compile
+  cancel-in-progress: false
+jobs:
+  compile:
+    if: github.repository == 'jorgeasenrivera/lead-performance-calculator' && github.event_name == 'push' && github.ref == 'refs/heads/codex/native-queue-ack-handoff-20261029'
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      SKIP_BUNDLING: '1'
+    defaults:
+      run:
+        shell: bash
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify reviewed native source
+        run: |
+          test "$(git rev-parse HEAD:native)" = 2b55accfd8f57602ac082e033feacf21178b03b5
+          cmp intents/QueueIntents.swift targets/queue/QueueIntents.swift
+          git rev-parse HEAD
+          xcodebuild -version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked app packages
+        run: npm ci --no-audit --no-fund
+      - name: Generate unsigned simulator project
+        run: ./node_modules/.bin/expo prebuild --platform ios --clean --no-install
+      - name: Install iOS libraries
+        working-directory: native/ios
+        run: pod install
+      - name: Verify both targets compile the reviewed intent
+        working-directory: native/ios
+        run: |
+          ruby <<'RUBY'
+          require 'xcodeproj'
+          require 'digest'
+          projects = Dir.glob('*.xcodeproj')
+          abort 'Expected one app project' unless projects.length == 1
+          project = Xcodeproj::Project.open(projects.first)
+          expected = '65b1f03d8be5f36dc407e435eb5c120584f4fdcfd80c11b2e59ca47433f88a46'
+          ['../intents/QueueIntents.swift', '../targets/queue/QueueIntents.swift'].each do |source|
+            abort "Changed reviewed source #{source}" unless Digest::SHA256.file(source).hexdigest == expected
+          end
+          ['Sage', 'SageQueue'].each do |name|
+            target = project.targets.find { |t| t.name == name }
+            abort "Missing target #{name}" unless target
+            files = target.source_build_phase.files_references.select { |f| File.basename(f.path) == 'QueueIntents.swift' }
+            abort "Expected one intent in #{name}" unless files.length == 1
+            abort "Wrong intent source in #{name}" unless Digest::SHA256.file(files.first.real_path).hexdigest == expected
+            puts "Verified #{name}: #{files.first.real_path} SHA256 #{expected}"
+          end
+          RUBY
+      - name: Compile app and widget without signing
+        working-directory: native/ios
+        run: |
+          shopt -s nullglob
+          workspaces=(*.xcworkspace)
+          test "${#workspaces[@]}" = 1
+          ws="${workspaces[0]}"
+          scheme="${ws%.xcworkspace}"
+          set +e
+          xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/native-queue-derived" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > ../xcode.log 2>&1
+          code=$?
+          set -e
+          cat ../xcode.log
+          test "$code" = 0
+          for target in Sage SageQueue; do
+            grep -E "SwiftCompile.*QueueIntents.swift.*in target '$target'" ../xcode.log
+          done

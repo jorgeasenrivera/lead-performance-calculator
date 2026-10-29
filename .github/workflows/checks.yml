@@ -8,7 +8,7 @@ name: checks
 
 on:
   push:
-    branches: ["**"]
+    branches: ["**", "!codex/native-queue-ack-handoff-20261029"]
   pull_request:
 
 # One branch gets the synthetic fixture backend in feel, feel-webkit and shots (the CANDIDATE

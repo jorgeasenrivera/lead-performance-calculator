@@ -2,25 +2,33 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const swift = fs.readFileSync(new URL('../native/targets/queue/QueueIntents.swift', import.meta.url), 'utf8');
+const swiftSources = ['native/intents/QueueIntents.swift', 'native/targets/queue/QueueIntents.swift'].map(path =>
+  [path, fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')]);
 const kotlin = fs.readFileSync(new URL('../native/modules/sage-live/android/src/main/java/com/sageonline/sagelive/QueueActionReceiver.kt', import.meta.url), 'utf8');
 
-test('iOS remote presses skip optimistic state and reread current state before clearing the ring', () => {
-  const nudge = swift.split('private func nudgeNow()')[1].split('private struct ServerAcknowledgement')[0];
-  assert.match(nudge, /if isLocalOnly \{ apply\(&s\) \}/);
-  assert.equal((nudge.match(/apply\(&s\)/g) || []).length, 1);
-  assert.match(nudge, /Task\.sleep[\s\S]*s = a\.content\.state[\s\S]*s\.pressed = nil/);
+test('app and widget intent copies stay identical', () => {
+  assert.equal(swiftSources[0][1], swiftSources[1][1]);
 });
 
-test('iOS requires a typed acknowledgment but a valid no-op does not trigger replay', () => {
-  assert.match(swift, /struct ServerAcknowledgement: Decodable \{\s*let ok: Bool\s*let changed: Bool\s*\}/);
-  const server = swift.split('private func viaServer()')[1].split('private func buzz()')[0];
-  assert.match(server, /\(200\.\.<300\)\.contains\(http\.statusCode\)/);
-  assert.match(server, /JSONDecoder\(\)\.decode\(ServerAcknowledgement\.self, from: data\)/);
-  assert.match(server, /ack\.ok else \{ return \.unconfirmed \}/);
-  assert.match(swift, /case \.acknowledged, \.unconfirmed: return \.result\(\)/);
-  assert.doesNotMatch(server, /ack\.changed/);
-});
+for (const [path, swift] of swiftSources) {
+  test(`${path}: remote presses skip optimistic state and reread current state before clearing the ring`, () => {
+    const nudge = swift.split('private func nudgeNow()')[1].split('private struct ServerAcknowledgement')[0];
+    assert.match(swift, /private var isLocalOnly: Bool \{ action == "ask-done" \|\| action == "keep" \}/);
+    assert.match(nudge, /if isLocalOnly \{ apply\(&s\) \}/);
+    assert.equal((nudge.match(/apply\(&s\)/g) || []).length, 1);
+    assert.match(nudge, /Task\.sleep[\s\S]*s = a\.content\.state[\s\S]*s\.pressed = nil/);
+  });
+
+  test(`${path}: requires a typed acknowledgment but a valid no-op does not trigger replay`, () => {
+    assert.match(swift, /struct ServerAcknowledgement: Decodable \{\s*let ok: Bool\s*let changed: Bool\s*\}/);
+    const server = swift.split('private func viaServer()')[1].split('private func buzz()')[0];
+    assert.match(server, /\(200\.\.<300\)\.contains\(http\.statusCode\)/);
+    assert.match(server, /JSONDecoder\(\)\.decode\(ServerAcknowledgement\.self, from: data\)/);
+    assert.match(server, /ack\.ok else \{ return \.unconfirmed \}/);
+    assert.match(swift, /case \.acknowledged, \.unconfirmed: return \.result\(\)/);
+    assert.doesNotMatch(server, /ack\.changed/);
+  });
+}
 
 test('Android applies local confirmation only and accepts both Boolean changed outcomes', () => {
   assert.equal((kotlin.match(/SageLiveStore\.optimistic/g) || []).length, 1);

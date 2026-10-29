@@ -10,9 +10,9 @@ import AudioToolbox
    Pressing one runs this in the APP's process (that is what LiveActivityIntent
    means). Three things happen, in this order:
 
-   1. The card changes at once. The status the press implies is written into
-      the running activity, so the button answers under the thumb rather than
-      after a round trip. The server's own update follows and settles it.
+   1. The card acknowledges the press at once. Only local confirmation buttons
+      change its state here; remote actions wait for the authoritative update.
+      A valid server no-op must not leave a state the server never committed.
    2. The word goes to /api/queue-action with the session the page handed the
       shell, and the server applies it to the floor row exactly as the page's
       own buttons would. This is what makes a press work with the app closed.
@@ -45,11 +45,8 @@ struct QueueActionIntent: LiveActivityIntent {
     }
   }
 
-  /* Everything the press implies, written before the server hears about it.
-     Two of these never used to change anything at all: FlyBy and T.O. worked
-     out no status, so the card sat on "With a customer" and the ask vanished
-     into the floor. They have a face of their own now and this is what puts
-     the card on it. */
+  /* Local confirmation buttons may change the card immediately. Remote actions
+     never call this reducer: a refusal or no-op may produce no server update. */
   private func apply(_ s: inout QueueAttributes.ContentState) {
     let now = ISO8601DateFormatter().string(from: Date())
     switch action {
@@ -97,29 +94,39 @@ struct QueueActionIntent: LiveActivityIntent {
     }
   }
 
-  /* The card answers under the thumb: the new face, and one beat of the
+  /* The card acknowledges the press with one beat of the
      pressed button's colour ringing the card. The ring is a field on the state
      rather than a gesture, because a widget cannot run its own animation on a
      tap; the second update, a third of a second later, takes it off. */
   private func nudgeNow() async {
     guard let a = Activity<QueueAttributes>.activities.first else { return }
     var s = a.content.state
-    apply(&s)
+    if isLocalOnly { apply(&s) }
     s.pressed = action
     await a.update(ActivityContent(state: s, staleDate: nil))
     try? await Task.sleep(nanoseconds: 340_000_000)
+    s = a.content.state
+    guard s.pressed == action else { return }
     s.pressed = nil
     await a.update(ActivityContent(state: s, staleDate: nil))
   }
 
-  private func viaServer() async -> Bool {
+  private struct ServerAcknowledgement: Decodable {
+    let ok: Bool
+    let changed: Bool
+  }
+
+  private enum ServerOutcome { case acknowledged, unconfirmed, unavailable }
+
+  // A valid no-op is acknowledged. An unreadable 2xx may have committed and must not be replayed.
+  private func viaServer() async -> ServerOutcome {
     let d = UserDefaults.standard
     guard let token = d.string(forKey: "sageLive.token"), !token.isEmpty,
           let base = d.string(forKey: "sageLive.apiBase"), !base.isEmpty,
           let store = d.string(forKey: "sageLive.store"), !store.isEmpty,
           let date = d.string(forKey: "sageLive.date"), !date.isEmpty,
-          let url = URL(string: base + "/api/queue-action") else { return false }
-    if let exp = d.object(forKey: "sageLive.exp") as? Double, exp > 0, Date().timeIntervalSince1970 > exp { return false }
+          let url = URL(string: base + "/api/queue-action") else { return .unavailable }
+    if let exp = d.object(forKey: "sageLive.exp") as? Double, exp > 0, Date().timeIntervalSince1970 > exp { return .unavailable }
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.timeoutInterval = 12
@@ -127,10 +134,11 @@ struct QueueActionIntent: LiveActivityIntent {
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     req.httpBody = try? JSONSerialization.data(withJSONObject: ["store": store, "date": date, "action": action])
     do {
-      let (_, resp) = try await URLSession.shared.data(for: req)
-      if let http = resp as? HTTPURLResponse { return (200..<300).contains(http.statusCode) }
-      return false
-    } catch { return false }
+      let (data, resp) = try await URLSession.shared.data(for: req)
+      guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return .unavailable }
+      guard let ack = try? JSONDecoder().decode(ServerAcknowledgement.self, from: data), ack.ok else { return .unconfirmed }
+      return .acknowledged
+    } catch { return .unavailable }
   }
 
   /* Whether iOS will let a background process buzz is not documented either
@@ -159,10 +167,13 @@ struct QueueActionIntent: LiveActivityIntent {
        which is exactly what "FlyBy is a bit slow" was. The ring and the
        request now run together, and the request is still awaited, so a failed
        one still falls back to the app. */
-    let server: Task<Bool, Never>? = isLocalOnly ? nil : Task { await viaServer() }
+    let server: Task<ServerOutcome, Never>? = isLocalOnly ? nil : Task { await viaServer() }
     await nudgeNow()
     guard let server = server else { return .result() }
-    if await server.value { return .result() }
+    switch await server.value {
+    case .acknowledged, .unconfirmed: return .result()
+    case .unavailable: break
+    }
     UserDefaults.standard.set(a, forKey: "sageLive.pendingAction")
     NotificationCenter.default.post(name: Notification.Name("SageLiveAction"), object: nil, userInfo: ["action": a])
     return .result()
