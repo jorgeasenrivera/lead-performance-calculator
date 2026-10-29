@@ -70,7 +70,25 @@ function originalCallback(name, text) {
   return text.replace(FRESHNESS_SPLIT_STAMP, '');
 }
 
+// Room rendering now has a read-only API fixture. Its exact wiring is outside
+// the unchanged app_data callback; reverse only these three reviewed lines.
+function originalRoomFile(name, text) {
+  if (name !== 'room-hero-colors') return text;
+  const pairs = [
+    [IMPORT, "import {installRoomReadFixture} from './room-read-fixture.mjs';"],
+    ['const rpcFx = await installRpcAdapter(context, { appDataRoute });', 'const roomFx = await installRoomReadFixture(context, {appOrigin:url});'],
+    [VERDICT, 'roomFx.assertNoRefusals();'],
+  ];
+  for (const [anchor, line] of pairs) {
+    assert.equal(text.split(line).length, 2, 'one exact room-fixture wiring line');
+    assert.ok(text.includes(anchor + '\n' + line), 'room fixture line at its exact anchor');
+    text = text.replace(anchor + '\n' + line, anchor);
+  }
+  return text;
+}
+
 function reverse(name, text) {
+  text = originalRoomFile(name, text);
   text = originalCallback(name, text);
   const s = SPEC[name];
   let L = linesOf(text);
@@ -176,7 +194,7 @@ for (const name of NAMES) {
     assert.equal(L.filter((l) => l === VERDICT).length, 1);
   });
   test(`${name}: the verdict follows the finally, which holds no return, catch or success message`, () => {
-    const L = linesOf(read(name));
+    const L = linesOf(originalRoomFile(name, read(name)));
     const s = SPEC[name];
     const finallyAt = L.length - (s.log ? 3 : 2);
     assert.ok(L[finallyAt].startsWith('}finally{') && L[finallyAt].endsWith(CLOSE_TAIL), 'the finally is the last cleanup line');

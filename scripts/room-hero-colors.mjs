@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
 import {installRpcAdapter} from './rpc-fixture-adapter.mjs';
+import {installRoomReadFixture} from './room-read-fixture.mjs';
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
@@ -38,6 +39,7 @@ const appDataRoute = async route => {
 };
 await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', appDataRoute);
 const rpcFx = await installRpcAdapter(context, { appDataRoute });
+const roomFx = await installRoomReadFixture(context, {appOrigin:url});
 const page = await context.newPage(), errors = [];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
@@ -87,3 +89,4 @@ try{
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
 }finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,results,failures,errors},null,2));await browser.close();}
 rpcFx.assertNoRefusals();
+roomFx.assertNoRefusals();
