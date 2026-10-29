@@ -473,6 +473,7 @@ test("real PDF with an ambiguous heading writes nothing despite a valid addresse
   const { out, db } = await run(seed, message({ to: "lpc-classicmazdanorth@example.test", subject: "Summary", filename: "summary.pdf",
     mime: "application/pdf", encoding: "base64", csv: pdf.toString("base64") }));
   assert.equal(out.code, 422, JSON.stringify(out.body));
+  assert.match(out.body.failures[0].why, /ambiguous/, "the PDF must be read before its store is refused");
   assert.deepEqual(Object.fromEntries(db), seed);
 });
 
