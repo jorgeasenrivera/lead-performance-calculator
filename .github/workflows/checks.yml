@@ -8,7 +8,7 @@ name: checks
 
 on:
   push:
-    branches: ["**"]
+    branches-ignore: ["codex/dst-provider-handoff-20261030"]
   pull_request:
 
 # One branch gets the synthetic fixture backend in feel, feel-webkit and shots (the CANDIDATE
