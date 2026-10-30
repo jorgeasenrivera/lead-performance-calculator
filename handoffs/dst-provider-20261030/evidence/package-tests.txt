@@ -1,0 +1,24 @@
+✔ refused 2026-03-08 emits no generated work, Off, absence or ownership (85.181052ms)
+✔ refused 2026-11-01 emits no generated work, Off, absence or ownership (44.265106ms)
+✔ regeneration preserves manual work, Off, unknown and old generated choices on a refused date (89.446503ms)
+✔ Apply cannot install refused-date Off from an older generator proposal and reports actual write count (15.530828ms)
+✔ supported dates still generate and apply ordinary nonselection Off (10.533243ms)
+✔ a refused closed date does not clear an earlier assignment on regenerate or Apply (8.71317ms)
+✔ ordinary daytime generation and Apply accepted on 2026-11-01 (7.05158ms)
+✔ ordinary daytime generation and Apply accepted on 2026-03-08 (64.834625ms)
+✔ unsafe template on 2026-11-01 emits no work or Off despite daytime hours (6.507447ms)
+✔ unsafe template on 2026-03-08 emits no work or Off despite daytime hours (22.776685ms)
+✔ November 1 and spring transition ordinary daytime are exact 480 elapsed minutes (24.226722ms)
+✔ fall fold endpoints are ambiguous, including a wall interval with two possible occurrences (0.5223ms)
+✔ spring gap endpoints do not exist (0.445053ms)
+✔ unique endpoints crossing a transition report exact elapsed duration but require review (0.297353ms)
+✔ minute boundaries around gaps and folds, invalid zones and overnight remain fail closed (0.967966ms)
+✔ weekly interval audit counts daytime exactly and refuses implicit crossing hours (0.913843ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 467.479481

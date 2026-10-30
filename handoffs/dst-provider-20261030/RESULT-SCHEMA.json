@@ -1,0 +1,74 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ok",
+    "reason",
+    "elapsedMinutes"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "elapsedMinutes": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "reason": {
+          "type": "null"
+        },
+        "elapsedMinutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "reason": {
+          "enum": [
+            "Date or timezone is outside the supported preview.",
+            "Enter an increasing same-day HH:MM interval.",
+            "Nonexistent local time requires manual review.",
+            "Ambiguous local time requires manual review."
+          ]
+        },
+        "elapsedMinutes": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "reason": {
+          "const": "DST-crossing interval requires manual review."
+        },
+        "elapsedMinutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  ]
+}

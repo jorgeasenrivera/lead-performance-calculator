@@ -1,0 +1,21 @@
+{
+  "DEPENDENCIES.json": "7591600bba1ac3a991b7e8dc3b9b97b8a84271239c0b1ca62d04284666e5c7bf",
+  "INTERFACE.md": "1de9475b866b793d8803ab7a6d3bebc3a4d58d2db939f8e27a918ae0056f750c",
+  "RESULT-SCHEMA.json": "a2ac9b21b7b2a6746b2573ccf04e38e98dd6263c0783832eb2393624c28c5ff9",
+  "REVIEWED-DST-SOURCES.json": "9839e9ce85d58636dcb24f984520145c4be469a7cda88c862f0e0b763baaf46e",
+  "evidence/independent-dst-review-final.txt": "6b91da90af12772fdf82dc15564ea243d93b89376103d700b210163555afabbb",
+  "evidence/independent-review.md": "68b155799711f99b104b394a9c5e9bfc10b873932fb0786c1b5b2b4266f4098c",
+  "evidence/package-tests.txt": "bd094c3b6f8ec9f5e179e44745b75c37762518776e236d3ba5b5bbcaef3792d9",
+  "evidence/runtime.json": "eafba0fc0a43d9527b75191d3310197d2cb8a59b5e8dc09ffea227d457136d89",
+  "scripts/scheduler-performance/demand-context.mjs": "3c82e4476127c9abeef92ac32b486b482162af1a78d1d94c0c8f3ea030cace8f",
+  "scripts/scheduler-performance/generation-dst.test.mjs": "35712cc47bcb79d9f894e639e639caf615b88457fde4fa94170cc2f45d0d2c94",
+  "scripts/scheduler-performance/generation.mjs": "065b5a58f44a022f991ff8b4f4f3d663b416eb44f129fb0ba7b6bdfa0998f527",
+  "scripts/scheduler-performance/local-time.test.mjs": "014b7adc9c2f32c9d1f8fbb61b3f645cd017aac913f632f70b3638bcf4fd0424",
+  "scripts/scheduler-performance/month-model.mjs": "096d495846c120d82d5b4c02816fc1411a93e38297950a49d37970c31aa04dfa",
+  "scripts/scheduler-performance/name-key.mjs": "3919ec1154836daabf2149660cb6a21a307db5e4afbd69def5ae91da338fcb92",
+  "scripts/scheduler-performance/schedule-import.mjs": "d57e7bddbfe77562198b15c7b30d8a3c6d3de2581ce78d169174704938659755",
+  "scripts/scheduler-performance/shift-intervals.mjs": "0a8bbaf67349bdbc60491e2bb60f2e70f2091d7c0f6354216243479c1ca24ad0",
+  "scripts/scheduler-performance/team-model.mjs": "7c25f9bc67b18f6b033f35657cf0abedc5999bea5a763378246d928a61c10ea5",
+  "scripts/scheduler-performance/weekly-hours.mjs": "e5510b4d6a616a8d0a152d23d55ef97da3c3d6aea38a284f70b805fcdd39bfcd",
+  "scripts/scheduler-proposal/model.mjs": "4da9871871ffc052c5732b90b63e138e81bdda0a025a3d691ba84d41740be0a1"
+}

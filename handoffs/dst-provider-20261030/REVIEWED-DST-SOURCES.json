@@ -1,0 +1,42 @@
+{
+  "scripts/scheduler-performance/generation-dst.test.mjs": {
+    "before": "3b5178e99f26f96a1c3b5caa09b4f4efcfb3655c7e5778cdaef7e8b7d97d1846",
+    "after": "35712cc47bcb79d9f894e639e639caf615b88457fde4fa94170cc2f45d0d2c94"
+  },
+  "scripts/scheduler-performance/generation.mjs": {
+    "before": "b894579ca66c200a7a2dda3b3e5fe987d838639e5dabd5bfe7fe100bce759c6e",
+    "after": "065b5a58f44a022f991ff8b4f4f3d663b416eb44f129fb0ba7b6bdfa0998f527"
+  },
+  "scripts/scheduler-performance/generation.test.mjs": {
+    "before": "16afdfc49136ae8f017cbde9b3100189a3a864d191b1678094fb30491b746620",
+    "after": "01e3d8ed302e1b79d5e2f3407474d084d4f059df234e6ebc001221ec6bc9e9fe"
+  },
+  "scripts/scheduler-performance/local-time.test.mjs": {
+    "before": null,
+    "after": "014b7adc9c2f32c9d1f8fbb61b3f645cd017aac913f632f70b3638bcf4fd0424"
+  },
+  "scripts/scheduler-performance/month-model.mjs": {
+    "before": "dd537e94ee3a31bc9938bdf03f88574ebb910963e839628e0df4463034249acf",
+    "after": "096d495846c120d82d5b4c02816fc1411a93e38297950a49d37970c31aa04dfa"
+  },
+  "scripts/scheduler-performance/schedule-import.test.mjs": {
+    "before": "90f039db44a6eeaa47c9023f11255a2d4745f7e9a98bd380bf9b1167b026cf3b",
+    "after": "98afc44b1de737de191a0d72857ee69c6e7db8fed5b8e80fe1c790890d5ff027"
+  },
+  "scripts/scheduler-performance/shift-intervals.mjs": {
+    "before": "b56d8530bd0f49bebf014d1afc0df51357ad3871ec8d71692010b5d16ad0950f",
+    "after": "0a8bbaf67349bdbc60491e2bb60f2e70f2091d7c0f6354216243479c1ca24ad0"
+  },
+  "scripts/scheduler-performance/weekly-hours.mjs": {
+    "before": "856eeb82ffe7dcb55d9248bcf6a54d2fc98b7ff4b3d369cf6c96f2136c3121d9",
+    "after": "e5510b4d6a616a8d0a152d23d55ef97da3c3d6aea38a284f70b805fcdd39bfcd"
+  },
+  "src/SchedulerProposal.jsx": {
+    "before": "3521f91d03437c616f8f8570bf13187a8ef74be334c135c5913b42b7017e36b7",
+    "after": "bbfd3dbe19a5d16834385c5686eacff1ee2e63281a81b5c910f697eaddb65ce5"
+  },
+  "test/scheduler-manager-preview.test.mjs": {
+    "before": "61c027614738a4b0ec29be279fc3c7f19b86f1dc2157b0ce487e8b80bdc59158",
+    "after": "32e1e7a9cc77ef8bf15ad90dc9ab811e4b683381e142cf8f3156c24e53f57430"
+  }
+}

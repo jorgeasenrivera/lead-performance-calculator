@@ -1,0 +1,97 @@
+{
+  "provider": "scripts/scheduler-performance/shift-intervals.mjs",
+  "providerImports": [],
+  "runtime": "Node Intl.DateTimeFormat, Date, standard ECMAScript; no packages/network/storage",
+  "sourceBase": "c002127 plus reviewed local DST layer",
+  "sourcePatchSHA256": "a156281288ae9e2cdbc859d50e14735ab8b4fae578af9334b5364975ba0301cc",
+  "entries": [
+    "scripts/scheduler-performance/shift-intervals.mjs",
+    "scripts/scheduler-performance/generation.mjs",
+    "scripts/scheduler-performance/month-model.mjs",
+    "scripts/scheduler-performance/weekly-hours.mjs",
+    "scripts/scheduler-performance/local-time.test.mjs",
+    "scripts/scheduler-performance/generation-dst.test.mjs"
+  ],
+  "files": {
+    "scripts/scheduler-performance/generation-dst.test.mjs": {
+      "sha256": "35712cc47bcb79d9f894e639e639caf615b88457fde4fa94170cc2f45d0d2c94",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "./month-model.mjs",
+        "./generation.mjs"
+      ]
+    },
+    "scripts/scheduler-performance/generation.mjs": {
+      "sha256": "065b5a58f44a022f991ff8b4f4f3d663b416eb44f129fb0ba7b6bdfa0998f527",
+      "imports": [
+        "./month-model.mjs",
+        "../scheduler-proposal/model.mjs",
+        "./shift-intervals.mjs",
+        "./team-model.mjs",
+        "./schedule-import.mjs",
+        "./demand-context.mjs"
+      ]
+    },
+    "scripts/scheduler-performance/demand-context.mjs": {
+      "sha256": "3c82e4476127c9abeef92ac32b486b482162af1a78d1d94c0c8f3ea030cace8f",
+      "imports": [
+        "../scheduler-proposal/model.mjs",
+        "./month-model.mjs"
+      ]
+    },
+    "scripts/scheduler-performance/month-model.mjs": {
+      "sha256": "096d495846c120d82d5b4c02816fc1411a93e38297950a49d37970c31aa04dfa",
+      "imports": [
+        "./name-key.mjs",
+        "./team-model.mjs",
+        "./shift-intervals.mjs",
+        "../scheduler-proposal/model.mjs"
+      ]
+    },
+    "scripts/scheduler-proposal/model.mjs": {
+      "sha256": "4da9871871ffc052c5732b90b63e138e81bdda0a025a3d691ba84d41740be0a1",
+      "imports": []
+    },
+    "scripts/scheduler-performance/shift-intervals.mjs": {
+      "sha256": "0a8bbaf67349bdbc60491e2bb60f2e70f2091d7c0f6354216243479c1ca24ad0",
+      "imports": []
+    },
+    "scripts/scheduler-performance/team-model.mjs": {
+      "sha256": "7c25f9bc67b18f6b033f35657cf0abedc5999bea5a763378246d928a61c10ea5",
+      "imports": [
+        "./shift-intervals.mjs"
+      ]
+    },
+    "scripts/scheduler-performance/name-key.mjs": {
+      "sha256": "3919ec1154836daabf2149660cb6a21a307db5e4afbd69def5ae91da338fcb92",
+      "imports": []
+    },
+    "scripts/scheduler-performance/schedule-import.mjs": {
+      "sha256": "d57e7bddbfe77562198b15c7b30d8a3c6d3de2581ce78d169174704938659755",
+      "imports": [
+        "./weekly-hours.mjs",
+        "./team-model.mjs",
+        "./shift-intervals.mjs",
+        "./month-model.mjs",
+        "./name-key.mjs"
+      ]
+    },
+    "scripts/scheduler-performance/weekly-hours.mjs": {
+      "sha256": "e5510b4d6a616a8d0a152d23d55ef97da3c3d6aea38a284f70b805fcdd39bfcd",
+      "imports": [
+        "../scheduler-proposal/model.mjs",
+        "./shift-intervals.mjs"
+      ]
+    },
+    "scripts/scheduler-performance/local-time.test.mjs": {
+      "sha256": "014b7adc9c2f32c9d1f8fbb61b3f645cd017aac913f632f70b3638bcf4fd0424",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "./shift-intervals.mjs",
+        "./weekly-hours.mjs"
+      ]
+    }
+  }
+}
