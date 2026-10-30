@@ -1,0 +1,2816 @@
+{
+  "people": [
+    {
+      "id": "FictionalA",
+      "name": "Fictional A"
+    },
+    {
+      "id": "FictionalB",
+      "name": "Fictional B"
+    }
+  ],
+  "month": "2026-11",
+  "proposal": {
+    "temporalPolicy": "unambiguous-local/1",
+    "month": "2026-11",
+    "index": 0,
+    "storeId": "FictionalStore",
+    "snapshot": "{\"revision\":0,\"index\":0,\"id\":\"FictionalStore\",\"people\":[{\"id\":\"FictionalA\",\"name\":\"Fictional A\",\"off\":[],\"start\":9,\"end\":17,\"maxHours\":40},{\"id\":\"FictionalB\",\"name\":\"Fictional B\",\"off\":[],\"start\":9,\"end\":17,\"maxHours\":40}],\"rules\":[{\"effective\":\"2026-11-01\",\"open\":9,\"close\":17,\"minimum\":1,\"closedDays\":[],\"holidays\":{},\"useCapacity\":false},{\"effective\":\"2026-12-01\",\"open\":null,\"close\":null,\"minimum\":null,\"closedDays\":[],\"holidays\":{},\"useCapacity\":false}],\"teams\":[],\"memberships\":[],\"drafts\":[[\"0:2026-11\",{\"store\":{\"id\":\"FictionalStore\",\"name\":\"Fictional\",\"timezone\":\"America/New_York\",\"people\":[{\"id\":\"FictionalA\",\"name\":\"Fictional A\",\"off\":[],\"start\":9,\"end\":17,\"maxHours\":40},{\"id\":\"FictionalB\",\"name\":\"Fictional B\",\"off\":[],\"start\":9,\"end\":17,\"maxHours\":40}],\"rules\":[{\"effective\":\"2026-11-01\",\"open\":9,\"close\":17,\"minimum\":1,\"closedDays\":[],\"holidays\":{},\"useCapacity\":false},{\"effective\":\"2026-12-01\",\"open\":null,\"close\":null,\"minimum\":null,\"closedDays\":[],\"holidays\":{},\"useCapacity\":false}],\"history\":[],\"teams\":[],\"memberships\":[]},\"overrides\":{},\"accepted\":false,\"reviewFingerprint\":null}]]}",
+    "policy": {
+      "confirmed": true,
+      "mode": "individual",
+      "regenerate": false,
+      "shifts": [
+        {
+          "id": "opening",
+          "fullDay": true
+        }
+      ],
+      "requiredRoles": {
+        "sales": 1
+      },
+      "people": {
+        "FictionalA": {
+          "eligible": true,
+          "roles": [
+            "sales"
+          ]
+        },
+        "FictionalB": {
+          "eligible": true,
+          "roles": [
+            "sales"
+          ]
+        }
+      },
+      "useMarket": false,
+      "market": null
+    },
+    "records": {
+      "2026-11-01": {
+        "on": [],
+        "off": [],
+        "unknownNotes": {
+          "FictionalA": {
+            "source": {
+              "kind": "Adjacent-week shifts unverified"
+            }
+          },
+          "FictionalB": {
+            "source": {
+              "kind": "Adjacent-week shifts unverified"
+            }
+          }
+        },
+        "shifts": [],
+        "teamSnapshot": {},
+        "generation": {
+          "unlocked": [],
+          "signatures": {}
+        }
+      },
+      "2026-11-02": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-02",
+            "endDate": "2026-11-02",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-02",
+            "to": "2026-11-02",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-02"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-02",
+            "to": "2026-11-02",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-02"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-02\",\"endDate\":\"2026-11-02\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-02\",\"to\":\"2026-11-02\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-02\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-02\",\"to\":\"2026-11-02\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-02\"}}"
+          }
+        }
+      },
+      "2026-11-03": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-03",
+            "endDate": "2026-11-03",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-03",
+            "to": "2026-11-03",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-03"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-03",
+            "to": "2026-11-03",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-03"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-03\",\"endDate\":\"2026-11-03\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-03\",\"to\":\"2026-11-03\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-03\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-03\",\"to\":\"2026-11-03\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-03\"}}"
+          }
+        }
+      },
+      "2026-11-04": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-04",
+            "endDate": "2026-11-04",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-04",
+            "to": "2026-11-04",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-04"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-04",
+            "to": "2026-11-04",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-04"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-04\",\"endDate\":\"2026-11-04\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-04\",\"to\":\"2026-11-04\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-04\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-04\",\"to\":\"2026-11-04\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-04\"}}"
+          }
+        }
+      },
+      "2026-11-05": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-05",
+            "endDate": "2026-11-05",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-05",
+            "to": "2026-11-05",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-05"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-05",
+            "to": "2026-11-05",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-05"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-05\",\"endDate\":\"2026-11-05\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-05\",\"to\":\"2026-11-05\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-05\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-05\",\"to\":\"2026-11-05\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-05\"}}"
+          }
+        }
+      },
+      "2026-11-06": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-06",
+            "endDate": "2026-11-06",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-06",
+            "to": "2026-11-06",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-06"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-06",
+            "to": "2026-11-06",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-06"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-06\",\"endDate\":\"2026-11-06\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-06\",\"to\":\"2026-11-06\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-06\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-06\",\"to\":\"2026-11-06\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-06\"}}"
+          }
+        }
+      },
+      "2026-11-07": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-07",
+            "endDate": "2026-11-07",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-07",
+            "to": "2026-11-07",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-07"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-07",
+            "to": "2026-11-07",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-07"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-07\",\"endDate\":\"2026-11-07\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-07\",\"to\":\"2026-11-07\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-07\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-07\",\"to\":\"2026-11-07\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-07\"}}"
+          }
+        }
+      },
+      "2026-11-08": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-08",
+            "endDate": "2026-11-08",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-08",
+            "to": "2026-11-08",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-08"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-08",
+            "to": "2026-11-08",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-08"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-08\",\"endDate\":\"2026-11-08\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-08\",\"to\":\"2026-11-08\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-08\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-08\",\"to\":\"2026-11-08\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-08\"}}"
+          }
+        }
+      },
+      "2026-11-09": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-09",
+            "endDate": "2026-11-09",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-09",
+            "to": "2026-11-09",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-09"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-09",
+            "to": "2026-11-09",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-09"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-09\",\"endDate\":\"2026-11-09\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-09\",\"to\":\"2026-11-09\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-09\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-09\",\"to\":\"2026-11-09\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-09\"}}"
+          }
+        }
+      },
+      "2026-11-10": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-10",
+            "endDate": "2026-11-10",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-10",
+            "to": "2026-11-10",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-10"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-10",
+            "to": "2026-11-10",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-10"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-10\",\"endDate\":\"2026-11-10\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-10\",\"to\":\"2026-11-10\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-10\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-10\",\"to\":\"2026-11-10\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-10\"}}"
+          }
+        }
+      },
+      "2026-11-11": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-11",
+            "endDate": "2026-11-11",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-11",
+            "to": "2026-11-11",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-11"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-11",
+            "to": "2026-11-11",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-11"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-11\",\"endDate\":\"2026-11-11\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-11\",\"to\":\"2026-11-11\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-11\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-11\",\"to\":\"2026-11-11\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-11\"}}"
+          }
+        }
+      },
+      "2026-11-12": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-12",
+            "endDate": "2026-11-12",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-12",
+            "to": "2026-11-12",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-12"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-12",
+            "to": "2026-11-12",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-12"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-12\",\"endDate\":\"2026-11-12\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-12\",\"to\":\"2026-11-12\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-12\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-12\",\"to\":\"2026-11-12\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-12\"}}"
+          }
+        }
+      },
+      "2026-11-13": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-13",
+            "endDate": "2026-11-13",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-13",
+            "to": "2026-11-13",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-13"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-13",
+            "to": "2026-11-13",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-13"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-13\",\"endDate\":\"2026-11-13\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-13\",\"to\":\"2026-11-13\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-13\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-13\",\"to\":\"2026-11-13\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-13\"}}"
+          }
+        }
+      },
+      "2026-11-14": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-14",
+            "endDate": "2026-11-14",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-14",
+            "to": "2026-11-14",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-14"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-14",
+            "to": "2026-11-14",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-14"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-14\",\"endDate\":\"2026-11-14\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-14\",\"to\":\"2026-11-14\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-14\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-14\",\"to\":\"2026-11-14\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-14\"}}"
+          }
+        }
+      },
+      "2026-11-15": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-15",
+            "endDate": "2026-11-15",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-15",
+            "to": "2026-11-15",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-15"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-15",
+            "to": "2026-11-15",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-15"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-15\",\"endDate\":\"2026-11-15\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-15\",\"to\":\"2026-11-15\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-15\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-15\",\"to\":\"2026-11-15\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-15\"}}"
+          }
+        }
+      },
+      "2026-11-16": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-16",
+            "endDate": "2026-11-16",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-16",
+            "to": "2026-11-16",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-16"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-16",
+            "to": "2026-11-16",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-16"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-16\",\"endDate\":\"2026-11-16\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-16\",\"to\":\"2026-11-16\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-16\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-16\",\"to\":\"2026-11-16\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-16\"}}"
+          }
+        }
+      },
+      "2026-11-17": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-17",
+            "endDate": "2026-11-17",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-17",
+            "to": "2026-11-17",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-17"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-17",
+            "to": "2026-11-17",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-17"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-17\",\"endDate\":\"2026-11-17\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-17\",\"to\":\"2026-11-17\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-17\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-17\",\"to\":\"2026-11-17\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-17\"}}"
+          }
+        }
+      },
+      "2026-11-18": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-18",
+            "endDate": "2026-11-18",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-18",
+            "to": "2026-11-18",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-18"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-18",
+            "to": "2026-11-18",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-18"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-18\",\"endDate\":\"2026-11-18\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-18\",\"to\":\"2026-11-18\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-18\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-18\",\"to\":\"2026-11-18\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-18\"}}"
+          }
+        }
+      },
+      "2026-11-19": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-19",
+            "endDate": "2026-11-19",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-19",
+            "to": "2026-11-19",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-19"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-19",
+            "to": "2026-11-19",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-19"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-19\",\"endDate\":\"2026-11-19\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-19\",\"to\":\"2026-11-19\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-19\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-19\",\"to\":\"2026-11-19\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-19\"}}"
+          }
+        }
+      },
+      "2026-11-20": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-20",
+            "endDate": "2026-11-20",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-20",
+            "to": "2026-11-20",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-20"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-20",
+            "to": "2026-11-20",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-20"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-20\",\"endDate\":\"2026-11-20\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-20\",\"to\":\"2026-11-20\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-20\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-20\",\"to\":\"2026-11-20\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-20\"}}"
+          }
+        }
+      },
+      "2026-11-21": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-21",
+            "endDate": "2026-11-21",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-21",
+            "to": "2026-11-21",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-21"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-21",
+            "to": "2026-11-21",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-21"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-21\",\"endDate\":\"2026-11-21\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-21\",\"to\":\"2026-11-21\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-21\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-21\",\"to\":\"2026-11-21\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-21\"}}"
+          }
+        }
+      },
+      "2026-11-22": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-22",
+            "endDate": "2026-11-22",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-22",
+            "to": "2026-11-22",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-22"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-22",
+            "to": "2026-11-22",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-22"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-22\",\"endDate\":\"2026-11-22\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-22\",\"to\":\"2026-11-22\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-22\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-22\",\"to\":\"2026-11-22\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-22\"}}"
+          }
+        }
+      },
+      "2026-11-23": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-23",
+            "endDate": "2026-11-23",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-23",
+            "to": "2026-11-23",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-23"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-23",
+            "to": "2026-11-23",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-23"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-23\",\"endDate\":\"2026-11-23\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-23\",\"to\":\"2026-11-23\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-23\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-23\",\"to\":\"2026-11-23\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-23\"}}"
+          }
+        }
+      },
+      "2026-11-24": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-24",
+            "endDate": "2026-11-24",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-24",
+            "to": "2026-11-24",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-24"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-24",
+            "to": "2026-11-24",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-24"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-24\",\"endDate\":\"2026-11-24\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-24\",\"to\":\"2026-11-24\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-24\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-24\",\"to\":\"2026-11-24\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-24\"}}"
+          }
+        }
+      },
+      "2026-11-25": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-25",
+            "endDate": "2026-11-25",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-25",
+            "to": "2026-11-25",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-25"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-25",
+            "to": "2026-11-25",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-25"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-25\",\"endDate\":\"2026-11-25\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-25\",\"to\":\"2026-11-25\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-25\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-25\",\"to\":\"2026-11-25\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-25\"}}"
+          }
+        }
+      },
+      "2026-11-26": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-26",
+            "endDate": "2026-11-26",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-26",
+            "to": "2026-11-26",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-26"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-26",
+            "to": "2026-11-26",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-26"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-26\",\"endDate\":\"2026-11-26\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-26\",\"to\":\"2026-11-26\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-26\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-26\",\"to\":\"2026-11-26\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-26\"}}"
+          }
+        }
+      },
+      "2026-11-27": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-27",
+            "endDate": "2026-11-27",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-27",
+            "to": "2026-11-27",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-27"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-27",
+            "to": "2026-11-27",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-27"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-27\",\"endDate\":\"2026-11-27\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-27\",\"to\":\"2026-11-27\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-27\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-27\",\"to\":\"2026-11-27\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-27\"}}"
+          }
+        }
+      },
+      "2026-11-28": {
+        "on": [
+          "FictionalA"
+        ],
+        "off": [
+          "FictionalB"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "date": "2026-11-28",
+            "endDate": "2026-11-28",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalB": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-28",
+            "to": "2026-11-28",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-28"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-28",
+            "to": "2026-11-28",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-28"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalA",
+            "FictionalB"
+          ],
+          "signatures": {
+            "FictionalA": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"date\":\"2026-11-28\",\"endDate\":\"2026-11-28\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-28\",\"to\":\"2026-11-28\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-28\"}}",
+            "FictionalB": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-28\",\"to\":\"2026-11-28\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-28\"}}"
+          }
+        }
+      },
+      "2026-11-29": {
+        "on": [
+          "FictionalB"
+        ],
+        "off": [
+          "FictionalA"
+        ],
+        "shifts": [
+          {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "date": "2026-11-29",
+            "endDate": "2026-11-29",
+            "startMinute": 540,
+            "endMinute": 1020,
+            "timezone": "America/New_York",
+            "role": "sales",
+            "source": {
+              "kind": "generated preview",
+              "file": "Generated local proposal"
+            }
+          }
+        ],
+        "absences": {
+          "FictionalA": {
+            "kind": "off",
+            "source": {
+              "kind": "generated preview"
+            }
+          }
+        },
+        "teamSnapshot": {
+          "FictionalA": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalA",
+            "teamIds": [],
+            "from": "2026-11-29",
+            "to": "2026-11-29",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-29"
+          },
+          "FictionalB": {
+            "storeId": "FictionalStore",
+            "personId": "FictionalB",
+            "teamIds": [],
+            "from": "2026-11-29",
+            "to": "2026-11-29",
+            "source": {
+              "kind": "unknown membership"
+            },
+            "unknown": true,
+            "date": "2026-11-29"
+          }
+        },
+        "generation": {
+          "unlocked": [
+            "FictionalB",
+            "FictionalA"
+          ],
+          "signatures": {
+            "FictionalB": "{\"on\":true,\"off\":false,\"shifts\":[{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"date\":\"2026-11-29\",\"endDate\":\"2026-11-29\",\"startMinute\":540,\"endMinute\":1020,\"timezone\":\"America/New_York\",\"role\":\"sales\",\"source\":{\"kind\":\"generated preview\",\"file\":\"Generated local proposal\"}}],\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalB\",\"teamIds\":[],\"from\":\"2026-11-29\",\"to\":\"2026-11-29\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-29\"}}",
+            "FictionalA": "{\"on\":false,\"off\":true,\"shifts\":[],\"absence\":{\"kind\":\"off\",\"source\":{\"kind\":\"generated preview\"}},\"team\":{\"storeId\":\"FictionalStore\",\"personId\":\"FictionalA\",\"teamIds\":[],\"from\":\"2026-11-29\",\"to\":\"2026-11-29\",\"source\":{\"kind\":\"unknown membership\"},\"unknown\":true,\"date\":\"2026-11-29\"}}"
+          }
+        }
+      },
+      "2026-11-30": {
+        "on": [],
+        "off": [],
+        "unknownNotes": {
+          "FictionalA": {
+            "source": {
+              "kind": "Adjacent-week shifts unverified"
+            }
+          },
+          "FictionalB": {
+            "source": {
+              "kind": "Adjacent-week shifts unverified"
+            }
+          }
+        },
+        "shifts": [],
+        "teamSnapshot": {},
+        "generation": {
+          "unlocked": [],
+          "signatures": {}
+        }
+      }
+    },
+    "days": [
+      {
+        "day": "2026-11-01",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 0,
+            "roles": {
+              "sales": 0
+            }
+          }
+        ],
+        "gaps": [
+          {
+            "start": 540,
+            "end": 1020,
+            "role": null,
+            "missing": 1
+          },
+          {
+            "start": 540,
+            "end": 1020,
+            "role": "sales",
+            "missing": 1
+          }
+        ],
+        "conflicts": [],
+        "unknown": [
+          "FictionalA",
+          "FictionalB"
+        ],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-02",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-03",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-04",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-05",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-06",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-07",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-08",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-09",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-10",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-11",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-12",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-13",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-14",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-15",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-16",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-17",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-18",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-19",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-20",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-21",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-22",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-23",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-24",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-25",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-26",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-27",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-28",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalA"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-29",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 1,
+            "roles": {
+              "sales": 1
+            }
+          }
+        ],
+        "gaps": [],
+        "conflicts": [],
+        "unknown": [],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [
+          "FictionalB"
+        ],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      },
+      {
+        "day": "2026-11-30",
+        "state": "open",
+        "segments": [
+          {
+            "start": 540,
+            "end": 1020,
+            "count": 0,
+            "roles": {
+              "sales": 0
+            }
+          }
+        ],
+        "gaps": [
+          {
+            "start": 540,
+            "end": 1020,
+            "role": null,
+            "missing": 1
+          },
+          {
+            "start": 540,
+            "end": 1020,
+            "role": "sales",
+            "missing": 1
+          }
+        ],
+        "conflicts": [],
+        "unknown": [
+          "FictionalA",
+          "FictionalB"
+        ],
+        "notes": [
+          "Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee."
+        ],
+        "added": [],
+        "preserved": [],
+        "removed": [],
+        "changed": true
+      }
+    ],
+    "status": "incomplete",
+    "limited": false,
+    "checks": 60,
+    "computeMs": 0,
+    "market": null,
+    "applied": false
+  }
+}

@@ -1,0 +1,18 @@
+✔ default disabled does not inspect material (1.067834ms)
+✔ full actual manager proposal yields 28 explicit off items and typed unknowns without mutation or approval (15.607909ms)
+✔ missing or null kind/provenance never falls back to off (17.549957ms)
+✔ vacation unavailable and unknown remain typed and never join proposed off (11.046277ms)
+✔ split shifts and fractional/negative-zero values remain exact with temporal blockers (4.628175ms)
+✔ source, principal, interval, absence and diagnostics changes stale exact material (11.625355ms)
+✔ case identity mismatch refuses; conflicting assignments preserved but not selected (4.931649ms)
+✔ missing dates remain missing and incomplete, not invented off or work (3.800653ms)
+✔ accessors refused without execution, undefined retained and distinct from missing (7.482468ms)
+✔ explicit closed unknown and open-unentered dates remain distinct without invented off (13.834356ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 145.442254

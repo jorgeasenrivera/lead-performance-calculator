@@ -1,0 +1,1 @@
+Independent /root/review_monthly_candidate: PASS default-disabled local derivation. 10 tests passed. Source b364da6c7d22dedf67a7edf8ab0bf3235cf0d7c216ad04a6abc6ca870d06a15d; tests d8e121bbcd0c32faa1b252bb0242cdfefd4f94183b00ec6ee731a7883bbde9cb. No trusted identity, backend compatibility, prior absence approval or complete DST qualification.

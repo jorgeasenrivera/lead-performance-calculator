@@ -1,0 +1,25 @@
+# Versioned final-review derivation, disabled local candidate
+
+`deriveFinalReview(material,{enabled:false})` defaults to a disabled result without reading input. Explicit local enablement returns version `sage-final-review-material/1`; it always has `trusted:false` and `publicationAuthorized:false`. No app import, UI activation, route, mutation, save or publication is added. This is not a new backend exact-key request format.
+
+Input: `{context:{storeId,month,timezone,principalEpoch},result}`, where result is the actual ManagerMonthlyPreview result (people/month/full proposal). The caller must supply the current verified lifecycle scope; the function checks equality but cannot authenticate it. For actual trust, backend must derive/revalidate source, draft revision and actor/store authority itself. Principal epoch is an invalidation hint only.
+
+Output:
+
+- `preserved`: complete detached immutable input. All inherited rules/snapshot strings, proposal metadata, provenance, team metadata, unknown notes, gaps, conflicts, signatures and other supplied fields remain here.
+- `materialKey`: version-associated tagged encoding of the entire preserved object, including property/interval order, undefined and negative zero. `matchesFinalReview(derived,current)` detects changed local material. It is neither a server digest nor authority/receipt. It does not prove that unsupplied current data has not changed.
+- `proposedOff`: ordered explicit off candidates `{storeId,month,date,personId,kind:'off',absence}`. Requires off membership plus an explicit absence kind and source; preserves the complete absence object. No `kind || 'off'`, no conversion from nonselection/unknown/unavailable/vacation, no assignment overwrite. Conflicting/unmapped records are excluded with issues and retained in preserved.
+- `projection`: person order follows result.people, dates follow record enumeration, split intervals preserve source order and exact values. Statuses working/off/vacation/unavailable/unknown/closed/unentered remain distinct. Missing records stay missing with issues. No working shifts are inferred from legacy on lists lacking intervals.
+- `issues`: mapping conflicts, missing data, unknowns and selected unsupported temporal forms. This is not the final scheduling validator or permission to publish.
+
+The proposedOff name means explicit off entries found in the proposal being reviewed. It does NOT establish which entries were newly generated versus retained/imported or previously approved. Those records remain distinguishable by full provenance in preserved and absence. No existing approval is fabricated or revoked. Backend/base comparison is still needed to decide which entries need a new approval receipt. Missing approval-state metadata is not repaired by inference.
+
+Lossless scope: accepted finite plain data, including undefined and -0, is preserved immutably. Accessors are rejected without executing them; class instances, symbols, functions, sparse arrays, nonfinite values and over-limit/cyclic data are refused rather than normalized. The tagged key is local-only and JSON serialization of preserved by itself would lose undefined/-0; do not treat ordinary JSON as the final persistence codec.
+
+Fractional/midnight/order issues preserve all original values and mark mapping limitations. Integer DST ambiguity/crossings are NOT validated by this module. Empty issues would still not establish temporal qualification. The reviewed timezone provider and server policy must be applied during trusted conversion. The current full fixture remains incomplete and has unknown membership/boundary context; nothing silently becomes publication-ready.
+
+Final-review UI must render the exact returned proposedOff plus unresolved items/provenance and the matching projection, not independently recalculate a different list. Editing any supplied draft/context/absence/shift/source invalidates the local key. A genuine final Publish must use trusted server review material and stable operation identity with atomic off approval/publication, not this local key or shift acknowledgement marks.
+
+Evidence: 10 focused tests run against the complete existing fictional manager proposal, SHA-256 e1a63d61b56b49b8eef5ef41ec0fcb559b4ef1e219c49a2773813ef04cdd2d60. 28 explicit off candidates are produced without input mutation; unknowns are retained. Tests cover defaults, kinds/provenance, split/fractional values, negative zero/undefined, scope/case, stale material, conflicts, missing records and distinct closed/unknown/unentered days. Tests currently reference that existing local fixture path; no clipped excerpt was substituted.
+
+Open integration gates: exact trusted final-review schema, source-to-draft correspondence, retained versus new absence approval semantics, immutable persisted revision, complete DST/coverage validation and atomic authorized publication. Backend's reported rejection of generated-preview absences is not bypassed or modified. The inaccessible containment packet was not read. No server grants, hosted SQL, activation, push or deployment.
