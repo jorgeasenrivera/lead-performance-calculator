@@ -1,17 +1,23 @@
-// Synthetic unit tests for scripts/strict-webkit-kit.mjs. Fakes only: no browser, no launch, no network, no install. A pass here is NEVER sandbox evidence:
-// every receipt produced by a fake is evidenceClass "synthetic-unit-test" and qualifying false, and one test below pins that.
+// Synthetic unit tests for scripts/strict-webkit-kit.mjs. Fakes only: no browser, no launch of any real browser, no network, no install. A pass here is NEVER sandbox evidence:
+// every receipt says qualifying false with a constant blocked list, and tests below pin that even for well-formed records, the "real" binding and a perfectly clean run.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createWebkitKit, checkQualification, realWebkitDeps, webkitRunFailed, REASONS, GAPS, STATES } from './strict-webkit-kit.mjs';
+import { createWebkitKit, checkRecordShape, realWebkitDeps, webkitRunFailed, REASONS, BLOCKED, STATES } from './strict-webkit-kit.mjs';
 
-const NOW = Date.parse('2026-10-31T12:00:00Z');
+const NOW0 = Date.parse('2026-10-31T12:00:00Z');
 const HASH = 'a'.repeat(64), EVID = 'b'.repeat(64);
 const EXE = '/opt/verified/webkit/pw_run.sh';   // a label for the fake; nothing here is read from disk
 const prereq = () => ({ status: 'VERIFIED', webkitExecutable: EXE, webkitExecutableSha256: HASH, playwrightVersion: '1.0.0', verifiedBy: 'sandbox-lane', verifiedAt: '2026-10-30T00:00:00Z' });
 const attest = () => ({ status: 'VERIFIED', kind: 'real-sandbox', engine: 'webkit', sandboxId: 'sbx-1', runnerLabel: 'runner-a', attestedBy: 'reviewer-1', evidenceSha256: EVID, attestedAt: '2026-10-30T00:00:00Z', expiresAt: '2026-11-30T00:00:00Z' });
 const never = () => new Promise(() => {});
-const T = { preflight: 100, start: 40, startGrace: 20, connect: 40, health: 50, close: 40, kill: 40, exitObserve: 40 };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const T = { preflight: 100, start: 40, startGrace: 20, connect: 40, health: 50, close: 40, kill: 40, exitObserve: 40, lateWait: 60 };
+const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 
 /* A fake server whose child "exits" when close or kill is called, unless told otherwise. */
 function fakeServer(o = {}) {
@@ -33,17 +39,19 @@ function fakeBrowser(o = {}) {
 function harness(o = {}) {
   const s = o.server || fakeServer(), b = o.browser || fakeBrowser();
   const log = { launch: [], connect: [], hash: 0 };
+  const clock = { now: NOW0 };
   const deps = {
-    now: () => NOW,
-    executablePath: async () => (o.exe || EXE), playwrightVersion: async () => (o.ver || '1.0.0'), hashFile: async () => { log.hash++; return o.sha || HASH; },
-    launchServer: (opts) => { log.launch.push(opts); return o.launch ? o.launch(s) : Promise.resolve(s.server); },
-    connect: (ws, opts) => { log.connect.push({ ws, opts }); return o.connect ? o.connect(b) : Promise.resolve(b.browser); },
+    now: () => clock.now,
+    executablePath: async () => (o.exe || EXE), playwrightVersion: async () => (o.ver || '1.0.0'), realPath: async (f) => (o.real || f), hashFile: async () => { log.hash++; return o.sha || HASH; },
+    launchServer: (opts) => { log.launch.push(opts); return o.launch ? o.launch(s, clock) : Promise.resolve(s.server); },
+    connect: (ws, opts) => { log.connect.push({ ws, opts }); return o.connect ? o.connect(b, clock) : Promise.resolve(b.browser); },
     ...(o.verifyNoDescendants ? { verifyNoDescendants: o.verifyNoDescendants } : {}),
   };
   const kit = createWebkitKit({ deps, prerequisites: o.prerequisites === undefined ? prereq() : o.prerequisites, attestation: o.attestation === undefined ? attest() : o.attestation, timeouts: T, ...(o.launchOptions !== undefined ? { launchOptions: o.launchOptions } : {}) });
-  return { kit, log, s, b };
+  return { kit, log, s, b, clock };
 }
-const vocab = (r) => { for (const x of r.reasons) assert.ok(REASONS.includes(x), x); for (const x of r.gaps) assert.ok(GAPS.includes(x), x); for (const t of r.transitions) assert.ok(STATES.includes(t.state), t.state); };
+const vocab = (r) => { for (const x of r.reasons) assert.ok(REASONS.includes(x), x); for (const t of r.transitions) assert.ok(STATES.includes(t.state), t.state); };
+const NONQUALIFYING = (r, msg) => { assert.equal(r.qualifying, false, msg); assert.deepEqual(r.blocked, [...BLOCKED], msg); assert.equal(r.records.evidenceBound, false, msg); };
 
 test('missing or unverified prerequisites and attestation refuse before ANY launch call', async () => {
   const bad = [
@@ -58,17 +66,16 @@ test('missing or unverified prerequisites and attestation refuse before ANY laun
   for (const [o, reason] of bad) {
     const { kit, log } = harness(o); const r = await kit.start();
     assert.equal(r.ok, false, reason); assert.equal(log.launch.length, 0, reason + ': no launch'); assert.equal(log.connect.length, 0); assert.equal(log.hash, 0, 'no machine probe either');
-    assert.equal(r.receipt.finalState, 'REFUSED'); assert.ok(r.receipt.reasons.includes(reason), reason + ' in ' + r.receipt.reasons); assert.equal(r.receipt.qualifying, false); assert.equal(webkitRunFailed(r.receipt), true); vocab(r.receipt);
+    assert.equal(r.receipt.finalState, 'REFUSED'); assert.ok(r.receipt.reasons.includes(reason), reason + ' in ' + r.receipt.reasons); NONQUALIFYING(r.receipt, reason); assert.equal(webkitRunFailed(r.receipt), true); vocab(r.receipt);
   }
-  assert.deepEqual(checkQualification({ prerequisites: prereq(), attestation: attest(), now: NOW }), []);
+  assert.deepEqual(checkRecordShape({ prerequisites: prereq(), attestation: attest(), now: NOW0 }), [], 'well-formed means shape only');
 });
 
-test('the machine must match the verified record: executable, version and hash, each refuses before launch', async () => {
-  for (const [o, reason] of [[{ exe: '/other/pw_run.sh' }, 'executable-mismatch'], [{ ver: '9.9.9' }, 'version-mismatch'], [{ sha: 'c'.repeat(64) }, 'hash-mismatch']]) {
+test('the machine must match the record: canonical path, executable, version and hash, each refuses before launch', async () => {
+  for (const [o, reason] of [[{ real: '/somewhere/else/pw_run.sh' }, 'path-not-canonical'], [{ exe: '/other/pw_run.sh' }, 'executable-mismatch'], [{ ver: '9.9.9' }, 'version-mismatch'], [{ sha: 'c'.repeat(64) }, 'hash-mismatch']]) {
     const { kit, log } = harness(o); const r = await kit.start(); assert.equal(log.launch.length, 0, reason); assert.deepEqual(r.receipt.reasons, [reason]); assert.equal(r.receipt.finalState, 'REFUSED');
   }
-  const h = harness(); h.kit; const deps = {}; // a probe that throws refuses too, with a code and no text
-  const kit = createWebkitKit({ deps: { now: () => NOW, executablePath: async () => { throw new Error('secret-looking detail'); }, playwrightVersion: async () => '1.0.0', hashFile: async () => HASH, launchServer: () => { throw new Error('must not launch'); }, connect: () => { throw new Error('no'); } }, prerequisites: prereq(), attestation: attest(), timeouts: T });
+  const kit = createWebkitKit({ deps: { now: () => NOW0, executablePath: async () => { throw new Error('secret-looking detail'); }, playwrightVersion: async () => '1.0.0', realPath: async (f) => f, hashFile: async () => HASH, launchServer: () => { throw new Error('must not launch'); }, connect: () => { throw new Error('no'); } }, prerequisites: prereq(), attestation: attest(), timeouts: T });
   const r = await kit.start(); assert.deepEqual(r.receipt.reasons, ['probe-failed']); assert.ok(!JSON.stringify(r.receipt).includes('secret'));
 });
 
@@ -76,57 +83,116 @@ test('callers cannot pass launch options: any value refuses', async () => {
   for (const lo of [{}, { args: ['--anything'] }, { executablePath: '/x' }, []]) { const { kit, log } = harness({ launchOptions: lo }); const r = await kit.start(); assert.deepEqual(r.receipt.reasons, ['launch-options-refused']); assert.equal(log.launch.length, 0); }
 });
 
-test('happy path with fakes: exact launch options, bounded connect, health, owned handle, clean close', async () => {
+test('happy path with fakes: exact launch options, bounded connect, health, owned handle, clean close, and still nonqualifying', async () => {
   const { kit, log, s, b } = harness(); const r = await kit.start();
-  assert.equal(r.ok, true); assert.equal(r.receipt.finalState, 'READY'); assert.ok(r.browser);
+  assert.equal(r.ok, true); assert.equal(r.receipt.finalState, 'READY'); assert.ok(r.browser); assert.equal(r.receipt.reachedReady, true);
   assert.deepEqual(log.launch, [{ executablePath: EXE, headless: true, timeout: T.start }], 'only the verified executable, headless, and a timeout; no flags');
   assert.equal(log.connect[0].ws, 'ws://127.0.0.1:5555/abc'); assert.deepEqual(log.connect[0].opts, { timeout: T.connect });
   assert.equal(r.receipt.ownership, 'server-handle-and-pid'); assert.equal(r.receipt.ownedPid, 4242);
   const c = await kit.close();
-  assert.equal(c.finalState, 'CLOSED'); assert.equal(c.ok, true); assert.deepEqual(c.reasons, []); assert.equal(b.calls.close, 1); assert.equal(s.calls.close, 1); assert.equal(s.calls.kill, 0);
+  assert.equal(c.finalState, 'CLOSED'); assert.equal(c.ok, true); assert.deepEqual(c.reasons, []); assert.deepEqual(c.unresolved, []); assert.equal(b.calls.close, 1); assert.equal(s.calls.close, 1); assert.equal(s.calls.kill, 0);
   assert.deepEqual(c.transitions.map((x) => x.state), ['PREFLIGHT', 'STARTING', 'CONNECTING', 'HEALTH', 'READY', 'CLOSING', 'CLOSED']); vocab(c);
-  assert.equal(webkitRunFailed(c), false, 'a clean synthetic run is not a failure of the lifecycle...');
-  assert.equal(c.qualifying, false, '...but it is never qualifying');
+  assert.equal(webkitRunFailed(c), false, 'lifecycle clean'); NONQUALIFYING(c, 'but never qualifying'); assert.equal(c.descendants, 'unproven');
 });
 
-test('mocks can never become real sandbox evidence', async () => {
-  // Even with perfect records, a descendant check that says none-observed, and a clean close, fakes give a synthetic, non-qualifying receipt.
-  const { kit } = harness({ verifyNoDescendants: async () => 'none-observed' }); await kit.start(); const c = await kit.close();
-  assert.equal(c.ok, true); assert.equal(c.descendants, 'none-observed'); assert.equal(c.evidenceClass, 'synthetic-unit-test'); assert.equal(c.qualifying, false); assert.ok(c.gaps.includes('synthetic-dependencies'));
-  // A forged brand does not help: the only way in is realWebkitDeps(), which is never called here.
-  const forged = { now: () => NOW, [Symbol.for('real')]: true, real: true, evidenceClass: 'real-launch' };
-  const k2 = createWebkitKit({ deps: { ...forged, executablePath: async () => EXE, playwrightVersion: async () => '1.0.0', hashFile: async () => HASH, launchServer: async () => fakeServer().server, connect: async () => fakeBrowser().browser }, prerequisites: prereq(), attestation: attest(), timeouts: T });
-  await k2.start(); assert.equal((await k2.close()).qualifying, false);
-  assert.throws(() => realWebkitDeps({ driverDir: 'relative' }), /absolute driverDir/, 'the real binding resolves nothing implicitly');
-  const src = readFileSync(new URL('./strict-webkit-kit.mjs', import.meta.url), 'utf8');
-  assert.ok(!/^\s*import\s[^\n]*['"]playwright['"]/m.test(src) && !/\bimport\(/.test(src), 'no static or dynamic import of playwright: it is only required lazily inside the real binding');
+test('no receipt is ever qualifying: not with perfect fakes, a descendants check, forged labels, or the real binding on a synthetic driver', async () => {
+  let h = harness({ verifyNoDescendants: async () => 'none-observed' }); await h.kit.start(); let c = await h.kit.close();
+  assert.equal(c.ok, true); assert.equal(c.descendants, 'none-observed'); NONQUALIFYING(c, 'fakes plus descendants check');
+  const forged = { evidenceClass: 'real-launch', qualifying: true, real: true, [Symbol.for('real')]: true };
+  const k2 = createWebkitKit({ deps: { ...forged, now: () => NOW0, executablePath: async () => EXE, playwrightVersion: async () => '1.0.0', realPath: async (f) => f, hashFile: async () => HASH, launchServer: async () => fakeServer().server, connect: async () => fakeBrowser().browser }, prerequisites: prereq(), attestation: attest(), timeouts: T });
+  await k2.start(); c = await k2.close(); NONQUALIFYING(c, 'forged labels'); assert.equal(c.bindingKind, 'injected');
+  // The real binding, aimed at a throwaway driver directory that contains only synthetic JavaScript written by this test. It never starts anything.
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'wk-synthetic-')));
+  try {
+    const exe = path.join(base, 'pw_run.sh'); fs.writeFileSync(exe, 'synthetic launcher file, never executed\n');
+    const sha = crypto.createHash('sha256').update(fs.readFileSync(exe)).digest('hex');
+    fs.writeFileSync(path.join(base, 'package.json'), JSON.stringify({ name: 'synthetic-driver', version: '1.0.0', main: 'index.js' }));
+    const slow = deferred(); const srv = fakeServer(); globalThis.__wkSynthetic = { exe, slow, srv, connectCalls: 0 };
+    fs.writeFileSync(path.join(base, 'index.js'), "const g = globalThis.__wkSynthetic; exports.webkit = { executablePath: () => g.exe, launchServer: () => g.slow.promise, connect: async () => ({ isConnected: () => true, version: () => '1', close: async () => {} }) };\n");
+    const deps = realWebkitDeps({ driverDir: base });
+    const mk = () => createWebkitKit({ deps, prerequisites: { ...prereq(), webkitExecutable: exe, webkitExecutableSha256: sha }, attestation: attest(), timeouts: T });
+    // close during STARTING with a late server: the forged-but-well-shaped records must not yield qualifying, ownership none, or descendants none-observed.
+    const kit = mk(); const started = kit.start(); for (let i = 0; i < 100 && kit.state() !== 'STARTING'; i++) await wait(5);   // real file hashing takes a moment
+    assert.equal(kit.state(), 'STARTING'); const closing = kit.close(); await wait(10); globalThis.__wkSynthetic.slow.resolve(srv.server); const final = await closing; await started;
+    assert.equal(final.bindingKind, 'real-binding-unreviewed'); NONQUALIFYING(final, 'real binding, forged records'); assert.equal(srv.calls.close, 1, 'the late server was closed before close() returned');
+    assert.notEqual(final.ownership, 'none'); assert.notEqual(final.descendants, 'none-observed'); assert.equal(final.ok, false); assert.equal(webkitRunFailed(final), true);
+  } finally { delete globalThis.__wkSynthetic; fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-test('descendants stay unproven without an external check, and a reported leftover is a failure', async () => {
-  let h = harness(); await h.kit.start(); let c = await h.kit.close(); assert.equal(c.descendants, 'unproven'); assert.ok(c.gaps.includes('descendants-unproven'));
+test('descendants stay unproven without an external check; a reported leftover is UNCERTAIN; never launched is not-applicable', async () => {
+  let h = harness(); await h.kit.start(); let c = await h.kit.close(); assert.equal(c.descendants, 'unproven');
   h = harness({ verifyNoDescendants: async () => 'remaining' }); await h.kit.start(); c = await h.kit.close();
   assert.equal(c.descendants, 'remaining'); assert.ok(c.reasons.includes('descendants-remaining')); assert.equal(c.finalState, 'UNCERTAIN'); assert.equal(webkitRunFailed(c), true);
+  h = harness(); c = await h.kit.close(); assert.equal(c.descendants, 'not-applicable');
 });
 
-test('start that never answers: bounded, UNCERTAIN, nothing owned; a late handle is adopted and closed', async () => {
-  let release; const s = fakeServer(); const late = new Promise((r) => { release = r; });
-  const { kit, log } = harness({ server: s, launch: () => late });
-  const r = await kit.start(); assert.equal(r.ok, false); assert.deepEqual(r.receipt.reasons, ['start-timeout']); assert.equal(r.receipt.finalState, 'UNCERTAIN'); assert.equal(r.receipt.ownership, 'none'); assert.equal(log.connect.length, 0);
-  assert.equal(kit.receipt().pendingAdoptions, 1); assert.equal(webkitRunFailed(kit.receipt()), true, 'adoption pending is a failure');
-  release(s.server); await new Promise((r2) => setTimeout(r2, 80));
-  assert.equal(s.calls.close, 1, 'the late server was closed'); assert.equal(kit.receipt().pendingAdoptions, 0); assert.ok(kit.receipt().reasons.includes('late-start-adopted')); assert.equal(kit.receipt().finalState, 'UNCERTAIN');
+test('close BEFORE start: terminal, never launches, start() afterwards does not launch, repeated close is the same receipt, and it is not a pass', async () => {
+  const h = harness(); const c = await h.kit.close();
+  assert.equal(c.finalState, 'FAILED'); assert.deepEqual(c.reasons, ['closed-before-start']); assert.equal(c.ok, false); assert.equal(c.reachedReady, false); assert.equal(webkitRunFailed(c), true); assert.equal(h.log.launch.length, 0);
+  const r = await h.kit.start(); assert.equal(r.ok, false); assert.equal(h.log.launch.length, 0); assert.equal(h.log.hash, 0); assert.equal(h.log.connect.length, 0);
+  const c2 = await h.kit.close(); assert.deepEqual(c2, c); const c3 = await h.kit.cancel(); assert.deepEqual(c3, c); NONQUALIFYING(c);
 });
 
-test('late start whose close hangs is killed, and one that cannot be stopped stays UNCERTAIN', async () => {
-  const s = fakeServer({ closeHangs: true, killHangs: true }); let release; const late = new Promise((r) => { release = r; });
-  const { kit } = harness({ server: s, launch: () => late }); await kit.start(); release(s.server); await new Promise((r) => setTimeout(r, 150));
-  assert.equal(s.calls.close, 1); assert.equal(s.calls.kill, 1); assert.ok(kit.receipt().reasons.includes('kill-timeout')); assert.equal(kit.receipt().finalState, 'UNCERTAIN');
+test('close DURING STARTING: waits for the late server, closes it, never reaches READY, and a second close does not return a cached clean result', async () => {
+  const slow = deferred(); const s = fakeServer(); const h = harness({ server: s, launch: () => slow.promise });
+  const started = h.kit.start(); await wait(5); assert.equal(h.kit.state(), 'STARTING');
+  let resolved = false; const closing = h.kit.close().then((x) => { resolved = true; return x; });
+  await wait(15); assert.equal(resolved, false, 'close does not return while the start step is unsettled');
+  slow.resolve(s.server); const c = await closing; const r = await started;
+  assert.equal(s.calls.close, 1, 'the late server was closed before close() returned'); assert.equal(h.log.connect.length, 0); assert.equal(r.ok, false); assert.equal(r.browser, null);
+  assert.deepEqual(c.reasons, ['closed-before-ready']); assert.equal(c.finalState, 'FAILED'); assert.equal(c.ownership, 'server-handle-and-pid'); assert.equal(c.ok, false); assert.equal(webkitRunFailed(c), true); assert.equal(h.kit.state(), 'FAILED');
+  const again = await h.kit.close(); assert.deepEqual(again, c); assert.equal(s.calls.close, 1);
 });
 
-test('start that throws, and a handle that is not a server, are failures with codes only', async () => {
+test('close DURING CONNECTING: waits for the late browser, closes it and the server, never reaches READY', async () => {
+  const slow = deferred(); const b = fakeBrowser(); const s = fakeServer(); const h = harness({ server: s, browser: b, connect: () => slow.promise });
+  const started = h.kit.start(); await wait(5); assert.equal(h.kit.state(), 'CONNECTING');
+  let resolved = false; const closing = h.kit.close().then((x) => { resolved = true; return x; });
+  await wait(15); assert.equal(resolved, false); slow.resolve(b.browser); const c = await closing; const r = await started;
+  assert.equal(b.calls.close, 1); assert.equal(s.calls.close, 1); assert.equal(r.ok, false); assert.deepEqual(c.reasons, ['closed-before-ready']); assert.equal(c.reachedReady, false); assert.equal(webkitRunFailed(c), true);
+});
+
+test('cancel DURING STARTING and CONNECTING resolves only at the terminal state, after the late handle is closed', async () => {
+  let slow = deferred(); let s = fakeServer(); let h = harness({ server: s, launch: () => slow.promise });
+  let started = h.kit.start(); await wait(5); let done = false; let cancelling = h.kit.cancel().then((x) => { done = true; return x; });
+  await wait(15); assert.equal(done, false, 'not resolved while the start step is still open'); slow.resolve(s.server);
+  let c = await cancelling; await started; assert.equal(s.calls.close, 1); assert.ok(['FAILED', 'UNCERTAIN', 'CLOSED'].includes(c.finalState)); assert.ok(c.reasons.includes('cancelled')); assert.equal(h.log.connect.length, 0); assert.equal(webkitRunFailed(c), true);
+  slow = deferred(); const b = fakeBrowser(); s = fakeServer(); h = harness({ server: s, browser: b, connect: () => slow.promise });
+  started = h.kit.start(); await wait(5); done = false; cancelling = h.kit.cancel().then((x) => { done = true; return x; });
+  await wait(15); assert.equal(done, false); slow.resolve(b.browser); c = await cancelling; await started; assert.equal(b.calls.close, 1); assert.equal(s.calls.close, 1); assert.ok(c.reasons.includes('cancelled'));
+});
+
+test('close or cancel during START with a launch that never settles: bounded, UNCERTAIN, unresolved is listed, never clean; a much later handle is still closed and cannot change the state', async () => {
+  const slow = deferred(); const s = fakeServer(); const h = harness({ server: s, launch: () => slow.promise });
+  const started = h.kit.start(); await wait(5); const c = await h.kit.close(); await started;
+  assert.equal(c.finalState, 'UNCERTAIN'); assert.ok(c.unresolved.includes('start-unresolved')); assert.ok(c.reasons.includes('start-unresolved')); assert.equal(c.ownership, 'none'); assert.equal(c.ok, false); assert.equal(webkitRunFailed(c), true); assert.equal(c.lateTails, 1);
+  assert.equal(h.kit.state(), 'UNCERTAIN');
+  slow.resolve(s.server); await wait(30);
+  assert.equal(s.calls.close, 1, 'the late server was closed'); const live = h.kit.receipt(); assert.equal(live.finalState, 'UNCERTAIN', 'UNCERTAIN is a one-way door'); assert.equal(live.lateTails, 0); assert.ok(live.reasons.includes('late-start-adopted')); assert.equal(live.ok, false);
+  const again = await h.kit.close(); assert.equal(again.finalState, 'UNCERTAIN');
+});
+
+test('start timeout alone (nobody calls close): the run cleans up, waits bounded, and is UNCERTAIN when the launch never settles', async () => {
+  const slow = deferred(); const h = harness({ launch: () => slow.promise }); const r = await h.kit.start();
+  assert.equal(r.ok, false); assert.ok(r.receipt.reasons.includes('start-timeout')); assert.ok(r.receipt.reasons.includes('start-unresolved')); assert.equal(r.receipt.finalState, 'UNCERTAIN'); assert.equal(h.log.connect.length, 0);
+});
+
+test('start timeout, then the launch settles inside the bounded wait: the server is owned and closed, the run fails but is not UNCERTAIN', async () => {
+  const slow = deferred(); const s = fakeServer(); const h = harness({ server: s, launch: () => slow.promise }); const p = h.kit.start();
+  await wait(T.start + T.startGrace + 10); slow.resolve(s.server); const r = await p;
+  assert.equal(s.calls.close, 1); assert.deepEqual(r.receipt.reasons, ['start-timeout']); assert.equal(r.receipt.finalState, 'FAILED'); assert.deepEqual(r.receipt.unresolved, []); assert.equal(r.ok, false);
+});
+
+test('a late server whose close hangs is killed; one that cannot be stopped stays UNCERTAIN', async () => {
+  const s = fakeServer({ closeHangs: true, killHangs: true, neverExits: true }); const slow = deferred(); const h = harness({ server: s, launch: () => slow.promise });
+  const p = h.kit.start(); await wait(T.start + T.startGrace + 10); slow.resolve(s.server); const r = await p;
+  assert.equal(s.calls.close, 1); assert.equal(s.calls.kill, 1); assert.ok(r.receipt.reasons.includes('kill-timeout')); assert.equal(r.receipt.finalState, 'UNCERTAIN');
+});
+
+test('start that throws, and a handle that is not a server, are failures with codes only; an unusable handle is unresolved work', async () => {
   let h = harness({ launch: () => Promise.reject(new Error('secret-looking detail')) }); let r = await h.kit.start();
   assert.deepEqual(r.receipt.reasons, ['start-threw']); assert.ok(!JSON.stringify(r.receipt).includes('secret')); assert.equal(h.log.connect.length, 0);
-  h = harness({ launch: () => Promise.resolve({ wsEndpoint: () => 'ws://127.0.0.1:1/x' }) }); r = await h.kit.start(); assert.ok(r.receipt.reasons.includes('start-handle-invalid')); assert.equal(r.receipt.finalState, 'UNCERTAIN');
+  h = harness({ launch: () => Promise.resolve({ wsEndpoint: () => 'ws://127.0.0.1:1/x' }) }); r = await h.kit.start(); assert.ok(r.receipt.reasons.includes('start-handle-invalid')); assert.equal(r.receipt.finalState, 'UNCERTAIN'); assert.ok(r.receipt.unresolved.includes('start-handle-invalid'));
 });
 
 test('a non-loopback or malformed endpoint is refused and the owned server is closed', async () => {
@@ -136,11 +202,10 @@ test('a non-loopback or malformed endpoint is refused and the owned server is cl
   }
 });
 
-test('connect that hangs: bounded, owned server closed, late browser adopted and closed', async () => {
-  let release; const b = fakeBrowser(); const late = new Promise((r) => { release = r; }); const s = fakeServer();
-  const { kit } = harness({ server: s, browser: b, connect: () => late }); const r = await kit.start();
-  assert.ok(r.receipt.reasons.includes('connect-timeout')); assert.equal(s.calls.close, 1); assert.equal(r.receipt.finalState, 'UNCERTAIN'); assert.equal(kit.receipt().pendingAdoptions, 1);
-  release(b.browser); await new Promise((r2) => setTimeout(r2, 80)); assert.equal(b.calls.close, 1); assert.equal(kit.receipt().pendingAdoptions, 0); assert.ok(kit.receipt().reasons.includes('late-connect-adopted'));
+test('connect that hangs for good: bounded, owned server closed, UNCERTAIN with the unresolved connect listed; a much later browser is still closed', async () => {
+  const slow = deferred(); const b = fakeBrowser(); const s = fakeServer(); const h = harness({ server: s, browser: b, connect: () => slow.promise }); const r = await h.kit.start();
+  assert.ok(r.receipt.reasons.includes('connect-timeout')); assert.ok(r.receipt.unresolved.includes('connect-unresolved')); assert.equal(s.calls.close, 1); assert.equal(r.receipt.finalState, 'UNCERTAIN'); assert.equal(r.receipt.lateTails, 1);
+  slow.resolve(b.browser); await wait(30); assert.equal(b.calls.close, 1); assert.equal(h.kit.receipt().lateTails, 0); assert.equal(h.kit.receipt().finalState, 'UNCERTAIN'); assert.ok(h.kit.receipt().reasons.includes('late-connect-adopted'));
 });
 
 test('connect that throws, and a failed health check, close what is owned', async () => {
@@ -150,10 +215,18 @@ test('connect that throws, and a failed health check, close what is owned', asyn
   }
 });
 
+test('freshness is rechecked: a record that expires during start or connect never reaches READY and the owned handles are closed', async () => {
+  const expire = (clock) => { clock.now = Date.parse('2026-12-01T00:00:00Z'); };
+  let h = harness({ launch: async (s, clock) => { expire(clock); return s.server; } }); let r = await h.kit.start();
+  assert.equal(r.ok, false); assert.ok(r.receipt.reasons.includes('attestation-expired')); assert.equal(h.s.calls.close, 1); assert.equal(h.log.connect.length, 0); assert.equal(r.receipt.reachedReady, false);
+  h = harness({ connect: async (b, clock) => { expire(clock); return b.browser; } }); r = await h.kit.start();
+  assert.equal(r.ok, false); assert.ok(r.receipt.reasons.includes('attestation-expired')); assert.equal(h.b.calls.close, 1); assert.equal(h.s.calls.close, 1); assert.equal(r.receipt.reachedReady, false); assert.equal(webkitRunFailed(r.receipt), true);
+});
+
 test('close is single-flight: concurrent, repeated, and cancel callers share one close of each handle', async () => {
   const h = harness(); await h.kit.start();
   const [a, b] = await Promise.all([h.kit.close(), h.kit.close()]); await h.kit.close(); await h.kit.cancel();
-  assert.equal(h.b.calls.close, 1); assert.equal(h.s.calls.close, 1); assert.equal(a, b); assert.equal(h.kit.start() instanceof Promise, true);
+  assert.equal(h.b.calls.close, 1); assert.equal(h.s.calls.close, 1); assert.deepEqual(a, b); assert.equal(h.kit.start() instanceof Promise, true);
 });
 
 test('cancel while READY closes through the shared path and is not a pass', async () => {
@@ -161,14 +234,8 @@ test('cancel while READY closes through the shared path and is not a pass', asyn
   assert.equal(h.s.calls.close, 1); assert.ok(r.reasons.includes('cancelled')); assert.equal(r.finalState, 'FAILED'); assert.equal(webkitRunFailed(r), true);
 });
 
-test('cancel during start: the pending launch still gets owned and closed, and no connect happens', async () => {
-  let release; const s = fakeServer(); const slow = new Promise((r) => { release = r; });
-  const h = harness({ server: s, launch: () => slow }); const p = h.kit.start(); await new Promise((r) => setTimeout(r, 5)); h.kit.cancel(); release(s.server);
-  const r = await p; assert.equal(r.ok, false); assert.ok(r.receipt.reasons.includes('cancelled')); assert.equal(h.log.connect.length, 0); assert.equal(s.calls.close, 1);
-});
-
-test('cancel before start: refuses to launch', async () => {
-  const h = harness(); h.kit.cancel(); const r = await h.kit.start(); assert.equal(r.ok, false); assert.equal(h.log.launch.length, 0); assert.ok(r.receipt.reasons.includes('cancelled'));
+test('cancel before start: no launch', async () => {
+  const h = harness(); const r0 = await h.kit.cancel(); const r = await h.kit.start(); assert.equal(r.ok, false); assert.equal(h.log.launch.length, 0); assert.ok(r0.reasons.includes('cancelled'));
 });
 
 test('a server close that hangs or throws escalates to kill on the owned handle only; exit is then observed or the run is UNCERTAIN', async () => {
@@ -185,8 +252,7 @@ test('unknown exit is a failure: close resolves but no exit is observable', asyn
     const h = harness({ server: fakeServer(o) }); await h.kit.start(); const c = await h.kit.close();
     assert.ok(c.reasons.includes('exit-unobserved'), JSON.stringify(o)); assert.equal(c.finalState, 'UNCERTAIN'); assert.equal(c.ok, false); assert.equal(webkitRunFailed(c), true);
   }
-  const h = harness({ server: fakeServer({ pid: undefined }) }); const r = await h.kit.start(); assert.equal(r.receipt.ownedPid, 4242);
-  const h2 = harness({ server: fakeServer({ pid: 0 }) }); const r2 = await h2.kit.start(); assert.equal(r2.receipt.ownership, 'server-handle-only', 'an unusable pid is never recorded or signalled');
+  const h = harness({ server: fakeServer({ pid: 0 }) }); const r = await h.kit.start(); assert.equal(r.receipt.ownership, 'server-handle-only', 'an unusable pid is never recorded or signalled');
 });
 
 test('a browser close that throws or hangs is a failure and is not swallowed; the server is still closed', async () => {
@@ -203,7 +269,7 @@ test('start is idempotent: a second call returns the same run and changes nothin
 test('receipts are structured and secret-free', async () => {
   const h = harness({ server: fakeServer({ closeThrows: true }), browser: fakeBrowser({ closeThrows: true }) }); await h.kit.start(); const c = await h.kit.close(); const j = JSON.stringify(c);
   assert.ok(!j.includes('secret') && !j.includes(EXE) && !j.includes('/opt/') && !j.includes(HASH) && !j.includes(EVID), 'no error text, no paths, no hashes of the records'); vocab(c);
-  assert.deepEqual(Object.keys(c).sort(), ['evidenceClass', 'finalState', 'forced', 'gaps', 'ok', 'ownedPid', 'ownership', 'pendingAdoptions', 'qualification', 'qualifying', 'reasons', 'timeouts', 'transitions', 'descendants', 'version'].sort());
+  assert.deepEqual(Object.keys(c).sort(), ['blocked', 'bindingKind', 'descendants', 'finalState', 'forced', 'lateTails', 'ok', 'ownedPid', 'ownership', 'qualifying', 'reachedReady', 'reasons', 'records', 'timeouts', 'transitions', 'unresolved', 'version'].sort());
 });
 
 test('existing WebKit refusals are untouched and nothing integrates this kit', () => {
