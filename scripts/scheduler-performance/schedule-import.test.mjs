@@ -30,8 +30,8 @@ test('strict dates reject normalization, missing years, impossible days and ambi
  for(const date of ['2026-02-30','2026-01-99','2025-02-29','11/02','11/02/2026','2026-1-02','2026-11-00']){assert.equal(validDate(date),false);assert.equal(run(setup(),`Alex One,${date},09:00,17:00,work`).blocked,true);}
  assert.equal(validDate('2024-02-29'),true);
 });
-test('DST change dates, overnight, mismatched zones and invalid times fail closed',()=>{
- for(const line of ['Alex One,2026-03-08,09:00,17:00,work','Alex One,2026-11-01,09:00,17:00,work','Alex One,2026-11-02,22:00,06:00,work','Alex One,2026-11-02,09:00,24:00,work','Alex One,2026-11-02,,17:00,work','Alex One,2026-11-02,09:61,17:00,work'])assert.equal(run(setup(),line).blocked,true);
+test('unsafe DST intervals, overnight, mismatched zones and invalid times fail closed',()=>{
+ for(const line of ['Alex One,2026-03-08,02:00,04:00,work','Alex One,2026-11-01,01:00,03:00,work','Alex One,2026-11-01,00:00,03:00,work','Alex One,2026-11-02,22:00,06:00,work','Alex One,2026-11-02,09:00,24:00,work','Alex One,2026-11-02,,17:00,work','Alex One,2026-11-02,09:61,17:00,work'])assert.equal(run(setup(),line).blocked,true);
  for(const extra of ['2026-11-03,America/New_York','2026-11-02,UTC']){const r=reviewImport(setup(),0,parseSchedule('Name,Date,Start,End,End Date,Timezone\nAlex One,2026-11-02,09:00,17:00,'+extra));assert.equal(r.blocked,true);}
 });
 test('unknown formats, break columns and malformed CSV are explicit errors',()=>{
@@ -57,7 +57,7 @@ test('overlap and work/off conflicts within one file block both input orders',()
 test('weekly caps include adjacent months, exact partial minutes and legacy assignments',()=>{
  const p=setup();p.get(0,'2026-10').store.people[0].maxHours=40;p.get(0,'2026-11').store.people[0].maxHours=40;
  for(const d of ['26','27','28','29','30'])p.setAssignment(0,'2026-10-'+d,{on:['a'],off:[]});
- // Nov 1 is rejected as a DST day as well, so use a non-DST boundary week in February/March.
+ // Use a February/March boundary week to isolate the adjacent-month cap test.
  const q=setup();for(const d of ['23','24','25','26','27'])q.setAssignment(0,'2026-02-'+d,{on:['a'],off:[]});
  const r=run(q,'Alex One,2026-03-01,09:00,09:01,work');assert.ok(r.items[0].messages.some(m=>m.includes('weekly hours exceeded')));assert.equal(r.blocked,true);
  q.setAssignment(0,'2026-02-27',{on:[],off:[]});const ok=run(q,'Alex One,2026-03-01,09:00,09:01,work');applyImport(q,ok);assert.equal(q.rows(0,'2026-03')[0].weeklyHours.a,32+1/60);
@@ -107,4 +107,8 @@ test('Cedar December 31 cap eight blocks January 1 minute despite January cap fo
  const r=run(p,'Alex 1,2027-01-01,09:00,09:01,work');assert.equal(r.blocked,true);
  assert.ok(r.items[0].messages.some(m=>m.includes('Existing assignment on 2026-12-31')));
  assert.throws(()=>applyImport(p,r));assert.equal(importSnapshot(p,0),before);
+});
+
+test('import review accepts unambiguous transition daytime with exact eight-hour total',()=>{
+ for(const day of ['2026-11-01','2026-03-08']){const p=setup(),r=run(p,`Alex One,${day},09:00,17:00,work`);assert.equal(r.blocked,false);applyImport(p,r);assert.equal(p.rows(0,day.slice(0,7)).find(d=>d.day===day).weeklyHours.a,8);}
 });

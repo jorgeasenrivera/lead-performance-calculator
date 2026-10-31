@@ -1,5 +1,5 @@
 import { addDays, weekday, ruleFor } from '../scheduler-proposal/model.mjs';
-import { shiftProblem, unionMinutes, STORE_TIMEZONE } from './shift-intervals.mjs';
+import { shiftProblem, localInterval, unionMinutes, STORE_TIMEZONE } from './shift-intervals.mjs';
 
 export const WEEKLY_WARNING_MINUTES = 3000;
 export const mondayOf = day => addDays(day, -((weekday(day) + 6) % 7));
@@ -32,7 +32,7 @@ export function weeklyHoursAudit(day, personId, resolveDay) {
       }
     } else if (assigned) {
       const rule = ruleFor(store.rules, date);
-      if (Number.isInteger(rule?.open * 60) && Number.isInteger(rule?.close * 60) && rule.open >= 0 && rule.close <= 24 && rule.close > rule.open) intervals.push([rule.open * 60, rule.close * 60]);
+      if (Number.isInteger(rule?.open * 60) && Number.isInteger(rule?.close * 60) && rule.open >= 0 && rule.close <= 24 && rule.close > rule.open && localInterval(date,rule.open*60,rule.close*60,store.timezone||STORE_TIMEZONE).ok) intervals.push([rule.open * 60, rule.close * 60]);
       else reasons.push('Shift duration unknown');
     }
     if (assigned && record?.breaksKnown !== true) reasons.push('Break information unavailable');

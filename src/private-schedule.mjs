@@ -7,12 +7,13 @@ export function reviewedSchedule(data, month) {
   }
   return { ...people };
 }
+const validDate = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10) === d;
 export function ownSchedule(result, { store, month, person }) {
   if (result?.store !== store || result?.month !== month || result?.subject !== person) return { state: 'unavailable', offDates: null };
   if (result.state !== 'published') return { state: 'unpublished', offDates: null };
   const entry = result.people?.[person];
   if (!Array.isArray(entry?.offDates) || Object.keys(result.people).length !== 1
-      || entry.offDates.some(d => typeof d !== 'string' || !d.startsWith(month + '-'))) return { state: 'unavailable', offDates: null };
+      || entry.offDates.some(d => !validDate(d) || !d.startsWith(month + '-'))) return { state: 'unavailable', offDates: null };
   return { state: 'published', offDates: entry.offDates.slice(), revision: result.revision };
 }
 /* No disk cache. Every request rechecks account approval at the database. */

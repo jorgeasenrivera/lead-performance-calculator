@@ -1,6 +1,6 @@
 import { nameKey, reservedTeamName } from './name-key.mjs';
 import { seedTeams, teamSnapshot, validateMembership } from "./team-model.mjs";
-import { personIntervals, unionMinutes, coverageSegments, shiftProblem, stableLocalDate, storeTimezone } from "./shift-intervals.mjs";
+import { personIntervals, unionMinutes, coverageSegments, shiftProblem, localInterval, storeTimezone } from "./shift-intervals.mjs";
 import {
   addDays,
   weekday,
@@ -122,8 +122,8 @@ export function enteredMonth(month, resolveDay) {
   const totals = new Map(), unknownWeeks = new Set();
   for (const r of all) for (const id of r.ids) {
     const key = r.week + ':' + id;
-    totals.set(key, (totals.get(key) || 0) + unionMinutes(personIntervals(r.record,id,r.rule)));
-    if (!r.hours || (r.record?.shifts || []).filter(s=>s.personId===id).some(s=>shiftProblem(s,r.store,r.day))) unknownWeeks.add(key);
+    totals.set(key, (totals.get(key) || 0) + unionMinutes(personIntervals(r.record,id,r.rule).filter(([a,b])=>localInterval(r.day,a,b,storeTimezone(r.store)).ok)));
+    if (!r.hours || personIntervals(r.record,id,r.rule).some(([a,b])=>!localInterval(r.day,a,b,storeTimezone(r.store)).ok) || (r.record?.shifts || []).filter(s=>s.personId===id).some(s=>shiftProblem(s,r.store,r.day))) unknownWeeks.add(key);
   }
   return all.filter(r => r.day.startsWith(month + '-')).map(r => {
     const issues = [], conflicts = {}, eligibleIds = [];
@@ -159,14 +159,14 @@ export function enteredMonth(month, resolveDay) {
     if (r.state === 'open' && r.record && minimumCoverage < r.rule.minimum) issues.push(`${r.rule.minimum - minimumCoverage} more eligible people needed for entered minimum coverage.`);
     if(r.state==='open'&&r.store.planningPolicy){
       const policy=r.store.planningPolicy;
-      if(!stableLocalDate(r.day,storeTimezone(r.store)))issues.push('Generated planning does not support this DST-change date.');
+      if(!localInterval(r.day,r.rule.open*60,r.rule.close*60,storeTimezone(r.store)).ok)issues.push('Store interval requires local-time review.');
       if(r.store.people.some(p=>!Array.isArray(p.off)||!Number.isFinite(p.start)||!Number.isFinite(p.end)||p.end<=p.start||!Number.isFinite(p.maxHours)||policy.people?.[p.id]?.eligible===undefined||!Array.isArray(policy.people?.[p.id]?.roles)||r.record?.unknownNotes?.[p.id]||r.record?.generationLocks?.includes(p.id)&&!r.ids.includes(p.id)&&!(r.record?.off||[]).includes(p.id)))issues.push('Planning inputs incomplete: review availability, eligibility and roles.');
       for(const [role,minimum] of Object.entries(policy.requiredRoles||{}))if(coverage.some(segment=>new Set(eligibleIds.filter(id=>personIntervals(r.record,id,r.rule).some(([a,b])=>a<=segment.start&&b>=segment.end&&((r.record?.shifts||[]).find(s=>s.personId===id&&s.startMinute===a&&s.endMinute===b)?.role||(policy.people[id]?.roles?.length===1?policy.people[id].roles[0]:null))===role))).size<minimum))issues.push(`Required ${role} coverage is incomplete.`);
     }
     const estimate = r.state === 'open' ? forecast(r.store.history, r.day) : null;
     const target = r.state === 'open' ? Math.max(r.rule.minimum, r.rule.useCapacity && estimate && r.rule.capacity > 0 ? Math.ceil(estimate.high / r.rule.capacity) : 0) : null;
     const suggestions = r.state !== 'open' ? [] : r.store.people.filter(p => !(r.record?.shifts || []).some(s=>s.personId===p.id) && !unknownWeeks.has(r.week + ':' + p.id) && !(r.record?.off || []).includes(p.id) && Array.isArray(p.off) && !p.off.includes(weekday(r.day)) && p.start <= r.rule.open && p.end >= r.rule.close && Number.isFinite(p.maxHours) && (totals.get(r.week + ':' + p.id) || 0) - (r.ids.includes(p.id) ? unionMinutes(personIntervals(r.record,p.id,r.rule)) : 0) + r.hours*60 <= p.maxHours*60).slice(0, target).map(p => p.id);
-    return { coverage, minimumCoverage, day:r.day, state:r.state, rule:r.rule, record:r.record, ids:r.ids, eligibleIds, conflicts, issues, required:r.state === 'open' ? r.rule.minimum : null, recommendationTarget:target, suggestions, estimate, hours:r.hours, override:r.override, weeklyHours:Object.fromEntries(r.store.people.map(p => [p.id, (totals.get(r.week + ':' + p.id) || 0)/60])) };
+    return { coverage, minimumCoverage, day:r.day, state:r.state, rule:r.rule, record:r.record, ids:r.ids, eligibleIds, conflicts, issues, required:r.state === 'open' ? r.rule.minimum : null, recommendationTarget:target, suggestions, estimate, hours:r.hours, override:r.override, weeklyHours:Object.fromEntries(r.store.people.map(p => [p.id, unknownWeeks.has(r.week + ':' + p.id)?null:(totals.get(r.week + ':' + p.id) || 0)/60])) };
   });
 }
 
