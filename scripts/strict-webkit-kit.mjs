@@ -10,6 +10,14 @@
  *  - the "real" binding can be pointed at any driver directory, so being built by it proves nothing. It only changes `bindingKind`.
  * Qualification needs an external attestation verifier and a runtime proof that do not exist yet. When they do, they are a new reviewed change, not a flag here.
  *
+ * No receipt reads as a WebKit pass. There is no `ok` field: `lifecycleOk` says only that this run's own bookkeeping was clean, `verdict` is the constant "NOT_QUALIFIED", and
+ * webkitRunFailed() is true for every receipt this file can produce. start() resolves `ready`, meaning only "reached READY".
+ *
+ * Source evidence about Playwright, as REPORTED by the independent reviewer (I did not read it myself): Playwright v1.63.0, commit 1b025d7e20a026371cd5f98ba0cdce48892737c8,
+ * packages/utils/processLauncher.ts. handleSIGINT, handleSIGTERM and handleSIGHUP default to true and are left at their defaults here. close() waits for the child to close and for temp
+ * cleanup. kill() sends SIGKILL to the process group and waits, with NO timeout of its own, so the only bound on it is T.kill below. That group kill does NOT prove that descendants which
+ * left the group are gone, so descendants stay "unproven" and a clean exit of the direct child is not process-tree evidence.
+ *
  * What the lifecycle DOES guarantee (checked by synthetic tests only, never by a real browser):
  *  - The launch API is only called after both records pass the shape and freshness check and the machine matches them (path is canonical, executable path, sha256, Playwright version).
  *    Freshness is rechecked after start and before READY. Callers cannot pass launch options.
@@ -18,13 +26,19 @@
  *  - Every wait is bounded. Close is single-flight. A close that throws or hangs is a failure, escalating to kill() on the owned server handle only. Nothing is killed by name, pattern or guessed pid.
  *  - An exit that was not observed is UNCERTAIN. UNCERTAIN never turns into a pass: later events can only add reasons.
  *  - Receipts carry closed-vocabulary codes, state names, booleans, numbers. No error text, no paths, no hashes, no environment.
+ *  - Bookkeeping cannot stop cleanup. A throwing injected clock, or any unexpected internal fault, is recorded as clock-fault or internal-fault, cleanup is still attempted, and the receipt is
+ *    never clean. start(), close() and cancel() never reject.
+ *
+ * close() and cancel() are BOUNDED, NOT PROMPT. They wait for the step in flight (preflight up to 2 x preflight; start up to start + startGrace; connect up to connect + startGrace; health up to
+ * health), then run the close path: lateWait for a timed-out start and again for a timed-out connect, browser close, server close, kill, exitObserve, and a descendants check if one was supplied
+ * (each up to close, kill, exitObserve or close respectively). The worst case is the longest in-flight step plus that close path, a sum of the configured timeouts, roughly a minute with the defaults.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 
-export const RECEIPT_VERSION = 2;
+export const RECEIPT_VERSION = 3;
 export const STATES = Object.freeze(["IDLE", "PREFLIGHT", "REFUSED", "STARTING", "CONNECTING", "HEALTH", "READY", "CLOSING", "CLOSED", "FAILED", "UNCERTAIN"]);
 export const REASONS = Object.freeze([
   "launch-options-refused",
@@ -36,6 +50,7 @@ export const REASONS = Object.freeze([
   "cancelled", "closed-before-start", "closed-before-ready",
   "browser-close-threw", "browser-close-timeout", "server-close-threw", "server-close-timeout",
   "kill-threw", "kill-timeout", "exit-unobserved", "descendants-remaining",
+  "clock-fault", "internal-fault",
 ]);
 /* Constant on purpose: nothing a run does can remove an item from this list. */
 export const BLOCKED = Object.freeze([
@@ -113,21 +128,28 @@ export function realWebkitDeps({ driverDir }) {
 export function createWebkitKit({ deps, prerequisites, attestation, timeouts, launchOptions } = {}) {
   if (!deps || typeof deps.now !== "function") throw new Error("createWebkitKit needs deps");
   const T = resolveTimeouts(timeouts);
-  const t0 = deps.now();
   const transitions = [], reasons = [], unresolved = [];
-  let state = "IDLE", started = null, closing = null, intent = null;
+  let state = "IDLE", started = null, closing = null, intent = null, clockFault = false, lastNow = 0;
   let server = null, browser = null, ownedPid = null, forced = false, uncertain = false, launchAttempted = false, reachedReady = false, lateTails = 0, descendants = "unproven", shapeOk = false;
   let pendingStart = null, pendingConnect = null;
-  /* UNCERTAIN is a one-way door: nothing later can turn it into anything else. */
-  const go = (s) => { if (state === "UNCERTAIN" && s !== "UNCERTAIN") return; state = s; transitions.push({ state: s, atMs: Math.max(0, deps.now() - t0) }); };
   const why = (r) => { if (!REASONS.includes(r)) throw new Error("unknown reason " + r); if (!reasons.includes(r)) reasons.push(r); };
+  /* The injected clock is bookkeeping, not a reason to skip cleanup. A clock that throws or returns a non-number is recorded once, the last good time is used, and freshness then fails closed. */
+  const nowMs = () => {
+    try { const v = deps.now(); if (Number.isFinite(v)) { lastNow = v; return v; } } catch (e) { /* recorded below */ }
+    if (!clockFault) { clockFault = true; why("clock-fault"); }
+    return lastNow;
+  };
+  const t0 = nowMs();
+  /* UNCERTAIN is a one-way door: nothing later can turn it into anything else. */
+  const go = (s, at = nowMs()) => { if (state === "UNCERTAIN" && s !== "UNCERTAIN") return; state = s; transitions.push({ state: s, atMs: Math.max(0, at - t0) }); };
   const open = (r) => { if (!unresolved.includes(r)) unresolved.push(r); uncertain = true; };
 
   const receipt = () => ({
     version: RECEIPT_VERSION,
     qualifying: false, blocked: [...BLOCKED],   // constant: see the header
     bindingKind: REAL.has(deps) ? "real-binding-unreviewed" : "injected",
-    ok: reachedReady && state === "CLOSED" && reasons.length === 0 && unresolved.length === 0 && lateTails === 0,   // lifecycle clean. NOT a qualification.
+    verdict: "NOT_QUALIFIED",   // constant: no receipt from this file is a WebKit pass
+    lifecycleOk: reachedReady && state === "CLOSED" && reasons.length === 0 && unresolved.length === 0 && lateTails === 0,   // this run's own bookkeeping was clean. NOT a qualification, NOT a pass.
     finalState: state, reachedReady, reasons: [...reasons], unresolved: [...unresolved], lateTails,
     ownership: server ? (ownedPid ? "server-handle-and-pid" : "server-handle-only") : "none",
     ownedPid, forced, descendants,
@@ -154,7 +176,16 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
     }, () => { lateTails--; });
   };
 
-  const closeAll = () => closing || (closing = (async () => {
+  /* Never rejects. If anything unexpected breaks the close path, record it, make one bounded best-effort attempt on what is owned, and end UNCERTAIN. */
+  const closeAll = () => closing || (closing = closeBody().catch(async () => {
+    try { why("internal-fault"); } catch (e) { /* the vocabulary is fixed, this cannot fail */ }
+    uncertain = true;
+    try { if (browser) await step(() => browser.close(), T.close); } catch (e) { /* already uncertain */ }
+    try { if (server) { const r = await step(() => server.close(), T.close); if (r.status !== "ok") await step(() => server.kill(), T.kill); } } catch (e) { /* already uncertain */ }
+    go("UNCERTAIN");
+    return receipt();
+  }));
+  const closeBody = async () => {
     if (state === "REFUSED") return receipt();   // nothing was ever launched, so there is nothing to close and no state to change
     go("CLOSING");
     // 1. Anything a timed-out step may still produce is waited for, bounded, and then owned.
@@ -192,22 +223,25 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
         else if (d.status === "ok" && d.value === "remaining") { descendants = "remaining"; why("descendants-remaining"); }
       }
     } else if (!launchAttempted) descendants = "not-applicable";   // launch was never called, so there is nothing that could remain
+    const endAt = nowMs();   // read once, BEFORE the final state is chosen, so a clock fault is in the reasons when the state is decided and there is no second read after it
     const bad = uncertain || reasons.some((r) => ["kill-timeout", "kill-threw", "exit-unobserved", "descendants-remaining"].includes(r));
-    go(bad ? "UNCERTAIN" : reasons.length ? "FAILED" : "CLOSED");
+    go(bad ? "UNCERTAIN" : reasons.length ? "FAILED" : "CLOSED", endAt);
     return receipt();
-  })());
+  };
 
-  const refuse = (r) => { why(r); go("REFUSED"); return { ok: false, browser: null, receipt: receipt() }; };
-  const finish = async (r) => { if (r) why(r); const rc = await closeAll(); return { ok: false, browser: null, receipt: rc }; };
-  /* Freshness is rechecked wherever a later step could outlive the record. */
-  const stale = () => { const q = checkRecordShape({ prerequisites, attestation, now: deps.now() }); return q.length ? q[0] : null; };
+  const refuse = (r) => { why(r); go("REFUSED"); return { ready: false, browser: null, receipt: receipt() }; };
+  const finish = async (r) => { if (r) why(r); const rc = await closeAll(); return { ready: false, browser: null, receipt: rc }; };
+  /* Freshness is rechecked wherever a later step could outlive the record. A broken clock is not fresh. */
+  const stale = () => { const now = nowMs(); if (clockFault) return "clock-fault"; const q = checkRecordShape({ prerequisites, attestation, now }); return q.length ? q[0] : null; };
 
   async function run() {
-    if (closing) return { ok: false, browser: null, receipt: await closing };   // closed before start: launch is never called
+    if (closing) return { ready: false, browser: null, receipt: await closing };   // closed before start: launch is never called
     go("PREFLIGHT");
     if (launchOptions !== undefined) return refuse("launch-options-refused");
-    const q = checkRecordShape({ prerequisites, attestation, now: deps.now() });
-    if (q.length) { for (const r of q) why(r); go("REFUSED"); return { ok: false, browser: null, receipt: receipt() }; }
+    if (clockFault) return refuse("clock-fault");
+    const q = checkRecordShape({ prerequisites, attestation, now: nowMs() });
+    if (clockFault) return refuse("clock-fault");
+    if (q.length) { for (const r of q) why(r); go("REFUSED"); return { ready: false, browser: null, receipt: receipt() }; }
     shapeOk = true;
     // Machine probes: what is installed must be what the record names. This does not verify the record's evidence.
     const exeP = prerequisites.webkitExecutable;
@@ -247,8 +281,10 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
     if (intent !== null) return finish(null);
     { const st = stale(); if (st) return finish(st); }
     reachedReady = true; go("READY");   // no await between the last check and here: a stop after this sees READY and closes through closeAll
-    return { ok: true, browser, receipt: receipt() };
+    return { ready: true, browser, receipt: receipt() };
   }
+  /* start() never rejects: an unexpected fault in the run is recorded and routed through the same close path. */
+  const runSafe = () => run().catch(() => { try { why("internal-fault"); } catch (e) { /* fixed vocabulary */ } return finish(null); });
 
   /* close() and cancel(): one terminal path. Before READY they record why the run is not a pass, let the run's current step settle (it sees the intent and cleans up), then run the single shared close. */
   const stop = (kind) => {
@@ -260,12 +296,14 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
   };
 
   return {
-    start: () => started || (started = run()),   // one run; a second call returns the same result and changes nothing
+    start: () => started || (started = runSafe()),   // one run; a second call returns the same result and changes nothing
     close: () => stop("close"),
     cancel: () => stop("cancel"),
     receipt, state: () => state,
   };
 }
 
-/* Same contract as strict-cleanup.cleanupFailed: only a run that reached READY and then closed completely clean is not a failure. This is lifecycle only, never qualification. */
-export const webkitRunFailed = (r) => !(r && r.ok === true && r.reachedReady === true && r.finalState === "CLOSED" && Array.isArray(r.reasons) && r.reasons.length === 0 && Array.isArray(r.unresolved) && r.unresolved.length === 0 && r.lateTails === 0);
+/* Lifecycle only: true unless the run reached READY and then closed with nothing wrong and nothing unresolved. A caller that wants a WebKit result must NOT use this. */
+export const lifecycleFailed = (r) => !(r && r.lifecycleOk === true && r.reachedReady === true && r.finalState === "CLOSED" && Array.isArray(r.reasons) && r.reasons.length === 0 && Array.isArray(r.unresolved) && r.unresolved.length === 0 && r.lateTails === 0);
+/* The failure semantics an integration must use: anything short of an explicit qualifying receipt (and a clean lifecycle) is a failure. Today no receipt can qualify, so this is always true. */
+export const webkitRunFailed = (r) => !(r && r.qualifying === true && r.verdict === "QUALIFIED" && !lifecycleFailed(r));

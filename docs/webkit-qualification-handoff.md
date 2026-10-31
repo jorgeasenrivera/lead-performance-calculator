@@ -27,21 +27,47 @@ Qualification needs an external verifier and a runtime proof. That is a new revi
 
 ## Lifecycle guarantees (synthetic tests only)
 
-The 28 tests use fakes. No real browser is started. One test builds a throwaway driver directory of synthetic JavaScript to exercise the real binding, and removes it afterwards.
+The 31 tests use fakes. No real browser is started. One test builds a throwaway driver directory of synthetic JavaScript to exercise the real binding, and removes it afterwards.
 
 - Launch is only called after both records pass shape and freshness and the machine matches them (canonical path, executable path, sha256, Playwright version). Callers pass no launch options.
 - Every wait is bounded. Close is single-flight. A close that throws or hangs is a failure and escalates to `kill()` on the owned server handle only. Nothing is killed by name, pattern or guessed pid.
 - An exit that was not observed is `UNCERTAIN`.
-- `ok` means the lifecycle was clean (reached READY and closed with no reasons and nothing unresolved). It is not a qualification.
+- There is no `ok` field. `lifecycleOk` means only that this run reached READY and closed with no reasons and nothing unresolved. It is not a qualification and not a pass. `verdict` is the constant `NOT_QUALIFIED`. `start()` resolves `ready`, meaning only that READY was reached.
 - Receipts carry closed-vocabulary codes, state names, booleans and numbers. No error text, paths or hashes.
+
+## Failure semantics for any future integration
+
+- `webkitRunFailed(receipt)` is the one to use. It is true unless the receipt is `qualifying: true` with verdict `QUALIFIED` and a clean lifecycle. No receipt this file produces can be either, so today it is always true. Tests pin that, including a forged `qualifying: true`.
+- `lifecycleFailed(receipt)` is lifecycle only. It is for diagnosing a run, and must not be used to decide a WebKit result.
+- Nothing calls either. No caller is wired, and `ci-fixture.sh` still refuses WebKit.
+
+## Bookkeeping faults (8f63e00 follow-up)
+
+- An injected clock that throws or returns a non-number is recorded once as `clock-fault`. The last good time is used, freshness fails closed, and cleanup is still attempted. The run is never clean.
+- Any unexpected fault in the run or the close path is recorded as `internal-fault`. The close path makes one bounded best-effort close of what it owns and ends `UNCERTAIN`.
+- `start()`, `close()` and `cancel()` never reject, and a failed close is no longer cached as a rejected promise.
+- A test faults the clock at every read of a full clean run and checks each case: the server is closed, the fault is in the reasons, the state is `REFUSED`, `FAILED` or `UNCERTAIN`, and a second `close()` returns the same receipt.
+
+## Cancel and close are bounded, not prompt
+
+They wait for the step in flight (preflight up to 2 x `preflight`, start up to `start + startGrace`, connect up to `connect + startGrace`, health up to `health`). Then the close path runs: `lateWait` for a timed-out start and again for a timed-out connect, browser close, server close, kill, `exitObserve`, and a descendants check if one was supplied. The worst case is the longest in-flight step plus that close path, a sum of the configured timeouts, roughly a minute with the defaults. A caller that needs a hard deadline must set its own.
+
+## Playwright source evidence (as reported by the independent reviewer; not read by me)
+
+Playwright v1.63.0, commit `1b025d7e20a026371cd5f98ba0cdce48892737c8`, `packages/utils/processLauncher.ts`:
+
+- `handleSIGINT`, `handleSIGTERM` and `handleSIGHUP` default to true. They are left at their defaults here.
+- `close()` waits for the child to close and for temp cleanup.
+- `kill()` sends SIGKILL to the process group and waits, with no timeout of its own. The only bound is this kit's `kill` timeout.
+- A group kill does not prove that descendants which left the group are gone. So `descendants` stays `unproven`, and a clean exit of the direct child is not process-tree evidence.
 
 ## Not proven by anything here
 
 - That WebKit is sandboxed on any runner.
 - How many processes WebKit starts, and whether any survive close.
 - That `launchServer` and `connect` behave as the upstream docs say on the runner. `realWebkitDeps` has never been run against a real browser.
-- That Playwright's default signal handlers (`handleSIGINT`, `handleSIGTERM`, `handleSIGHUP` default to true) are acceptable here. They are left at their defaults.
-- The pinned Playwright version for this repo was not read. The upstream docs were read from `main`.
+- That Playwright's default signal handlers are acceptable here. They are left at their defaults.
+- Whether the Playwright version this repo pins matches v1.63.0. I did not read the repo's pin. The upstream docs I read myself were from `main`.
 
 ## Process notes
 
