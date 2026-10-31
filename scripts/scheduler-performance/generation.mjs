@@ -1,6 +1,7 @@
 import {monthDays,enteredMonth} from './month-model.mjs';
 import {addDays,weekday,ruleFor} from '../scheduler-proposal/model.mjs';
 import {personIntervals,unionMinutes,shiftProblem,localInterval,stableLocalDate,storeTimezone,validDate} from './shift-intervals.mjs';
+import {knownLegacyStoreInterval} from './legacy-store-interval.mjs';
 import {membershipAt,teamSnapshot} from './team-model.mjs';
 import {importSnapshot} from './schedule-import.mjs';
 import {dayDemand} from './demand-context.mjs';
@@ -90,7 +91,9 @@ export function generationDateSafe(day,store,policy,record) {
  if(!rr)return false;
  const state=rr.holidays?.[day]||(rr.closedDays.includes(weekday(day))?'closed':'open');
  if(state!=='open'&&!stableLocalDate(day,zone))return false;
- if(!localInterval(day,rr.open*60,rr.close*60,zone).ok)return false;
+ // Store hours may close at 24 (legacy midnight close). That is wall-time accounting only: the
+ // policy templates below still go through localInterval, so no explicit 24:00 shift is allowed.
+ if(!knownLegacyStoreInterval(day,rr.open*60,rr.close*60,zone))return false;
  if((record?.shifts||[]).some(s=>shiftProblem(s,store,day)))return false;
  return Array.isArray(policy?.shifts)&&policy.shifts.every(s=>localInterval(day,s.fullDay?rr.open*60:s.startMinute,s.fullDay?rr.close*60:s.endMinute,zone).ok);
 }
@@ -104,9 +107,9 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
  for(const day of dates)records[day]=supported(day)?cleanRecord(records[day],policy.regenerate):{on:[],off:[],shifts:[],...copy(records[day]||{})};
  // Seed full-week budgets from retained records, including both adjacent months.
  for(const [day,r] of Object.entries(records))for(const id of unique([...(r?.on||[]),...(r?.shifts||[]).map(s=>s.personId)])){
-  const c=context(day),p=c.store.people.find(p=>p.id===id),rr=rule(day),key=week(day)+':'+id,intervals=personIntervals(r,id,rr),minutes=unionMinutes(intervals.filter(([a,b])=>localInterval(day,a,b,storeTimezone(c.store)).ok));
+  const c=context(day),p=c.store.people.find(p=>p.id===id),rr=rule(day),key=week(day)+':'+id,intervals=personIntervals(r,id,rr),zone=storeTimezone(c.store),legacy=!(r?.shifts||[]).some(s=>s.personId===id),ok=([a,b])=>legacy?knownLegacyStoreInterval(day,a,b,zone):localInterval(day,a,b,zone).ok,minutes=unionMinutes(intervals.filter(ok));
   weekly.set(key,(weekly.get(key)||0)+minutes);used.set(id,(used.get(id)||0)+(day.startsWith(month)?minutes:0));
-  if(!p||!Number.isFinite(p.maxHours)||p.maxHours<0||!intervals.length||intervals.some(([a,b])=>!localInterval(day,a,b,storeTimezone(c.store)).ok)||!rr||!Number.isFinite(rr.open)||!Number.isFinite(rr.close)||(r?.shifts||[]).filter(s=>s.personId===id).some(s=>shiftProblem(s,c.store,day)))unknownWeeks.add(key);
+  if(!p||!Number.isFinite(p.maxHours)||p.maxHours<0||!intervals.length||!intervals.every(ok)||!rr||!Number.isFinite(rr.open)||!Number.isFinite(rr.close)||(r?.shifts||[]).filter(s=>s.personId===id).some(s=>shiftProblem(s,c.store,day)))unknownWeeks.add(key);
   else caps.set(key,Math.min(caps.get(key)??Infinity,p.maxHours*60));
  }
  const baseRows=enteredMonth(month,context),base=new Map(baseRows.map(r=>[r.day,r]));
