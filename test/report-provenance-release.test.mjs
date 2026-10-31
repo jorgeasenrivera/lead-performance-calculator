@@ -35,6 +35,9 @@ test('value equality: no coercion of null, zero, units or absence; key order is 
   assert.equal(isDeepStrictEqual(0.5, 1), false);
   assert.equal(isDeepStrictEqual({ a: 0 }, { a: null }), false);
   assert.equal(isDeepStrictEqual({ a: 0 }, {}), false);
+  assert.equal(isDeepStrictEqual({}, { a: 0 }), false, 'absence versus zero is not equal from either side');
+  assert.equal(isDeepStrictEqual({}, { a: null }), false);
+  assert.equal(isDeepStrictEqual({}, { a: undefined }), false);
   assert.equal(isDeepStrictEqual({ a: null }, {}), false);
   assert.equal(isDeepStrictEqual({ a: undefined }, {}), false, 'a present undefined is not absence');
   assert.equal(isDeepStrictEqual({ a: 1, b: 0.5 }, { b: 0.5, a: 1 }), true);
@@ -111,9 +114,11 @@ test('a changed store identity refuses the save, whichever side moved', () => {
   assert.throws(() => reconcileMonths(b, copy(b), s), conflict);
 });
 
-test('a malformed reported-field mask is refused instead of being ignored', () => {
+test('a malformed reported-field mask is refused when the current row exists', () => {
   // A mask that silently matched nothing would let an import skip the
-  // "reported value has another change" check.
+  // "reported value has another change" check. The mask is only read after the
+  // no-row early return in reconcileMonths, so this pins the existing-row path
+  // only and says nothing about what a no-row save does with a mask.
   const b = base(), n = copy(b), s = copy(b);
   for (const mask of [[[]], [['2026-05', 7]], [['2026-05', null]], ['2026-05'], [null]]) {
     assert.throws(() => reconcileMonths(b, n, s, mask), conflict, JSON.stringify(mask));
@@ -136,4 +141,47 @@ test('reportInputs is one snapshot: a one-sided change is taken whole, two indep
   const beforeRefusal = frozen(b, n, s2);
   assert.throws(() => reconcileMonths(b, n, s2), conflict);
   assert.equal(frozen(b, n, s2), beforeRefusal, 'refusal leaves the inputs as they were');
+});
+
+test('reportInputs is taken whole even when the server changed an unrelated field, so the per-key walk is exercised', () => {
+  // The test above leaves the server equal to the baseline, which returns the
+  // intent for the whole month at once (rule 2 at the top of reconcile) and
+  // never reaches the per-key walk. Here the server also moved stats.person.a,
+  // so the month is settled key by key and reportInputs must still arrive as
+  // one unmodified snapshot next to the server's value.
+  const withInputs = () => {
+    const d = base();
+    d.months[M].stats.person.a = 1;
+    d.months[M].reportInputs = { file: 'a.csv', at: 'old', rows: { person: 1 } };
+    return d;
+  };
+  const b = withInputs(), n = copy(b), s = copy(b);
+  n.months[M].reportInputs.at = 'new';
+  person(s).a = 9;
+  const before = frozen(b, n, s);
+  const out = reconcileMonths(b, n, s);
+  assert.deepStrictEqual(out[M].reportInputs, { file: 'a.csv', at: 'new', rows: { person: 1 } });
+  assert.equal(personOf(out).a, 9, 'the server change to a different field is kept');
+  assert.equal(personOf(out).phoneUnits, 2, 'untouched fields are unchanged');
+  out[M].reportInputs.rows.person = 'poked';
+  personOf(out).a = 'poked';
+  assert.equal(frozen(b, n, s), before, 'neither the snapshot nor the merged field shares a reference with an input');
+});
+
+test('a field the intent adds keeps 0, null and 0.5 per key when baseline and current lack it', () => {
+  // Server also moves another field, so this goes through the per-key walk and
+  // not the whole-month shortcut. z is absent from baseline and current.
+  for (const z of [0, null, 0.5]) {
+    const b = base(), n = copy(b), s = copy(b);
+    person(n).z = z;
+    person(s).internetUnits = 8;
+    const out = reconcileMonths(b, n, s);
+    assert.equal(Object.hasOwn(personOf(out), 'z'), true, `z=${z} is present, not treated as absence`);
+    assert.equal(Object.is(personOf(out).z, z), true, `z=${z}`);
+    assert.equal(personOf(out).internetUnits, 8, `z=${z}: the server change is kept`);
+    assert.equal(personOf(out).campaignUnits, 0.5);
+    const round = JSON.parse(JSON.stringify(out));
+    assert.deepStrictEqual(round, out, `z=${z} survives a JSON round trip`);
+    assert.equal(Object.is(personOf(round).z, z), true);
+  }
 });
