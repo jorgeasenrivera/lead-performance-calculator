@@ -1,3 +1,4 @@
+import { reviewedSchedule } from "./private-schedule.mjs";
 import managerSignalCSS from "./manager-signal.css?inline";
 import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
 /* The manager's pages.
@@ -1955,7 +1956,7 @@ function TicketsPanel({ config, onChange }) {
 
   const setStatus = async (t, status) => {
     const next = { ...t, status, closedAt: status === "closed" ? new Date().toISOString() : null };
-    if (await saveTicket(next)) reload();
+    if (await saveTicket(next, true)) reload();
   };
   const saveSupport = () => {
     const next = JSON.parse(JSON.stringify(config));
@@ -3824,7 +3825,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   }, [data.roster, config.roles]);
 
   const refetch = useCallback(async () => {
-    const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store.id, date, variant.kind));
+    const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store.id, date, variant.kind), undefined, "manager");
     if (got === undefined || got === "same") return;   // failed, or nothing moved: keep what is on screen
     setRow(got || null);
   }, [store.id, date, variant.kind]);
@@ -4022,6 +4023,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     if (!(await askConfirm("Generate a new code? Any code already posted or screenshotted will stop working."))) return;
     act((cur) => { cur.token = uid(); return cur; }, { action: "Queue: code regenerated", detail: store.name });
   };
+  if (row?.__unavailable) return <div className="checkout" role="status">The line is unavailable. Reload to try again.</div>;
   if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
 
   /* A phone gets the room, the same way Live Floor does: the map is the
@@ -4476,7 +4478,7 @@ function AssistWatcher({ store, meName }) {
   const [hidden, setHidden] = useState({});     // ids dismissed on THIS screen
   const poll = useCallback(async () => {
     try {
-      const row = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, today()), "assist|" + store);
+      const row = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, today()), "assist|" + store, "manager");
       if (row === undefined || row === "same") return;
       setAsks(row ? activeAssists(row) : []);
     } catch (e) { /* the next poll tells the truth */ }
@@ -4519,19 +4521,11 @@ function AssistWatcher({ store, meName }) {
 /* ---- Supabase access: the deal_events feed (read-only) ----
    Pulls events for this store's dealership_norm(s) that arrived after `sinceIso`.
    deal_events RLS allows authenticated reads; writes are service-role only. */
-async function loadDealEvents(dealershipNorms, sinceIso) {
-  if (!supabase || !dealershipNorms || !dealershipNorms.length) return [];
-  try {
-    let q = supabase.from("deal_events")
-      .select("received_at,dealership,dealership_norm,event,alert,description,sales,source,raw_subject")
-      .in("dealership_norm", dealershipNorms)
-      .order("received_at", { ascending: true })
-      .limit(300);
-    if (sinceIso) q = q.gt("received_at", sinceIso);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data || [];
-  } catch (e) { console.error("loadDealEvents", e); return []; }
+async function loadDealEvents(storeId, sinceIso) {
+  if (!supabase) throw new Error("Event feed unavailable");
+  const { data, error } = await supabase.rpc("sage_deal_events", { p_store: storeId, p_since: sinceIso || null });
+  if (error || !Array.isArray(data)) throw new Error("Event feed could not be read");
+  return data;
 }
 
 /* ---- match a deal_events "sales" full name to a roster person id ---- */
@@ -5464,7 +5458,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
   }, [data, config.roles]);
 
   const refetch = useCallback(async () => {
-    const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store.id, date));
+    const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store.id, date), undefined, "manager");
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store.id, date]);
@@ -5525,12 +5519,15 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
   };
 
   // ---- the engine tick: pull new deal_events, apply, and run the timer ----
+  const [engineError, setEngineError] = useState("");
   const engineTick = useCallback(async () => {
-    if (!row) return;
+    if (!row || row.__unavailable) return;
     const norms = (cfg.dealershipNorms || []).filter(Boolean);
-    if (cfg.enabled && norms.length) {
+    if (cfg.enabled) {
       const since = row.lastEventAt || `${date}T00:00:00.000Z`;
-      const events = await loadDealEvents(norms, since);
+      let events;
+      try { events = await loadDealEvents(store.id, since); setEngineError(""); }
+      catch { setEngineError("Deal events are unavailable. The floor has not been updated from the feed."); return; }
       if (events.length) {
         const next = await mutateFloorRow(store.id, date, (cur) => (cur ? floorApplyEvents(cur, events, store) : cur));
         if (next) setRow(next);
@@ -5568,7 +5565,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
     }
   }, [row, cfg.enabled, cfg.dealershipNorms, cfg.timerOn, cfg.timerMins, store, date]);
 
-  useEffect(() => { const t = setInterval(engineTick, 8000); return () => clearInterval(t); }, [engineTick]);
+  useEffect(() => { const t = setInterval(() => { engineTick().catch(() => setEngineError("The floor update was not confirmed. Reload to try again.")); }, 8000); return () => clearInterval(t); }, [engineTick]);
 
   // stamp leaderSince when the leader changes; fire a move-up toast + sound
   useEffect(() => {
@@ -5684,6 +5681,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
     act((cur) => { cur.token = uid(); return cur; }, { action: "Floor: code regenerated", detail: store.name });
   };
 
+  if (row?.__unavailable) return <div className="checkout" role="status">The floor is unavailable. Reload to try again.</div>;
   if (row === undefined || data === null) return <div className="checkout"><p className="muted">Loading the floor…</p></div>;
 
   const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
@@ -5699,6 +5697,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
   if (phone) {
     return (
       <div className="checkout q-tab f-tab mf mf-floor">
+        {engineError && <p role="status">{engineError}</p>}
         <FloorRoomPhone config={config} store={store} data={data} row={row} line={line} salesRoster={salesRoster}
           realName={realName} act={act} busy={busy} date={date} userName={userName}
           regenToken={regenToken}
@@ -5711,6 +5710,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
 
   return (
     <div className="checkout q-tab f-tab mf mf-floor">
+        {engineError && <p role="status">{engineError}</p>}
       <div className="q-topline">
         <div className="q-topline-actions">
           <SignalFloorSettings onClick={onSettings} />
@@ -6843,14 +6843,22 @@ function PhoneRoomCard({ config, storeId, onChange }) {
   );
 }
 
-function FloorConfigEditor({ config, storeId, onChange }) {
+function FloorConfigEditor({ config, storeId, onChange, isAdmin = false }) {
   const store = config.stores.find((s) => s.id === storeId);
   const cfg = floorCfg(store);
   const map = floorEventMap(store);
   /* The "no dealership linked" note lives here, where the link is made,
      as one line (five-second pass, item 8). It used to be a paragraph at
      the top of the board. */
-  const unlinked = !(cfg.dealershipNorms || []).filter(Boolean).length;
+  const [dealerLinks, setDealerLinks] = useState(null);
+  const [dealerError, setDealerError] = useState("");
+  const refreshDealers = async () => {
+    const { data, error } = await supabase.rpc("sage_dealer_links", { p_store: storeId });
+    if (error) { setDealerError("Dealership links are unavailable"); setDealerLinks(null); return; }
+    setDealerLinks(data); setDealerError("");
+  };
+  useEffect(() => { refreshDealers(); }, [storeId]);
+  const unlinked = Array.isArray(dealerLinks) && dealerLinks.length === 0;
   const [dealerInput, setDealerInput] = useState("");
   const [evEvent, setEvEvent] = useState("");
   const [evAction, setEvAction] = useState("checkin");
@@ -6881,15 +6889,19 @@ function FloorConfigEditor({ config, storeId, onChange }) {
   };
   const setNum = (field, v, min = 0) => save({ [field]: Math.max(min, v) });
 
-  const addDealer = () => {
-    const norm = floorNormDealer(dealerInput);
-    if (!norm) return;
-    const cur = cfg.dealershipNorms || [];
-    if (cur.includes(norm)) { setDealerInput(""); return; }
-    save({ dealershipNorms: [...cur, norm] }, { store: storeId, action: "Linked dealership to Live Floor", detail: `${store.name}: ${dealerInput.trim()}` });
-    setDealerInput("");
+  const addDealer = async () => {
+    if (!isAdmin) return;
+    const norm = floorNormDealer(dealerInput); if (!norm) return;
+    const { error } = await supabase.rpc("sage_dealer_map", { p_dealership_norm: norm, p_store: storeId, p_operation_id: crypto.randomUUID() });
+    if (error) { setDealerError("The link was not saved"); return; }
+    setDealerInput(""); await refreshDealers();
   };
-  const removeDealer = (norm) => save({ dealershipNorms: (cfg.dealershipNorms || []).filter((d) => d !== norm) });
+  const removeDealer = async (norm) => {
+    if (!isAdmin) return;
+    const { error } = await supabase.rpc("sage_dealer_unmap", { p_dealership_norm: norm, p_store: storeId, p_operation_id: crypto.randomUUID() });
+    if (error) { setDealerError("The link was not removed"); return; }
+    await refreshDealers();
+  };
 
   const setEventAction = (evt, action) => {
     const overrides = { ...(store.floorConfig?.eventMap || {}) };
@@ -6934,15 +6946,16 @@ function FloorConfigEditor({ config, storeId, onChange }) {
         <h3>Linked dealerships</h3>
         <p className="hint">Exactly as the deal alerts spell it. Case and punctuation do not matter.</p>
         <div className="f-dealer-add">
-          <input className="f-input" placeholder="Dealership name from DriveCentric" value={dealerInput}
+          <input className="f-input" placeholder="Dealership name from DriveCentric" value={dealerInput} disabled={!isAdmin}
             onChange={(e) => setDealerInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addDealer(); }} />
-          <button className="btn" onClick={addDealer}>Add</button>
+          <button className="btn" disabled={!isAdmin} onClick={addDealer}>Add</button>
         </div>
-        {(cfg.dealershipNorms || []).length === 0
+        {dealerError && <p role="status">{dealerError}</p>}
+        {dealerLinks !== null && (dealerLinks || []).length === 0
           ? <p className="muted">None linked yet. The board runs as a manual floor line until you add one.</p>
           : <div className="f-dealer-list">
-              {(cfg.dealershipNorms || []).map((d) => (
-                <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" onClick={() => removeDealer(d)} aria-label="Close"><PixIcon glyph="close" size={13} /></button></span>
+              {(dealerLinks || []).map((d) => (
+                <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" disabled={!isAdmin} onClick={() => removeDealer(d)} aria-label="Close"><PixIcon glyph="close" size={13} /></button></span>
               ))}
             </div>}
       </div>
@@ -7353,7 +7366,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
         ) : queue === "line" ? (
           <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} variant={LEAD_VARIANTS[queue]} />
         ) : effSub === "settings" && isAdmin ? (
-          <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
+          <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} isAdmin={isAdmin} />
         ) : (
           <FloorBoard config={config} store={store} data={data} onData={persist} userName={session.name} onSettings={isAdmin ? () => setSubtab("settings") : null} />
         )}
@@ -9244,6 +9257,45 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
 
   const [mk, setMk] = useState(ym());
   const [mode, setMode] = useState("edit");
+  const [publication, setPublication] = useState(null);
+  const publicationKey = `${store.id}:${mk}`;
+  const publicationKeyRef = useRef(publicationKey); publicationKeyRef.current = publicationKey;
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishMessage, setPublishMessage] = useState("");
+  useEffect(() => {
+    let dead = false; setPublication(null);
+    if (!supabase) return;
+    supabase.rpc("sage_schedule_read", { p_store: store.id, p_month: mk, p_view: "manager" }).then(({data: result, error}) => {
+      if (dead) return;
+      if (error) setPublishMessage("Publication status unavailable. Nothing was published.");
+      else { setPublication(result); setPublishMessage(""); }
+    });
+    return () => { dead = true; };
+  }, [store.id, mk]);
+  const publish = async () => {
+    if (!supabase || !publication || changed || publishBusy) return;
+    let people;
+    try { people = reviewedSchedule(data, mk); }
+    catch { setPublishMessage("The saved roster or dates need review before publication."); return; }
+    const summary = (data.roster || []).map(a => `${a.name}: ${people[a.id].offDates.join(", ") || "no days off"}`).join("\n");
+    if (!(await askConfirm(`Publish this saved schedule for ${monthLabel(mk)}?\nPending staff will not be able to view it until approved.\n\n${summary}`))) return;
+    const requestKey = publicationKey;
+    if (publicationKeyRef.current !== requestKey) return;
+    setPublishBusy(true); setPublishMessage("");
+    try {
+      const { data: result, error } = await supabase.rpc("sage_schedule_publish", {
+        p_store: store.id, p_month: mk, p_source_revision: data.rev || 0,
+        p_previous_revision: publication.revision || 0, p_reviewed_people: people,
+        p_operation_id: crypto.randomUUID()
+      });
+      if (publicationKeyRef.current !== requestKey) return;
+      if (error) throw error;
+      setPublication({ ...publication, state: "published", revision: result.revision });
+      setPublishMessage("Published. Approved staff can view their own schedule.");
+    } catch { if (publicationKeyRef.current === requestKey) setPublishMessage("Nothing confirmed published. Refresh and review the saved schedule before trying again."); }
+    finally { setPublishBusy(false); }
+  };
+
 
   const [Y, M] = mk.split("-").map(Number);
   const dim = new Date(Y, M, 0).getDate();
@@ -9493,7 +9545,7 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
       <div className="modal sr-modal" onClick={(e) => e.stopPropagation()}>
         <div className="sr-head">
           <div className="sr-id">
-            <div className="sr-sub">The schedule this month is running on</div>
+            <div className="sr-sub">Schedule draft</div>
             <h2>{store.name}</h2>
           </div>
           <select className="sr-mo" value={mk} onChange={(e) => setMk(e.target.value)} aria-label="Which month">
@@ -9511,10 +9563,15 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
             <span><b>{changed}</b> change{changed === 1 ? "" : "s"} not saved</span>
             <span className="sr-sp" />
             <button onClick={() => setDraft(saved)}>Discard</button>
-            <button className="go" onClick={save}>Save schedule</button>
+            <button className="go" onClick={save}>Save draft</button>
           </div>
         )}
 
+        <div className="sr-savebar">
+          <span>{publication?.state === "published" ? "A published schedule is available." : "This month needs publication confirmation."}</span>
+          <button className="go" disabled={!publication || changed > 0 || publishBusy} onClick={publish}>{publishBusy ? "Publishing…" : "Publish saved schedule"}</button>
+          {publishMessage && <span role="status">{publishMessage}</span>}
+        </div>
         <div className="sr-body">
           {mode === "raw" ? uploaded : <>{calendar}{dayView}</>}
         </div>
@@ -9779,7 +9836,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         <div className="plate-hist-head">
           <div>
             <h2 className="plate-hist-title">Upload monthly schedule</h2>
-            <p className="plate-hist-sub">Applies days off and vacation for the month. Off-days are excluded from the point system and from days worked.</p>
+            <p className="plate-hist-sub">Saves days off and vacation as a draft. Review and publish the saved schedule before staff can see it.</p>
           </div>
           <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
@@ -18291,6 +18348,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
    split deal is credited in halves -- but a STORE total ending in .5 means one
    half of a split is being counted against somebody the other half is not, and
    that is worth saying out loud rather than rounding away. */
+/* A cell in the store roll-up that the report left blank, filled with spaces or marked with a dash did not say zero, it said nothing, and the screen
+   must show it as not said. Every other cell keeps exactly the reading Number() gave it: an explicit 0 and 0.5 are numbers, and text that is not a
+   number stays NaN rather than being guessed at. (The per-person units column already reads a blank or a dash this way.) */
+const csvCell = (v) => { const raw = String(v ?? "").trim(); return raw === "" || raw === "-" ? null : Number(raw); };
 function CrossCheck({ store, data, config, onClose }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -18364,10 +18425,10 @@ function CrossCheck({ store, data, config, onClose }) {
         const sDeal = shead ? shead.findIndex((c) => /^deals delivered$/i.test(c)) : -1;
         if (shead && sDeal >= 0 && rows[si + 1]) {
           const r = rows[si + 1];
-          const at = (re) => { const j = shead.findIndex((c) => re.test(c)); return j < 0 ? null : Number(r[j] || 0); };
+          const at = (re) => { const j = shead.findIndex((c) => re.test(c)); return j < 0 ? null : csvCell(r[j]); };
           setRoll({
             store: String(r[shead.findIndex((c) => /^store$/i.test(c))] || "").trim(),
-            deals: Number(r[sDeal] || 0),
+            deals: csvCell(r[sDeal]),
             sold: at(/^sold$/i),
             opps: at(/^net opportunities$/i),
             fileName: file.name,
@@ -18391,7 +18452,7 @@ function CrossCheck({ store, data, config, onClose }) {
           file2[norm(nm)] = {
             displayName: nm,
             flatUnits: raw === "" || raw === "-" ? null : Number(raw),
-            opps: oppAt >= 0 ? Number(r[oppAt] || 0) : null,
+            opps: oppAt >= 0 ? csvCell(r[oppAt]) : null,
           };
         }
       }
@@ -18399,6 +18460,9 @@ function CrossCheck({ store, data, config, onClose }) {
       const held = M?.stats || {};
 
       const rows = [];
+      // A summed zero cannot tell an absent channel from an explicit zero.
+      // Keep totals unchanged, but require every raw channel for a match claim.
+      const knownUnits = (r) => ["internetUnits", "phoneUnits", "showroomUnits", "campaignUnits"].every((key) => Number.isFinite(r?.[key]));
       const keys = new Set([...Object.keys(file2), ...Object.keys(held)]);
       for (const k of keys) {
         const f = file2[k], h = held[k];
@@ -18408,6 +18472,7 @@ function CrossCheck({ store, data, config, onClose }) {
         const name = f?.displayName || h?.displayName || k;
         rows.push({
           k, name, fu, hu,
+          comparable: !!f && !!h && (f.flatUnits !== undefined ? Number.isFinite(f.flatUnits) : knownUnits(f)) && knownUnits(h),
           onBoard: onRoster.has(k),
           opps: f?.opps ?? null,
           diff: fu != null && hu != null ? +(fu - hu).toFixed(2) : null,
@@ -18427,13 +18492,15 @@ function CrossCheck({ store, data, config, onClose }) {
         roll: roll || filed,
         halfHolders,
         kind: /\.pdf$/i.test(file.name) ? "pdf" : "csv",
-        fileTotal: +sum(rows, (r) => r.fu).toFixed(2),
+        // no person in the file gave a figure: the people add to nothing the report said, which is unknown and not zero (a mix of known and unknown still sums as before)
+        fileTotal: rows.some((r) => r.fu != null) ? +sum(rows, (r) => r.fu).toFixed(2) : null,
         fileOpps: rows.some((r) => r.opps != null) ? +sum(rows, (r) => r.opps).toFixed(0) : null,
         boardTotal: +sum(boardRows, (r) => r.hu).toFixed(2),
         heldTotal: +sum(rows, (r) => r.hu).toFixed(2),
         offBoard: rows.filter((r) => r.fu != null && !r.onBoard && r.fu > 0),
         missing: rows.filter((r) => r.fu == null && r.onBoard && (r.hu ?? 0) > 0),
         moved: rows.filter((r) => r.diff != null && Math.abs(r.diff) > 0.001),
+        complete: rows.length > 0 && rows.every((r) => r.onBoard && r.comparable && Number.isFinite(r.fu) && Number.isFinite(r.hu)),
         fileName: file.name,
         month: monthLabel(ym()),
       });
@@ -18477,7 +18544,7 @@ function CrossCheck({ store, data, config, onClose }) {
                     ? (shownRoll.source === "roll-up" ? "The store roll-up on file says" : "The Delivery Summary on file says")
                     : "The store roll-up says"}</div>
                   <div className="xc-rollrow">
-                    <span className="xc-n">{shownRoll.deals}</span>
+                    <span className="xc-n">{shownRoll.deals == null ? "\u2013" : shownRoll.deals}</span>
                     <span className="xc-note">deliveries at {shownRoll.store}{shownRoll.sold != null ? ` \u00b7 ${shownRoll.sold} sold` : ""}{shownRoll.opps != null ? ` \u00b7 ${shownRoll.opps} opportunities` : ""}</span>
                   </div>
                   <p className="xc-note">{shownRoll.emailed && shownRoll.day
@@ -18541,7 +18608,7 @@ function CrossCheck({ store, data, config, onClose }) {
                    comes out high -- opportunities most of all, which is the proof
                    it is double counting rather than disagreeing. */
                 const auth = res.roll ? res.roll.deals : res.stated ? res.stated.total : null;
-                if (auth == null) return null;
+                if (auth == null || res.fileTotal == null) return null;   // nothing to compare against, or no figure from the people
                 const over = res.fileTotal - auth;
                 if (Math.abs(over) <= 0.001) return (
                   <p className="xc-lead">The report's people add up to exactly what the store says.</p>
@@ -18574,7 +18641,7 @@ function CrossCheck({ store, data, config, onClose }) {
                 rows={res.moved} col={(r) => `${n(r.hu)} → ${n(r.fu)}`} />
 
               {!res.offBoard.length && !res.missing.length && !res.moved.length && (
-                <p className="xc-clean"><PixIcon glyph="check" size={13} /> Every name and every figure matches.</p>
+                <p className="xc-clean" style={res.complete ? undefined : { color: "var(--ink-3)" }}><PixIcon glyph={res.complete ? "check" : "warn"} size={13} /> {res.complete ? "Every name and every figure matches." : "Some names or figures could not be compared."}</p>
               )}
 
               <div className="xc-actions">
@@ -22038,13 +22105,19 @@ function AuditLog({ config }) {
   const [log, setLog] = useState(null);
   const [filter, setFilter] = useState("");
   const [kind, setKind] = useState("all");
-  useEffect(() => { loadShared(AUDIT_KEY, []).then(setLog); }, []);
+  const [auditError, setAuditError] = useState(false);
+  useEffect(() => { let dead = false; supabase.rpc("sage_audit_read", { p_store: null }).then(({data,error}) => {
+    if (dead) return; if (error) { setAuditError(true); return; }
+    setLog((data || []).map(e => ({ t: e.created_at, user: e.actor || "System", store: e.store, action: e.action,
+      detail: (e.correction_of ? `Correction of event ${e.correction_of}: ` : "") + JSON.stringify(e.detail || {}) })));
+  }).catch(() => { if (!dead) setAuditError(true); }); return () => { dead = true; }; }, []);
   /* Every store's own colour, so a line about Holler Ford is recognisable as
      Holler Ford at a glance rather than by reading the column. */
   const colOf = (name) => {
     const st = (config?.stores || []).find((x) => x.id === name || x.name === name);
     return st ? (st.brand || DEFAULT_BRAND).primary : null;
   };
+  if (auditError) return <div role="status">Audit history is unavailable. Reload to try again.</div>;
   if (!log) return <div className="loading">Loading audit log…</div>;
   /* What people come here asking: who moved a target, who changed the roster,
      what has been imported. Everything else is still one click away. */

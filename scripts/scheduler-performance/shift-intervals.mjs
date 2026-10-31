@@ -1,4 +1,4 @@
-// Local wall-clock minutes. This bounded preview rejects overnight and DST-change dates.
+// Same-day local minutes. Transition crossings require review, never payroll inference.
 export const STORE_TIMEZONE = 'America/New_York';
 export const storeTimezone = store => store.timezone || STORE_TIMEZONE;
 export function validDate(day) {
@@ -9,6 +9,45 @@ export function minute(value) {
   const [h,m] = value.split(':').map(Number); return h*60+m;
 }
 export const timeLabel = value => `${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
+const localFormat = new Intl.DateTimeFormat('en-CA',{timeZone:STORE_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+const wallAt = instant => {
+  const p=Object.fromEntries(localFormat.formatToParts(new Date(instant)).map(x=>[x.type,x.value]));
+  return Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute);
+};
+const dateOffsets=new Map(),intervalCache=new Map();
+function instants(day,minute) {
+  const midnight=Date.parse(day+'T00:00:00Z'),wall=midnight+minute*60000;
+  if(!dateOffsets.has(day)){
+    // Enumerate offsets around the date, then round-trip each candidate. This
+    // detects both occurrences of a fold and zero occurrences of a gap.
+    const offsets=new Set();
+    for(let h=-24;h<=48;h++){const t=midnight+h*3600000;offsets.add(wallAt(t)-t);}
+    if(dateOffsets.size>=128)dateOffsets.delete(dateOffsets.keys().next().value);
+    dateOffsets.set(day,[...offsets]);
+  }
+  return dateOffsets.get(day).map(offset=>wall-offset).filter(t=>wallAt(t)===wall).sort((a,b)=>a-b);
+}
+export function localInterval(day,startMinute,endMinute,timezone) {
+  const fail=reason=>({ok:false,reason,elapsedMinutes:null});
+  if(!validDate(day)||timezone!==STORE_TIMEZONE)return fail('Date or timezone is outside the supported preview.');
+  if(!Number.isInteger(startMinute)||!Number.isInteger(endMinute)||startMinute<0||endMinute>=1440||endMinute<=startMinute)return fail('Enter an increasing same-day HH:MM interval.');
+  const key=day+':'+startMinute+':'+endMinute;
+  if(intervalCache.has(key))return {...intervalCache.get(key)};
+  const a=instants(day,startMinute),b=instants(day,endMinute);
+  let result;
+  if(!a.length||!b.length)result=fail('Nonexistent local time requires manual review.');
+  else if(a.length!==1||b.length!==1)result=fail('Ambiguous local time requires manual review.');
+  else {
+    const elapsedMinutes=(b[0]-a[0])/60000,offset=wallAt(a[0])-a[0];
+    let crossing=elapsedMinutes!==endMinute-startMinute;
+    // Check every minute of the actual interval, including endpoints. No
+    // transition may be hidden inside otherwise unique endpoint mappings.
+    for(let t=a[0];!crossing&&t<=b[0];t+=60000)if(wallAt(t)-t!==offset)crossing=true;
+    result=crossing?{ok:false,reason:'DST-crossing interval requires manual review.',elapsedMinutes}:{ok:true,reason:null,elapsedMinutes};
+  }
+  if(intervalCache.size>=512)intervalCache.delete(intervalCache.keys().next().value);
+  intervalCache.set(key,Object.freeze(result));return {...result};
+}
 export function stableLocalDate(day, timezone) {
   if (!validDate(day) || timezone !== STORE_TIMEZONE) return false;
   const format = new Intl.DateTimeFormat('en-US',{timeZone:timezone,timeZoneName:'longOffset'});
@@ -20,9 +59,7 @@ export function shiftProblem(shift, store, day) {
   if (shift.date !== day || !validDate(day) || !validDate(shift.endDate)) return 'Use a real date with a four-digit year.';
   if (shift.timezone !== storeTimezone(store)) return 'Timezone does not match the store.';
   if (shift.endDate !== day) return 'Overnight shifts are not supported in this preview.';
-  if (!stableLocalDate(day, shift.timezone)) return 'DST-change dates or this timezone are not supported.';
-  if (!Number.isInteger(shift.startMinute) || !Number.isInteger(shift.endMinute) || shift.startMinute < 0 || shift.endMinute >= 1440 || shift.endMinute <= shift.startMinute) return 'Enter an increasing same-day HH:MM interval.';
-  return null;
+  return localInterval(day,shift.startMinute,shift.endMinute,shift.timezone).reason;
 }
 export function personIntervals(record, id, rule) {
   const shifts=(record?.shifts || []).filter(s=>s.personId===id);

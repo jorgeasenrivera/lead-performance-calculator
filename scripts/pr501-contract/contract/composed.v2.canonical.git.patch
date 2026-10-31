@@ -1,0 +1,1061 @@
+diff --git a/api/_self-room-command.mjs b/api/_self-room-command.mjs
+index 3d2151679bb6d6cb33f4eec88130c29ceb215f11..36710fb247ab7a96a3d16b3d7a002fbd20644f75 100644
+--- a/api/_self-room-command.mjs
++++ b/api/_self-room-command.mjs
+@@ -3,6 +3,7 @@ import { applyPhoneAction, isPhoneAction } from './_phone-action.mjs';
+ import { releasePerson, stationOf } from './_stations.mjs';
+ import { pointsForDay, stampLineMoves } from './_phone-rows.mjs';
+ export const SELF_COMMANDS = ['join','status','table','table-checkin','undo-checkin','checkout','complete-checkout','assist','cancel-assist','goal-note','heartbeat','leave','release-desk','offday-denied'];
++const tableValue = t => typeof t === 'string' || typeof t === 'number';
+ const fail = why => { throw Object.assign(new Error(why), { status: 400 }); };
+ /* Caller passes authenticated link, current authoritative row/config and figures.
+    No actor, label, counts, timestamp or replacement JSON is accepted from input. */
+@@ -63,7 +64,7 @@ export function selfRoomCommand({ room, row, personId, action, input = {}, now,
+     next.checkouts=[...(next.checkouts||[]).filter(c=>c.id!==personId),entry];
+   } else if(action==='assist') {
+     if(!me || !['to','fly'].includes(input.kind)) return fail('Invalid assistance request');
+-    if(input.table!=null && !allowedTables.map(String).includes(String(input.table))) return fail('Unknown table');
++    if(input.table!=null && (!tableValue(input.table)||!allowedTables.map(String).includes(String(input.table)))) return fail('Unknown table');
+     if(input.note!=null && (typeof input.note!=='string'||input.note.length>500)) return fail('Invalid note');
+     next.assists=[{id:`${personId}:${now}`,t:now,kind:input.kind,byId:personId,byName:roster.name,table:input.table??null,spot:input.table==null?'lot':'floor',note:input.note||null},...(next.assists||[]).filter(a=>a.byId!==personId||a.doneAt)].slice(0,40);
+   } else if(action==='cancel-assist') {
+@@ -75,7 +76,7 @@ export function selfRoomCommand({ room, row, personId, action, input = {}, now,
+       if(!(room==='floor'?['waiting','customer','lunch','away']:['waiting','lunch','away']).includes(input.status)) return fail('Invalid status');
+       me.awayReason=input.status==='waiting'?null:input.status;me.status=input.status;me.statusAt=now;log(input.status==='waiting'?'back':input.status);
+     } else if(action==='table'||action==='table-checkin') {
+-      if(room!=='floor'||!allowedTables.map(String).includes(String(input.table))) return fail('Unknown table');
++      if(room!=='floor'||!tableValue(input.table)||!allowedTables.map(String).includes(String(input.table))) return fail('Unknown table');
+       if(action==='table'&&me.status!=='customer') return fail('Take a customer before choosing a table');
+       if(action==='table-checkin'&&me.status!=='customer'){me.status='customer';me.statusAt=now;me.awayReason=null;me.autoFlip=false;log('checkin');}
+       me.table=input.table;
+diff --git a/scripts/browser-security-cases.mjs b/scripts/browser-security-cases.mjs
+index f639eac05d93d9a1ab3f94e58fd2d21824c95eb9..dc41add330ba2453f97c3eda3c51d48be7880dfc 100644
+--- a/scripts/browser-security-cases.mjs
++++ b/scripts/browser-security-cases.mjs
+@@ -20,6 +20,7 @@ import { mkdir, writeFile } from "node:fs/promises";
+ import { launchStrict, guardContext, pinsFromEnv, sandboxDiagnostics } from "./strict-browser-kit.mjs";
+ import { createBackend, MOCK_PORT, USER_A, USER_B, makeWritePolicy as makePolicy } from "./synthetic-backend.mjs";
+ import { createAnnotator } from "./safe-annotations.mjs";
++import { createCleanup, cleanupFailed } from "./strict-cleanup.mjs";
+ 
+ const argv = process.argv.slice(2);
+ const opt = (name, fallback) => { const i = argv.indexOf("--" + name); return i >= 0 ? argv[i + 1] : fallback; };
+@@ -710,8 +711,10 @@ const GROUP_MS = Number(process.env.STRICT_GROUP_TIMEOUT_MS || 150_000), DEADLIN
+ const EXPECTED_IDS = ["A1", ...XC.map((c) => c.id), "XC-reopen", "XC-session", "XC-renderers", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+ const rendererAudits = [];
+ const PINS_COMPLETE = (() => { try { const p = pinsFromEnv(); return !!(p.playwright && p.chrome && p.cdpSuffix); } catch (e) { return false; } })();   // local runs set no pins: they are evidence about the local browser only
+-let k = null, auditCalls = 0, diagnostics = null, finished = false, deadlineHit = false;
+-const summary = (extra = {}) => ({ when: new Date().toISOString(), expect: EXPECT, countsAsRepairResult: EXPECT === "corrected" && !WRITE_PROBE, qualifying: !WRITE_PROBE && PINS_COMPLETE && !!diagnostics, evidenceKind: PINS_COMPLETE ? "pinned-run" : "local-unpinned-run", pinsComplete: PINS_COMPLETE, writeProbe: WRITE_PROBE, dist: DIST, browser: k ? k.evidence : null, auditCalls, rendererAudits, diagnostics, deadlineExceeded: deadlineHit, roundupDrawnOverResetForm: roundupCovered.length, expectedIds: ONLY ? null : EXPECTED_IDS, results, ...extra });
++let k = null, auditCalls = 0, diagnostics = null, finished = false, deadlineHit = false, cleanup = null;
++/* One cleanup for the whole run (scripts/strict-cleanup.mjs): created when first needed so it knows whether the kit launched; the end of the run and the deadline share it. */
++const makeCleanup = () => (cleanup = cleanup || createCleanup({ closeKit: k ? () => k.close() : null, closeServer: () => new Promise((resolve, reject) => appServer.close((e) => (e ? reject(e) : resolve()))) }));
++const summary = (extra = {}) => ({ when: new Date().toISOString(), expect: EXPECT, countsAsRepairResult: EXPECT === "corrected" && !WRITE_PROBE, qualifying: !WRITE_PROBE && PINS_COMPLETE && !!diagnostics, evidenceKind: PINS_COMPLETE ? "pinned-run" : "local-unpinned-run", pinsComplete: PINS_COMPLETE, writeProbe: WRITE_PROBE, dist: DIST, browser: k ? k.evidence : null, auditCalls, rendererAudits, diagnostics, deadlineExceeded: deadlineHit, cleanup: cleanup ? cleanup.outcome() : null, roundupDrawnOverResetForm: roundupCovered.length, expectedIds: ONLY ? null : EXPECTED_IDS, results, ...extra });
+ /* The end-of-run annotation reads the same facts the exit expression reads, as booleans. It decides nothing and cannot throw. */
+ const annotateEnd = (exception) => { try { const passed = new Set(results.filter((r) => r.status === "PASS").map((r) => r.id)); note.terminal({ failed: results.some((r) => r.status === "FAIL"), skipped: results.some((r) => r.status === "NOT RUN"), missing: !ONLY && EXPECTED_IDS.some((id) => !passed.has(id)), audit: auditCalls > 0, deadline: deadlineHit, exception: exception === true, probe: WRITE_PROBE, only: !!ONLY, results }); } catch (e) {} };
+ const deadline = setTimeout(async () => {
+@@ -719,8 +722,8 @@ const deadline = setTimeout(async () => {
+   deadlineHit = true;
+   try { note.runDeadline(); annotateEnd(false); } catch (e) {}
+   console.error(`DEADLINE: the run did not finish in ${DEADLINE_MS} ms`);
++  try { await makeCleanup().close(); } catch (e) {}
+   try { fs.writeFileSync(path.join(OUT, "result.json"), JSON.stringify(summary(), null, 2) + "\n"); } catch (e) {}
+-  try { await Promise.race([k && k.close(), new Promise((r) => setTimeout(r, 5000))]); } catch (e) {}
+   process.exit(1);
+ }, DEADLINE_MS);
+ /* done is set when the group settles, so a group timer that fires later, after the group already finished, is not reported as a deadline. */
+@@ -738,9 +741,10 @@ try {
+ finally {
+   finished = true; clearTimeout(deadline);
+   if (WRITE_PROBE) try { await writeFile(path.join(OUT, "write-probe.json"), JSON.stringify(probeWrites, null, 2) + "\n"); } catch (e) {}
++  /* Close first, once; the result is written only AFTER it, so it carries the cleanup outcome. A cleanup that failed, timed out or never completed is a failed run. */
++  await makeCleanup().close();
++  if (cleanupFailed(cleanup.outcome())) { exitCode = 1; console.error("CLEANUP FAILED: " + cleanup.outcome().reasons.join(", ")); }
+   try { await writeFile(path.join(OUT, "result.json"), JSON.stringify(summary(), null, 2) + "\n"); } catch (e) { console.error("could not write result.json", e); exitCode = 1; }
+-  if (k) { try { await k.close(); } catch (e) {} }
+-  appServer.close();
+ }
+ const failed = results.filter((r) => r.status === "FAIL").length, skipped = results.filter((r) => r.status === "NOT RUN").length;
+ const passedIds = new Set(results.filter((r) => r.status === "PASS").map((r) => r.id));
+diff --git a/scripts/scheduler-performance/build.mjs b/scripts/scheduler-performance/build.mjs
+index 9347c59f3345866ffa4e3bf4783cd4a3253235e2..5aebaed0ff93007edcdeff7ddd296f4cc468ebb3 100644
+--- a/scripts/scheduler-performance/build.mjs
++++ b/scripts/scheduler-performance/build.mjs
+@@ -9,9 +9,9 @@ import { fixtures } from "../scheduler-proposal/model.mjs";
+ import { monthSales } from "./month-model.mjs";
+ import { buildDemo } from "../demo-seed.mjs";
+ export const MANAGER_SHA =
+-  "a43ca55c7be25431461f94ce5a0d59d6e8fbe09a11a06befeda9e226e2ba4b31";
++  "a893ab793a7d2877fb33024a7ac558f1c45c5b2402aa10c9f59ed5ca3b81f78f";
+ export function patchPhoneLayout(source) {
+-  if (createHash("sha256").update(source).digest("hex") !== "deb49061d44e72920797307f1449dae0ca37a06de722c091e93daed8ed3824f0") throw Error("Core layout boundary changed. Re-review preview transform.");
++  if (createHash("sha256").update(source).digest("hex") !== "f14bdab08eb07803ddd5e5967bff76f80c37f38808aee9bfd88fc8ffbe779f12") throw Error("Core layout boundary changed. Re-review preview transform.");
+   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
+   if (!source.includes(old)) throw Error("Phone layout hook not found");
+   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
+diff --git a/scripts/strict-cleanup.mjs b/scripts/strict-cleanup.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c81e5d2491331022ed229c19a1c3fa1e0881cde
+--- /dev/null
++++ b/scripts/strict-cleanup.mjs
+@@ -0,0 +1,46 @@
++/* Cleanup for the strict browser cases, as a small pure module so it can be tested with fakes and no browser.
++ *
++ * One close, once: every caller (the end of the run, the deadline) gets the same promise, so the kit and the app server are each closed at most once. The result says in fixed words
++ * whether cleanup COMPLETED and whether it was OK. A required close that throws, runs out of time, or was never attempted is not ok, and the caller must exit non-zero.
++ * It reads no output of either close: only that it resolved, threw, or timed out.
++ */
++export const CLEANUP_REASONS = Object.freeze(["kit-close-threw", "kit-close-timeout", "server-close-threw", "server-close-timeout"]);
++
++const withTimeout = (promise, ms, timeoutReason) => new Promise((resolve) => {
++  let settled = false;
++  const timer = setTimeout(() => { if (!settled) { settled = true; resolve({ ok: false, reason: timeoutReason }); } }, ms);
++  Promise.resolve(promise).then(
++    () => { if (!settled) { settled = true; clearTimeout(timer); resolve({ ok: true }); } },
++    () => { if (!settled) { settled = true; clearTimeout(timer); resolve({ ok: false, reason: timeoutReason.replace("-timeout", "-threw") }); } },
++  );
++});
++
++/* closeKit may be null when the kit never launched (nothing to close); closeServer is required. */
++export function createCleanup({ closeKit, closeServer, timeoutMs = 15000 }) {
++  if (typeof closeServer !== "function") throw new Error("createCleanup needs closeServer");
++  let closing = null;
++  const outcome = { attempted: false, completed: false, ok: false, kitClosed: closeKit ? false : null, serverClosed: false, reasons: [] };
++  const close = () => {
++    if (closing) return closing;
++    outcome.attempted = true;
++    closing = (async () => {
++      if (closeKit) {
++        let r;
++        try { r = await withTimeout(Promise.resolve().then(closeKit), timeoutMs, "kit-close-timeout"); } catch (e) { r = { ok: false, reason: "kit-close-threw" }; }
++        outcome.kitClosed = r.ok; if (!r.ok) outcome.reasons.push(r.reason);
++      }
++      let s;
++      try { s = await withTimeout(Promise.resolve().then(closeServer), timeoutMs, "server-close-timeout"); } catch (e) { s = { ok: false, reason: "server-close-threw" }; }
++      outcome.serverClosed = s.ok; if (!s.ok) outcome.reasons.push(s.reason);
++      outcome.completed = true;
++      outcome.ok = outcome.reasons.length === 0;
++      return snapshot();
++    })();
++    return closing;
++  };
++  const snapshot = () => ({ attempted: outcome.attempted, completed: outcome.completed, ok: outcome.ok, kitClosed: outcome.kitClosed, serverClosed: outcome.serverClosed, reasons: [...outcome.reasons] });
++  return { close, outcome: snapshot };
++}
++
++/* The run may only report cleanup as fine when it completed and was ok. Anything else (not attempted, still pending, failed) is a failed run. */
++export const cleanupFailed = (o) => !(o && o.attempted === true && o.completed === true && o.ok === true);
+diff --git a/scripts/strict-cleanup.test.mjs b/scripts/strict-cleanup.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ecf4d055ffde46e48005aaa77802850b8161607
+--- /dev/null
++++ b/scripts/strict-cleanup.test.mjs
+@@ -0,0 +1,60 @@
++// Fake-cleanup tests: no browser, no network. The module and the harness contract only.
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { createCleanup, cleanupFailed, CLEANUP_REASONS } from './strict-cleanup.mjs';
++const harness = readFileSync(new URL('./browser-security-cases.mjs', import.meta.url), 'utf8');
++const never = () => new Promise(() => {});
++
++test('both closes resolve: completed and ok', async () => {
++  const calls = []; const c = createCleanup({ closeKit: async () => calls.push('kit'), closeServer: async () => calls.push('server'), timeoutMs: 200 });
++  const o = await c.close(); assert.deepEqual(calls, ['kit', 'server']); assert.equal(o.completed, true); assert.equal(o.ok, true); assert.equal(cleanupFailed(o), false);
++});
++test('close runs once for concurrent and later callers (the end of the run and the deadline share it)', async () => {
++  let kit = 0, server = 0; const c = createCleanup({ closeKit: async () => { kit++; }, closeServer: async () => { server++; }, timeoutMs: 200 });
++  const [a, b] = await Promise.all([c.close(), c.close()]); await c.close(); assert.equal(kit, 1); assert.equal(server, 1); assert.deepEqual(a, b);
++});
++test('a kit close that throws is a failure, the server is still closed, no error text is kept', async () => {
++  let server = 0; const c = createCleanup({ closeKit: async () => { throw new Error('secret-looking detail'); }, closeServer: async () => { server++; }, timeoutMs: 200 });
++  const o = await c.close(); assert.equal(server, 1); assert.equal(o.ok, false); assert.equal(o.completed, true); assert.deepEqual(o.reasons, ['kit-close-threw']); assert.equal(cleanupFailed(o), true);
++  assert.ok(!JSON.stringify(o).includes('secret'));
++});
++test('a synchronous throw in closeKit is also a failure', async () => {
++  const c = createCleanup({ closeKit: () => { throw new Error('x'); }, closeServer: async () => {}, timeoutMs: 200 }); const o = await c.close();
++  assert.deepEqual(o.reasons, ['kit-close-threw']); assert.equal(cleanupFailed(o), true);
++});
++test('a kit close that never finishes times out and fails, and the run still completes', async () => {
++  const c = createCleanup({ closeKit: never, closeServer: async () => {}, timeoutMs: 30 }); const o = await c.close();
++  assert.deepEqual(o.reasons, ['kit-close-timeout']); assert.equal(o.completed, true); assert.equal(cleanupFailed(o), true);
++});
++test('a server close that errors or hangs is a failure', async () => {
++  let o = await createCleanup({ closeKit: async () => {}, closeServer: async () => { throw new Error('e'); }, timeoutMs: 100 }).close(); assert.deepEqual(o.reasons, ['server-close-threw']);
++  o = await createCleanup({ closeKit: async () => {}, closeServer: never, timeoutMs: 30 }).close(); assert.deepEqual(o.reasons, ['server-close-timeout']); assert.equal(cleanupFailed(o), true);
++});
++test('no kit (launch failed): only the server is closed; still must complete', async () => {
++  let server = 0; const c = createCleanup({ closeKit: null, closeServer: async () => { server++; }, timeoutMs: 100 }); const o = await c.close();
++  assert.equal(server, 1); assert.equal(o.kitClosed, null); assert.equal(o.ok, true);
++});
++test('missing completion is a failure: never attempted, or still pending', async () => {
++  const c = createCleanup({ closeKit: never, closeServer: async () => {}, timeoutMs: 5000 });
++  assert.equal(cleanupFailed(c.outcome()), true, 'not attempted'); c.close(); assert.equal(cleanupFailed(c.outcome()), true, 'attempted but not completed');
++  assert.equal(cleanupFailed(undefined), true); assert.equal(cleanupFailed({ attempted: true, completed: true, ok: false }), true);
++});
++test('reasons are a closed vocabulary', async () => {
++  for (const mk of [() => createCleanup({ closeKit: never, closeServer: never, timeoutMs: 20 }), () => createCleanup({ closeKit: async () => { throw 1; }, closeServer: async () => { throw 2; }, timeoutMs: 20 })]) {
++    const o = await mk().close(); for (const r of o.reasons) assert.ok(CLEANUP_REASONS.includes(r), r);
++  }
++});
++test('harness contract: the only close of the kit is inside the cleanup, the result is written after it, and a failed cleanup sets a failing exit', () => {
++  assert.ok(harness.includes('createCleanup('), 'harness builds the cleanup');
++  assert.equal((harness.match(/makeCleanup\(\)\.close\(\)/g) || []).length, 2, 'exactly the deadline and the end of the run close, through the one shared cleanup');
++  assert.equal((harness.match(/\bk\.close\(\)/g) || []).length, 1, 'k.close() appears once, inside the cleanup closure');
++  assert.ok(!/\bappServer\.close\(\)/.test(harness.replace(/closeServer:[^\n]*appServer\.close[^\n]*/, '')), 'appServer.close only inside the cleanup closure');
++  const fin = harness.slice(harness.lastIndexOf('finally {'), harness.indexOf('const failed = results.filter'));   // the run's own final block, not a case's
++  assert.ok(fin.indexOf('await makeCleanup().close()') >= 0 && fin.indexOf('await makeCleanup().close()') < fin.indexOf('result.json'), 'finally: cleanup before result.json');
++  assert.ok(fin.includes('if (cleanupFailed(cleanup.outcome())) { exitCode = 1;'), 'a failed cleanup sets exitCode');
++  const dl = harness.slice(harness.indexOf('const deadline = setTimeout'), harness.indexOf('/* done is set when the group settles'));
++  assert.ok(dl.indexOf('await makeCleanup().close()') >= 0 && dl.indexOf('await makeCleanup().close()') < dl.indexOf('result.json'), 'deadline: cleanup before result.json');
++  assert.ok(harness.includes('cleanup: cleanup ? cleanup.outcome() : null') || harness.includes('cleanup: cleanupOutcome()'), 'result.json carries the cleanup outcome');
++  assert.ok(/process\.exit\([^\n]*exitCode/.test(harness), 'exit expression still includes exitCode');
++});
+diff --git a/src/LeadPerformanceCalculator.jsx b/src/LeadPerformanceCalculator.jsx
+index 9f38e26aa07d187f0d619dc316b0e3b06dcdd05e..0ed3d96311597574bddda73fe95d0fa3032426c0 100644
+--- a/src/LeadPerformanceCalculator.jsx
++++ b/src/LeadPerformanceCalculator.jsx
+@@ -11,6 +11,7 @@ import { readRecoveryHash } from "./recovery-link.mjs";
+ import { createRecoveryGuard, setPasswordAs, LINK_FAILED_NOTICE } from "./recovery-session.mjs";
+ import { createRecoveryContinuity, RECOVERY_INTERRUPTED_NOTICE } from "./recovery-continuity.mjs";
+ import { createRecoveryController } from "./recovery-controller.mjs";
++import { createHoldAttempt } from "./arrival-hold.mjs";
+ import { arrivalEngineCore as productionArrivalEngine } from "./arrival-engine.mjs";
+ import { createArrivalScheduler } from "./arrival-scheduler.mjs";
+ import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArrivalSurface } from "./arrival-surface.mjs";
+@@ -1368,8 +1369,10 @@ async function authClaimName(claim) {
+ }
+ async function authSignIn(email, password) {
+   bumpAuthEpoch();
+-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+-  return { error: error ? error.message : null };
++  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
++  /* Who the accepted response is for. The sign-in screen binds its arrival to this id, never to the first identity event after the press and never to the profile. */
++  const userId = !error && data && data.user && typeof data.user.id === "string" && data.user.id ? data.user.id : null;
++  return { error: error ? error.message : null, userId };
+ }
+ /* Two kinds of person sign up here and they need opposite things. A manager
+    needs a store to look at, which only an admin can grant. A salesperson needs
+@@ -3672,9 +3675,10 @@ export default function LeadPerformanceCalculator() {
+      sign-in card that would flip to the new-password card a moment later. A
+      failed link shows the card even with somebody signed in, because that is
+      exactly when the notice was hidden (C97, review). */
+-  const signInLayer = config && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
++  const loginConfig = loginConfigFor(config, jumpHold);
++  const signInLayer = loginConfig && authReady && rec.status !== "pending" && (!session || jumpHold || recoveryLayer) ? (
+     <div className="signin-over" key="signin">
+-      <Login config={config} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
++      <Login config={loginConfig} resetting={rec.status === "ready"} linkFailed={rec.status === "failed"}
+         interrupted={rec.status === "interrupted"} recoveryGeneration={rec.generation}
+         onRecoveryDismissed={() => recoveryFlow.dismiss()}
+         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
+@@ -3717,6 +3721,9 @@ export default function LeadPerformanceCalculator() {
+      cannot be seen. */
+   /* Nothing but the ground while there is no session: the sign-in screen itself
+      is the layer above, and it is already on screen. */
++  // Recovery owns the screen until it is dismissed or completed. A mounted
++  // dashboard can otherwise open its round-up above the recovery controls.
++  if (rec.status !== "idle") return wrap(<Shell><Style /></Shell>);
+   if (!session || holdMount) return wrap(<Shell><Style /></Shell>);
+ 
+   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
+@@ -5736,6 +5743,12 @@ function ClaimPicker({ config, value, onChange, onName }) {
+ }
+ 
+ /* ---------------- Login (real accounts) ---------------- */
++/* What the sign-in layer shows while a legitimate arrival keeps it mounted (jumpHold) but the real config has been cleared, as it is when the account changes (the configSubject effect
++   in App). It is empty on purpose and is never built from any earlier config: no approved domain, registration closed, no store list. Registration stays unavailable until the current
++   real config arrives. It exists only so the one keyed Login that owns the running jump is not unmounted (which would end the jump through its cleanup). */
++const HELD_LOGIN_CONFIG = Object.freeze({ approvedDomains: Object.freeze([]), registrationOpen: false, stores: Object.freeze([]) });
++const loginConfigFor = (config, jumpHold) => config || (jumpHold ? HELD_LOGIN_CONFIG : null);
++
+ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false, linkFailed = false, interrupted = false, recoveryGeneration = 0, onRecoveryDismissed }) {
+   /* The other half of lpcf:boot: a phone that reached the sign-in screen
+      opens on the light ground next time, not under a curtain for rooms it
+@@ -5842,10 +5855,29 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+     if (jumping.current) { jumping.current(); jumping.current = null; }
+     if (heldRef.current) heldRef.current(false);
+   };
+-  useEffect(() => () => { if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
++  /* One attempt per press (src/arrival-hold.mjs): its ordered identity history, its own unsubscribe, and the rule that only the CURRENT attempt may touch the hold, the flash class, busy or
++     the jump. An old attempt that is killed, overtaken or finished ends quietly and never clears a newer hold. */
++  const attemptRef = useRef(null);
++  const endAttempt = (a) => { if (a.unsub) { a.unsub(); a.unsub = null; } a.done = true; };
++  /* How an attempt is retired from outside (a kill, a new press, a new generation, an unmount). The success and error paths end their own attempt with endAttempt, on purpose. The flash
++     class is global, so only the attempt that is STILL current may take it down, and it does so before it lets go: an attempt that was already overtaken never clears a newer attempt's
++     flash. No React state is touched here, so it is safe in an unmount cleanup. */
++  const retireAttempt = (a) => {
++    a.hold.kill();
++    if (attemptRef.current === a) document.documentElement.classList.remove("sage-flash-hold");
++    endAttempt(a);
++  };
++  const killAttempt = (a) => {
++    const owned = attemptRef.current === a;
++    retireAttempt(a);
++    if (!owned) return;
++    abortJump(); signInPressed = false; setBusy(false);
++  };
++  useEffect(() => () => { const a = attemptRef.current; if (a) retireAttempt(a); if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
+   // A new recovery, logout or BFCache re-entry owns a new lifecycle. Old
+   // completions must not clear its fields, flash or hand it to the dashboard.
+   useEffect(() => {
++    { const a = attemptRef.current; if (a) retireAttempt(a); }
+     abortJump(); signInPressed = false; setBusy(false);
+     setPassword(""); setPassword2("");
+   }, [recoveryGeneration]);
+@@ -5862,6 +5894,15 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+     if (!custom && (!email.trim() || !password)) { setErr("Enter your email and password."); return; }
+     setBusy(true);
+     signInPressed = true;
++    /* A new press overtakes an unfinished one: its attempt ends, its jump goes, its late results are ignored. */
++    const prev = attemptRef.current;
++    if (prev && !prev.done) { retireAttempt(prev); if (jumping.current) { jumping.current(); jumping.current = null; } }
++    const a = { hold: createHoldAttempt({ baseline: arrivalUser, custom }), unsub: null, done: false };
++    attemptRef.current = a;
++    const mine = () => attemptRef.current === a && !a.done && !a.hold.isDead();
++    const liveSubject = () => recoveryFlow.snapshot().sessionUserId || null;
++    a.unsub = recoveryFlow.subscribe((snap) => { if (a.done) return; if (!a.hold.observe(snap.sessionUserId)) killAttempt(a); });
++    if (a.hold.isDead()) { killAttempt(a); return; }
+     /* ---- put the keyboard away BEFORE anything is measured ----
+        On a phone the press that starts all of this happens with the keyboard
+        up, which means the viewport is roughly half the screen. The jump
+@@ -5882,7 +5923,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+       if (el && typeof el.blur === "function") el.blur();
+     } catch (e) {}
+     await settleViewport();
+-    if (!isCurrent()) return;
++    if (!isCurrent() || !mine()) return;
+     /* ---- hold the screen for the length of the jump ----
+        The sign-in call is not the only thing that brings the session in: the
+        client fires SIGNED_IN the moment it succeeds, the app's own auth listener
+@@ -5910,7 +5951,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+     let handedOver = false;
+     const handOver = () => {
+       if (!isCurrent() || handedOver || !flashed || authed !== true) return;
+-      handedOver = true;
++      /* Released only for the subject that started it: a live attempt, still the current one, and the live subject is the one bound from this press. */
++      if (!mine() || !a.hold.canHandOver(liveSubject())) { if (attemptRef.current === a) killAttempt(a); return; }
++      handedOver = true; endAttempt(a);
+       if (custom) recoveryFlow.arrivalFinished(generation, arrivalUser);
+       /* This is the frame the white is covering, and it is a handful of class
+          names: the dashboard has been mounted and laid out since the hold. */
+@@ -5921,7 +5964,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+       onFlash: () => {
+         /* Nothing to hand over to yet: hold the flash rather than dropping back
+            onto a sign-in screen that has already taken itself apart. */
+-        if (isCurrent() && authed === null) document.documentElement.classList.add("sage-flash-hold");
++        if (mine() && isCurrent() && authed === null) document.documentElement.classList.add("sage-flash-hold");
+       },
+       onDone: () => { flashed = true; handOver(); },
+     });
+@@ -5935,8 +5978,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+     } catch (e) {
+       res = { error: "Couldn't reach sign-in. Check your connection and try again." };
+     }
+-    if (!isCurrent() || res?.stale) return;
++    if (!mine() || !isCurrent() || res?.stale) return;
+     if (!res || res.error) {
++      endAttempt(a);
+       abortJump();
+       signInPressed = false;
+       document.documentElement.classList.remove("sage-flash-hold");
+@@ -5944,6 +5988,8 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+       setBusy(false); setErr((res && res.error) || "Sign-in didn't complete. Try again.");
+       return;
+     }
++    /* Accept the attempt for the user the RESPONSE names, and only if that is who is signed in now and the history since the press is baseline then that user (custom: the known recovery subject). */
++    if (!custom && !a.hold.accept(res.userId, liveSubject())) { killAttempt(a); return; }
+     authed = true;
+     /* Signing in the ordinary way settles any failed reset link: the person is
+        in, and a notice about an old link must not keep the card up (C97). */
+@@ -5958,6 +6004,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump, resetting = false
+        for, which is far too late for the flash to cover it. By the time the white
+        is up the session is already in hand and the swap is a state flip. */
+     try { await onAuthed(); } catch (e) { console.error("profile load at handover", e); }
++    if (!mine()) return;   // the profile that came back is not an input to the hold; only the attempt's own state is
+     handOver();
+   };
+ 
+diff --git a/src/Manager.jsx b/src/Manager.jsx
+index 26d8b8019355bbb3b99c934f4988275153b78f24..f236ad94a74158dd1bd58cfc62b5676a43ac335a 100644
+--- a/src/Manager.jsx
++++ b/src/Manager.jsx
+@@ -18460,6 +18460,9 @@ function CrossCheck({ store, data, config, onClose }) {
+       const held = M?.stats || {};
+ 
+       const rows = [];
++      // A summed zero cannot tell an absent channel from an explicit zero.
++      // Keep totals unchanged, but require every raw channel for a match claim.
++      const knownUnits = (r) => ["internetUnits", "phoneUnits", "showroomUnits", "campaignUnits"].every((key) => Number.isFinite(r?.[key]));
+       const keys = new Set([...Object.keys(file2), ...Object.keys(held)]);
+       for (const k of keys) {
+         const f = file2[k], h = held[k];
+@@ -18469,6 +18472,7 @@ function CrossCheck({ store, data, config, onClose }) {
+         const name = f?.displayName || h?.displayName || k;
+         rows.push({
+           k, name, fu, hu,
++          comparable: !!f && !!h && (f.flatUnits !== undefined ? Number.isFinite(f.flatUnits) : knownUnits(f)) && knownUnits(h),
+           onBoard: onRoster.has(k),
+           opps: f?.opps ?? null,
+           diff: fu != null && hu != null ? +(fu - hu).toFixed(2) : null,
+@@ -18496,6 +18500,7 @@ function CrossCheck({ store, data, config, onClose }) {
+         offBoard: rows.filter((r) => r.fu != null && !r.onBoard && r.fu > 0),
+         missing: rows.filter((r) => r.fu == null && r.onBoard && (r.hu ?? 0) > 0),
+         moved: rows.filter((r) => r.diff != null && Math.abs(r.diff) > 0.001),
++        complete: rows.length > 0 && rows.every((r) => r.onBoard && r.comparable && Number.isFinite(r.fu) && Number.isFinite(r.hu)),
+         fileName: file.name,
+         month: monthLabel(ym()),
+       });
+@@ -18636,7 +18641,7 @@ function CrossCheck({ store, data, config, onClose }) {
+                 rows={res.moved} col={(r) => `${n(r.hu)} → ${n(r.fu)}`} />
+ 
+               {!res.offBoard.length && !res.missing.length && !res.moved.length && (
+-                <p className="xc-clean"><PixIcon glyph="check" size={13} /> Every name and every figure matches.</p>
++                <p className="xc-clean" style={res.complete ? undefined : { color: "var(--ink-3)" }}><PixIcon glyph={res.complete ? "check" : "warn"} size={13} /> {res.complete ? "Every name and every figure matches." : "Some names or figures could not be compared."}</p>
+               )}
+ 
+               <div className="xc-actions">
+diff --git a/src/arrival-hold.mjs b/src/arrival-hold.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..3fbd320c88045c5ca523da3dd3934b24711439c1
+--- /dev/null
++++ b/src/arrival-hold.mjs
+@@ -0,0 +1,46 @@
++/* The identity rules of one sign-in arrival attempt (the "hold"), as a pure object so every ordering can be tested without a browser.
++ *
++ * An attempt belongs to ONE press. It is bound to ONE auth subject, and the history of subjects it has seen is an ORDERED sequence, not a set.
++ *   normal attempt:  before acceptance the history must read  baseline+ then U+  (consecutive repeats collapse, nothing else does). The first subject that is not the baseline is
++ *                    the only one allowed from then on; a return to the baseline, or any other subject, kills the attempt for good. Acceptance needs the sign-in RESPONSE user id
++ *                    and the live subject to agree, and the history to be consistent with it. After acceptance only the bound subject is allowed; anything else kills.
++ *   custom attempt:  (the recovery save) it has no sign-in response; its subject is the known recovery subject at the press and never changes. No known subject means dead at once.
++ * Dead is permanent: nothing revives an attempt. A new press makes a new attempt.
++ * The profile is never an input here; callers must not feed one in.
++ */
++const subj = (v) => (typeof v === "string" && v ? v : null);
++
++export function createHoldAttempt({ baseline = null, custom = false } = {}) {
++  const b = subj(baseline);
++  let dead = custom === true && b === null;
++  let accepted = custom === true && !dead;
++  let bound = accepted ? b : null;
++  let moved;                  // normal, before acceptance: the first subject that is not the baseline, or undefined while only the baseline has been seen
++  let last = b;
++  const history = [b];
++  return {
++    observe(v) {
++      const s = subj(v);
++      if (dead) return false;
++      if (s === last) return true;               // consecutive repeats only
++      last = s; history.push(s);
++      if (accepted) { if (s !== bound) dead = true; return !dead; }
++      if (moved === undefined) { if (s !== b) moved = s; return true; }
++      if (s !== moved) dead = true;              // a return to the baseline, or another subject, after leaving it
++      return !dead;
++    },
++    accept(userId, live) {
++      if (dead || accepted || custom === true) return false;
++      const u = subj(userId), l = subj(live);
++      const consistent = moved === undefined ? u === b : u === moved;
++      if (u === null || l !== u || !consistent) { dead = true; return false; }
++      accepted = true; bound = u; return true;
++    },
++    canHandOver(live) { return !dead && accepted && subj(live) === bound; },
++    kill() { dead = true; },
++    isDead() { return dead; },
++    isAccepted() { return accepted && !dead; },
++    subject() { return bound; },
++    history() { return history.slice(); },
++  };
++}
+diff --git a/test/arrival-hold.test.mjs b/test/arrival-hold.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..5321f743196664189c62f780e4bc801c65955b38
+--- /dev/null
++++ b/test/arrival-hold.test.mjs
+@@ -0,0 +1,30 @@
++/* The identity history of a sign-in arrival attempt: ordered, never revived, bound to the sign-in RESPONSE subject. Pure, no browser. */
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import { createHoldAttempt } from "../src/arrival-hold.mjs";
++
++const A = "user-A", B = "user-B", R = "user-R";
++const run = (baseline, events, response, live) => { const h = createHoldAttempt({ baseline }); for (const e of events) h.observe(e); const ok = response === undefined ? null : h.accept(response, live === undefined ? response : live); return { h, ok }; };
++
++test("anonymous to A is accepted when the response is for A and A is live", () => { const { h, ok } = run(null, [A], A); assert.equal(ok, true); assert.equal(h.isAccepted(), true); assert.equal(h.canHandOver(A), true); assert.deepEqual(h.history(), [null, A]); });
++test("same-user re-sign-in: baseline A, no new subject (or repeats of A) is accepted", () => { for (const evs of [[], [A], [A, A, A]]) { const { h, ok } = run(A, evs, A); assert.equal(ok, true); assert.deepEqual(h.history(), [A]); } });
++test("baseline existing A, a direct A to B and a response for B is POSITIVE", () => { const { h, ok } = run(A, [B], B); assert.equal(ok, true); assert.equal(h.subject(), B); assert.equal(h.canHandOver(B), true); assert.equal(h.canHandOver(A), false); });
++test("A to B to A to B is NEGATIVE: the return to the baseline kills the attempt for good, and a later B does not revive it", () => { const h = createHoldAttempt({ baseline: A }); assert.equal(h.observe(B), true); assert.equal(h.observe(A), false); assert.equal(h.observe(B), false); assert.equal(h.accept(B, B), false); assert.equal(h.isDead(), true); assert.deepEqual(h.history(), [A, B, A], "history keeps order up to the kill and stops there; only consecutive repeats collapse"); });
++test("null to A to null to A stays dead", () => { const h = createHoldAttempt({ baseline: null }); assert.equal(h.observe(A), true); assert.equal(h.observe(null), false); assert.equal(h.observe(A), false); assert.equal(h.accept(A, A), false); assert.equal(h.canHandOver(A), false); });
++test("B before A's response: null to B, then A (the response's subject) arrives: dead at A, never accepted", () => { const h = createHoldAttempt({ baseline: null }); assert.equal(h.observe(B), true); assert.equal(h.observe(A), false); assert.equal(h.accept(A, A), false); });
++test("B arrives and stays, A's response is for A: not accepted (the live subject is not the response's)", () => { const { ok, h } = run(null, [B], A, B); assert.equal(ok, false); assert.equal(h.isDead(), true); });
++test("the first event is not assumed to be the intended user: events for B, response for A", () => { const { ok } = run(null, [B], A, A); assert.equal(ok, false); });
++test("the response user id is mandatory, and must equal the live subject", () => { for (const [u, l] of [[undefined, A], [null, A], ["", A], [A, null], [A, B], [A, undefined]]) { const h = createHoldAttempt({ baseline: null }); h.observe(A); assert.equal(h.accept(u, l), false, JSON.stringify([u, l])); assert.equal(h.isDead(), true); } });
++test("a response for A with no event delivered yet and no live subject is not accepted", () => { const h = createHoldAttempt({ baseline: null }); assert.equal(h.accept(A, null), false); });
++test("after acceptance any other subject kills, and a return to the bound subject does not revive", () => { const h = createHoldAttempt({ baseline: null }); h.observe(A); assert.equal(h.accept(A, A), true); assert.equal(h.observe(B), false); assert.equal(h.observe(A), false); assert.equal(h.canHandOver(A), false); assert.equal(h.isAccepted(), false); });
++test("after acceptance a logout (anonymous) kills", () => { const h = createHoldAttempt({ baseline: null }); h.observe(A); h.accept(A, A); assert.equal(h.observe(null), false); });
++test("duplicate events collapse only when consecutive", () => { const h = createHoldAttempt({ baseline: null }); for (const e of [A, A, A, A]) assert.equal(h.observe(e), true); assert.deepEqual(h.history(), [null, A]); assert.equal(h.accept(A, A), true); });
++test("canHandOver needs acceptance, a live attempt and the live subject equal to the bound one", () => { const h = createHoldAttempt({ baseline: null }); assert.equal(h.canHandOver(A), false); h.observe(A); h.accept(A, A); assert.equal(h.canHandOver(A), true); assert.equal(h.canHandOver(B), false); assert.equal(h.canHandOver(null), false); h.kill(); assert.equal(h.canHandOver(A), false); });
++test("accept is once only", () => { const h = createHoldAttempt({ baseline: null }); h.observe(A); assert.equal(h.accept(A, A), true); assert.equal(h.accept(A, A), false); });
++test("custom attempt (the recovery save): the known recovery subject stays, any other kills for good, null at the press is dead, and accept is not for it", () => {
++  const h = createHoldAttempt({ baseline: R, custom: true }); assert.equal(h.isAccepted(), true); assert.equal(h.canHandOver(R), true); assert.equal(h.observe(R), true); assert.equal(h.accept(R, R), false);
++  assert.equal(h.observe(B), false); assert.equal(h.observe(R), false); assert.equal(h.canHandOver(R), false);
++  const none = createHoldAttempt({ baseline: null, custom: true }); assert.equal(none.isDead(), true);
++});
++test("non-string subjects are treated as anonymous", () => { const h = createHoldAttempt({ baseline: undefined }); assert.equal(h.observe(undefined), true); assert.equal(h.observe(0), true); assert.deepEqual(h.history(), [null]); });
++test("attempts do not share state", () => { const a = createHoldAttempt({ baseline: null }), b = createHoldAttempt({ baseline: null }); a.observe(A); a.observe(null); assert.equal(a.isDead(), true); assert.equal(b.isDead(), false); });
+diff --git a/test/flash-retire-closure.test.mjs b/test/flash-retire-closure.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..55b9a13ba0a0d5c19e8485a3360de16702bfd869
+--- /dev/null
++++ b/test/flash-retire-closure.test.mjs
+@@ -0,0 +1,55 @@
++// CLOSURE-LEVEL ONLY, NOT MOUNTED. The real signIn source and the real attempt plumbing (attemptRef, endAttempt, retireAttempt, killAttempt) run against a synthetic DOM class list, a synthetic animation and the real recovery modules.
++// Overlap of two presses is not reachable through the mounted UI (the first press blurs the field), so current/new-owner protection is exercised here and labelled as such.
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {readFileSync} from 'node:fs';
++import {createRecoveryController} from '../src/recovery-controller.mjs';
++import {createRecoveryGuard,LINK_FAILED_NOTICE} from '../src/recovery-session.mjs';
++import {createRecoveryContinuity} from '../src/recovery-continuity.mjs';
++import {createHoldAttempt} from '../src/arrival-hold.mjs';
++const source=readFileSync(new URL('../src/LeadPerformanceCalculator.jsx',import.meta.url),'utf8');
++const anchor='  const signIn = async (authCall, isCurrent = () => true) => {';
++const start=source.indexOf(anchor);assert.ok(start>=0);assert.equal(source.indexOf(anchor,start+1),-1);
++const finish=source.indexOf('\n  const signUp =',start);const code=source.slice(start,finish);
++const plumbStart=source.indexOf('  const attemptRef = useRef(null);'),plumbEnd=source.indexOf('  useEffect(() => () => { const a = attemptRef.current;');
++const plumb=source.slice(plumbStart,plumbEnd).replace('useRef(null)','{current:null}');
++const defer=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
++const sess=(id='synthetic-a',token='synthetic-token')=>({user:{id},access_token:token});
++function harness(){
++ const log=[];let flash=false,session=sess();const animations=[];const gates=[];
++ const storage={getItem:()=>null,setItem(){},removeItem(){}};
++ const controller=createRecoveryController({guard:createRecoveryGuard(null),continuity:createRecoveryContinuity({storage,makeId:()=>'synthetic-1'}),getSession:async()=>({data:{session}}),writePassword:async()=>({error:null}),failedNotice:LINK_FAILED_NOTICE});
++ controller.settled(session);
++ const classList={add:x=>{if(x==='sage-flash-hold'){flash=true;log.push('flash-on');}},remove:x=>{if(x==='sage-flash-hold'){flash=false;log.push('flash-off');}}};
++ const ctx={recoveryFlow:controller,setErr(){},setOk(){},email:'synthetic@example.invalid',password:'synthetic-password',setBusy:x=>log.push(['busy',x]),signInPressed:false,document:{activeElement:{blur(){}},documentElement:{classList}},settleViewport:async()=>{},onJump(){},tellJumpOrigin(){},markRef:{current:null},typed:34,hurryBuild(){},jumping:{current:null},RUSH:0,
++  runJump:cb=>{animations.push(cb);return ()=>{};},createHoldAttempt,abortJump:()=>log.push('abort'),onRecoveryDismissed(){},onAuthed:async()=>{},onHandover:()=>log.push('handover'),console:{error(){}},
++  authSignIn:()=>{const g=defer();gates.push(g);return g.promise;}};
++ const f=new Function('ctx',`with(ctx){${plumb};${code};return {signIn,retireAttempt,attemptRef};}`)(ctx);
++ return {...f,ctx,log,animations,gates,controller,isFlash:()=>flash,resolveA:(i)=>gates[i].resolve({error:null,userId:'synthetic-a'})};
++}
++const tick=()=>new Promise(r=>setTimeout(r,0));
++test('closure: a flash held while the answer is pending is taken down by the CURRENT attempt when it retires (generation or unmount path)',async()=>{
++ const h=harness();const p=h.signIn();await tick();h.animations[0].onFlash();assert.equal(h.isFlash(),true);
++ h.retireAttempt(h.attemptRef.current);assert.equal(h.isFlash(),false);assert.equal(h.attemptRef.current.done,true);
++ h.resolveA(0);await p;assert.ok(!h.log.includes('handover'));assert.equal(h.isFlash(),false);
++});
++test('closure: a new press retires the old current attempt (flash off) before the new one is installed; the old late answer can never clear or hand over',async()=>{
++ const h=harness();const p1=h.signIn();await tick();h.animations[0].onFlash();assert.equal(h.isFlash(),true);
++ const first=h.attemptRef.current;const p2=h.signIn();await tick();
++ assert.equal(h.isFlash(),false,'old flash retired by the new press');assert.equal(first.done,true);assert.notEqual(h.attemptRef.current,first);
++ h.animations[1].onFlash();assert.equal(h.isFlash(),true,'the NEW attempt owns its own flash');
++ const before=h.log.length;h.resolveA(0);await p1;
++ assert.equal(h.isFlash(),true,'the old completion did not clear the new attempt flash');assert.ok(!h.log.slice(before).includes('flash-off'));assert.ok(!h.log.includes('handover'));
++ h.resolveA(1);await p2;
++});
++test('closure: retiring an attempt that is no longer current never touches the class',async()=>{
++ const h=harness();const p1=h.signIn();await tick();const first=h.attemptRef.current;const p2=h.signIn();await tick();
++ h.animations[1].onFlash();assert.equal(h.isFlash(),true);
++ h.retireAttempt(first);assert.equal(h.isFlash(),true,'stale retire is a no-op for the class');
++ h.resolveA(0);h.resolveA(1);await p1;await p2;
++});
++test('closure: no residue and one current completion when the next legitimate press follows the retire',async()=>{
++ const h=harness();const p1=h.signIn();await tick();h.animations[0].onFlash();h.retireAttempt(h.attemptRef.current);assert.equal(h.isFlash(),false);h.resolveA(0);await p1;
++ const p2=h.signIn();await tick();h.animations[1].onFlash();h.resolveA(1);await p2;h.animations[1].onDone();
++ assert.equal(h.log.filter(x=>x==='handover').length,1,'exactly one handover, from the current attempt');assert.equal(h.isFlash(),false);
++});
+diff --git a/test/held-login-config.test.mjs b/test/held-login-config.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..a4746dc559b1c4192d418277f82f5e8f8f4d9e8a
+--- /dev/null
++++ b/test/held-login-config.test.mjs
+@@ -0,0 +1,47 @@
++/* PROPOSED test, not in the repository. The sign-in layer stays mounted while a legitimate arrival holds it, even when the real config has been cleared by an account change, and it then
++   shows an INERT empty config. It never reuses a previous account's config, and every protection around it is still in the source. Source-level, node:test only, no browser. */
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import fs from "node:fs";
++
++const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
++const line = (re) => { const m = core.match(re); assert.ok(m, "missing: " + re); return m[0]; };
++
++test("loginConfigFor: the real config wins, null is inert only while held, null otherwise, and no earlier config is ever returned", () => {
++  const src = line(/^const HELD_LOGIN_CONFIG = .*$/m) + "\n" + line(/^const loginConfigFor = .*$/m) + "\nreturn { HELD_LOGIN_CONFIG, loginConfigFor };";
++  const { HELD_LOGIN_CONFIG, loginConfigFor } = new Function(src)();
++  const real = { approvedDomains: ["example.test"], registrationOpen: true, stores: [{ id: "s1" }] }, other = { approvedDomains: ["other.test"], registrationOpen: true, stores: [] };
++  assert.equal(loginConfigFor(real, false), real); assert.equal(loginConfigFor(real, true), real);
++  assert.equal(loginConfigFor(null, true), HELD_LOGIN_CONFIG);
++  assert.equal(loginConfigFor(null, false), null, "a non-held null config gets no form");
++  assert.equal(loginConfigFor(undefined, false), null);
++  loginConfigFor(other, true); assert.equal(loginConfigFor(null, true), HELD_LOGIN_CONFIG, "nothing remembered from the previous call");
++  assert.equal(loginConfigFor.length, 2);
++  assert.deepEqual(HELD_LOGIN_CONFIG, { approvedDomains: [], registrationOpen: false, stores: [] });
++  assert.ok(Object.isFrozen(HELD_LOGIN_CONFIG) && Object.isFrozen(HELD_LOGIN_CONFIG.approvedDomains) && Object.isFrozen(HELD_LOGIN_CONFIG.stores));
++  // Login's own derivation (copied from its source line) is false for the inert config: registration unavailable.
++  const derived = new Function("config", line(/^  const domains = config\.approvedDomains \|\| \[\];$/m) + "\n" + line(/^  const canRegister = .*$/m) + "\nreturn canRegister;");
++  assert.equal(!!derived(HELD_LOGIN_CONFIG), false); assert.equal(!!derived(real), true);
++});
++
++test("the layer uses it only through loginConfigFor(config, jumpHold); no copy of a config is kept anywhere", () => {
++  assert.equal(core.split("loginConfigFor(config, jumpHold)").length - 1, 1);
++  assert.ok(core.includes("const signInLayer = loginConfig && authReady && rec.status !== \"pending\" && (!session || jumpHold || recoveryLayer) ?"), "the pending exclusion and the three-way condition are kept");
++  assert.ok(core.includes("<Login config={loginConfig} resetting={rec.status === \"ready\"}"));
++  assert.ok(!/\b(prevConfig|lastConfig|heldConfig|configSnapshot|savedConfig)\b/.test(core), "no remembered config");
++  assert.equal((core.match(/HELD_LOGIN_CONFIG/g) || []).length, 2, "the inert config is defined once and used once, by loginConfigFor");
++});
++
++test("every protection around the clear is untouched: caches, CAS resets, provisional flag, generation abort, readiness gates", () => {
++  for (const must of [
++    "sharedVersions.clear(); rowStamps.clear(); actCache.clear(); casCache.clear();",
++    "cfgProvisional.current = true; setConfig(null); setStoreData(null); setAdminData({});",
++    "viewPicked.current = false; viewPickInFlight.current = false; setInitialViewReady(false); setCfgWave(w => w + 1);",
++    "const configSubject = JSON.stringify([session?.id || session?.email || null, session?.role, session?.active, session?.pending, session?.stores]);",
++    "abortJump(); signInPressed = false; setBusy(false);",
++    "if (!mine() || !isCurrent() || res?.stale) return;",
++    "const landable = !!session && !!config && arrivalDestinationReady && !cfgProvisional.current",
++    "if (!session || holdMount) return wrap(<Shell><Style /></Shell>);",
++  ]) assert.ok(core.includes(must), must);
++  assert.ok(!/recoveryFlow\.[a-zA-Z]+\([^)]*\)\s*;?\s*\/\/ held/.test(core));
++});
+diff --git a/test/held-login-hold.test.mjs b/test/held-login-hold.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..bf8978da2f51495df964c85debed0eb34207e298
+--- /dev/null
++++ b/test/held-login-hold.test.mjs
+@@ -0,0 +1,62 @@
++/* PROTOTYPE source-contract checks for the identity-bound hold in Login (source-level, node:test only, no browser). Mounted behaviour is covered by the driver scenarios. */
++import { test } from "node:test";
++import assert from "node:assert/strict";
++import fs from "node:fs";
++const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
++const at = (s) => { const i = core.indexOf(s); assert.ok(i >= 0, "missing: " + s); assert.equal(core.indexOf(s, i + 1), -1, "not unique: " + s); return i; };
++const signInStart = core.indexOf("const signIn = async (authCall, isCurrent = () => true) => {");
++const signUpStart = core.indexOf("const signUp = async () => {");
++
++test("authSignIn returns the accepted response's user id and nothing else changes", () => {
++  const i = at("async function authSignIn(email, password) {"); const body = core.slice(i, core.indexOf("\n}\n", i));
++  assert.ok(body.includes("bumpAuthEpoch();") && body.includes("const { data, error } = await supabase.auth.signInWithPassword({ email, password });"));
++  assert.ok(body.includes("return { error: error ? error.message : null, userId };") && body.includes("typeof data.user.id === \"string\""));
++});
++test("ownership is checked after every await in signIn, and immediately before callbacks and the handover", () => {
++  const body = core.slice(signInStart, signUpStart);
++  for (const must of ["await settleViewport();\n    if (!isCurrent() || !mine()) return;", "if (!mine() || !isCurrent() || res?.stale) return;", "if (!mine()) return;   // the profile that came back is not an input to the hold", "if (mine() && isCurrent() && authed === null) document.documentElement.classList.add(\"sage-flash-hold\");", "if (!mine() || !a.hold.canHandOver(liveSubject())) { if (attemptRef.current === a) killAttempt(a); return; }"]) assert.ok(body.includes(must), must);
++  assert.equal(body.split("await ").length - 1, 3, "three awaits: settleViewport, the auth call, the profile");
++});
++test("acceptance uses the response user id and the live subject, only for the normal path, before the attempt is treated as signed in", () => {
++  const body = core.slice(signInStart, signUpStart);
++  const accept = body.indexOf("if (!custom && !a.hold.accept(res.userId, liveSubject())) { killAttempt(a); return; }");
++  assert.ok(accept > 0 && accept < body.indexOf("authed = true;") && accept > body.indexOf("if (!res || res.error) {"));
++  assert.equal(body.split(".accept(").length - 1, 1);
++});
++test("only the current attempt touches the hold, the flash class, busy and the jump on kill; an old one ends quietly", () => {
++  const r = at("const retireAttempt = (a) => {"); const rb = core.slice(r, core.indexOf("};", r) + 2);
++  assert.ok(rb.indexOf("a.hold.kill();") < rb.indexOf("if (attemptRef.current === a) document.documentElement.classList.remove(\"sage-flash-hold\");"), "the owner takes the class down only while still current");
++  assert.ok(rb.indexOf("classList.remove(\"sage-flash-hold\")") < rb.indexOf("endAttempt(a);"), "the class goes before the attempt lets go");
++  assert.ok(!/set[A-Z][A-Za-z]*\(/.test(rb), "no React state setter in the retire helper (it runs in the unmount cleanup)");
++  const i = at("const killAttempt = (a) => {"); const body = core.slice(i, core.indexOf("};", i) + 2);
++  assert.ok(body.indexOf("const owned = attemptRef.current === a;") < body.indexOf("retireAttempt(a);") && body.indexOf("if (!owned) return;") < body.indexOf("abortJump();"));
++  assert.ok(!body.includes("sage-flash-hold"), "kill leaves the class to the retire helper");
++  assert.ok(core.includes("const endAttempt = (a) => { if (a.unsub) { a.unsub(); a.unsub = null; } a.done = true; };"));
++  assert.equal(core.split("recoveryFlow.subscribe((snap) =>").length - 1, 1, "one subscription per attempt, ended with it");
++});
++test("every abortJump in Login is the component's own (kill, generation effect, error path after the ownership check)", () => {
++  const login = core.slice(core.indexOf("function Login({ config, onBack"), core.indexOf("\nfunction clearToolMove()"));
++  const calls = [...login.matchAll(/abortJump\(\)/g)].map((m) => m.index);
++  assert.equal(calls.length, 3, "the kill (current attempt only), the generation effect, and the error branch after the ownership check");
++});
++test("a new press overtakes an old attempt, the unmount and the generation effect end it through the retire helper, and nothing is revived", () => {
++  assert.ok(core.includes("if (prev && !prev.done) { retireAttempt(prev); if (jumping.current)"));
++  assert.ok(core.includes("useEffect(() => () => { const a = attemptRef.current; if (a) retireAttempt(a); if (jumping.current)"));
++  assert.ok(core.includes("{ const a = attemptRef.current; if (a) retireAttempt(a); }\n    abortJump(); signInPressed = false; setBusy(false);"));
++  assert.equal(core.split("a.hold.kill(); endAttempt(").length - 1, 0, "no path ends an attempt without the retire helper");
++  const login = core.slice(core.indexOf("function Login({ config, onBack"), core.indexOf("\nfunction clearToolMove()"));
++  assert.ok(login.indexOf("retireAttempt(prev)") < login.indexOf("attemptRef.current = a;"), "the old attempt is retired while still current, before the new one is installed");
++});
++test("retained: generation invalidation, the ordinary failed-notice dismissal (non-custom only), the custom recovery handover, and no blanket status abort", () => {
++  const body = core.slice(signInStart, signUpStart);
++  assert.ok(core.includes("}, [recoveryGeneration]);") && body.includes("isCurrent = () => recoveryFlow.snapshot().generation === generation && callerCurrent();"));
++  assert.ok(body.includes("if (!custom && onRecoveryDismissed) onRecoveryDismissed();"));
++  assert.ok(body.includes("if (custom) recoveryFlow.arrivalFinished(generation, arrivalUser);"));
++  assert.ok(!/rec\.status|interrupted|linkFailed/.test(body), "no status-based abort inside signIn");
++  assert.ok(core.includes('const signInLayer = loginConfig && authReady && rec.status !== "pending"'));
++  assert.ok(core.includes("cfgProvisional.current = true; setConfig(null); setStoreData(null); setAdminData({});"));
++});
++test("the custom recovery save is bound at the press (baseline is the recovery subject, custom: true), not from a response", () => {
++  assert.ok(core.includes("createHoldAttempt({ baseline: arrivalUser, custom })"));
++  assert.ok(core.includes("return signIn(() => authSetPassword(password), () => recoveryFlow.snapshot().generation === generation && recoveryFlow.snapshot().sessionUserId === sessionUserId);"));
++});
+diff --git a/test/launch-gap-candidate.test.mjs b/test/launch-gap-candidate.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..67b087d834610ed4d9c5fbb0a912488ab21f22d4
+--- /dev/null
++++ b/test/launch-gap-candidate.test.mjs
+@@ -0,0 +1,75 @@
++// Executes the production gates and row construction. No runtime qualification.
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { parseDeliverySummaryRows } from '../api/_report-parsers.mjs';
++const source = process.env.LAUNCH_GAP_SOURCE;
++const core = readFileSync(source ? `${source}/src/LeadPerformanceCalculator.jsx` : new URL('../src/LeadPerformanceCalculator.jsx', import.meta.url), 'utf8');
++const manager = readFileSync(source ? `${source}/src/Manager.jsx` : new URL('../src/Manager.jsx', import.meta.url), 'utf8');
++const ordinary = core.match(/if \((!session \|\| holdMount[^\n]*?)\) return wrap\(<Shell><Style \/><\/Shell>\);/)[1];
++const recovery = core.match(/if \((rec.status !== "idle")\) return wrap\(<Shell><Style \/><\/Shell>\);/)?.[1] || 'false';
++const gate = `(${recovery}) || (${ordinary})`;
++const held = new Function('session', 'holdMount', 'rec', `return ${gate}`);
++test('recovery holds the dashboard through pending, ready, failure and interruption, then releases it', () => {
++  for (const status of ['pending', 'ready', 'failed', 'interrupted']) assert.equal(held({ id: 'manager' }, false, { status }), true, status);
++  assert.equal(held({ id: 'manager' }, false, { status: 'idle' }), false);
++  assert.equal(held(null, false, { status: 'idle' }), true);
++  assert.equal(held({ id: 'manager' }, true, { status: 'idle' }), true);
++});
++const completeness = manager.match(/complete: ([^\n]+),\n/);
++const complete = new Function('rows', `return ${completeness?.[1] || 'true'}`);
++test('unknown, missing and nonnumeric figures cannot certify a complete match', () => {
++  for (const row of [{ fu: null, hu: 0 }, { fu: 0, hu: null }, { fu: null, hu: null }, { fu: NaN, hu: 0 }, { fu: Infinity, hu: 0 }]) {
++    assert.equal(complete([{ onBoard: true, comparable: true, ...row }]), false);
++    assert.equal(complete([{ onBoard: true, comparable: true, fu: 0, hu: 0 }, { onBoard: true, comparable: true, ...row }]), false);
++  }
++  assert.equal(complete([]), false);
++  assert.equal(complete([{ onBoard: false, comparable: true, fu: 0, hu: 0 }]), false);
++});
++test('explicit zero and fractional values remain comparable', () => {
++  assert.equal(complete([{ onBoard: true, comparable: true, fu: 0, hu: 0 }]), true);
++  assert.equal(complete([{ onBoard: true, comparable: true, fu: .5, hu: .5 }]), true);
++});
++test('the match claim is conditional on complete coverage', () => {
++  assert.match(manager.slice(manager.indexOf('function CrossCheck('), manager.indexOf('function XcList(')), /res\.complete \? "Every name and every figure matches\." : "Some names or figures could not be compared\."/);
++});
++
++// Execute the real row construction, including unitsOf's missing-to-zero behavior.
++const crossStart = manager.indexOf('function CrossCheck(');
++const rowStart = manager.indexOf('      const rows = [];', crossStart);
++const rowEnd = manager.indexOf('      rows.sort(', rowStart);
++assert.ok(rowStart > crossStart && rowEnd > rowStart);
++const unitsCode = manager.slice(manager.indexOf('const unitsOf = (s) =>'), manager.indexOf(';', manager.indexOf('const unitsOf = (s) =>')) + 1);
++const buildRows = new Function('file2', 'held', 'onRoster', `${unitsCode}\n${manager.slice(rowStart, rowEnd)}\nreturn rows;`);
++const channels = ['internetUnits', 'phoneUnits', 'showroomUnits', 'campaignUnits'];
++const zero = () => Object.fromEntries(channels.map(k => [k, 0]));
++const construct = (f, h) => buildRows({ person: f }, { person: h }, new Set(['person']));
++test('actual CSV versus held row construction cannot certify absent or null channels as zero', () => {
++  for (const channel of channels) for (const absent of [true, false]) {
++    const h = zero(); if (absent) delete h[channel]; else h[channel] = null;
++    const rows = construct({ flatUnits: 0 }, h);
++    assert.equal(rows[0].hu, 0, 'the existing numerical total is preserved');
++    assert.equal(complete(rows), false, `${channel}: ${absent ? 'missing' : 'null'}`);
++  }
++  assert.equal(complete(construct({ flatUnits: 0 }, {})), false);
++  assert.equal(complete(construct({ flatUnits: 0 }, zero())), true);
++});
++test('actual PDF row construction requires every channel, including a missing header or null parsed cell', () => {
++  for (const channel of channels) for (const absent of [true, false]) {
++    const header = channels.filter(k => !absent || k !== channel);
++    const values = header.map(k => k === channel ? null : 0);
++    const file = parseDeliverySummaryRows([[], ['Name', ...header], ['person', ...values]]);
++    const rows = buildRows(file, { person: zero() }, new Set(['person']));
++    assert.equal(rows[0].fu, 0, 'global unitsOf still totals absent channels as before');
++    assert.equal(complete(rows), false, `${channel}: ${absent ? 'missing header' : 'null cell'}`);
++  }
++  assert.equal(complete(construct({}, zero())), false);
++  assert.equal(complete(construct(zero(), zero())), true);
++});
++test('constructed mixed coverage stays incomplete; explicit fractional channels remain comparable', () => {
++  const known = { ...zero(), internetUnits: .5 };
++  assert.equal(complete(construct(known, known)), true);
++  const rows = buildRows({ a: { flatUnits: 0 }, b: { flatUnits: 0 } }, { a: zero(), b: {} }, new Set(['a', 'b']));
++  assert.equal(complete(rows), false);
++  assert.equal(rows.reduce((n, r) => n + r.hu, 0), 0);
++});
+diff --git a/test/recovery-arrival.test.mjs b/test/recovery-arrival.test.mjs
+index 7edcbeb419109466735e890fddc5a773ead64843..0f22f24537c7b06e3d89d8fea3c8f8bb72ab111a 100644
+--- a/test/recovery-arrival.test.mjs
++++ b/test/recovery-arrival.test.mjs
+@@ -5,10 +5,14 @@ import {readFileSync} from 'node:fs';
+ import {createRecoveryController} from '../src/recovery-controller.mjs';
+ import {createRecoveryGuard,LINK_FAILED_NOTICE} from '../src/recovery-session.mjs';
+ import {createRecoveryContinuity} from '../src/recovery-continuity.mjs';
++import {createHoldAttempt} from '../src/arrival-hold.mjs';
+ const source=readFileSync(new URL('../src/LeadPerformanceCalculator.jsx',import.meta.url),'utf8');
+ const anchor='  const signIn = async (authCall, isCurrent = () => true) => {';
+ const start=source.indexOf(anchor);assert.ok(start>=0);assert.equal(source.indexOf(anchor,start+1),-1);
+ const finish=source.indexOf('\n  const signUp =',start);assert.ok(finish>start);const code=source.slice(start,finish);
++/* The attempt plumbing lives beside signIn in Login (attemptRef, endAttempt, killAttempt): run the REAL source for it in the same scope. */
++const plumbStart=source.indexOf('  const attemptRef = useRef(null);'),plumbEnd=source.indexOf('  useEffect(() => () => { const a = attemptRef.current;');assert.ok(plumbStart>0&&plumbEnd>plumbStart);
++const plumb=source.slice(plumbStart,plumbEnd).replace('useRef(null)','{current:null}');
+ const defer=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
+ const sess=(id='synthetic-a',token='synthetic-token')=>({user:{id},access_token:token});
+ function harness({mode='idle',denied=false}={}){
+@@ -17,8 +21,8 @@ function harness({mode='idle',denied=false}={}){
+  const guard=createRecoveryGuard(mode==='failed'?'expired':null),continuity=createRecoveryContinuity({storage,makeId:()=>`synthetic-${++n}`});
+  const controller=createRecoveryController({guard,continuity,getSession:async()=>({data:{session}}),writePassword:async()=>{calls.push('password-write');return {error:null};},failedNotice:LINK_FAILED_NOTICE});
+  controller.settled(session);
+- const ctx={recoveryFlow:controller,setErr:x=>calls.push(['error',x]),setOk(){},email:'synthetic@example.invalid',password:'synthetic-password',setBusy:x=>calls.push(['busy',x]),signInPressed:false,document:{activeElement:{blur(){}},documentElement:{classList:{add:x=>calls.push(['class-add',x]),remove:x=>calls.push(['class-remove',x])}}},settleViewport:async()=>{},onJump:()=>calls.push('jump'),tellJumpOrigin(){},markRef:{current:null},typed:34,hurryBuild(){},jumping:{current:null},RUSH:0,runJump:callbacks=>{animation=callbacks;return ()=>{};},authSignIn:async()=>{calls.push('auth');session=sess('synthetic-b','signed-in-token');controller.onAuthEvent('SIGNED_IN',session);return {error:null};},abortJump:()=>calls.push('abort'),onRecoveryDismissed:()=>{calls.push('dismiss');controller.dismiss();},onAuthed:async()=>calls.push('profile'),onHandover:()=>calls.push('handover'),console:{error(){}}};
+- return {ctx,calls,guard,continuity,controller,signIn:new Function('ctx',`with(ctx){${code};return signIn;}`)(ctx),done:()=>animation?.onDone(),fresh(){session=sess('synthetic-a','fresh-recovery');controller.onAuthEvent('PASSWORD_RECOVERY',session);},marker:()=>raw};
++ const ctx={recoveryFlow:controller,setErr:x=>calls.push(['error',x]),setOk(){},email:'synthetic@example.invalid',password:'synthetic-password',setBusy:x=>calls.push(['busy',x]),signInPressed:false,document:{activeElement:{blur(){}},documentElement:{classList:{add:x=>calls.push(['class-add',x]),remove:x=>calls.push(['class-remove',x])}}},settleViewport:async()=>{},onJump:()=>calls.push('jump'),tellJumpOrigin(){},markRef:{current:null},typed:34,hurryBuild(){},jumping:{current:null},RUSH:0,runJump:callbacks=>{animation=callbacks;return ()=>{};},createHoldAttempt,authSignIn:async()=>{calls.push('auth');session=sess('synthetic-b','signed-in-token');controller.onAuthEvent('SIGNED_IN',session);return {error:null,userId:'synthetic-b'};},abortJump:()=>calls.push('abort'),onRecoveryDismissed:()=>{calls.push('dismiss');controller.dismiss();},onAuthed:async()=>calls.push('profile'),onHandover:()=>calls.push('handover'),console:{error(){}}};
++ return {ctx,calls,guard,continuity,controller,signIn:new Function('ctx',`with(ctx){${plumb};${code};return signIn;}`)(ctx),done:()=>animation?.onDone(),fresh(){session=sess('synthetic-a','fresh-recovery');controller.onAuthEvent('PASSWORD_RECOVERY',session);},marker:()=>raw};
+ }
+ for(const mode of ['idle','failed','interrupted'])test(`ordinary ${mode} sign-in dismisses notice without cancelling its own arrival`,async()=>{
+  const h=harness({mode});const generation=h.controller.snapshot().generation;await h.signIn();h.done();assert.ok(h.calls.includes('auth'));assert.ok(h.calls.includes('dismiss'));assert.ok(h.calls.includes('profile'));assert.equal(h.calls.filter(x=>x==='handover').length,1);assert.equal(h.controller.snapshot().generation,generation);assert.equal(h.controller.snapshot().status,'idle');
+diff --git a/test/recovery-controller.test.mjs b/test/recovery-controller.test.mjs
+index 03bb8efccb63c09627fe8217fc2609ac8327908e..39843df6304ab43ae94f4af99f4265d0e406174d 100644
+--- a/test/recovery-controller.test.mjs
++++ b/test/recovery-controller.test.mjs
+@@ -67,7 +67,7 @@ test('source keeps interrupted reset in recovery layer and threads generation in
+  assert.ok(app.includes('return signIn(() => authSetPassword(password), () => recoveryFlow.snapshot().generation === generation && recoveryFlow.snapshot().sessionUserId === sessionUserId);'), 'custom arrival preserves both ownership checks');
+ });
+ test('source sign-in continuation checks context after waits and before handover',()=>{
+- assert.match(app,/await settleViewport\(\);\s*if \(!isCurrent\(\)\) return;/);
++ assert.match(app,/await settleViewport\(\);\s*if \(!isCurrent\(\) \|\| !mine\(\)\) return;/);
+  assert.match(app,/const handOver = \(\) => \{\s*if \(!isCurrent\(\)/);
+- assert.match(app,/if \(!isCurrent\(\) \|\| res\?\.stale\) return;/);
++ assert.match(app,/if \(!mine\(\) \|\| !isCurrent\(\) \|\| res\?\.stale\) return;/);
+ });
+diff --git a/test/room-command-handler.test.mjs b/test/room-command-handler.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..08ee0628991ce09b6d6a9724037f6d48287d92f3
+--- /dev/null
++++ b/test/room-command-handler.test.mjs
+@@ -0,0 +1,129 @@
++// Actual api/room-command.mjs handler, in-process, fake db only (the SDK import is the only thing mocked, through test/support/). Portable adaptation of the independently reviewed unit5 test
++// (handler.tgz sha256 a5792bb59d959ca701f5314e7a0d0572f27ca02646eeaa07c7f28a5d6266f3c2; its original is preserved unchanged). Exact adaptation:
++//  1. SUT is this repository's api/ (no SUT_DIR). The SDK mock is registered from here instead of `node --import`. No trace file is written.
++//  2. ALWAYS asserted, no baseline needed: a malformed (array/object/boolean) table is HTTP 400 'Unknown table' after the receipt LOOKUP, with no commit and no direct write; a valid scalar table
++//     is 200 with exactly one expected commit (actor, person, store, room, date, p_expected stamp with microseconds, p_request, strict stored type) and no direct write.
++//  3. The differential half (valid and unknown scalars identical to the 47757af handler) runs ONLY when BASE_DIR names an api/ directory whose whole file set matches the digest below
++//     (a mutable or different tree is refused with an error); otherwise those tests are skipped with a stated reason. The baseline tree is not vendored.
++import test, { before, after, mock } from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import path from 'node:path';
++import crypto from 'node:crypto';
++import { register } from 'node:module';
++const BASELINE_API_FILES = 49, BASELINE_API_DIGEST = '7eebf550461d7cb29003558a1f6f592ce607d4326fb48193faf2ea002f0e4096';   // the 47757af api/ directory
++function apiDigest(dir) {
++  const out = [];
++  (function walk(d, rel) { for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) { const p = path.join(d, e.name), r = rel ? rel + '/' + e.name : e.name; if (e.isDirectory()) walk(p, r); else out.push(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex') + '  ' + r); } })(dir, '');
++  out.sort();
++  return { n: out.length, d: crypto.createHash('sha256').update(out.join('\n') + '\n').digest('hex') };
++}
++let BASE = null, skipDifferential = 'BASE_DIR not set: the live comparison with the 47757af handler is skipped (the always-on assertions below still run)';
++if (process.env.BASE_DIR) {
++  const got = apiDigest(process.env.BASE_DIR);
++  if (got.n !== BASELINE_API_FILES || got.d !== BASELINE_API_DIGEST) throw new Error('BASE_DIR is not the authenticated 47757af api/ directory: ' + got.n + ' files, ' + got.d);
++  BASE = process.env.BASE_DIR; skipDifferential = false;
++}
++register('./support/room-command-hooks.mjs', import.meta.url);
++process.env.SUPABASE_URL = 'https://synthetic.invalid';
++process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic-service';
++process.env.SUPABASE_ANON_KEY = 'synthetic-anon';
++const sutHandler = (await import('../api/room-command.mjs')).default;
++const baseHandler = BASE ? (await import(`${BASE}/room-command.mjs`)).default : null;
++const NOW = '2026-10-27T15:00:00.000Z', DAY = '2026-10-27', STAMP = '2026-10-27T14:59:00.123456+00:00';
++before(() => mock.timers.enable({ apis: ['Date'], now: Date.parse(NOW) }));
++after(() => { mock.timers.reset(); });
++const roomRow = () => ({ store:'alpha', date:DAY,
++  roster:[{id:'p1',name:'Synthetic A',label:'A'},{id:'p2',name:'Synthetic B',label:'B'}],
++  line:[{id:'p1',label:'A',status:'customer',statusAt:'2026-10-27T14:00:00Z'},{id:'p2',label:'B',status:'waiting',statusAt:'2026-10-27T14:01:00Z'}],
++  history:[], goalNotes:[] });
++const CONFIG = { stores:[{ id:'alpha', floorPlan:{ tables:[{n:1},{n:2},{n:'3'},{n:'O1'}] } }] };
++
++function fakeDb(log) {
++  const builder = (table) => {
++    const f = {}; const b = {
++      select: () => b, eq: (k, v) => { f[k] = v; return b; },
++      maybeSingle: async () => {
++        log.push({ op:'read', table, filters:{ ...f } });
++        if (table === 'profiles' && f.id === 'actor-1') return { data:{ active:true }, error:null };
++        if (table === 'floor_people' && f.store === 'alpha' && f.user_id === 'actor-1') return { data:{ person_id:'p1' }, error:null };
++        if (table === 'app_data' && f.key === 'lpc:config:v2') return { data:{ value:CONFIG }, error:null };
++        if (table === 'floor_public' && f.id === `alpha:${DAY}` && f.store === 'alpha' && f.fdate === DAY) return { data:{ data:roomRow(), updated_at:STAMP }, error:null };
++        return { data:null, error:null };
++      },
++    };
++    for (const w of ['insert', 'update', 'upsert', 'delete']) b[w] = () => { log.push({ op:'WRITE', verb:w, table }); return b; };
++    return b;
++  };
++  return {
++    auth: { getUser: async (t) => { log.push({ op:'auth.getUser' }); return t === 'synthetic-session' ? { data:{ user:{ id:'actor-1' } }, error:null } : { data:null, error:{ message:'bad token' } }; } },
++    from: builder,
++    rpc: async (name, args) => {
++      log.push({ op:'rpc', name, args: JSON.parse(JSON.stringify(args)) });
++      if (name === 'sage_room_receipt') return { data:null, error:null };
++      if (name === 'sage_room_commit') return { data:{ ok:true, row:args.p_next }, error:null };
++      return { data:null, error:{ code:'XX000', message:'unexpected rpc' } };
++    },
++  };
++}
++async function run(handler, body) {
++  const log = []; globalThis.__FAKE_DB = fakeDb(log);
++  const res = { statusCode:0, status(c){ this.statusCode = c; return this; }, json(v){ this.body = v; return this; } };
++  await handler({ method:'POST', headers:{ authorization:'Bearer synthetic-session' }, body }, res);
++  globalThis.__FAKE_DB = undefined;
++  return { status: res.statusCode, body: res.body, log };
++}
++const req = (action, input, n = 1) => ({ store:'alpha', room:'floor', date:DAY, action, input, operationId:`00000000-0000-4000-8000-00000000000${n}` });
++const names = (log) => log.map(e => e.op === 'rpc' ? `rpc:${e.name}` : e.op === 'read' ? `read:${e.table}` : e.op === 'WRITE' ? `WRITE:${e.verb}:${e.table}` : e.op);
++const REJECT_EXPECTED_SEQUENCE = ['auth.getUser', 'read:profiles', 'read:floor_people', 'rpc:sage_room_receipt', 'read:app_data', 'read:floor_public'];
++
++const NONSCALAR = [['1'], [['2']], [], [1, 2], {}, { a: 1 }, true, false];
++for (const [action, mk] of [['table', t => ({ table:t })], ['table-checkin', t => ({ table:t })], ['assist', t => ({ kind:'to', table:t })]]) {
++  test(`${action}: array/object/boolean table => HTTP 400 Unknown table; no commit, no write, no CAS/audit/receipt-insert dispatch`, async () => {
++    for (const t of NONSCALAR) {
++      const r = await run(sutHandler, req(action, mk(t)));
++      assert.equal(r.status, 400, `${JSON.stringify(t)} => ${r.status}`);
++      assert.equal(r.body.error, 'Unknown table');
++      assert.deepEqual(names(r.log), REJECT_EXPECTED_SEQUENCE, `unexpected dispatch for ${JSON.stringify(t)}: ${names(r.log)}`);
++      assert.equal(r.log.filter(e => e.op === 'WRITE').length, 0);
++      assert.equal(r.log.filter(e => e.op === 'rpc' && e.name === 'sage_room_commit').length, 0);
++    }
++  });
++}
++for (const [action, mk] of [['table', t => ({ table:t })], ['table-checkin', t => ({ table:t })], ['assist', t => ({ kind:'to', table:t })]]) {
++  test(`${action}: valid scalar table => 200 with exactly one expected commit and no direct write (local invariants, no baseline)`, async () => {
++    for (const t of ['O1', '3', 1, 2]) {
++      const r = await run(sutHandler, req(action, mk(t)));
++      assert.equal(r.status, 200); assert.equal(r.body.ok, true);
++      const commits = r.log.filter(e => e.op === 'rpc' && e.name === 'sage_room_commit');
++      assert.equal(commits.length, 1);
++      const a = commits[0].args;
++      assert.equal(a.p_actor, 'actor-1'); assert.equal(a.p_person, 'p1'); assert.equal(a.p_store, 'alpha');
++      assert.equal(a.p_room, 'floor'); assert.equal(a.p_date, DAY); assert.equal(a.p_expected, STAMP);
++      assert.deepEqual(a.p_request, { action, input: mk(t) });
++      const stored = action === 'assist' ? a.p_next.assists[0].table : a.p_next.line[0].table;
++      assert.strictEqual(stored, t, 'accepted value must be stored with its original type');
++      assert.deepEqual(names(r.log), [...REJECT_EXPECTED_SEQUENCE, 'rpc:sage_room_commit']);
++      assert.equal(r.log.filter(e => e.op === 'WRITE').length, 0);
++    }
++  });
++  test(`${action}: valid scalar table is identical to the authenticated 47757af handler`, { skip: skipDifferential }, async () => {
++    for (const t of ['O1', '3', 1, 2]) {
++      const r = await run(sutHandler, req(action, mk(t))), b = await run(baseHandler, req(action, mk(t)));
++      assert.deepEqual({ status:r.status, body:r.body, log:r.log }, { status:b.status, body:b.body, log:b.log }, `scalar ${JSON.stringify(t)} differs from baseline handler`);
++    }
++  });
++}
++test('unknown scalar table => 400 Unknown table, receipt lookup only, no commit and no write', async () => {
++  for (const t of ['99', 'o1', ' 1']) {
++    const r = await run(sutHandler, req('table', { table:t }));
++    assert.equal(r.status, 400); assert.equal(r.body.error, 'Unknown table'); assert.deepEqual(names(r.log), REJECT_EXPECTED_SEQUENCE);
++    assert.equal(r.log.filter(e => e.op === 'WRITE').length, 0); assert.equal(r.log.filter(e => e.op === 'rpc' && e.name === 'sage_room_commit').length, 0);
++  }
++});
++test('unknown scalar table is identical to the authenticated 47757af handler', { skip: skipDifferential }, async () => {
++  for (const t of ['99', 'o1', ' 1']) {
++    const r = await run(sutHandler, req('table', { table:t })), b = await run(baseHandler, req('table', { table:t }));
++    assert.deepEqual({ status:r.status, body:r.body, log:r.log }, { status:b.status, body:b.body, log:b.log });
++  }
++});
+diff --git a/test/safe-annotations.test.mjs b/test/safe-annotations.test.mjs
+index 4915c8b554228c859c48a2177488b260c015389b..30e4b7cf476c29a5b2aa8fa6cf0437822326bc9e 100644
+--- a/test/safe-annotations.test.mjs
++++ b/test/safe-annotations.test.mjs
+@@ -274,7 +274,9 @@ test("exit invariance: the exit expression, the deadline exit, the timeouts and
+   assert.equal(RUNNER.split("process.exit(").length - 1, 2, "a new exit was added");
+   assert.ok(RUNNER.includes("  process.exit(1);\n}, DEADLINE_MS);"));
+   assert.ok(RUNNER.includes('Number(process.env.STRICT_GROUP_TIMEOUT_MS || 150_000), DEADLINE_MS = Number(process.env.STRICT_DEADLINE_MS || 480_000)'));
+-  assert.equal((RUNNER.match(/exitCode = 1/g) || []).length, 2, "the places that set the exit code changed");
++  // Strict cleanup delta: exactly ONE place was added on purpose, a cleanup that failed, timed out or never completed. The other two are the head's own.
++  assert.equal((RUNNER.match(/exitCode = 1/g) || []).length, 3, "the places that set the exit code changed");
++  assert.ok(RUNNER.includes('if (cleanupFailed(cleanup.outcome())) { exitCode = 1; console.error("CLEANUP FAILED: " + cleanup.outcome().reasons.join(", ")); }'));
+   assert.ok(RUNNER.includes('if (WRITE_PROBE && process.env.GITHUB_ACTIONS === "true") throw new Error('));
+   assert.ok(RUNNER.includes("const failed = results.filter((r) => r.status === \"FAIL\").length, skipped = results.filter((r) => r.status === \"NOT RUN\").length;"));
+   assert.ok(RUNNER.includes('const missing = ONLY ? [] : EXPECTED_IDS.filter((id) => !passedIds.has(id));'));
+diff --git a/test/self-room-command-table-type.test.mjs b/test/self-room-command-table-type.test.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..727fd1788bed3a65e9f92962545e396361d07779
+--- /dev/null
++++ b/test/self-room-command-table-type.test.mjs
+@@ -0,0 +1,70 @@
++// Portable adaptation of evidence/typeonly-scratch-differential.test.mjs (that file is preserved unchanged). Exact minimal adaptation:
++//  1. SUT is this repository's api/ (no SUT_DIR); 2. the 47757af scalar outcomes are frozen below as literals generated from the authenticated baseline module
++//     (sha256 d41af8518fe8a5874dc9a734c516ea9fe0bd83bbaab83477328b44c1baf6025d), so no baseline copy is needed; 3. the live differential half runs only when BASE_DIR is given AND that
++//     baseline module hashes to the value above (a mutable current tree is refused); otherwise it is skipped with a stated reason.
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { createHash } from 'node:crypto';
++import { selfRoomCommand as sut } from '../api/_self-room-command.mjs';
++const BASELINE_SHA = 'd41af8518fe8a5874dc9a734c516ea9fe0bd83bbaab83477328b44c1baf6025d';
++let base = null, skipWhy = 'BASE_DIR not set (frozen baseline literals still checked)';
++if (process.env.BASE_DIR) {
++  const got = createHash('sha256').update(readFileSync(`${process.env.BASE_DIR}/_self-room-command.mjs`)).digest('hex');
++  if (got !== BASELINE_SHA) throw new Error('BASE_DIR is not the authenticated 47757af baseline module: ' + got);
++  base = (await import(`${process.env.BASE_DIR}/_self-room-command.mjs`)).selfRoomCommand; skipWhy = false;
++}
++const NOW = '2026-10-27T15:00:00.000Z';
++const mkRow = () => ({ store:'alpha', date:'2026-10-27',
++  roster:[{id:'p1',name:'Synthetic A',label:'A'},{id:'p2',name:'Synthetic B',label:'B'}],
++  line:[{id:'p1',label:'A',status:'customer',statusAt:'t'},{id:'p2',label:'B',status:'waiting'}], history:[], goalNotes:[] });
++const ALLOWED = [1, 2, '3', 'O1', 'O2'];
++const call = (fn, o) => fn({ room:'floor', row:mkRow(), personId:'p1', now:NOW, config:{stores:[{id:'alpha'}]}, store:'alpha', allowedTables:ALLOWED, ...o });
++const outcome = (fn, o) => { try { const r = call(fn, o); return { ok:true, row:r.row, changed:r.changed }; } catch (e) { return { ok:false, msg:e.message }; } };
++const ACTIONS = [['table', t => ({ input:{ table:t } })], ['table-checkin', t => ({ input:{ table:t } })], ['assist', t => ({ input:{ kind:'to', table:t } })]];
++const SCALARS = ['1', '2', '3', 'O1', 'O2', 'o1', '99', '', ' 1', '1 ', '01', '1.0', 1, 2, 3, 0, -0, 1.5, 99, 1e0, '1e0'];
++const NONSCALARS = [['1'], [['2']], [1], ['O1'], [], [1, 2], {}, { a: 1 }, { toString: 'x' }, true, false];
++const FROZEN = [["table", "s:1", {"ok": true, "type": "string", "v": "1"}], ["table", "s:2", {"ok": true, "type": "string", "v": "2"}], ["table", "s:3", {"ok": true, "type": "string", "v": "3"}], ["table", "s:O1", {"ok": true, "type": "string", "v": "O1"}], ["table", "s:O2", {"ok": true, "type": "string", "v": "O2"}], ["table", "s:o1", {"ok": false, "msg": "Unknown table"}], ["table", "s:99", {"ok": false, "msg": "Unknown table"}], ["table", "s:", {"ok": false, "msg": "Unknown table"}], ["table", "s: 1", {"ok": false, "msg": "Unknown table"}], ["table", "s:1 ", {"ok": false, "msg": "Unknown table"}], ["table", "s:01", {"ok": false, "msg": "Unknown table"}], ["table", "s:1.0", {"ok": false, "msg": "Unknown table"}], ["table", "n:1", {"ok": true, "type": "number", "v": "1"}], ["table", "n:2", {"ok": true, "type": "number", "v": "2"}], ["table", "n:3", {"ok": true, "type": "number", "v": "3"}], ["table", "n:0", {"ok": false, "msg": "Unknown table"}], ["table", "-0", {"ok": false, "msg": "Unknown table"}], ["table", "n:1.5", {"ok": false, "msg": "Unknown table"}], ["table", "n:99", {"ok": false, "msg": "Unknown table"}], ["table", "n:1", {"ok": true, "type": "number", "v": "1"}], ["table", "s:1e0", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s:1", {"ok": true, "type": "string", "v": "1"}], ["table-checkin", "s:2", {"ok": true, "type": "string", "v": "2"}], ["table-checkin", "s:3", {"ok": true, "type": "string", "v": "3"}], ["table-checkin", "s:O1", {"ok": true, "type": "string", "v": "O1"}], ["table-checkin", "s:O2", {"ok": true, "type": "string", "v": "O2"}], ["table-checkin", "s:o1", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s:99", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s:", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s: 1", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s:1 ", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s:01", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "s:1.0", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "n:1", {"ok": true, "type": "number", "v": "1"}], ["table-checkin", "n:2", {"ok": true, "type": "number", "v": "2"}], ["table-checkin", "n:3", {"ok": true, "type": "number", "v": "3"}], ["table-checkin", "n:0", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "-0", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "n:1.5", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "n:99", {"ok": false, "msg": "Unknown table"}], ["table-checkin", "n:1", {"ok": true, "type": "number", "v": "1"}], ["table-checkin", "s:1e0", {"ok": false, "msg": "Unknown table"}], ["assist", "s:1", {"ok": true, "type": "string", "v": "1"}], ["assist", "s:2", {"ok": true, "type": "string", "v": "2"}], ["assist", "s:3", {"ok": true, "type": "string", "v": "3"}], ["assist", "s:O1", {"ok": true, "type": "string", "v": "O1"}], ["assist", "s:O2", {"ok": true, "type": "string", "v": "O2"}], ["assist", "s:o1", {"ok": false, "msg": "Unknown table"}], ["assist", "s:99", {"ok": false, "msg": "Unknown table"}], ["assist", "s:", {"ok": false, "msg": "Unknown table"}], ["assist", "s: 1", {"ok": false, "msg": "Unknown table"}], ["assist", "s:1 ", {"ok": false, "msg": "Unknown table"}], ["assist", "s:01", {"ok": false, "msg": "Unknown table"}], ["assist", "s:1.0", {"ok": false, "msg": "Unknown table"}], ["assist", "n:1", {"ok": true, "type": "number", "v": "1"}], ["assist", "n:2", {"ok": true, "type": "number", "v": "2"}], ["assist", "n:3", {"ok": true, "type": "number", "v": "3"}], ["assist", "n:0", {"ok": false, "msg": "Unknown table"}], ["assist", "-0", {"ok": false, "msg": "Unknown table"}], ["assist", "n:1.5", {"ok": false, "msg": "Unknown table"}], ["assist", "n:99", {"ok": false, "msg": "Unknown table"}], ["assist", "n:1", {"ok": true, "type": "number", "v": "1"}], ["assist", "s:1e0", {"ok": false, "msg": "Unknown table"}]];
++const decode = k => k === '-0' ? -0 : k.startsWith('n:') ? Number(k.slice(2)) : k.slice(2);
++const stored = (action, row) => action === 'assist' ? row.assists[0].table : row.line[0].table;
++
++for (const [action, mk] of ACTIONS) {
++  test(`${action}: arrays, objects and booleans are refused with Unknown table`, () => {
++    for (const t of NONSCALARS) {
++      const o = outcome(sut, { action, ...mk(t) });
++      assert.equal(o.ok, false, `${JSON.stringify(t)} was accepted`);
++      assert.equal(o.msg, 'Unknown table');
++    }
++  });
++  test(`${action}: scalar outcomes equal the frozen 47757af outcomes (accept, refuse, message, stored value and type)`, () => {
++    const rows = FROZEN.filter(r => r[0] === action); assert.equal(rows.length, 21);
++    for (const [, key, want] of rows) {
++      const t = decode(key), o = outcome(sut, { action, ...mk(t) });
++      assert.equal(o.ok, want.ok, `scalar ${key}`);
++      if (!want.ok) assert.equal(o.msg, want.msg, `scalar ${key}`);
++      else { const s = stored(action, o.row); assert.equal(typeof s, want.type, `scalar ${key}`); assert.equal(Object.is(s, -0) ? '-0' : String(s), want.v, `scalar ${key}`); }
++    }
++  });
++  test(`${action}: scalar outcomes are identical to the live authenticated baseline`, { skip: skipWhy }, () => {
++    for (const t of SCALARS) assert.deepEqual(outcome(sut, { action, ...mk(t) }), outcome(base, { action, ...mk(t) }), `scalar ${JSON.stringify(t)}`);
++  });
++}
++test('accepted scalars are stored exactly as given, strict type preserved (no normalization)', () => {
++  assert.equal(outcome(sut, { action:'table', input:{ table:'O1' } }).row.line[0].table, 'O1');
++  assert.strictEqual(outcome(sut, { action:'table', input:{ table:2 } }).row.line[0].table, 2);
++  assert.strictEqual(outcome(sut, { action:'assist', input:{ kind:'to', table:1 } }).row.assists[0].table, 1);
++});
++test('assist without a table (undefined or null) is still the lot', () => {
++  for (const input of [{ kind:'to' }, { kind:'to', table:null }]) { const a = outcome(sut, { action:'assist', input }); assert.equal(a.ok, true); assert.equal(a.row.assists[0].spot, 'lot'); assert.equal(a.row.assists[0].table, null); }
++});
++test('table action with null or missing table is refused', () => {
++  for (const input of [{ table:null }, {}]) { const o = outcome(sut, { action:'table', input }); assert.equal(o.ok, false); assert.equal(o.msg, 'Unknown table'); }
++});
++test('unchanged by this change: goal-note and history are NOT bounded here', () => {
++  let r = mkRow();
++  for (let i = 0; i < 250; i++) r = call(sut, { row:r, action:'goal-note', input:{ text:`n${i}`, forDay:'2026-10-27' } }).row;
++  assert.equal(r.goalNotes.length, 250);
++  r = mkRow(); r.line[0].status = 'waiting';
++  for (let i = 0; i < 120; i++) { const o = call(sut, { row:r, action:'status', input:{ status: i % 2 ? 'waiting' : 'lunch' } }); if (o.changed) r = o.row; }
++  assert.equal(r.history.length, 120);
++});
+diff --git a/test/support/room-command-hooks.mjs b/test/support/room-command-hooks.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..1be534edbc8535c215b4ea1c99ba4cc9bb099fde
+--- /dev/null
++++ b/test/support/room-command-hooks.mjs
+@@ -0,0 +1,7 @@
++// Module-customization hook for test/room-command-handler.test.mjs (registered from that test). It redirects the ONE third-party import the room-command handler makes to an in-process stub; every other import is untouched.
++export async function resolve(specifier, context, nextResolve) {
++  if (specifier === '@supabase/supabase-js') {
++    return { url: new URL('./room-command-supabase-stub.mjs', import.meta.url).href, shortCircuit: true };
++  }
++  return nextResolve(specifier, context);
++}
+diff --git a/test/support/room-command-supabase-stub.mjs b/test/support/room-command-supabase-stub.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ead5c6aab026c6d81a642d948b559cf7eb1b056
+--- /dev/null
++++ b/test/support/room-command-supabase-stub.mjs
+@@ -0,0 +1,5 @@
++// No SDK, no socket: the handler's createClient() returns whatever fake the test installed for this request.
++export function createClient() {
++  if (!globalThis.__FAKE_DB) throw new Error('no fake db installed');
++  return globalThis.__FAKE_DB;
++}

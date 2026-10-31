@@ -11,6 +11,12 @@ on:
     branches: ["**"]
   pull_request:
 
+# One branch gets the synthetic fixture backend in feel, feel-webkit and shots (the CANDIDATE
+# expression in each of those three jobs; the branch name is the same literal in all three).
+# Every other branch, and every pull request from a fork, runs exactly what it ran before. The
+# jobs, their names, the step ids, outputs and artifact names are unchanged, so no required check
+# is duplicated or goes missing.
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,7 +30,12 @@ jobs:
       # modules with Node's own test runner — but the build does, and a build
       # that fails is as broken as a test that fails.
       - run: npm ci
-      - run: npm test
+      - name: Selected synthetic qualification for the coordinated draft
+        if: github.ref == 'refs/heads/codex/nov1-security-recovery-integration' || github.head_ref == 'codex/nov1-security-recovery-integration'
+        run: node scripts/security-integration-selected-tests.mjs
+      - name: Complete ordinary suite for other branches
+        if: github.ref != 'refs/heads/codex/nov1-security-recovery-integration' && github.head_ref != 'codex/nov1-security-recovery-integration'
+        run: npm test
       - run: npm run build
 
   # The feel, measured. The phone's bars (a tab under 150 ms, a tap drawn
@@ -36,23 +47,38 @@ jobs:
   # request the table is posted as a comment, so every diff says what it did
   # to the phone.
   feel:
+    needs: feel-strict
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
+    env:
+      CANDIDATE: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/nov1-security-recovery-integration') || (github.event_name == 'push' && github.ref_name == 'codex/nov1-security-recovery-integration')) && '1' || '0' }}
     permissions:
       contents: read
       pull-requests: write
     steps:
+      # On the candidate branch the measurement is done by feel-strict (the reviewed strict browser path). This job keeps its name so the
+      # required check stays one check: here it only passes if feel-strict passed, and everything below it is skipped.
+      - name: Candidate gate (candidate branch only)
+        if: env.CANDIDATE == '1'
+        env:
+          STRICT_RESULT: ${{ needs.feel-strict.result }}
+        run: test "$STRICT_RESULT" = success
       - uses: actions/checkout@v4
       - run: npm ci
+        if: env.CANDIDATE != '1'
       # The browsers are in the image; only the package that drives them is needed,
       # and it is not a dependency of the app.
       - run: npm i --no-save playwright@1.63.0
+        if: env.CANDIDATE != '1'
       - name: Build against the mock
+        if: env.CANDIDATE != '1'
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
           npm run build
       - name: Measure
+        if: env.CANDIDATE != '1'
         id: feel
         # A container job's steps run in sh unless told; PIPESTATUS is bash's.
         shell: bash
@@ -72,7 +98,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           exit $code
       - name: Keep feel failure evidence
-        if: always()
+        if: env.CANDIDATE != '1' && (always())
         uses: actions/upload-artifact@v4
         with:
           name: feel-evidence-chromium
@@ -84,7 +110,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Keep manager search evidence
-        if: always()
+        if: env.CANDIDATE != '1' && (always())
         uses: actions/upload-artifact@v4
         with:
           name: manager-search-chromium
@@ -95,9 +121,12 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         env:
-          TABLE: ${{ steps.feel.outputs.table }}
-          OUTCOME: ${{ steps.feel.outcome }}
-          CODE: ${{ steps.feel.outputs.code }}
+          TABLE: ${{ needs.feel-strict.outputs.table || steps.feel.outputs.table }}
+          OUTCOME: ${{ needs.feel-strict.outputs.feel_outcome || steps.feel.outcome }}
+          CANDIDATE: ${{ env.CANDIDATE }}
+          VERDICT_OUTCOME: ${{ needs.feel-strict.outputs.verdict_outcome }}
+          STOP_OUTCOME: ${{ needs.feel-strict.outputs.stop_outcome }}
+          CODE: ${{ needs.feel-strict.outputs.code || steps.feel.outputs.code }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -109,14 +138,152 @@ jobs:
                not a check that passed, but it is not a missed bar and the
                comment must not say it is: that is what C83 was about. */
             const lost = String(process.env.CODE || "") === "3";
-            const head = ok ? "The phone feels the same or better: every bar met."
+            let head = ok ? "The phone feels the same or better: every bar met."
               : lost ? "The browser was lost before the phone was measured. Inspect the browser log and machine reading before another run. The cause is not established."
               : "The phone feels worse: a bar was missed.";
+            /* A candidate run is a functional check on a fast local link; it never says the phone feels better. */
+            if (process.env.CANDIDATE === "1") {
+              try {
+                const { headline } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/shots-fixture-verdict.mjs`);
+                head = headline({ candidate: "1", feelOutcome: process.env.OUTCOME, code: process.env.CODE, verdictOutcome: process.env.VERDICT_OUTCOME, stopOutcome: process.env.STOP_OUTCOME });
+              } catch (e) { head = "The fixture verdict could not be read. Not a pass."; }
+            }
             const body = `${mark}\n**${head}**\n\n\`\`\`\n${(process.env.TABLE || "(no table)").trim()}\n\`\`\``;
             const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
             const mine = comments.find((c) => c.body && c.body.startsWith(mark));
             if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
             else await github.rest.issues.createComment({ owner, repo, issue_number, body });
+
+  # The candidate branch's Chromium measurement, on the reviewed strict path: the hosted VM (no container), SHA-pinned actions, the pinned driver and
+  # browser installed through Playwright's official route, and the reviewed strict adapter as feel.mjs's own FEEL_PLAYWRIGHT drop-in. feel.mjs and
+  # the helper are unchanged. Sandbox on, non-root, renderer audits, exact loopback HTTP and WebSocket policy: all the adapter's, none relaxed here.
+  # The observer hook is not set. Functional only: Chrome 153 on a VM, room API unlagged; the 400 ms performance claim is not made by this job.
+  feel-strict:
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/nov1-security-recovery-integration') || (github.event_name == 'push' && github.ref_name == 'codex/nov1-security-recovery-integration') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      feel_outcome: ${{ steps.feel.outcome }}
+      code: ${{ steps.feel.outputs.code }}
+      table: ${{ steps.feel.outputs.table }}
+      verdict_outcome: ${{ steps.verdict.outcome }}
+      stop_outcome: ${{ steps.stop.outcome }}
+    env:
+      CANDIDATE: '1'
+      CI_ENGINE: chromium
+      STRICT_EXPECT_PLAYWRIGHT: '1.63.0'
+      STRICT_EXPECT_CHROME: '153.0.8010.12'
+      STRICT_EXPECT_CDP_SUFFIX: '["--noerrdialogs","--ozone-platform=headless","--ozone-override-screen-size=800,600","--use-angle=swiftshader-webgl","--flag-switches-begin","--flag-switches-end","--enable-unsafe-swiftshader"]'
+      STRICT_REQUIRE_PINS: '1'
+      VITE_SUPABASE_URL: http://127.0.0.1:5433
+      VITE_SUPABASE_ANON_KEY: mock-anon-key
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        id: co
+        with:
+          persist-credentials: false
+      - name: Preflight, not root
+        id: pre
+        run: |
+          if ! uid=$(id -u); then echo "could not read the uid" >&2; exit 1; fi
+          test "$uid" -gt 0 && test -z "${STRICT_BROWSER_RUN_AS:-}"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+        id: deps
+      - name: Install the pinned driver and its full Chromium through the official route
+        id: drv
+        run: |
+          npm install --prefix "$RUNNER_TEMP/sandbox-driver" --ignore-scripts --no-audit --no-fund --package-lock=false playwright@1.63.0
+          "$RUNNER_TEMP/sandbox-driver/node_modules/.bin/playwright" install --no-shell chromium
+      - name: Record and check the toolchain
+        id: tc
+        env:
+          STRICT_BROWSER_DRIVER: ${{ runner.temp }}/sandbox-driver/node_modules/playwright
+        run: node scripts/shots-fixture-verdict.mjs toolchain fixture-run
+      - name: Build against the fixture's origins
+        id: bld
+        run: |
+          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          npm run build
+      - name: Measure on the strict path
+        id: feel
+        shell: bash
+        env:
+          STRICT_BROWSER_DRIVER: ${{ runner.temp }}/sandbox-driver/node_modules/playwright
+          FEEL_PLAYWRIGHT: ${{ github.workspace }}/scripts/diagnostics/strict-adapter
+          ADAPTER_KIT: ${{ github.workspace }}/scripts/strict-browser-kit.mjs
+          ADAPTER_KIT_SHA256: '1f0427d009b15b7771f939f75b88186cadf7b76b28116884c1b7533bbb92d9ff'
+          ADAPTER_OUT: ${{ github.workspace }}/fixture-run/adapter
+          ADAPTER_LABEL: candidate
+          ADAPTER_REQUIRE_PINS: '1'
+        run: |
+          # Same command and same exit; the code is also kept in a one-number file for the stage receipt.
+          mkdir -p fixture-run
+          up_rc=0; scripts/ci-fixture.sh up || up_rc=$?
+          echo "$up_rc" > fixture-run/up-rc.txt
+          if [ "$up_rc" != 0 ]; then exit "$up_rc"; fi
+          export FEEL_MANAGER_ACTOR=fixture
+          set +e
+          FEEL_EVIDENCE_DIR=feel-evidence FEEL_FICTIONAL_FIXTURE=1 FEEL_URL=http://127.0.0.1:5178/ npm run feel 2>&1 | tee feel.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          scripts/ci-fixture.sh collect || echo "fixture collect failed" >&2
+          {
+            echo 'table<<FEEL_END'
+            echo 'backend: synthetic fixture, room API on, manager actor, strict sandbox path; not the ordinary mock; no API latency modelled'
+            grep -vE '^(> |$)' feel.txt
+            echo 'FEEL_END'
+            echo "code=$code"
+          } >> "$GITHUB_OUTPUT"
+          exit $code
+      - name: Stop the fixture
+        id: stop
+        if: always()
+        run: scripts/ci-fixture.sh stop
+      - name: Fixture and adapter verdict
+        id: verdict
+        if: always()
+        run: node scripts/shots-fixture-verdict.mjs verdict fixture-run chromium
+      - name: Stage receipt (fixed fields only)
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          O_CHECKOUT: ${{ steps.co.outcome }}
+          O_PREFLIGHT: ${{ steps.pre.outcome }}
+          O_DEPENDENCIES: ${{ steps.deps.outcome }}
+          O_DRIVER: ${{ steps.drv.outcome }}
+          O_TOOLCHAIN: ${{ steps.tc.outcome }}
+          O_BUILD: ${{ steps.bld.outcome }}
+          O_FEEL: ${{ steps.feel.outcome }}
+          O_VERDICT: ${{ steps.verdict.outcome }}
+          O_STOP: ${{ steps.stop.outcome }}
+          FEEL_CODE: ${{ steps.feel.outputs.code }}
+        run: |
+          TREE_SHA="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)" node scripts/ci-stage-receipt.mjs fixture-run >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep bounded evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: feel-strict-evidence
+          path: |
+            feel-evidence/
+            feel.txt
+            manager-phone-search/*.png
+            fixture-run/toolchain.json
+            fixture-run/fixture-start.json
+            fixture-run/fixture-report.json
+            fixture-run/fixture-expected.json
+            fixture-run/fixture-receipt.json
+            fixture-run/pins.json
+            fixture-run/adapter/adapter-evidence.json
+            fixture-run/stage-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
 
   # The same run in WebKit, which is what the app's WebView is. Chromium at
   # phone width is not the phone: the 18 September glitches that reached Jorge
@@ -141,12 +308,22 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
+    env:
+      CANDIDATE: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/nov1-security-recovery-integration') || (github.event_name == 'push' && github.ref_name == 'codex/nov1-security-recovery-integration')) && '1' || '0' }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: WebKit has no reviewed strict path (candidate branch only)
+        if: env.CANDIDATE == '1'
+        env:
+          CI_ENGINE: webkit
+        run: scripts/ci-fixture.sh up
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
+      - name: Record the toolchain (candidate branch only)
+        if: env.CANDIDATE == '1'
+        run: CI_IMAGE_TAG=mcr.microsoft.com/playwright:v1.63.0-noble node scripts/shots-fixture-verdict.mjs toolchain fixture-run
       - name: Build against the mock
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
@@ -154,16 +331,31 @@ jobs:
       - name: Measure in WebKit
         env:
           DEBUG: pw:browser
+          CI_ENGINE: webkit
         shell: bash
         run: |
-          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
-          npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
-          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          if [ "$CANDIDATE" = 1 ]; then
+            scripts/ci-fixture.sh up
+            export FEEL_MANAGER_ACTOR=fixture
+          else
+            SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+            npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
+            for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          fi
           set +e
           FEEL_BROWSER=webkit FEEL_EVIDENCE_DIR=feel-evidence FEEL_FICTIONAL_FIXTURE=1 FEEL_URL=http://127.0.0.1:5178/ npm run feel 2>&1 | tee feel.txt
           code=${PIPESTATUS[0]}
           set -e
+          if [ "$CANDIDATE" = 1 ]; then scripts/ci-fixture.sh collect || echo "fixture collect failed" >&2; fi
           exit $code
+      - name: Stop the fixture (candidate branch only)
+        id: stop
+        if: always() && env.CANDIDATE == '1'
+        run: scripts/ci-fixture.sh stop
+      - name: Fixture verdict (candidate branch only)
+        id: verdict
+        if: always() && env.CANDIDATE == '1'
+        run: node scripts/shots-fixture-verdict.mjs verdict fixture-run webkit
       - name: Keep feel failure evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -174,6 +366,11 @@ jobs:
             feel.txt
             mock.log
             preview.log
+            fixture-run/toolchain.json
+            fixture-run/fixture-start.json
+            fixture-run/fixture-report.json
+            fixture-run/fixture-expected.json
+            fixture-run/fixture-receipt.json
           if-no-files-found: warn
           retention-days: 7
       - name: Keep manager search evidence
@@ -197,13 +394,23 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
+    env:
+      CANDIDATE: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/nov1-security-recovery-integration') || (github.event_name == 'push' && github.ref_name == 'codex/nov1-security-recovery-integration')) && '1' || '0' }}
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+      - name: WebKit has no reviewed strict path (candidate branch only)
+        if: env.CANDIDATE == '1'
+        env:
+          CI_ENGINE: webkit
+        run: scripts/ci-fixture.sh up
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
+      - name: Record the toolchain (candidate branch only)
+        if: env.CANDIDATE == '1'
+        run: CI_IMAGE_TAG=mcr.microsoft.com/playwright:v1.63.0-noble node scripts/shots-fixture-verdict.mjs toolchain fixture-run
       - name: Build against the mock
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
@@ -212,12 +419,31 @@ jobs:
         id: picture
         env:
           DEBUG: pw:browser
+          CI_ENGINE: webkit
         shell: bash
         run: |
-          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
-          npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
-          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          if [ "$CANDIDATE" = 1 ]; then
+            scripts/ci-fixture.sh up
+            export SHOTS_FIXTURE_REPORT_URL=http://127.0.0.1:5178/__fixture/report
+          else
+            SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+            npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
+            for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
+          fi
+          set +e
           FEEL_BROWSER=webkit FEEL_URL=http://127.0.0.1:5178/ npm run shots
+          code=$?
+          set -e
+          if [ "$CANDIDATE" = 1 ]; then scripts/ci-fixture.sh collect || echo "fixture collect failed" >&2; fi
+          exit $code
+      - name: Stop the fixture (candidate branch only)
+        id: stop
+        if: always() && env.CANDIDATE == '1'
+        run: scripts/ci-fixture.sh stop
+      - name: Fixture verdict (candidate branch only)
+        id: verdict
+        if: always() && env.CANDIDATE == '1'
+        run: node scripts/shots-fixture-verdict.mjs verdict fixture-run webkit
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         id: keep
@@ -226,19 +452,36 @@ jobs:
           path: shots/*.png
           if-no-files-found: error
           retention-days: 30
+      - name: Keep fixture evidence (candidate branch only)
+        if: always() && env.CANDIDATE == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots-fixture-evidence
+          path: |
+            shots-evidence/shots-evidence.json
+            fixture-run/toolchain.json
+            fixture-run/fixture-start.json
+            fixture-run/fixture-report.json
+            fixture-run/fixture-expected.json
+            fixture-run/fixture-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Tell the pull request
         if: always()
         uses: actions/github-script@v7
         env:
           ARTIFACT_URL: ${{ steps.keep.outputs.artifact-url }}
           PICTURE_OUTCOME: ${{ steps.picture.outcome }}
+          VERDICT_OUTCOME: ${{ steps.verdict.outcome }}
+          STOP_OUTCOME: ${{ steps.stop.outcome }}
+          CANDIDATE: ${{ env.CANDIDATE }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
             const mark = "<!-- sage-shots -->";
             const url = process.env.ARTIFACT_URL;
-            const complete = process.env.PICTURE_OUTCOME === "success";
+            const complete = process.env.PICTURE_OUTCOME === "success" && (process.env.CANDIDATE !== "1" || (process.env.VERDICT_OUTCOME === "success" && process.env.STOP_OUTCOME === "success"));
             const body = url
               ? complete
                 ? `${mark}\n**The phone, pictured in WebKit** for ${context.sha.slice(0, 7)}: [phone-shots.zip](${url}). Home, Home's foot, halfway to the floor, Live Floor and Phone Line at Normal, Large and Largest, and You're up.`

@@ -159,7 +159,7 @@ test("every name a server file calls is one it has or imports", () => {
     "new","fetch","String","Number","Boolean","Array","Object","JSON","Math","Date","Set","Map",
     "Promise","Buffer","console","parseInt","parseFloat","isNaN","encodeURIComponent",
     "decodeURIComponent","require","import","setTimeout","clearTimeout","RegExp","Error","process",
-    "globalThis","URL","URLSearchParams","TextDecoder","TextEncoder","crypto","Uint8Array","Intl",
+    "globalThis","structuredClone","URL","URLSearchParams","TextDecoder","TextEncoder","crypto","Uint8Array","Intl",
     "async","of","in","do","else","try","yield","delete","void","instanceof","case"]);
   const bad = [];
   for (const f of fs.readdirSync(API).filter((x) => x.endsWith(".mjs"))) {

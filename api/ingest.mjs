@@ -1,3 +1,5 @@
+import { applySummaryStated } from "./_summary-stated.mjs";
+import { publicBoard, publicDay } from "./_public-projections.mjs";
 /* =========================================================================
    LPC automated report ingest — Vercel serverless function
    POST /api/ingest  (from the Cloudflare Email Worker)
@@ -6,7 +8,7 @@
 
 import PostalMime from "postal-mime";
 import Papa from "papaparse";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
+import pdfjs from "pdfjs-dist/legacy/build/pdf.js";
 /* The reader for the scheduled reports. Shared verbatim with the app, which
    reads the same PDFs when a manager drops one in by hand — see the note at the
    top of that file for what living as two copies cost. */
@@ -217,7 +219,7 @@ async function sbPutFloorStats(storeId, day, rows, sdata) {
      leave a day holding only its final hour. */
   const prev = await sbGet(key);
   slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
-  await sbPut(key, slim);
+  await sbPut(key, publicDay(slim));
 }
 
 /* ---------- the TV board row ----------
@@ -258,19 +260,60 @@ async function refreshBoardRow(storeId, sdata) {
   const people = ((sdata && sdata.roster) || [])
     .filter((a) => a && a.id && a.name && !gone.has(norm(a.name)))
     .map((a) => ({ id: a.id, name: a.name, roleId: a.roleId || null }));
-  await sbPut(boardKey(storeId), {
+  await sbPut(boardKey(storeId), publicBoard({
     ...prev,
     ym: month,
     roster,
     people,
     departed: [...gone],
     goals: extras.goals,
-    off: extras.off,
     boardDisplay: (sdata && sdata.boardDisplay) || prev.boardDisplay || null,
     months: { [month]: { stats } },
     updatedAt: new Date().toISOString(),
-  });
+  }));
   return { published: true, people: roster.length };
+}
+
+/* Aliases are separate credits inside ONE report, not new snapshots to add to
+   yesterday's saved figures. Only count fields add; rates need their bases. */
+const ALIAS_COUNTS = new Set([
+  "opps", "sold", "unitsDelivered", "internetUnits", "internetLeads",
+  "phoneUnits", "phoneLeads", "showroomUnits", "showroomLeads", "campaignUnits", "campaignLeads",
+  "showroomUps", "showroomUnsold", "showroomBeBacks", "newUnits", "usedUnits", "otherUnits",
+  "apptTotalCreated", "apptTotalScheduled", "apptTotalShow",
+  "actCalls", "actCallContacted", "actVideo", "actText", "actEmail", "actApptCreated",
+  "actApptShow", "actOppsTotal", "actCompletedTasks", "actVisits", "actOpenTasks",
+  "actSold", "actUnits", "actOppShowroom", "actOppPhone", "actOppInternet", "actOppCampaign",
+  "actApptScheduled", "actApptConfirmed", "actApptNoShow",
+]);
+function combineAliasRows(records, displayName) {
+  if (records.length === 1) return records[0];
+  const merged = { displayName };
+  for (const field of new Set(records.flatMap((r) => Object.keys(r)))) {
+    if (field === "displayName") continue;
+    const values = records.map((r) => r[field]);
+    // A missing contributor makes the total unknown, including zero plus unknown.
+    const total = ALIAS_COUNTS.has(field) && values.every(Number.isFinite)
+      ? values.reduce((sum, n) => sum + n, 0) : null;
+    merged[field] = Number.isFinite(total) ? total : null;
+  }
+  const ratio = (field, numerator, denominator) => {
+    if (!(field in merged)) return;
+    // A partial numerator or denominator cannot establish a combined rate.
+    const value = Number.isFinite(merged[numerator]) && Number.isFinite(merged[denominator]) &&
+      merged[denominator] > 0 ? merged[numerator] / merged[denominator] : null;
+    merged[field] = Number.isFinite(value) ? value : null;
+  };
+  // Email derives rates from complete counts, not agreement between printed rates.
+  // Stored rates are fractions; screen formatters convert them to percent.
+  ratio("soldPct", "sold", "opps");
+  ratio("deliveredPct", "unitsDelivered", "opps");
+  for (const channel of ["internet", "phone", "showroom"]) {
+    ratio(channel + "Pct", channel + "Units", channel + "Leads");
+  }
+  // Video rates have no exported bases here and remain unknown on collision.
+  ratio("apptShowPct", "apptTotalShow", "apptTotalScheduled");
+  return merged;
 }
 
 /* ---------- the merge: a faithful port of the app's applyEntries ---------- */
@@ -350,27 +393,22 @@ function applyToStore(data, entries, sourceLabel) {
        the roll-up -- it counts F&I deliveries rather than deals -- so it fills the
        figure in when no roll-up has landed this month and stands aside when one
        has. */
-    if (stated && stated.total != null && M.stated?.source !== "roll-up") {
-      M.stated = {
-        deliveries: stated.total, units: stated.units, leads: stated.leads,
-        vehicles: stated.vehicles, day, at: nowISO, file: fileName, source: "summary-grid",
-      };
-    } else if (stated && stated.vehicles && M.stated) {
-      /* The roll-up wins on how many cars, because it counts deals rather than
-         F&I deliveries, but it does not say how many were new. The grid does.
-         So when a roll-up already owns the figure, the grid still hands over the
-         stock split rather than letting it die with the rest of the block. */
-      M.stated = { ...M.stated, vehicles: stated.vehicles };
-    }
+    applySummaryStated(M, stated, { day, at: nowISO, file: fileName });
     const raw = type === "delivery-summary"
       ? parseDeliverySummaryRows(rows)
       : parseReport(rows, type);
     const parsed = {};
+    const aliasRows = new Map();
     let skipped = 0;
     for (const [k, v] of Object.entries(raw)) {
       if (excludedSet.has(k)) { skipped++; continue; }
       const c = canon(k);
-      parsed[c] = { ...(parsed[c] || {}), ...v };
+      if (!aliasRows.has(c)) aliasRows.set(c, []);
+      aliasRows.get(c).push(v);
+    }
+    for (const [c, records] of aliasRows) {
+      const displayName = raw[c]?.displayName || records.map((r) => r.displayName).sort()[0];
+      parsed[c] = combineAliasRows(records, displayName);
     }
     /* ---- Nobody joins this store's books by turning up in a file ----
        The same gate as the app's, and the one that matters more: this is the
@@ -427,7 +465,8 @@ function applyToStore(data, entries, sourceLabel) {
       next.activity[actDay] = {};
       for (const [key, rec] of Object.entries(parsed)) {
         const priorPosted = priorDay[key]?.tasksPosted;
-        const posted = rec.actOpenTasks != null ? rec.actOpenTasks : (priorPosted ?? null);
+        // A collided unknown is not a missing single-row column: do not revive old counts.
+        const posted = rec.actOpenTasks ?? (aliasRows.get(key)?.length > 1 ? null : (priorPosted ?? null));
         next.activity[actDay][key] = {
           displayName: rec.displayName,
           calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
@@ -605,15 +644,22 @@ export default async function handler(req, res) {
       const text = Buffer.from(a.content).toString("utf8").replace(/^\ufeff/, "");
       const rows = Papa.parse(text, { skipEmptyLines: true }).data;
       let type = detectReportType(rows, a.filename || "");
+      // The parser's rejection marker is not an importable report type.
+      if (type === "wrong-channel-report") {
+        const why = "wrong report export; use Delivery Summary filtered by source instead";
+        skippedFiles.push({ file: a.filename, why });
+        failures.push({ file: a.filename, why });
+        continue;
+      }
       /* The store roll-up carries no people at all, and it names its own store in
          its one row, so it does not depend on the address the way the other CSVs
          do. It is the store's own count of deliveries and it is filed as that. */
       if (type === "store-rollup") {
         const rollup = parseStoreRollup(rows);
-        const hit = matchStoreByName(cfg?.stores, rollup.storeName);
+        const hit = matchStoreByName(cfg?.stores, rollup.storeName, { rejectAmbiguous: true });
         const st = hit ? hit.store : addressStore;
         if (!st) {
-          const why = `store roll-up names "${rollup.storeName}", which matches no store, and this address names no store either`;
+          const why = `store roll-up names "${rollup.storeName}", which is ambiguous or matches no store, and cannot be routed`;
           skippedFiles.push({ file: a.filename, why });
           failures.push({ file: a.filename, why });
           continue;
@@ -663,9 +709,9 @@ export default async function handler(req, res) {
         }
 
         if (mapped) {
-          const hit = matchStoreByName(cfg?.stores, mapped.storeName);
-          if (!hit) {
-            const note = `parsed store "${mapped.storeName}" matches no store; nothing written`;
+          const hit = matchStoreByName(cfg?.stores, mapped.storeName, { rejectAmbiguous: true });
+          if (!hit?.store) {
+            const note = `parsed store "${mapped.storeName}" is ambiguous or matches no store; nothing written`;
             pdfReads.push({ file: a.filename, mapped: false, kind, note,
               parsedPeople: mapped.rows.slice(2).map((r) => r[0]) });
             failures.push({ file: a.filename, why: note });

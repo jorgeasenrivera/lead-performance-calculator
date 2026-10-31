@@ -517,8 +517,10 @@ function mapDeliverySummaryGrid(lines) {
   const g = (src, i) => (storeSources[src] ? storeSources[src][i] : null);
   const dcUnits = { internet: g("internet", 4), phone: g("phone", 4),
     showroom: g("showroom", 4), campaign: g("campaign", 4) };
-  const dcTotal = ["internet", "phone", "showroom", "campaign"]
-    .reduce((n, c) => (dcUnits[c] == null ? n : n + dcUnits[c]), 0);
+  // A stock-only block or blank delivery cells do not report zero deliveries.
+  // Keep existing nonempty channel sums, including an explicitly reported zero.
+  const reportedUnits = Object.values(dcUnits).filter((n) => n != null);
+  const dcTotal = reportedUnits.length ? reportedUnits.reduce((n, u) => n + u, 0) : null;
   const dcLeads = { internet: g("internet", 0), phone: g("phone", 0), showroom: g("showroom", 0) };
   /* The store's own New and Used rows, which were being parsed and then dropped
      three lines from here. They were kept in storeSources by the same branch
@@ -575,13 +577,18 @@ function parseDeliverySummaryRows(rows) {
    Lives here because both the pipeline and the app need it now: the pipeline to
    route an emailed report, and the app to refuse a PDF a manager drops into the
    wrong store. */
-function matchStoreByName(stores, parsedName) {
+function matchStoreByName(stores, parsedName, { rejectAmbiguous = false } = {}) {
   const P = squashT(parsedName);
   if (!P) return null;
   let best = null;
+  const matches = [];
   const consider = (s, cand, quality) => {
     if (!cand) return;
-    if (!best || cand.length > best.len) best = { store: s, len: cand.length, quality };
+    const match = { store: s, len: cand.length, quality };
+    matches.push(match);
+    // An exact heading must win even when another store has a longer name.
+    if (!best || (quality === "exact" && best.quality !== "exact") ||
+        ((quality === "exact") === (best.quality === "exact") && cand.length > best.len)) best = match;
   };
   for (const s of stores || []) {
     for (const cand of [squashT(s.name), squashT(s.id)]) {
@@ -591,6 +598,15 @@ function matchStoreByName(stores, parsedName) {
       if (P.startsWith(cand) && cand.length >= 6) { consider(s, cand, "prefix"); continue; }
       // the heading was truncated, but is long enough to be unambiguous
       if (cand.startsWith(P) && P.length >= 10) consider(s, cand, "truncated");
+    }
+  }
+  if (best && rejectAmbiguous) {
+    const rivals = matches.filter((m) => best.quality === "exact"
+      ? m.quality === "exact"
+      : best.quality === "truncated" || m.quality === "truncated" || m.len === best.len);
+    if (new Set(rivals.map((m) => m.store.id)).size > 1) {
+      // Distinct from no match: email callers must not fall back to the address.
+      return { store: null, quality: "ambiguous" };
     }
   }
   return best ? { store: best.store, quality: best.quality } : null;

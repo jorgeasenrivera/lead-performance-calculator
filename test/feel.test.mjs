@@ -10,6 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { applySummaryStated } from "../api/_summary-stated.mjs";
 
 const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
 const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
@@ -29,7 +30,9 @@ test("the status controls are never greyed out for a round trip", () => {
 test("both rooms commit a tap before the server answers", () => {
   assert.equal(core.split("useCommit(setRow, mutateRow, refetch, writes)").length - 1, 2, "the line and the floor both use the commit");
   assert.ok(/if \(writes\.current > 0\) return;/.test(core), "the poll holds off while a write is in flight");
-  for (const name of ["setFlag", "leave"]) assert.ok(!new RegExp(`async function ${name}\\(`).test(core), name + " does not await the row");
+  const commit = fn(core, "useCommit");
+  assert.ok(commit.indexOf("setRow((cur)") < commit.indexOf("mutate(fn, command)"), "optimistic frame is applied before the network command");
+  assert.ok(core.includes("const confirmed = await commit"), "success transitions await confirmation while the frame stays optimistic");
 });
 
 /* The motion tokens: one set of numbers in the stylesheet, the same set in the
@@ -561,13 +564,27 @@ test("five-second pass, item 2: the shortfall is drawn, and its height is the se
   assert.ok(/const col = t \? t\.col : "rgba\(255,255,255,\.3\)";/.test(mgr), "the fill takes the verdict, not the identity");
 });
 
-test("the record slims down: backups prune by what is on the server, day rows have a window, restore points left the store row, no legacy stars", () => {
-  assert.ok(/async function saveShared\(key, value, quiet\) \{/.test(core) && /lastSaveError = null; if \(!quiet\) buzz\("taken"\);/.test(core), "housekeeping writes do not buzz a phone");
-  assert.ok(/await saveShared\(row\.key, null, true\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true\)/.test(core), "the prunes and the backup rows are housekeeping");
-  assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
+test("the record slims down: backups prune by what is on the server, day rows have a window, restore points left the store row, no legacy stars", async () => {
+  assert.ok(/async function saveShared\(key, value, quiet, isCurrent = \(\) => true\) \{/.test(core) && /lastSaveError = null; if \(!quiet\) buzz\("taken"\);/.test(core), "housekeeping writes do not buzz a phone");
+  assert.ok(/await saveShared\(row\.key, null, true, current\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true(?:, isCurrent)?\)/.test(core), "the prunes and the backup rows are housekeeping");
+  // Execute the real save closure: both success and refusal stay silent for
+  // housekeeping. Non-quiet controls ensure the buzzer assertion is not vacuous.
+  for (const error of [null, { message: "synthetic refusal" }]) {
+    for (const quiet of [true, false]) {
+      const sounds = [], writes = [];
+      const ctx = { authEpoch: 1, CONFIG_KEY: "config", PUBLIC_STORES_KEY: "directory",
+        lastSaveError: null, console: { error() {} }, buzz: value => sounds.push(value),
+        supabase: { from: () => ({ upsert: async row => { writes.push(row); return { error }; } }) } };
+      const save = new Function("ctx", `with(ctx){async ${fn(core, "saveShared")}\n}; return saveShared;}`)(ctx);
+      assert.equal(await save("lpc:backup:synthetic", null, quiet), !error);
+      assert.equal(writes.length, 1);
+      assert.deepEqual(sounds, quiet ? [] : [error ? "refused" : "taken"]);
+    }
+  }
+  assert.ok(/async function pruneBackups\(keep(?:, isCurrent = \(\) => true)?\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
   assert.ok(/\.select\("key"\)\.like\("key", "lpc:config:backup:%"\)/.test(core), "the orphaned meta rows go with them");
-  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
-  assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId\) \{/.test(core), "the day rows have a window");
+  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true(?:, isCurrent)?\);\n\s*(?:if \(!isCurrent\(\)\) return keep;\n\s*)?await pruneBackups\(keep(?:, isCurrent)?\);/.test(core), "every backup run prunes");
+  assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId, isCurrent = \(\) => true\) \{/.test(core), "the day rows have a window");
   assert.ok(/const GOAL_LOOKBACK = 21;/.test(core), "and the window clears the longest read of them by a fortnight");
   /* A store row carries NO restore points now. It used to carry two, and before
      that six, and before that forty, and every one of those numbers was an
@@ -667,9 +684,23 @@ test("new and used are counted off the report on every screen that shows them", 
   assert.ok(/const statedSplitOf = \(M\) => \{/.test(mgr), "there is one reader for the stock split");
   assert.equal(mgr.split("statedSplitOf(M)").length - 1, 2,
     "the hero and phone board both use the report split; the digest writer is gone");
-  assert.ok(/M\.stated = \{ \.\.\.M\.stated, vehicles: stated\.vehicles \};/.test(ing),
-    "a roll-up owns how many cars, but the grid still hands over how many were new");
-  assert.ok(/vehicles: stated\.vehicles, day, at: nowISO/.test(ing), "and the grid files its own split with the rest");
+  assert.ok(ing.includes('import { applySummaryStated } from "./_summary-stated.mjs";') &&
+    ing.includes('applySummaryStated(M, stated, { day, at: nowISO, file: fileName });'),
+    "email imports invoke the shared aggregate writer with receipt metadata");
+  assert.ok(core.includes('applySummaryStated(M, stated, {'), "manual imports share aggregate precedence");
+  const receipt = { day: "2026-10-26", at: "2026-10-26T12:00:00Z", file: "synthetic.pdf" };
+  const stated = { total: 0, units: { internet: 0 }, leads: { internet: null }, vehicles: { new: 0, used: 3 } };
+  const roll = { stated: { deliveries: 9, source: "roll-up", file: "synthetic.csv" } };
+  assert.equal(applySummaryStated(roll, stated, receipt), true);
+  assert.deepEqual(roll.stated, { deliveries: 9, source: "roll-up", file: "synthetic.csv", vehicles: stated.vehicles },
+    "roll-up authority survives while explicit zero stock is retained");
+  const summary = {};
+  assert.equal(applySummaryStated(summary, stated, receipt), true);
+  assert.deepEqual(summary.stated, { deliveries: 0, units: stated.units, leads: stated.leads,
+    vehicles: stated.vehicles, ...receipt, source: "summary-grid" });
+  const unknown = {};
+  assert.equal(applySummaryStated(unknown, { total: null }, receipt), false);
+  assert.equal(Object.hasOwn(unknown, "stated"), false, "unknown is not fabricated zero");
   // The estimate stays, for a month whose report landed before any of this.
   assert.ok(/const f = statedM\.deliveries \/ known;/.test(mgr),
     "the scaled fallback is kept for a month filed before the split was carried");

@@ -18,9 +18,10 @@
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WALL_KEY_SECRET
  */
+import { roomProjection } from "./_room-projection.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, serviceKey, envGap } from "./_env.mjs";
-import { decide, readable, rowAddress, staffMayUse, storeDay, wallKey, sameSecret, WALL_HEADER } from "./_floor-access.mjs";
+import { decide, readable, rowAddress, mayManageAccounts, staffMayUse, storeDay, wallKey, sameSecret, WALL_HEADER } from "./_floor-access.mjs";
 
 const header = (req, name) => {
   const h = (req.headers && req.headers[name]) || "";
@@ -33,7 +34,7 @@ async function whoIsAsking(req, store, deps) {
     const user = await deps.userFor(auth.slice(7));
     if (!user) return { kind: "staff", allowed: false };
     const [profile, linkedStores] = await Promise.all([deps.profileOf(user.id), deps.linkedStoresOf(user.id)]);
-    return { kind: "staff", allowed: staffMayUse({ profile, linkedStores }, store) };
+    return { kind: "staff", allowed: staffMayUse({ profile, linkedStores }, store), subject: user.id, manager: mayManageAccounts(profile, store), person: deps.personFor ? await deps.personFor(user.id, store) : null };
   }
   const wall = header(req, WALL_HEADER);
   if (wall) return { kind: "wall", ok: sameSecret(wall, wallKey(store, deps.wallSecret)) };
@@ -44,20 +45,24 @@ export async function handle(req, res, deps) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   let body;
   try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch (e) { return res.status(400).json({ error: "bad json" }); }
-  const { op, room, store, date, stamp } = body;
+  const { op, room, store, date, stamp, view = "own" } = body;
+  if (!["own", "manager"].includes(view)) return res.status(400).json({ error: "Unknown room view" });
   const today = storeDay(deps.now ? deps.now() : new Date());
   const via = await whoIsAsking(req, store, deps);
   const d = decide({ op, room, store, date, today, via });
   if (!d.ok) return res.status(d.status).json({ error: d.why });
+  if (view === "manager" && !via?.manager) return res.status(403).json({ error: "Approved store management required" });
 
   if (op === "wallkey") {
     const key = wallKey(store, deps.wallSecret);
     if (!key) return res.status(500).json({ error: "WALL_KEY_SECRET is not set" });
     return res.status(200).json({ key });
   }
-  const row = await deps.getRow(rowAddress(room, store, date));
-  if (stamp && row && row.updated_at === stamp) return res.status(200).json({ same: true, stamp });
-  return res.status(200).json(readable(row));
+  const row = await deps.getRow({ ...rowAddress(room, store, date), store, date });
+  const scopedStamp = row ? `${view}:${via?.subject || "wall"}:${via?.person || "none"}:${row.updated_at || "none"}` : null;
+  if (stamp && row && scopedStamp === stamp) return res.status(200).json({ same: true, stamp });
+  const result = readable(row);
+  return res.status(200).json({ ...result, stamp: scopedStamp, row: view === "manager" ? result.row : roomProjection(result.row, via?.person || null) });
 }
 
 export default async function handler(req, res) {
@@ -72,15 +77,21 @@ export default async function handler(req, res) {
         return error || !data ? null : data.user;
       },
       profileOf: async (id) => {
-        const { data } = await db.from("profiles").select("role,stores,active,pending").eq("id", id).maybeSingle();
+        const { data, error } = await db.from("profiles").select("role,stores,active,pending").eq("id", id).maybeSingle();
+        if (error) throw error;
         return data || null;
       },
       linkedStoresOf: async (id) => {
-        const { data } = await db.from("floor_people").select("store").eq("user_id", id);
+        const { data, error } = await db.from("floor_people").select("store").eq("user_id", id);
+        if (error) throw error;
         return (data || []).map((r) => r.store);
       },
-      getRow: async ({ table, id }) => {
-        const { data, error } = await db.from(table).select("data,updated_at").eq("id", id).maybeSingle();
+      personFor: async (user, store) => {
+        const { data, error } = await db.from("floor_people").select("person_id").eq("user_id",user).eq("store",store).maybeSingle();
+        if(error)throw error; return data?.person_id || null;
+      },
+      getRow: async ({ table, id, store, date }) => {
+        const { data, error } = await db.from(table).select("data,updated_at").eq("id", id).eq("store", store).eq(table === "floor_public" ? "fdate" : "qdate", date).maybeSingle();
         if (error) throw error;
         return data || null;
       },

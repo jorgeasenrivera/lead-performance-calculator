@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
+import {installRpcAdapter} from './rpc-fixture-adapter.mjs';
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
@@ -13,7 +14,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => 
     stores:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
-await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
+const appDataRoute = async route => {
   const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
   const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
   const data=await response.json();
@@ -33,7 +34,9 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     return row;
   };
   await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
-});
+};
+await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', appDataRoute);
+const rpcFx = await installRpcAdapter(context, { appDataRoute });
 const page = await context.newPage(), errors = [];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
@@ -148,4 +151,6 @@ try{
  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
  for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();const action=page.locator('.manager-context-action');assert.match(await action.getAttribute('aria-label'),new RegExp(`${mode.done} of 2`));await shot(`import-${mode.done}`);await action.click();await page.waitForFunction(()=>!document.querySelector('.bp-row'));});
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
-}finally{await writeFile('manager-selector/evidence.json',JSON.stringify({engine,evidence,failures,errors},null,2));console.log('SELECTOR_RESULT '+JSON.stringify({engine,evidence,failures,errors}));await browser.close();}
+}finally{await writeFile('manager-selector/evidence.json',JSON.stringify({engine,evidence,failures,errors},null,2));await browser.close();}
+rpcFx.assertNoRefusals();
+console.log('SELECTOR_RESULT '+JSON.stringify({engine,evidence,failures,errors}));

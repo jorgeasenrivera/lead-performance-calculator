@@ -95,17 +95,20 @@ test("the endpoint: a TV key and a session each get exactly their share", async 
   const tv = { [WALL_HEADER]: wallKey("dm", SECRET) };
   assert.equal((await call(deps, read)).status, 401, "no headers at all");
   assert.equal((await call(deps, read, tv, "GET")).status, 405);
-  assert.equal((await call(deps, { ...read, room: "line" }, tv)).out.row.name, "line");
+  assert.equal((await call(deps, { ...read, room: "line" }, tv)).out.row.name, undefined, "unknown raw fields are not public");
   assert.equal((await call(deps, read, { [WALL_HEADER]: wallKey("other", SECRET) })).status, 403);
   assert.equal((await call(deps, read, { [WALL_HEADER]: "x" })).status, 403);
   assert.equal((await call(deps, { ...read, date: "2026-09-27" }, tv)).status, 403);
-  assert.equal((await call(deps, read, { authorization: "Bearer jwt-mgr" })).out.row.name, "floor");
+  assert.equal((await call(deps, { ...read, view: "manager" }, { authorization: "Bearer jwt-mgr" })).out.row.name, "floor");
+  assert.equal((await call(deps, { ...read, view: "manager" }, { authorization: "Bearer jwt-assoc" })).status, 403);
+  assert.equal((await call(deps, { ...read, view: "manager" }, tv)).status, 403);
   assert.equal((await call(deps, read, { authorization: "Bearer jwt-other" })).status, 403);
   assert.equal((await call(deps, read, { authorization: "Bearer jwt-assoc" })).status, 200, "linked associate");
   assert.equal((await call(deps, read, { authorization: "Bearer nonsense" })).status, 403);
   assert.deepEqual((await call(deps, { ...read, room: "online" }, tv)).out, { row: null, stamp: null }, "no row yet is not an error");
-  const same = await call(deps, { ...read, stamp: rows.get("floor_public|dm:2026-09-28").updated_at }, tv);
-  assert.deepEqual(same.out, { same: true, stamp: "2026-09-28T13:00:00Z" }, "a poll that finds nothing new costs a stamp");
+  const stamp = (await call(deps, read, tv)).out.stamp;
+  const same = await call(deps, { ...read, stamp }, tv);
+  assert.deepEqual(same.out, { same: true, stamp }, "a poll that finds nothing new costs a stamp");
   assert.equal((await call(deps, { ...read, op: "write" }, { authorization: "Bearer jwt-mgr" })).status, 400);
 });
 

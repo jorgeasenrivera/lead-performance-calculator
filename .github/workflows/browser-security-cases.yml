@@ -1,0 +1,120 @@
+name: Browser security cases
+
+# NEW for PR 501. Adapted from the reviewed PR 500 qualification workflow (head 79afba4c4575220b31a82cdf3e869753d9623760): same runner image, same
+# SHA-pinned actions, same driver and browser pins, same sandbox rules. It does not replace the ordinary checks in checks.yml and does not touch them.
+# Read-only, no secrets, no write token, no deployment, no hosting step. The app is built against made-up loopback literals and run against an in-process
+# synthetic backend; every request that is not to those two loopback origins is refused and recorded.
+#
+# Two runs, and they are not the same thing:
+#   corrected: the head of this pull request. This step gates the job.
+#   baseline:  the unmodified head 82e59f9, run only to show the defects it has. It is CHARACTERIZATION, it can never turn the job green, and a pass in it
+#              means "reproduced the old behaviour". It runs with continue-on-error so a baseline outcome never hides or replaces the corrected one.
+# Pins not yet proven in a hosted run: Playwright 1.63.0, Chrome 153.0.8010.12 and the Chrome 153 startup suffix below come from the PR 500 baseline and are
+# untested for this application until this workflow has run. The Node 22 and runner-image patch levels float, as they did in PR 500.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/browser-security-cases.yml
+      - scripts/strict-browser-kit.mjs
+      - scripts/synthetic-backend.mjs
+      - scripts/browser-security-cases.mjs
+      - scripts/safe-annotations.mjs
+      - test/safe-annotations.test.mjs
+      - test/strict-browser-kit.test.mjs
+      - src/Manager.jsx
+      - src/LeadPerformanceCalculator.jsx
+      - src/recovery-*.mjs
+      - src/private-schedule.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  cases:
+    if: github.head_ref == 'codex/nov1-security-recovery-integration'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    env:
+      STRICT_EXPECT_PLAYWRIGHT: '1.63.0'
+      STRICT_EXPECT_CHROME: '153.0.8010.12'
+      STRICT_EXPECT_CDP_SUFFIX: '["--noerrdialogs","--ozone-platform=headless","--ozone-override-screen-size=800,600","--use-angle=swiftshader-webgl","--flag-switches-begin","--flag-switches-end","--enable-unsafe-swiftshader"]'
+      STRICT_REQUIRE_PINS: '1'
+      STRICT_REQUIRE_DIAGNOSTICS: '1'
+      VITE_SUPABASE_URL: http://127.0.0.1:5433
+      VITE_SUPABASE_ANON_KEY: mock-anon-key
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 82e59f924020e11148a6d07fe41ff75f6de7d6f7
+          path: baseline-tree
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Mark the stage, install
+        run: echo "::notice title=STAGE::Stage starting, install the application dependencies."
+      - name: Install the application's own dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Mark the stage, driver
+        run: echo "::notice title=STAGE::Stage starting, install the pinned driver and browser."
+      - name: Install pinned driver and its full Chromium through official routes
+        run: |
+          npm install --prefix "$RUNNER_TEMP/sandbox-driver" --ignore-scripts --no-audit --no-fund --package-lock=false playwright@1.63.0
+          "$RUNNER_TEMP/sandbox-driver/node_modules/.bin/playwright" install --no-shell chromium
+      - name: Mark the stage, build
+        run: echo "::notice title=STAGE::Stage starting, build the corrected and baseline apps."
+      - name: Build the corrected app and the baseline app (synthetic literals only)
+        run: |
+          npx vite build --outDir "$RUNNER_TEMP/dist-corrected" --emptyOutDir
+          ln -s "$PWD/node_modules" baseline-tree/node_modules
+          (cd baseline-tree && npx vite build --outDir "$RUNNER_TEMP/dist-baseline" --emptyOutDir)
+      - name: Mark the stage, corrected
+        run: echo "::notice title=STAGE::Stage starting, corrected head cases. This step gates the job."
+      - name: Corrected head, every case (this step gates the job)
+        id: corrected
+        env:
+          STRICT_BROWSER_DRIVER: ${{ runner.temp }}/sandbox-driver/node_modules/playwright
+        run: node scripts/browser-security-cases.mjs --dist "$RUNNER_TEMP/dist-corrected" --out browser-cases-evidence/corrected --expect corrected
+      - name: Annotate the corrected outcome (fixed text, no step output is read)
+        if: always()
+        env:
+          CORRECTED_OUTCOME: ${{ steps.corrected.outcome }}
+        run: |
+          case "$CORRECTED_OUTCOME" in
+            success) echo "::notice title=CORRECTED_OUTCOME::Corrected step outcome. outcome=success" ;;
+            failure) echo "::error title=CORRECTED_OUTCOME::Corrected step outcome. outcome=failure" ;;
+            cancelled) echo "::error title=CORRECTED_OUTCOME::Corrected step outcome. outcome=cancelled" ;;
+            skipped) echo "::warning title=CORRECTED_OUTCOME::Corrected step outcome. outcome=skipped" ;;
+            *) echo "::warning title=CORRECTED_OUTCOME::Corrected step outcome. outcome=unknown" ;;
+          esac
+      - name: Mark the stage, baseline
+        if: always()
+        run: echo "::notice title=STAGE::Stage starting, baseline head. Characterization only."
+      - name: Baseline head, characterization only (never a repair result)
+        if: always()
+        continue-on-error: true
+        env:
+          STRICT_BROWSER_DRIVER: ${{ runner.temp }}/sandbox-driver/node_modules/playwright
+        run: node scripts/browser-security-cases.mjs --dist "$RUNNER_TEMP/dist-baseline" --out browser-cases-evidence/baseline --expect baseline
+      - name: Say what each step was
+        if: always()
+        run: |
+          {
+            echo "### Browser security cases"
+            echo "- corrected: gates this job; see browser-cases-evidence/corrected/result.json"
+            echo "- baseline: characterization of 82e59f9 only (countsAsRepairResult false); a pass there means the old defects were reproduced"
+            echo "- the sandbox, the pins and the renderer audit are checked inside the runner and fail the step when proof is missing"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep bounded synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-security-cases
+          path: browser-cases-evidence/
+          retention-days: 3
+          if-no-files-found: warn

@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {ownSchedule} from '../src/private-schedule.mjs';
+const identity={store:'fictional',month:'2026-11',person:'a'};
+const published=()=>({state:'published',store:identity.store,month:identity.month,subject:identity.person,revision:1,people:{a:{offDates:['2026-11-02']}}});
+test('absent people never throws or becomes empty published schedule',()=>{for(const people of [undefined,null,{},[],{other:{offDates:[]}}])assert.deepEqual(ownSchedule({...published(),people},identity),{state:'unavailable',offDates:null});});
+test('invalid calendar and outside-month dates cannot become valid Off; leap dates validated',()=>{for(const date of ['2026-11-31','2026-11-00','2026-11-2','2026-11-02T00:00:00Z','2026-12-01','2026-11-99',null]){const p=published();p.people.a.offDates=[date];assert.equal(ownSchedule(p,identity).state,'unavailable',String(date));}for(const [month,date,valid] of [['2024-02','2024-02-29',true],['2026-02','2026-02-29',false]]){const p={...published(),month};p.people.a.offDates=[date];assert.equal(ownSchedule(p,{...identity,month}).state,valid?'published':'unavailable');}assert.deepEqual(ownSchedule({...published(),people:{a:{offDates:[]}}},identity),{state:'published',offDates:[],revision:1});});

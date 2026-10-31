@@ -59,7 +59,9 @@ test("the app: the TV registers its key, and reads and listens through it; nothi
 
 test("tickets fill the columns the table requires (C98), and the TV link carries its key", () => {
   const save = app.slice(app.indexOf("async function saveTicket("), app.indexOf("async function saveTicket(") + 700);
-  assert.match(save, /\.upsert\(\{ id: TICKET_PREFIX \+ t\.id, store: t\.store \|\| "", qdate: day, data: t \}, \{ onConflict: "id" \}\)/);
+  assert.match(save, /supabase\.rpc\("sage_ticket_submit"/);
+  assert.match(save, /supabase\.rpc\("sage_ticket_status"/);
+  assert.ok(!save.includes(".upsert("), "support submissions cannot replace arbitrary queue rows");
   assert.match(mgr, /apiCall\("\/api\/floor-row", \{ method: "POST", body: \{ op: "wallkey", store: storeId \} \}\)/);
   assert.match(mgr, /`\$\{base\}&key=\$\{encodeURIComponent\(out\.key\)\}`/);
 });

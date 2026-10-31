@@ -10,10 +10,11 @@
  * a row it made itself.
  *
  * Idempotent and time-gated: before the time it makes nothing, after the time
- * it makes the row once, and a row that already exists is left alone. Anyone
- * signed in may ask; asking early does nothing, and asking late is what the
+ * it makes the row once, and a row that already exists is left alone. Active staff with access to the store
+ * may ask; asking early does nothing, and asking late is what the
  * phones do anyway.
  */
+import { staffMayUse, rowAddress } from "./_floor-access.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
 import { ROOMS, roomsOf, openAtFor, localClock, openedBy } from "./_rooms.mjs";
@@ -52,15 +53,23 @@ export default async function handler(req, res) {
   const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!jwt) return res.status(401).json({ error: "Sign in first." });
   const body = typeof req.body === "string" ? (() => { try { return JSON.parse(req.body); } catch (e) { return {}; } })() : (req.body || {});
+  if (!body || typeof body !== "object" || Array.isArray(body)) return res.status(400).json({ error: "bad body" });
   const store = String(body.store || "").trim();
   const room = String(body.room || "floor");
-  if (!store || !ROOMS.includes(room)) return res.status(400).json({ error: "Which store, and which room." });
+  if (typeof body.store !== "string" || body.store !== store || !ROOMS.includes(room) || !rowAddress(room, store, "2000-01-01")) return res.status(400).json({ error: "Which store, and which room." });
 
   const db = createClient(supabaseUrl(), serviceKey(), { auth: { persistSession: false } });
   const { data: who, error: whoErr } = await db.auth.getUser(jwt);
   if (whoErr || !who || !who.user) return res.status(401).json({ error: "Sign in again." });
 
-  const { data: cfgRow } = await db.from("app_data").select("value").eq("key", CONFIG_KEY).maybeSingle();
+  const { data: profile, error: profileError } = await db.from("profiles").select("role,stores,active,pending").eq("id", who.user.id).maybeSingle();
+  if (profileError) return res.status(500).json({ error: "Could not check this account." });
+  const { data: links, error: linkError } = await db.from("floor_people").select("store").eq("user_id", who.user.id).eq("store", store);
+  if (linkError) return res.status(500).json({ error: "Could not check this account." });
+  if (!staffMayUse({ profile, linkedStores: (links || []).map(x => x.store) }, store)) return res.status(403).json({ error: "Not one of your stores." });
+
+  const { data: cfgRow, error: cfgError } = await db.from("app_data").select("value").eq("key", CONFIG_KEY).maybeSingle();
+  if (cfgError) return res.status(500).json({ error: "Could not read the store setup." });
   const config = (cfgRow && cfgRow.value) || null;
   if (!config || !roomsOf(config, store)[room]) return res.status(400).json({ error: "That store does not run that room." });
 
@@ -69,12 +78,14 @@ export default async function handler(req, res) {
   if (!at) return res.status(200).json({ open: false, at: null, reason: "The desk opens it." });
   if (!openedBy(at, clock.hm)) return res.status(200).json({ open: false, at, now: clock.hm });
 
-  const table = room === "floor" ? "floor_public" : "queue_public";
-  const id = `${store}:${clock.day}`;
-  const { data: had } = await db.from(table).select("id").eq("id", id).maybeSingle();
+  const { table, id } = rowAddress(room, store, clock.day);
+  const dateColumn = room === "floor" ? "fdate" : "qdate";
+  const { data: had, error: readError } = await db.from(table).select("id").eq("id", id).eq("store", store).eq(dateColumn, clock.day).maybeSingle();
+  if (readError) return res.status(500).json({ error: "Could not read the room." });
   if (had) return res.status(200).json({ open: true, at, made: false });
 
-  const { data: sRow } = await db.from("app_data").select("value").eq("key", storeKey(store)).maybeSingle();
+  const { data: sRow, error: storeError } = await db.from("app_data").select("value").eq("key", storeKey(store)).maybeSingle();
+  if (storeError || !sRow?.value) return res.status(500).json({ error: "Could not read the store roster." });
   const data = dayRowFor(room, store, clock.day, at, config, (sRow && sRow.value) || null);
   const row = room === "floor"
     ? { id, store, fdate: clock.day, data, updated_at: new Date().toISOString() }
@@ -83,5 +94,9 @@ export default async function handler(req, res) {
   /* Two phones at the same minute: the second insert loses on the key, which
      is the row being there, which is the answer. */
   if (error && String(error.code) !== "23505") return res.status(500).json({ error: error.message || "The row could not be made." });
+  if (error) {
+    const { data: winner, error: retryError } = await db.from(table).select("id").eq("id", id).eq("store", store).eq(dateColumn, clock.day).maybeSingle();
+    if (retryError || !winner) return res.status(409).json({ error: "The room identity could not be confirmed." });
+  }
   return res.status(200).json({ open: true, at, made: !error });
 }

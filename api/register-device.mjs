@@ -18,6 +18,7 @@
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
  */
+import { accountIsActive } from "./_floor-access.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
 
@@ -60,6 +61,11 @@ export default async function handler(req, res) {
      and never match anybody in any queue — registered, and unreachable. The link
      is what turns one into the other, and until a manager has made it there is
      nothing to register against. */
+  const { data: profile, error: profileErr } = await db.from("profiles")
+    .select("active").eq("id", who.user.id).maybeSingle();
+  if (profileErr) return res.status(500).json({ error: "could not check this account" });
+  if (!accountIsActive(profile)) return res.status(403).json({ error: "this account is not active" });
+
   const { data: links, error: linkErr } = await db
     .from("floor_people").select("person_id").eq("user_id", userId).eq("store", store).limit(1);
   if (linkErr) return res.status(500).json({ error: "could not check this account" });

@@ -1,0 +1,16 @@
+      - scripts/rpc-fixture-adapter.mjs
+      - test/rpc-fixture-adapter.test.mjs
+      - test/manual-alias-snapshot.test.mjs
+      - test/staff-arrival.test.mjs
+      - scripts/scheduler-performance/generation-dst.test.mjs
+      - scripts/scheduler-performance/generation.mjs
+      - scripts/scheduler-performance/generation.test.mjs
+      - scripts/scheduler-performance/local-time.test.mjs
+      - scripts/scheduler-performance/month-model.mjs
+      - scripts/scheduler-performance/schedule-import.test.mjs
+      - scripts/scheduler-performance/shift-intervals.mjs
+      - scripts/scheduler-performance/weekly-hours.mjs
+      - src/private-schedule.mjs
+      - test/private-schedule-dates.test.mjs
+      - scripts/scheduler-performance/legacy-store-interval.mjs
+      - scripts/scheduler-performance/legacy-midnight.test.mjs

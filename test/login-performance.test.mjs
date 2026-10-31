@@ -104,7 +104,7 @@ test("first manager store pass is coalesced and a failed legacy read cannot wait
   assert.match(core, /if \(!viewPicked\.current && viewPickInFlight\.current\) return;/);
   assert.match(core, /if \(firstPick\) viewPickInFlight\.current = true;/);
   assert.match(core, /withTimeout\(loadStrict\(`lpc:store:\$\{s\.id\}:v1`\)\)/);
-  assert.match(core, /\}\)\(\)\.catch\(\(error\) => \{\s*if \(firstPick\) setLoadErr\(true\);\s*else console\.error\("store refresh failed", error\);/);
+  assert.match(core, /\}\)\(\)\.catch\(\(error\) => \{\s*if \(!current\(\)\) return;\s*if \(firstPick\) setLoadErr\(true\);\s*else console\.error\("store refresh failed", error\);/);
   assert.match(core, /if \(cfgReadInFlight\.current\) \{ cfgAuthReadPending\.current = true; return; \}/);
   assert.match(core, /const authenticatedAtStart = !!sessionRef\.current;/);
   assert.match(core, /view === "combined" \|\| !session \|\| !initialViewReady\) return;/);

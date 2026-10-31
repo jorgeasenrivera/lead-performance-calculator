@@ -1,6 +1,6 @@
 import {monthDays,enteredMonth} from './month-model.mjs';
 import {addDays,weekday,ruleFor} from '../scheduler-proposal/model.mjs';
-import {personIntervals,unionMinutes,shiftProblem,stableLocalDate,storeTimezone,validDate} from './shift-intervals.mjs';
+import {personIntervals,unionMinutes,shiftProblem,localInterval,stableLocalDate,storeTimezone,validDate} from './shift-intervals.mjs';
 import {membershipAt,teamSnapshot} from './team-model.mjs';
 import {importSnapshot} from './schedule-import.mjs';
 import {dayDemand} from './demand-context.mjs';
@@ -83,16 +83,30 @@ export function matchRoles(shifts,required,open,close,maxNodes=20000){
  walk(0);
  return {roles:bestRoles,changed:bestRoles!==current,capped:capped&&!done,nodes};
 }
+// Conservatively refuse the whole date when opening hours, a configured template,
+// or a retained shift needs temporal review. Do not generate Off on that date.
+export function generationDateSafe(day,store,policy,record) {
+ const rr=ruleFor(store.rules,day),zone=storeTimezone(store);
+ if(!rr)return false;
+ const state=rr.holidays?.[day]||(rr.closedDays.includes(weekday(day))?'closed':'open');
+ if(state!=='open'&&!stableLocalDate(day,zone))return false;
+ if(!localInterval(day,rr.open*60,rr.close*60,zone).ok)return false;
+ if((record?.shifts||[]).some(s=>shiftProblem(s,store,day)))return false;
+ return Array.isArray(policy?.shifts)&&policy.shifts.every(s=>localInterval(day,s.fullDay?rr.open*60:s.startMinute,s.fullDay?rr.close*60:s.endMinute,zone).ok);
+}
 export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(),maxMs=20000,maxRoleNodes=20000}={}) {
  validate(input);const began=now(),{month,policy,storeId}=input,dates=monthDays(month),store=input.stores[month],records=copy(input.records),changed={},days=[],weekly=new Map(),caps=new Map(),unknownWeeks=new Set(),used=new Map(),opportunity=new Map(),bands=new Map();let checks=0,limited=false,roleLimited=false;
  const context=day=>({store:input.stores[day.slice(0,7)],record:records[day]});
  const rule=day=>ruleFor(context(day).store.rules,day);
- for(const day of dates)records[day]=cleanRecord(records[day],policy.regenerate);
+ // A refused date is outside generation, including cleanup of earlier generated choices.
+ const supportedDates=new Set(dates.filter(day=>generationDateSafe(day,store,policy,records[day])));
+ const supported=day=>supportedDates.has(day);
+ for(const day of dates)records[day]=supported(day)?cleanRecord(records[day],policy.regenerate):{on:[],off:[],shifts:[],...copy(records[day]||{})};
  // Seed full-week budgets from retained records, including both adjacent months.
  for(const [day,r] of Object.entries(records))for(const id of unique([...(r?.on||[]),...(r?.shifts||[]).map(s=>s.personId)])){
-  const c=context(day),p=c.store.people.find(p=>p.id===id),rr=rule(day),key=week(day)+':'+id,intervals=personIntervals(r,id,rr),minutes=unionMinutes(intervals);
+  const c=context(day),p=c.store.people.find(p=>p.id===id),rr=rule(day),key=week(day)+':'+id,intervals=personIntervals(r,id,rr),minutes=unionMinutes(intervals.filter(([a,b])=>localInterval(day,a,b,storeTimezone(c.store)).ok));
   weekly.set(key,(weekly.get(key)||0)+minutes);used.set(id,(used.get(id)||0)+(day.startsWith(month)?minutes:0));
-  if(!p||!Number.isFinite(p.maxHours)||p.maxHours<0||!intervals.length||!rr||!Number.isFinite(rr.open)||!Number.isFinite(rr.close)||(r?.shifts||[]).filter(s=>s.personId===id).some(s=>shiftProblem(s,c.store,day)))unknownWeeks.add(key);
+  if(!p||!Number.isFinite(p.maxHours)||p.maxHours<0||!intervals.length||intervals.some(([a,b])=>!localInterval(day,a,b,storeTimezone(c.store)).ok)||!rr||!Number.isFinite(rr.open)||!Number.isFinite(rr.close)||(r?.shifts||[]).filter(s=>s.personId===id).some(s=>shiftProblem(s,c.store,day)))unknownWeeks.add(key);
   else caps.set(key,Math.min(caps.get(key)??Infinity,p.maxHours*60));
  }
  const baseRows=enteredMonth(month,context),base=new Map(baseRows.map(r=>[r.day,r]));
@@ -121,7 +135,7 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
   };
   const segments=()=>{if(row.state!=='open')return [];const all=entries(),points=unique([rr.open*60,rr.close*60,...all.flatMap(e=>[Math.max(rr.open*60,e.a),Math.min(rr.close*60,e.b)])]).filter(x=>x>=rr.open*60&&x<=rr.close*60).sort((a,b)=>a-b);return points.slice(0,-1).map((a,i)=>{const b=points[i+1],active=all.filter(e=>e.a<=a&&e.b>=b);return {start:a,end:b,count:unique(active.map(e=>e.id)).length,roles:Object.fromEntries(Object.keys(policy.requiredRoles).map(role=>[role,unique(active.filter(e=>e.role===role).map(e=>e.id)).length]))};});};
   const gaps=()=>segments().flatMap(s=>[...(s.count<rr.minimum?[{start:s.start,end:s.end,role:null,missing:rr.minimum-s.count}]:[]),...Object.entries(policy.requiredRoles).filter(([role,n])=>(s.roles[role]||0)<n).map(([role,n])=>({start:s.start,end:s.end,role,missing:n-(s.roles[role]||0)}))]);
-  if(row.state==='open'&&stableLocalDate(day,storeTimezone(store))){
+  if(row.state==='open'&&supported(day)){
    const available=(id,a,b)=>{const p=members.get(id),e=policy.people[id],key=week(day)+':'+id,intervals=personIntervals(r,id,rr);return p&&known(p)&&!retainedIds.includes(id)&&e?.eligible===true&&Array.isArray(e.roles)&&!p.off.includes(weekday(day))&&!r.off.includes(id)&&!r.unknownNotes?.[id]&&!r.generationLocks?.includes(id)&&a>=p.start*60&&b<=p.end*60&&a>=rr.open*60&&b<=rr.close*60&&!unknownWeeks.has(key)&&!intervals.some(([x,y])=>a<y&&b>x)&&(weekly.get(key)||0)+b-a<=Math.min(caps.get(key)??Infinity,p.maxHours*60);};
    const memberships=new Map(store.people.map(p=>[p.id,membershipAt(store,p.id,day)]));
    const units=policy.mode==='individual'?[]:(store.teams||[]).map(t=>store.people.filter(p=>memberships.get(p.id).teamIds.includes(t.id)).map(p=>p.id)).filter(ids=>ids.length&&ids.every(id=>!memberships.get(id).unknown));
@@ -148,16 +162,18 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
    fill();
    // A role gap may only mean an earlier multi-role choice was the wrong one; re-choose, then top up.
    for(let pass=0;pass<3&&!limited&&gaps().some(d=>d.role)&&rematch();pass++)fill();
-  } else if(row.state==='open')notes.push('DST-change date unsupported; enter and review separately.');
+  } else if(row.state==='open')notes.push('DST-local interval or retained shift requires manual review; no generated choices on this date.');
   if(row.state==='unknown')notes.push('Store hours or holiday status unknown.');
   // A capped role search only counts as a stop when a role gap is still open; it never halts later days.
   const roleStopped=roleCapped&&gaps().some(d=>d.role);if(roleStopped)roleLimited=true;
   if(limited||roleStopped)notes.push('Bounded search stopped; incomplete proposal.');
   // An unselected known eligible person is a generated off choice, never a substitute for unknown availability.
-  if(row.state==='open'&&!limited)for(const p of store.people)if(!r.on.includes(p.id)&&!r.off.includes(p.id)&&!r.unknownNotes?.[p.id]&&!r.generationLocks?.includes(p.id)&&known(p)&&policy.people[p.id]?.eligible===true){r.off.push(p.id);r.absences={...r.absences,[p.id]:{kind:p.off.includes(weekday(day))?'unavailable':'off',source:{kind:'generated preview'}}};generated.add(p.id);}
-  r.teamSnapshot={...r.teamSnapshot,...teamSnapshot(store,day,[...generated])};
-  const owned=unique([...retainedOwnership,...generated]);
-  r.generation={unlocked:owned,signatures:Object.fromEntries(owned.map(id=>[id,signature(r,id)]))};
+  if(row.state==='open'&&supported(day)&&!limited)for(const p of store.people)if(!r.on.includes(p.id)&&!r.off.includes(p.id)&&!r.unknownNotes?.[p.id]&&!r.generationLocks?.includes(p.id)&&known(p)&&policy.people[p.id]?.eligible===true){r.off.push(p.id);r.absences={...r.absences,[p.id]:{kind:p.off.includes(weekday(day))?'unavailable':'off',source:{kind:'generated preview'}}};generated.add(p.id);}
+  if(supported(day)){
+   r.teamSnapshot={...r.teamSnapshot,...teamSnapshot(store,day,[...generated])};
+   const owned=unique([...retainedOwnership,...generated]);
+   r.generation={unlocked:owned,signatures:Object.fromEntries(owned.map(id=>[id,signature(r,id)]))};
+  }
   const actualGaps=gaps();
   const extraTarget=rr?.useCapacity&&rr.capacity>0&&demand.get(day).estimate?Math.max(rr.minimum,Math.ceil(demand.get(day).estimate.high/rr.capacity)):null;
   if(market?.busyWeekdays?.includes(weekday(day)))notes.push('Fictional comparable-store sample suggests higher day-level coverage; no hourly peak inferred.');
@@ -165,12 +181,12 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
   else if(market?.busyWeekdays?.includes(weekday(day)))notes.push('No capacity calibration enabled: no numeric extra headcount recommended.');
   notes.push('Greedy minimum coverage first, then lower scheduled/available time and opening/closing opportunities; not an optimal or fairness guarantee.');
   const unknown=(row.state==='open'?store.people:[]).filter(p=>!known(p)||policy.people[p.id]?.eligible===undefined||!Array.isArray(policy.people[p.id]?.roles)||r.unknownNotes?.[p.id]||r.generationLocks?.includes(p.id)&&!r.on.includes(p.id)&&!r.off.includes(p.id)).map(p=>p.id);
-  days.push({day,state:row.state,segments:segments(),gaps:actualGaps,conflicts:lockedConflicts,unknown,notes,added:[...generated].filter(id=>r.on.includes(id)),preserved:retainedIds,removed:(input.records[day]?.on||[]).filter(id=>!r.on.includes(id)),changed:JSON.stringify(r)!==JSON.stringify(input.records[day])});
+  days.push({day,state:row.state,segments:segments(),gaps:actualGaps,conflicts:lockedConflicts,unknown,notes,added:[...generated].filter(id=>r.on.includes(id)),preserved:retainedIds,removed:(input.records[day]?.on||[]).filter(id=>!r.on.includes(id)),changed:supported(day)&&JSON.stringify(r)!==JSON.stringify(input.records[day])});
   changed[day]=r;
  }
  const finalRows=enteredMonth(month,context);for(const row of finalRows){const d=days.find(d=>d.day===row.day);for(const [id,reasons] of Object.entries(row.conflicts))if(!d.conflicts.some(c=>c.id===id))d.conflicts.push({id,reasons});}
  const incomplete=limited||roleLimited||days.some(d=>d.gaps.length||d.conflicts.length||d.unknown.length||d.state==='unknown'||d.notes.some(n=>n.startsWith('DST-')));
- return {month,index:input.index,storeId,snapshot:input.snapshot,policy:copy(policy),records:changed,days:days.sort((a,b)=>a.day.localeCompare(b.day)),status:incomplete?'incomplete':'covered',limited:limited||roleLimited,checks,computeMs:now()-began,market,applied:false};
+ return {temporalPolicy:'unambiguous-local/1',month,index:input.index,storeId,snapshot:input.snapshot,policy:copy(policy),records:changed,days:days.sort((a,b)=>a.day.localeCompare(b.day)),status:incomplete?'incomplete':'covered',limited:limited||roleLimited,checks,computeMs:now()-began,market,applied:false};
 }
 export function applyProposal(planner,proposal){
  if(proposal.applied)throw Error('This proposal was already applied.');
@@ -178,7 +194,10 @@ export function applyProposal(planner,proposal){
  // Only generator-owned proposal objects are passed by the UI. Preflight every record before mutation.
  const days=monthDays(proposal.month);if(days.some(d=>!proposal.records[d])||planner.get(proposal.index,proposal.month).store.id!==proposal.storeId)throw Error('Incomplete proposal payload.');
  const batch=copy(proposal.records);for(const day of days){const r=batch[day];if(!Array.isArray(r.on)||!Array.isArray(r.off)||!Array.isArray(r.shifts))throw Error('Invalid proposal record.');}
- for(const day of days)planner.setAssignment(proposal.index,day,batch[day]);
+ // Older proposals may contain generated Off on a refused date. Never apply that date.
+ const store=planner.get(proposal.index,proposal.month).store,timezone=storeTimezone(store);
+ const writableDays=days.filter(day=>generationDateSafe(day,store,proposal.policy,batch[day]) && generationDateSafe(day,store,proposal.policy,planner.record(proposal.index,day)) && (proposal.temporalPolicy==='unambiguous-local/1'||stableLocalDate(day,timezone)));
+ for(const day of writableDays)planner.setAssignment(proposal.index,day,batch[day]);
  planner.get(proposal.index,proposal.month).store.planningPolicy={people:copy(proposal.policy.people),requiredRoles:copy(proposal.policy.requiredRoles)};
- planner.get(proposal.index,proposal.month).generationPolicy=copy(proposal.policy);proposal.applied=true;return days.length;
+ planner.get(proposal.index,proposal.month).generationPolicy=copy(proposal.policy);proposal.applied=true;return writableDays.length;
 }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
+import {installRpcAdapter} from './rpc-fixture-adapter.mjs';
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
@@ -13,7 +14,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => 
     stores:singleStore?['sage-demo']:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
-await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
+const appDataRoute = async route => {
   const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
   const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
   const data=await response.json();
@@ -33,7 +34,9 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     return row;
   };
   await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
-});
+};
+await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', appDataRoute);
+const rpcFx = await installRpcAdapter(context, { appDataRoute });
 const page = await context.newPage(), errors = [];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
@@ -106,4 +109,6 @@ try{
  }
  fixtureRole='manager';singleStore=true;await page.setViewportSize({width:390,height:844});await page.reload();await page.locator('.bp-row').first().waitFor();assert.equal(await page.locator('.view-select').count(),0);assert.ok(await page.locator('.manager-store-name').isVisible());assert.equal(await page.locator('.manager-store-name').innerText(),'Sage Demo Motors');await page.screenshot({path:'search-keyboard/corrected-single-store-identity.png'});evidence.push({singleStoreIdentity:true});
  assert.deepEqual(errors,[]);
-}finally{await writeFile('search-keyboard/evidence.json',JSON.stringify({engine,identity,evidence,errors},null,2));console.log(JSON.stringify({engine,identity,evidence,errors}));await browser.close();}
+}finally{await writeFile('search-keyboard/evidence.json',JSON.stringify({engine,identity,evidence,errors},null,2));await browser.close();}
+rpcFx.assertNoRefusals();
+console.log(JSON.stringify({engine,identity,evidence,errors}));

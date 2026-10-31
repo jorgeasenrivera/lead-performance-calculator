@@ -8,6 +8,24 @@ const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "u
 const shots = fs.readFileSync(new URL("../scripts/shots.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const flow = fs.readFileSync(new URL("../.github/workflows/checks.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
+/* shots: the catch, tolerant of comments and whitespace but NOT of order. Inside the catch the lost-browser reading comes first, the evidence (ev.failed) after it, the SAME e is rethrown last,
+   and only then does finally close the browser. */
+function shotsCatchProblems(src) {
+  const code = src.replace(/\r\n/g, "\n").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  const m = /\bcatch \(e\) \{([\s\S]*?)\}\s*finally \{\s*await b\.close\(\)/.exec(code);
+  if (!m) return ["no catch (e) { ... } finally { await b.close() } shape"];
+  const body = m[1], out = [];
+  const why = body.indexOf("e.lostBrowser = lost.why(e);"), ev = body.indexOf("await ev.failed(e);"), thr = body.lastIndexOf("throw e;");
+  if (why < 0) out.push("the catch does not read lost.why(e) onto e.lostBrowser");
+  if (ev < 0) out.push("the catch does not write the evidence with ev.failed(e)");
+  if (why >= 0 && ev >= 0 && why > ev) out.push("lost.why(e) must be read BEFORE ev.failed(e)");
+  if (thr < 0) out.push("the catch does not rethrow e");
+  if (thr >= 0 && (thr < why || thr < ev)) out.push("the rethrow must come after both");
+  if (/\bthrow\s+(?!e;)/.test(body)) out.push("the catch throws something other than the same e");
+  if (/\breturn\b/.test(body)) out.push("the catch returns instead of rethrowing");
+  return out;
+}
+
 /* A stand-in for Playwright's browser: the two things the watch reads. */
 function fakeBrowser() {
   const on = {};
@@ -59,12 +77,46 @@ test("both harnesses ask before they close, and stay red when the answer is yes"
      and hangs the answer on the error. */
   assert.ok(/catch \(e\) \{ if \(e && typeof e === "object"\) e\.lostBrowser = lost\.why\(e\); throw e; \}\n\s*finally \{ await b\.close\(\)/.test(feel),
     "feel asks before the close");
-  assert.ok(/catch \(e\) \{ if \(e && typeof e === "object"\) e\.lostBrowser = lost\.why\(e\); throw e; \}\n\s*finally \{\n\s*await b\.close\(\)/.test(shots),
-    "shots asks before the close");
+  assert.deepEqual(shotsCatchProblems(shots), [], "shots asks before the close, and in order: lost.why(e), then ev.failed(e), then the same e rethrown, then finally closes the browser");
   assert.ok(/process\.exitCode = 3;/.test(feel) && /process\.exit\(3\);/.test(shots),
     "a run that could not measure still fails: C83 asked for a legible check, not an advisory one");
   assert.ok(/Nothing here says the phone got worse, because nothing here measured it/.test(feel),
     "and the log says which of the two it was");
+});
+
+test("the shots catch guard fails when the order is reversed, the reading or the evidence is removed, or something other than the same e is thrown", () => {
+  const A = 'if (e && typeof e === "object") e.lostBrowser = lost.why(e);', B = "await ev.failed(e);";
+  assert.equal(shots.split(A).length - 1, 1); assert.equal(shots.split(B).length - 1, 1);
+  const reversed = shots.replace(B, "").replace(A, B + "\n    " + A);
+  const noWhy = shots.replace(A, "");
+  const noEv = shots.replace(B, "");
+  const other = shots.replace(/throw e;(\s*\}\s*finally \{\s*await b\.close\(\))/, "throw new Error('x');$1");
+  const noThrow = shots.replace(/throw e;(\s*\}\s*finally \{\s*await b\.close\(\))/, "$1");
+  for (const [name, src] of [["reversed", reversed], ["no lost.why", noWhy], ["no ev.failed", noEv], ["another error thrown", other], ["no rethrow", noThrow]]) {
+    assert.notEqual(src, shots, name + " is a real mutation");
+    assert.ok(shotsCatchProblems(src).length > 0, "the guard must fail for: " + name);
+  }
+  assert.deepEqual(shotsCatchProblems(shots), []);
+});
+
+const COMPLETE_LINE = 'const complete = process.env.PICTURE_OUTCOME === "success" && (process.env.CANDIDATE !== "1" || (process.env.VERDICT_OUTCOME === "success" && process.env.STOP_OUTCOME === "success"));';
+test("the picture comment's completeness expression, taken from the workflow, follows the truth table for every outcome, for the candidate and for every other branch", () => {
+  assert.equal(flow.split(COMPLETE_LINE).length - 1, 1);
+  const expr = /const complete = ([^\n]*);\n/.exec(flow)[1];
+  assert.equal("const complete = " + expr + ";", COMPLETE_LINE, "only the exact reviewed text is evaluated below");
+  const evalWith = (env) => new Function("process", `"use strict"; return (${expr});`)({ env });
+  const ref = (e) => e.PICTURE_OUTCOME === "success" && (e.CANDIDATE !== "1" || (e.VERDICT_OUTCOME === "success" && e.STOP_OUTCOME === "success"));
+  const outcomes = ["success", "failure", "skipped", "cancelled", "", undefined];
+  for (const PICTURE_OUTCOME of outcomes) for (const CANDIDATE of ["1", "0", "", "true", undefined]) for (const VERDICT_OUTCOME of outcomes) for (const STOP_OUTCOME of outcomes) {
+    const env = { PICTURE_OUTCOME, CANDIDATE, VERDICT_OUTCOME, STOP_OUTCOME };
+    assert.equal(evalWith(env), ref(env), JSON.stringify(env));
+  }
+  const cand = (v, s, p = "success") => evalWith({ PICTURE_OUTCOME: p, CANDIDATE: "1", VERDICT_OUTCOME: v, STOP_OUTCOME: s });
+  assert.equal(cand("success", "success"), true);
+  for (const bad of ["failure", "skipped", "cancelled", undefined, ""]) { assert.equal(cand(bad, "success"), false, "candidate, verdict " + bad); assert.equal(cand("success", bad), false, "candidate, stop " + bad); }
+  assert.equal(cand("success", "success", "failure"), false); assert.equal(cand("success", "success", "skipped"), false);
+  const other = (p, v, s) => evalWith({ PICTURE_OUTCOME: p, CANDIDATE: "0", VERDICT_OUTCOME: v, STOP_OUTCOME: s });
+  assert.equal(other("success", undefined, undefined), true, "another branch: the verdict and the stop do not matter"); assert.equal(other("failure", "success", "success"), false);
 });
 
 test("the pull request comment tells a lost browser from a missed bar", () => {
@@ -155,7 +207,7 @@ test("stage reporting leaves sign-in's operations and waits unchanged", async ()
 test("partial screenshot artifacts survive failure and are not described as complete", () => {
   assert.match(flow, /uses: actions\/upload-artifact@v4\n\s+if: \$\{\{ !cancelled\(\) \}\}\n\s+id: keep/);
   assert.match(flow, /PICTURE_OUTCOME: \$\{\{ steps\.picture\.outcome \}\}/);
-  assert.match(flow, /const complete = process\.env\.PICTURE_OUTCOME === "success";/);
+  assert.equal(flow.split(COMPLETE_LINE).length - 1, 1, "the completeness line is exactly: picture success AND (not the candidate OR verdict success AND stop success)");
   assert.match(flow, /Incomplete phone pictures/);
   assert.match(flow, /This is not a passing check/);
   assert.doesNotMatch(flow, /continue-on-error: true/);

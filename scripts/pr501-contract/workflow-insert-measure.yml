@@ -1,0 +1,3 @@
+      - name: PR501 diagnostics, mark the stage, measurement
+        if: ${{ steps.route.outputs.contract == 'true' }}
+        run: echo "::notice title=PR501_STAGE::Stage starting, measurement."

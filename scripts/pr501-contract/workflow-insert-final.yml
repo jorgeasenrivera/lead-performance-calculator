@@ -1,0 +1,20 @@
+      - name: PR501 diagnostics, fixed stage outcomes (fixed text only, no step output is read)
+        if: ${{ always() && (steps.route.outputs.contract == 'true' || (steps.route.outcome != 'success' && github.head_ref == 'codex/nov1-security-recovery-integration')) }}
+        env:
+          O_ROUTE: ${{ steps.route.outcome }}
+          O_CK_HEAD: ${{ steps.ck_head.outcome }}
+          O_CK_FROZEN: ${{ steps.ck_frozen.outcome }}
+          O_CK_MAIN: ${{ steps.ck_main.outcome }}
+          O_CK_477: ${{ steps.ck_477.outcome }}
+          O_HASH: ${{ steps.hash.outcome }}
+          O_TS: ${{ steps.ts_install.outcome }}
+          O_VERIFY: ${{ steps.verify.outcome }}
+          O_JOB: ${{ job.status }}
+        run: |
+          # Every value is mapped through a closed list below, so the line can only contain these words. An unexpected value becomes "unknown".
+          cls() { case "$1" in success) echo success ;; failure) echo failure ;; cancelled) echo cancelled ;; skipped) echo skipped ;; *) echo unknown ;; esac; }
+          line="Stage outcomes. route=$(cls "$O_ROUTE") checkout_head=$(cls "$O_CK_HEAD") checkout_frozen=$(cls "$O_CK_FROZEN") checkout_main=$(cls "$O_CK_MAIN") checkout_477=$(cls "$O_CK_477") hash=$(cls "$O_HASH") install=$(cls "$O_TS") verify=$(cls "$O_VERIFY") job=$(cls "$O_JOB")."
+          case "$line" in
+            *failure*|*cancelled*) echo "::error title=PR501_OUTCOMES::$line" ;;
+            *) echo "::notice title=PR501_OUTCOMES::$line" ;;
+          esac

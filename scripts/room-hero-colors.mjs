@@ -2,6 +2,8 @@ import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
+import {installRpcAdapter} from './rpc-fixture-adapter.mjs';
+import {installRoomReadFixture} from './room-read-fixture.mjs';
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
@@ -14,7 +16,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => 
     stores:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
 });
-await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
+const appDataRoute = async route => {
   const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
   const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
   const data=await response.json();
@@ -34,7 +36,10 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     return row;
   };
   await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
-});
+};
+await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', appDataRoute);
+const rpcFx = await installRpcAdapter(context, { appDataRoute });
+const roomFx = await installRoomReadFixture(context, {appOrigin:url});
 const page = await context.newPage(), errors = [];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
@@ -83,3 +88,5 @@ try{
  }
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
 }finally{await writeFile(`${out}/evidence.json`,JSON.stringify({engine,results,failures,errors},null,2));await browser.close();}
+rpcFx.assertNoRefusals();
+roomFx.assertNoRefusals();

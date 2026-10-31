@@ -139,7 +139,11 @@ function parseDealEvent({ subject, text, receivedAt }) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method not allowed" });
-  if (req.headers["x-ingest-secret"] !== process.env.INGEST_SHARED_SECRET) {
+  const secret = process.env.INGEST_SHARED_SECRET;
+  if (typeof secret !== "string" || !secret.trim()) {
+    return res.status(503).json({ error: "ingest is not configured" });
+  }
+  if (req.headers["x-ingest-secret"] !== secret) {
     return res.status(401).json({ error: "unauthorized" });
   }
   try {

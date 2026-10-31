@@ -1,0 +1,38 @@
+{
+  "functions": {
+    "api/ingest.mjs": {
+      "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/support.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, max-age=0, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    }
+  ],
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md' ':(exclude)scripts' ':(exclude)test' ':(exclude).github' ':(exclude)native' ':(exclude)supabase'",
+  "git": {
+    "deploymentEnabled": {
+      "codex/nov1-security-recovery-integration": false
+    }
+  }
+}

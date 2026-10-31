@@ -9,9 +9,9 @@ import { fixtures } from "../scheduler-proposal/model.mjs";
 import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
-  "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
+  "a893ab793a7d2877fb33024a7ac558f1c45c5b2402aa10c9f59ed5ca3b81f78f";
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "2a72f748250d01e21e44a99363d2379e9f4b2272a29d235e65760422a576ed89") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "0b1b93a68eeea2f9f79a8f624aa3ca55f0413de817b46d38aa48f4213f248e2a") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');

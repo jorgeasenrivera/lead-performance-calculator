@@ -20,7 +20,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ensureMock, prepFloor, setUp, launch, phone, signIn, swipe, settled, lostBrowserWatch, watchMachine } from "./probe-kit.mjs";
+import { createShotsEvidence } from "./shots-evidence.mjs";
 
 const OUT = process.env.SHOTS_DIR || "shots";
 const SIZES = { "1": "normal", "1.15": "large", "1.3": "largest" };
@@ -29,7 +31,9 @@ const browserName = String(process.env.FEEL_BROWSER || "").toLowerCase() === "we
 let taken = 0;
 let machine = null;
 let currentStage = "starting";
-const stage = (name) => { currentStage = name; console.log(`shots: stage ${name}`); };
+/* What this run can say about itself when it fails; see shots-evidence.mjs. */
+const ev = createShotsEvidence({ engine: browserName, dir: process.env.SHOTS_EVIDENCE_DIR || "shots-evidence", here: path.dirname(fileURLToPath(import.meta.url)) });
+const stage = (name) => { currentStage = name; ev.stage(name); console.log(`shots: stage ${name}`); };
 
 const floorTab = (p) => p.locator('.ar-tab[aria-label="Live Floor"]');
 /* The floor's pane in the frame (C29), or, on a build before the panes, the
@@ -41,6 +45,7 @@ const roomAlone = (p) => p.waitForFunction(() => document.querySelectorAll(".ar-
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
+  ev.start();
   const mock = await ensureMock();
   const floor = await prepFloor();
   const b = await launch();
@@ -50,7 +55,7 @@ async function main() {
   const shot = async (page, name) => {
     stage(`capture ${name}`);
     const f = path.join(OUT, name + ".png");
-    await page.screenshot({ path: f }); files.push(f); taken = files.length;
+    await page.screenshot({ path: f }); files.push(f); taken = files.length; ev.setPictures(taken);
     console.log(`shots: saved ${f} (${taken})`);
   };
   try {
@@ -58,7 +63,7 @@ async function main() {
       const tag = SIZES[size];
       stage(`${tag}: create context`);
       const { ctx, page, errors } = await phone(b, { prefs: { "lpcf:pref:text": size } });
-      lost.watchPage(page);
+      lost.watchPage(page); ev.watchPage(page);
       await signIn(page, undefined, (name) => stage(`${tag}: ${name}`));
       await shot(page, `${tag}-home`);
       /* Home, scrolled to the foot: the corner is the one screen that scrolls,
@@ -92,17 +97,24 @@ async function main() {
     await setUp(floor);
     stage("normal-up: create context");
     const { ctx, page } = await phone(b);
-    lost.watchPage(page);
+    lost.watchPage(page); ev.watchPage(page);
     await signIn(page, undefined, (name) => stage(`normal-up: ${name}`));
     stage("normal-up: settle takeover");
     await page.waitForTimeout(1500);
     await shot(page, "normal-up");
     stage("normal-up: close context");
     await ctx.close();
+    ev.freeze();   // counts stop here: earlier contexts' closes are inside them, this last close too; only the browser's own close is outside
   }
   /* Asked before the close, which fires the same disconnect: see the watch's
      comment in probe-kit. */
-  catch (e) { if (e && typeof e === "object") e.lostBrowser = lost.why(e); throw e; }
+  catch (e) {
+    if (e && typeof e === "object") e.lostBrowser = lost.why(e);
+    /* The verdict above is frozen first; the evidence reads it, probes a page
+       that is still there, and writes, all before the finally closes anything. */
+    await ev.failed(e);
+    throw e;
+  }
   finally {
     await b.close().catch(() => {});
     if (mock) mock.kill();
@@ -113,6 +125,9 @@ async function main() {
      crash only reads against what a run normally costs. C83. */
   const m = machine && machine.line();
   if (m) console.log("shots: the machine: " + m);
+  /* An unexpected route fails a passing run. A lost browser never gets here: its
+     exit 3 is decided above, and nothing the fixture saw outranks it. */
+  await ev.passed();
 }
 
 main().catch((e) => {

@@ -214,7 +214,7 @@ test("the TV window's real save handler also falls back when the callback refuse
 });
 
 /* ---- integration: saveStoreCAS against an in-memory row ---- */
-const casSrc = (() => { const a = once(app, "async function saveStoreCAS(key, build, tries = 8) {", "saveStoreCAS"); return app.slice(a, app.indexOf("\n}\n", a) + 3); })();
+const casSrc = (() => { const a = once(app, "async function saveStoreCAS(key, build, tries = 8, current = () => true) {", "saveStoreCAS"); return app.slice(a, app.indexOf("\n}\n", a) + 3); })();
 function fakeDb(initial) {
   const row = { value: structuredClone(initial) }; const log = { updates: 0, inserts: 0 };
   const from = () => {
