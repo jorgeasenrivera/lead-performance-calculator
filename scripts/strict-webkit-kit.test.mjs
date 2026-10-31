@@ -272,10 +272,21 @@ test('receipts are structured and secret-free', async () => {
   assert.deepEqual(Object.keys(c).sort(), ['blocked', 'bindingKind', 'descendants', 'finalState', 'forced', 'lateTails', 'lifecycleOk', 'ownedPid', 'ownership', 'qualifying', 'reachedReady', 'reasons', 'records', 'timeouts', 'transitions', 'unresolved', 'verdict', 'version'].sort());
 });
 
-test('webkitRunFailed is true for every receipt shape, including a forged qualifying one without a QUALIFIED verdict', async () => {
+test('webkitRunFailed is true for EVERY input, including wholly fabricated QUALIFIED receipts: there is no verifier to believe one', async () => {
   const h = harness(); await h.kit.start(); const c = await h.kit.close();
-  assert.equal(webkitRunFailed(c), true); assert.equal(webkitRunFailed({ ...c, qualifying: true }), true, 'qualifying alone is not enough'); assert.equal(webkitRunFailed(null), true); assert.equal(webkitRunFailed(undefined), true);
-  for (const bad of [{}, { lifecycleOk: true }, { ...c, lifecycleOk: false }]) assert.equal(lifecycleFailed(bad), true);
+  const clean = { lifecycleOk: true, reachedReady: true, finalState: 'CLOSED', reasons: [], unresolved: [], lateTails: 0, ownership: 'server-handle-and-pid', descendants: 'none-observed', blocked: [] };
+  const fabricated = [
+    { ...clean, qualifying: true, verdict: 'QUALIFIED' },
+    { ...clean, qualifying: true, verdict: 'QUALIFIED', records: { shapeOk: true, evidenceBound: true }, bindingKind: 'real-binding-reviewed', version: 3 },
+    { ...c, qualifying: true, verdict: 'QUALIFIED', blocked: [] },   // a genuine clean receipt with only the labels flipped
+    { qualifying: true, verdict: 'QUALIFIED' }, { verdict: 'QUALIFIED' }, { qualifying: true }, { ok: true }, { pass: true },
+    new Proxy({}, { get: () => true }),   // answers true to everything it is asked
+  ];
+  for (const f of fabricated) assert.equal(webkitRunFailed(f), true);
+  for (const x of [c, {}, null, undefined, 0, 1, true, 'QUALIFIED', [], () => true]) assert.equal(webkitRunFailed(x), true);
+  assert.equal(webkitRunFailed(), true);
+  // lifecycleFailed stays the lifecycle-only check and still tells a clean run from a dirty one, so the two are not the same function.
+  assert.equal(lifecycleFailed(c), false); assert.equal(lifecycleFailed({ ...c, lifecycleOk: false }), true); assert.equal(lifecycleFailed({}), true);
 });
 
 test('a throwing injected clock cannot stop cleanup: start and close resolve, the server is still closed, and the run is never clean', async () => {
@@ -316,6 +327,41 @@ test('an unexpected internal fault is recorded, one bounded best-effort close is
   const deps = { now: () => NOW0, executablePath: async () => EXE, playwrightVersion: async () => '1.0.0', realPath: async (f) => f, hashFile: async () => HASH, launchServer: async () => { log.launch++; return server; }, connect: async () => br.browser };
   const kit = createWebkitKit({ deps, prerequisites: prereq(), attestation: attest(), timeouts: T }); const r = await kit.start(); const c = await kit.close();
   assert.equal(r.ready, true); assert.equal(sv.calls.close, 1); assert.equal(c.lifecycleOk, false); assert.ok(['FAILED', 'UNCERTAIN'].includes(c.finalState)); assert.ok(c.reasons.includes('exit-unobserved') || c.reasons.includes('internal-fault')); assert.ok(!JSON.stringify(c).includes('secret'));
+});
+
+/* A fault that is injected through a public dependency surface, causally: reading deps.verifyNoDescendants throws. closeAll reads it only AFTER the browser and server close attempts, so the
+   close path faults with the owned handles already closed. */
+function faultAfterClose(sv, br) {
+  const d = { now: () => NOW0, executablePath: async () => EXE, playwrightVersion: async () => '1.0.0', realPath: async (f) => f, hashFile: async () => HASH, launchServer: async () => sv.server, connect: async () => br.browser };
+  Object.defineProperty(d, 'verifyNoDescendants', { enumerable: true, get() { throw new Error('secret-looking detail'); } });
+  return d;
+}
+
+test('internal-fault fallback never closes or kills a handle whose close was already attempted, and the run is UNCERTAIN', async () => {
+  // Both handles close normally, then the close path faults.
+  let sv = fakeServer(), br = fakeBrowser();
+  let kit = createWebkitKit({ deps: faultAfterClose(sv, br), prerequisites: prereq(), attestation: attest(), timeouts: T }); let r = await kit.start(); assert.equal(r.ready, true);
+  let c = await kit.close(); const again = await kit.close();
+  assert.equal(br.calls.close, 1, 'browser closed exactly once'); assert.equal(sv.calls.close, 1, 'server closed exactly once'); assert.equal(sv.calls.kill, 0);
+  assert.ok(c.reasons.includes('internal-fault')); assert.equal(c.finalState, 'UNCERTAIN'); assert.equal(c.lifecycleOk, false); assert.equal(lifecycleFailed(c), true); assert.equal(webkitRunFailed(c), true); assert.deepEqual(again, c); assert.ok(!JSON.stringify(c).includes('secret'));
+  // The normal path already tried, and failed or timed out: the fallback must not try those again either. Browser close hangs, server close hangs and is killed.
+  sv = fakeServer({ closeHangs: true }); br = fakeBrowser({ closeHangs: true });
+  kit = createWebkitKit({ deps: faultAfterClose(sv, br), prerequisites: prereq(), attestation: attest(), timeouts: T }); await kit.start(); c = await kit.close();
+  assert.equal(br.calls.close, 1, 'the hung browser close is not repeated'); assert.equal(sv.calls.close, 1, 'the hung server close is not repeated'); assert.equal(sv.calls.kill, 1, 'the kill is not repeated');
+  for (const x of ['browser-close-timeout', 'server-close-timeout', 'internal-fault']) assert.ok(c.reasons.includes(x), x); assert.equal(c.forced, true); assert.equal(c.finalState, 'UNCERTAIN'); assert.equal(c.lifecycleOk, false);
+  // Throws rather than hangs: the same, each attempted once.
+  sv = fakeServer({ closeThrows: true }); br = fakeBrowser({ closeThrows: true });
+  kit = createWebkitKit({ deps: faultAfterClose(sv, br), prerequisites: prereq(), attestation: attest(), timeouts: T }); await kit.start(); c = await kit.close();
+  assert.equal(br.calls.close, 1); assert.equal(sv.calls.close, 1); assert.equal(sv.calls.kill, 1); assert.equal(c.finalState, 'UNCERTAIN'); assert.ok(!JSON.stringify(c).includes('secret'));
+});
+
+test('an internal fault with an unresolved handle stays UNCERTAIN: a late start handle that cannot be read is never treated as closed', async () => {
+  // The late handle's wsEndpoint getter throws when closeAll inspects it. It was produced, cannot be validated, and so cannot be closed: unresolved, UNCERTAIN, never clean.
+  const slow = deferred(); const s = fakeServer(); const odd = { close: s.server.close, kill: s.server.kill, process: s.server.process };
+  Object.defineProperty(odd, 'wsEndpoint', { enumerable: true, get() { throw new Error('secret-looking detail'); } });
+  const h = harness({ launch: () => slow.promise }); const p = h.kit.start(); await wait(T.start + T.startGrace + 10); slow.resolve(odd); const r = await p; const c = await h.kit.close();
+  assert.equal(r.ready, false); assert.equal(h.log.connect.length, 0); assert.ok(c.reasons.includes('internal-fault')); assert.ok(c.reasons.includes('start-timeout')); assert.equal(c.finalState, 'UNCERTAIN'); assert.equal(c.ownership, 'none');
+  assert.equal(c.lifecycleOk, false); assert.equal(lifecycleFailed(c), true); assert.equal(webkitRunFailed(c), true); assert.ok(!JSON.stringify(c).includes('secret')); assert.deepEqual(await h.kit.close(), c);
 });
 
 test('existing WebKit refusals are untouched and nothing integrates this kit', () => {

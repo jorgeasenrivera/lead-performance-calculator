@@ -11,7 +11,7 @@
  * Qualification needs an external attestation verifier and a runtime proof that do not exist yet. When they do, they are a new reviewed change, not a flag here.
  *
  * No receipt reads as a WebKit pass. There is no `ok` field: `lifecycleOk` says only that this run's own bookkeeping was clean, `verdict` is the constant "NOT_QUALIFIED", and
- * webkitRunFailed() is true for every receipt this file can produce. start() resolves `ready`, meaning only "reached READY".
+ * webkitRunFailed() is true for EVERY input, including a fabricated receipt that says QUALIFIED: no verifier exists, so nothing can be trusted to say otherwise. start() resolves `ready`, meaning only "reached READY".
  *
  * Source evidence about Playwright, as REPORTED by the independent reviewer (I did not read it myself): Playwright v1.63.0, commit 1b025d7e20a026371cd5f98ba0cdce48892737c8,
  * packages/utils/processLauncher.ts. handleSIGINT, handleSIGTERM and handleSIGHUP default to true and are left at their defaults here. close() waits for the child to close and for temp
@@ -130,6 +130,7 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
   const T = resolveTimeouts(timeouts);
   const transitions = [], reasons = [], unresolved = [];
   let state = "IDLE", started = null, closing = null, intent = null, clockFault = false, lastNow = 0;
+  let browserCloseAttempted = false, serverCloseAttempted = false, serverKillAttempted = false;   // each owned close or kill is attempted at most once, even if the close path itself faults
   let server = null, browser = null, ownedPid = null, forced = false, uncertain = false, launchAttempted = false, reachedReady = false, lateTails = 0, descendants = "unproven", shapeOk = false;
   let pendingStart = null, pendingConnect = null;
   const why = (r) => { if (!REASONS.includes(r)) throw new Error("unknown reason " + r); if (!reasons.includes(r)) reasons.push(r); };
@@ -176,12 +177,19 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
     }, () => { lateTails--; });
   };
 
-  /* Never rejects. If anything unexpected breaks the close path, record it, make one bounded best-effort attempt on what is owned, and end UNCERTAIN. */
+  /* Never rejects. If anything unexpected breaks the close path, record it and end UNCERTAIN. The fallback makes one bounded best-effort close only of what the normal path has NOT already
+     attempted: a handle whose close or kill was already attempted is never closed or killed a second time. */
   const closeAll = () => closing || (closing = closeBody().catch(async () => {
     try { why("internal-fault"); } catch (e) { /* the vocabulary is fixed, this cannot fail */ }
     uncertain = true;
-    try { if (browser) await step(() => browser.close(), T.close); } catch (e) { /* already uncertain */ }
-    try { if (server) { const r = await step(() => server.close(), T.close); if (r.status !== "ok") await step(() => server.kill(), T.kill); } } catch (e) { /* already uncertain */ }
+    try { if (browser && !browserCloseAttempted) { browserCloseAttempted = true; await step(() => browser.close(), T.close); } } catch (e) { /* already uncertain */ }
+    try {
+      if (server && !serverCloseAttempted) {
+        serverCloseAttempted = true;
+        const r = await step(() => server.close(), T.close);
+        if (r.status !== "ok" && !serverKillAttempted) { serverKillAttempted = true; await step(() => server.kill(), T.kill); }
+      }
+    } catch (e) { /* already uncertain */ }
     go("UNCERTAIN");
     return receipt();
   }));
@@ -203,14 +211,17 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
     }
     // 2. Close what is owned, in order. A browser close failure is a failure, never swallowed; the server is still closed.
     if (browser) {
+      browserCloseAttempted = true;
       const r = await step(() => browser.close(), T.close);
       if (r.status === "threw") why("browser-close-threw"); else if (r.status === "timeout") why("browser-close-timeout");
     }
     if (server) {
+      serverCloseAttempted = true;
       const r = await step(() => server.close(), T.close);
       if (r.status !== "ok") {
         why(r.status === "threw" ? "server-close-threw" : "server-close-timeout");
         forced = true;   // escalate only against the handle this launch created
+        serverKillAttempted = true;
         const k = await step(() => server.kill(), T.kill);
         if (k.status === "threw") why("kill-threw"); else if (k.status === "timeout") why("kill-timeout");
       }
@@ -305,5 +316,6 @@ export function createWebkitKit({ deps, prerequisites, attestation, timeouts, la
 
 /* Lifecycle only: true unless the run reached READY and then closed with nothing wrong and nothing unresolved. A caller that wants a WebKit result must NOT use this. */
 export const lifecycleFailed = (r) => !(r && r.lifecycleOk === true && r.reachedReady === true && r.finalState === "CLOSED" && Array.isArray(r.reasons) && r.reasons.length === 0 && Array.isArray(r.unresolved) && r.unresolved.length === 0 && r.lateTails === 0);
-/* The failure semantics an integration must use: anything short of an explicit qualifying receipt (and a clean lifecycle) is a failure. Today no receipt can qualify, so this is always true. */
-export const webkitRunFailed = (r) => !(r && r.qualifying === true && r.verdict === "QUALIFIED" && !lifecycleFailed(r));
+/* The failure semantics an integration must use. ALWAYS true, for any input. A receipt is plain data that anyone can write, and there is no external verifier to check one against, so no input,
+   however well-formed or however it is labelled QUALIFIED, can be believed. When a real verifier exists this becomes a new reviewed change that calls it. Until then there is no pass. */
+export const webkitRunFailed = (_receipt) => true;

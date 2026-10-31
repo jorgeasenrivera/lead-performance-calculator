@@ -27,7 +27,7 @@ Qualification needs an external verifier and a runtime proof. That is a new revi
 
 ## Lifecycle guarantees (synthetic tests only)
 
-The 31 tests use fakes. No real browser is started. One test builds a throwaway driver directory of synthetic JavaScript to exercise the real binding, and removes it afterwards.
+The 33 tests use fakes. No real browser is started. One test builds a throwaway driver directory of synthetic JavaScript to exercise the real binding, and removes it afterwards.
 
 - Launch is only called after both records pass shape and freshness and the machine matches them (canonical path, executable path, sha256, Playwright version). Callers pass no launch options.
 - Every wait is bounded. Close is single-flight. A close that throws or hangs is a failure and escalates to `kill()` on the owned server handle only. Nothing is killed by name, pattern or guessed pid.
@@ -37,14 +37,15 @@ The 31 tests use fakes. No real browser is started. One test builds a throwaway 
 
 ## Failure semantics for any future integration
 
-- `webkitRunFailed(receipt)` is the one to use. It is true unless the receipt is `qualifying: true` with verdict `QUALIFIED` and a clean lifecycle. No receipt this file produces can be either, so today it is always true. Tests pin that, including a forged `qualifying: true`.
+- `webkitRunFailed(anything)` is the one to use. It returns true for every input, always, including a wholly fabricated receipt that says `qualifying: true` and `verdict: "QUALIFIED"`, and a genuine clean receipt with only its labels flipped. A receipt is plain data anyone can write and there is no verifier to check one against, so none can be believed. When a real verifier exists, this becomes a new reviewed change that calls it. No verifier is added here.
 - `lifecycleFailed(receipt)` is lifecycle only. It is for diagnosing a run, and must not be used to decide a WebKit result.
 - Nothing calls either. No caller is wired, and `ci-fixture.sh` still refuses WebKit.
 
 ## Bookkeeping faults (8f63e00 follow-up)
 
 - An injected clock that throws or returns a non-number is recorded once as `clock-fault`. The last good time is used, freshness fails closed, and cleanup is still attempted. The run is never clean.
-- Any unexpected fault in the run or the close path is recorded as `internal-fault`. The close path makes one bounded best-effort close of what it owns and ends `UNCERTAIN`.
+- Any unexpected fault in the run or the close path is recorded as `internal-fault` and ends `UNCERTAIN`. The fallback makes one bounded best-effort close only of an owned handle the normal path had not already attempted. A handle whose close or kill was already attempted (including one that timed out or threw) is never closed or killed a second time. A produced handle that cannot be inspected is unresolved, so the run stays `UNCERTAIN`.
+- The fallback's branch for a handle that was not yet attempted is defensive. I found no way to reach it through the injected dependencies without adding a test harness, so it is not exercised by a test. The tests prove the part that matters: nothing is closed twice.
 - `start()`, `close()` and `cancel()` never reject, and a failed close is no longer cached as a rejected promise.
 - A test faults the clock at every read of a full clean run and checks each case: the server is closed, the fault is in the reasons, the state is `REFUSED`, `FAILED` or `UNCERTAIN`, and a second `close()` returns the same receipt.
 
