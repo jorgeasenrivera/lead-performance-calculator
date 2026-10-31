@@ -1,5 +1,5 @@
 {
- "label": "CONDITIONAL v7 on composed tree a47714a50d1f0c8e36df2348e010bd7f4e0b153d. Adds reviewed ten-file DST and Gregorian-date correction to v6; v1-v6 remain frozen. Local source proof only; independent approval and hosted qualification pending.",
+ "label": "CONDITIONAL v7 on composed tree e9d2497f8e087d16d47cd35dfc08283ad144feee. Reviewed DST and Gregorian-date corrections with bounded legacy-midnight consumer compatibility. Supersedes unpushed local v7 at 348bfb5ad82d8f8425d4f709613af6ef38d4d09e; v1-v6 remain frozen. Local source proof only, not hosted qualification.",
  "base": "b8478e9f45654a03cc1f2212896a4eb59a491366",
  "head": "47757af2487a0844b7083d50a9fbace01b7fad6e",
  "frozenBaseline": "d9320e253b603260f6a7355d4bc1c77a59fefa5b",
@@ -64,11 +64,13 @@
  },
  "minimalFixes": {
   "base": "c002127db3357fdc4a6040edb30acf9e51f38a39",
-  "patchSha256": "39156dbda051e5428976e2eaeaa18049278da8890bde9e0ab628b165cc7f7a69",
+  "patchSha256": "0127b08ea99f5a03cce1906c48d707bf32192e43a2942d25b0fc092173704fb6",
   "paths": [
    "scripts/scheduler-performance/generation-dst.test.mjs",
    "scripts/scheduler-performance/generation.mjs",
    "scripts/scheduler-performance/generation.test.mjs",
+   "scripts/scheduler-performance/legacy-midnight.test.mjs",
+   "scripts/scheduler-performance/legacy-store-interval.mjs",
    "scripts/scheduler-performance/local-time.test.mjs",
    "scripts/scheduler-performance/month-model.mjs",
    "scripts/scheduler-performance/schedule-import.test.mjs",
@@ -77,5 +79,10 @@
    "src/private-schedule.mjs",
    "test/private-schedule-dates.test.mjs"
   ]
+ },
+ "supersededLocalV7": {
+  "commit": "348bfb5ad82d8f8425d4f709613af6ef38d4d09e",
+  "contractDigest": "bfde1cb8823c51deef9ab0e619bac18af9fe346400c7cb617520a7c4e4a73893",
+  "reason": "Legacy full-day 17-to-24 known-duration regression; explicit interval provider remains unchanged."
  }
 }

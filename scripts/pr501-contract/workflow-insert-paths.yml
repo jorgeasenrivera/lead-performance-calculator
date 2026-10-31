@@ -12,3 +12,5 @@
       - scripts/scheduler-performance/weekly-hours.mjs
       - src/private-schedule.mjs
       - test/private-schedule-dates.test.mjs
+      - scripts/scheduler-performance/legacy-store-interval.mjs
+      - scripts/scheduler-performance/legacy-midnight.test.mjs

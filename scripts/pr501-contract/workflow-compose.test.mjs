@@ -358,12 +358,12 @@ test("W33 an unfilled placeholder in insertion P is refused", () => {
   assert.throws(() => composeP({ tplP: "      - @@NOPE@@\n" }), /an insertion has an unfilled pin/);
   assert.throws(() => composeP({ tplP: "      - @@NOPE@@\n", allowEmptyP: true }), /an insertion has an unfilled pin/);
 });
-test("W34 the output is the old composition plus exactly the fourteen path lines, right after anchor P", () => {
+test("W34 the output is the old composition plus exactly the sixteen path lines, right after anchor P", () => {
   const without = composeP({ tplP: "", allowEmptyP: true }), out = composeP();
   const i = without.indexOf(ANCHOR_P) + ANCHOR_P.length;
   assert.equal(without.indexOf(ANCHOR_P), without.lastIndexOf(ANCHOR_P));
   assert.equal(out, without.slice(0, i) + TPL_P + without.slice(i));
-  assert.deepEqual(TPL_P.split("\n"), ["      - scripts/rpc-fixture-adapter.mjs", "      - test/rpc-fixture-adapter.test.mjs", "      - test/manual-alias-snapshot.test.mjs", "      - test/staff-arrival.test.mjs", "      - scripts/scheduler-performance/generation-dst.test.mjs", "      - scripts/scheduler-performance/generation.mjs", "      - scripts/scheduler-performance/generation.test.mjs", "      - scripts/scheduler-performance/local-time.test.mjs", "      - scripts/scheduler-performance/month-model.mjs", "      - scripts/scheduler-performance/schedule-import.test.mjs", "      - scripts/scheduler-performance/shift-intervals.mjs", "      - scripts/scheduler-performance/weekly-hours.mjs", "      - src/private-schedule.mjs", "      - test/private-schedule-dates.test.mjs", ""]);
+  assert.deepEqual(TPL_P.split("\n"), ["      - scripts/rpc-fixture-adapter.mjs", "      - test/rpc-fixture-adapter.test.mjs", "      - test/manual-alias-snapshot.test.mjs", "      - test/staff-arrival.test.mjs", "      - scripts/scheduler-performance/generation-dst.test.mjs", "      - scripts/scheduler-performance/generation.mjs", "      - scripts/scheduler-performance/generation.test.mjs", "      - scripts/scheduler-performance/local-time.test.mjs", "      - scripts/scheduler-performance/month-model.mjs", "      - scripts/scheduler-performance/schedule-import.test.mjs", "      - scripts/scheduler-performance/shift-intervals.mjs", "      - scripts/scheduler-performance/weekly-hours.mjs", "      - src/private-schedule.mjs", "      - test/private-schedule-dates.test.mjs", "      - scripts/scheduler-performance/legacy-store-interval.mjs", "      - scripts/scheduler-performance/legacy-midnight.test.mjs", ""]);
 });
 test("W35 every byte outside the four insertions equals the old file", () => {
   const out = composeP();
@@ -394,8 +394,8 @@ test("W37 the production runner supplies the pinned template and never the empty
   assert.ok(src.includes('tplP: tpl("workflow-insert-paths.yml")'));
   assert.ok(!src.includes("allowEmptyP"));
 });
-test("W38 the shipped insertion P template is exactly the fourteen path lines", () => {
-  assert.equal(read("workflow-insert-paths.yml"), "      - scripts/rpc-fixture-adapter.mjs\n      - test/rpc-fixture-adapter.test.mjs\n      - test/manual-alias-snapshot.test.mjs\n      - test/staff-arrival.test.mjs\n      - scripts/scheduler-performance/generation-dst.test.mjs\n      - scripts/scheduler-performance/generation.mjs\n      - scripts/scheduler-performance/generation.test.mjs\n      - scripts/scheduler-performance/local-time.test.mjs\n      - scripts/scheduler-performance/month-model.mjs\n      - scripts/scheduler-performance/schedule-import.test.mjs\n      - scripts/scheduler-performance/shift-intervals.mjs\n      - scripts/scheduler-performance/weekly-hours.mjs\n      - src/private-schedule.mjs\n      - test/private-schedule-dates.test.mjs\n");
+test("W38 the shipped insertion P template is exactly the sixteen path lines", () => {
+  assert.equal(read("workflow-insert-paths.yml"), "      - scripts/rpc-fixture-adapter.mjs\n      - test/rpc-fixture-adapter.test.mjs\n      - test/manual-alias-snapshot.test.mjs\n      - test/staff-arrival.test.mjs\n      - scripts/scheduler-performance/generation-dst.test.mjs\n      - scripts/scheduler-performance/generation.mjs\n      - scripts/scheduler-performance/generation.test.mjs\n      - scripts/scheduler-performance/local-time.test.mjs\n      - scripts/scheduler-performance/month-model.mjs\n      - scripts/scheduler-performance/schedule-import.test.mjs\n      - scripts/scheduler-performance/shift-intervals.mjs\n      - scripts/scheduler-performance/weekly-hours.mjs\n      - src/private-schedule.mjs\n      - test/private-schedule-dates.test.mjs\n      - scripts/scheduler-performance/legacy-store-interval.mjs\n      - scripts/scheduler-performance/legacy-midnight.test.mjs\n");
 });
 
 test("W39 anchor B before anchor A is refused for its own reason", () => {

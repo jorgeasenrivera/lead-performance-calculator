@@ -30,6 +30,8 @@ on:
       - scripts/scheduler-performance/weekly-hours.mjs
       - src/private-schedule.mjs
       - test/private-schedule-dates.test.mjs
+      - scripts/scheduler-performance/legacy-store-interval.mjs
+      - scripts/scheduler-performance/legacy-midnight.test.mjs
 jobs:
   spacing:
     runs-on: ubuntu-latest
@@ -152,7 +154,7 @@ jobs:
         id: hash
         if: ${{ steps.route.outputs.contract == 'true' }}
         env:
-          EXPECTED_DELTA_SHA256: "a49782d74bb1395171e12cd55cb35645e594753fd9121c47f84f3beb0b45ac9f"
+          EXPECTED_DELTA_SHA256: "42eef81793f8b7111ae1fc7f09a7710b13552d0b3f6fbb915bc33eb8c1448378"
         run: |
           cd .pr501/head
           echo "${EXPECTED_DELTA_SHA256}  scripts/pr501-contract/DELTA.sha256" | sha256sum --check -
@@ -173,8 +175,8 @@ jobs:
         env:
           # External pins, supplied by this workflow, which is the one bootstrap exception: it is covered by independent diff review, and the runner
           # recomputes this file from the old blob plus the reviewed template and refuses any other bytes.
-          EXPECTED_CONTRACT_DIGEST: "bfde1cb8823c51deef9ab0e619bac18af9fe346400c7cb617520a7c4e4a73893"
-          EXPECTED_DELTA_SHA256: "a49782d74bb1395171e12cd55cb35645e594753fd9121c47f84f3beb0b45ac9f"
+          EXPECTED_CONTRACT_DIGEST: "e86497b0bc9a6ea06169217f48616c38e2c29cb9b739ce39c6093b834a80c036"
+          EXPECTED_DELTA_SHA256: "42eef81793f8b7111ae1fc7f09a7710b13552d0b3f6fbb915bc33eb8c1448378"
           EXPECTED_VALIDATOR_SHA256: "1a80e14c786754c7a0a83c5785acbf0c17d2c26b3e2e53ec8b556937d0d7f228"
           EXPECTED_TS_VERSION: "6.0.2"
           EXPECTED_TS_LIB_SHA256: "630f808ac32d968a49a392c42cc06fd72abd939aaa7edfe3302810c067934653"

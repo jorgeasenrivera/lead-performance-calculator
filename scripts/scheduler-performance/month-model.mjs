@@ -1,3 +1,4 @@
+import {knownLegacyStoreInterval} from './legacy-store-interval.mjs';
 import { nameKey, reservedTeamName } from './name-key.mjs';
 import { seedTeams, teamSnapshot, validateMembership } from "./team-model.mjs";
 import { personIntervals, unionMinutes, coverageSegments, shiftProblem, localInterval, storeTimezone } from "./shift-intervals.mjs";
@@ -122,8 +123,10 @@ export function enteredMonth(month, resolveDay) {
   const totals = new Map(), unknownWeeks = new Set();
   for (const r of all) for (const id of r.ids) {
     const key = r.week + ':' + id;
-    totals.set(key, (totals.get(key) || 0) + unionMinutes(personIntervals(r.record,id,r.rule).filter(([a,b])=>localInterval(r.day,a,b,storeTimezone(r.store)).ok)));
-    if (!r.hours || personIntervals(r.record,id,r.rule).some(([a,b])=>!localInterval(r.day,a,b,storeTimezone(r.store)).ok) || (r.record?.shifts || []).filter(s=>s.personId===id).some(s=>shiftProblem(s,r.store,r.day))) unknownWeeks.add(key);
+    const explicit = (r.record?.shifts || []).some(s=>s.personId===id);
+    const known = (a,b) => !r.hours ? false : explicit ? localInterval(r.day,a,b,storeTimezone(r.store)).ok : knownLegacyStoreInterval(r.day,a,b,storeTimezone(r.store));
+    totals.set(key, (totals.get(key) || 0) + unionMinutes(personIntervals(r.record,id,r.rule).filter(([a,b])=>known(a,b))));
+    if (!r.hours || personIntervals(r.record,id,r.rule).some(([a,b])=>!known(a,b)) || (r.record?.shifts || []).filter(s=>s.personId===id).some(s=>shiftProblem(s,r.store,r.day))) unknownWeeks.add(key);
   }
   return all.filter(r => r.day.startsWith(month + '-')).map(r => {
     const issues = [], conflicts = {}, eligibleIds = [];
