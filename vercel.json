@@ -1,4 +1,10 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "codex/reported-reader-integration": false,
+      "codex/scheduler-storage-boundary": false
+    }
+  },
   "functions": {
     "api/ingest.mjs": {
       "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js"
