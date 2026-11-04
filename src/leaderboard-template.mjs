@@ -508,7 +508,7 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 </style></head>
 <body>
-<div class="stale-note" id="stale-note">Holding the last board: the newest report looked incomplete. Updating on the next cycle.</div>
+<div class="stale-note" id="stale-note" role="status" aria-live="polite"></div>
 <div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
 
 <!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
@@ -635,7 +635,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         res = await withTimeout(fetch(url, { headers: headers() }), 12000);
       }
       if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
-      var rows = await res.json();
+      var rows = await withTimeout(res.json(), 12000);
       return (rows && rows[0]) ? rows[0].value : null;
     } catch (e) {
       return { __err: 'No connection to the database. Retrying...' };
@@ -715,6 +715,12 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
+  function easternMonth(){
+    var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+    var year = parts.find(function(p){ return p.type === 'year'; }).value;
+    var month = parts.find(function(p){ return p.type === 'month'; }).value;
+    return year + '-' + month;
+  }
   function render(store){
     CAR_ROW = 0;
     var root = document.getElementById('root');
@@ -724,7 +730,8 @@ export function LEADERBOARD_HTML(p, PIX) {
       return;
     }
     if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
-    var M = (store.months||{})[CFG.ym] || {stats:{}};
+    var M = (store.months||{})[easternMonth()];
+    if (!M || !M.stats) { root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
 
     // CFG.roles already excludes any role turned off for The Board (BDC by default),
     // so only the people who actually deliver units show up here.
@@ -1110,7 +1117,8 @@ export function LEADERBOARD_HTML(p, PIX) {
   // units moved by more than half, on a board that had real numbers to begin with.
   function tooDifferent(prev, next){
     try {
-      if (!prev || !prev.store || !next || !next.store) return false;
+      if (!prev || !next || !prev.ym || prev.ym !== next.ym) return false;
+      if (prev.storeId && next.storeId && prev.storeId !== next.storeId) return false;
       function totalUnits(st){
         var t = 0, r = (st.roster||[]);
         for (var i=0;i<r.length;i++){
@@ -1166,16 +1174,46 @@ export function LEADERBOARD_HTML(p, PIX) {
     setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
   }
 
+  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, displayedByStore = new Map(), lastCheckByStore = new Map(), heldByStore = new Set();
+  var failedByStore = new Set(), currentFreshness = 'Report freshness is not verified.';
+  function showStatus(){
+    var note = document.getElementById('stale-note');
+    if (!note) return;
+    var parts = [];
+    if (failedByStore.size) parts.push('Cannot refresh one or more stores.');
+    if (currentFreshness) parts.push(currentFreshness);
+    if (heldByStore.size) parts.push('A store has a large change that needs verification.');
+    if (lastGoodKey === CFG.storeKey && lastGoodAt) parts.push('Last successful check: ' + lastGoodAt.toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.');
+    if (failedByStore.size || heldByStore.size) parts.push('Retrying.');
+    note.textContent = parts.join(' ');
+    if (parts.length) note.classList.add('on'); else note.classList.remove('on');
+  }
+  // The import is scheduled hourly. Two hours is a warning threshold, not a
+  // guarantee that the report itself is current or correctly scoped.
+  function publicationProblem(row, now){
+    if (!row || typeof row.updatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(row.updatedAt)) return 'Report freshness is not verified. Board publication time is unavailable.';
+    var t = Date.parse(row.updatedAt);
+    if (!Number.isFinite(t) || new Date(t).toISOString().slice(0,19) !== row.updatedAt.slice(0,19) || t > now + 5 * 60 * 1000) return 'Report freshness is not verified. Board publication time is unavailable.';
+    if (now - t >= 2 * 60 * 60 * 1000) return 'Report freshness is not verified. Board last published: ' + new Date(t).toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.';
+    return 'Report freshness is not verified.';
+  }
   async function loop(){
+    if (HANDING) return;
+    var epoch = ++requestEpoch, key = CFG.storeKey;
     var s = await getStore();
+    if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
+    if (!s || s.__err) {
+      failedByStore.add(key); showStatus();
+      if (LAST && !LAST.__err) return;
+    } else failedByStore.delete(key);
     var switched = SWITCHING; SWITCHING = false;
-    // Failsafe: a good previous board plus a suspicious new one = keep the old one.
-    // Skipped across a hand-over: two different dealerships are supposed to look
-    // nothing like each other, and this check would refuse every rotation.
-    if (!switched && LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
-      var warn = document.getElementById('stale-note');
-      if (warn) warn.classList.add('on');
-      return;                                        // skip this render entirely
+    // Compare with the last displayed row for this store, including after rotation.
+    var previous = displayedByStore.get(key);
+    if (previous && s && !s.__err && tooDifferent(previous, s)) {
+      heldByStore.add(key);
+      if (lastGoodKey !== key) renderHeldStore(previous, key);
+      showStatus();
+      return;
     }
     /* Nobody "just delivered" anything because the screen changed store, so the
        congratulations are held across a hand-over too. */
@@ -1218,8 +1256,6 @@ export function LEADERBOARD_HTML(p, PIX) {
        carries a name, and brand, icon and thresholds all differ per store. */
     SWITCHING = switched;
     renderStore(s);
-    var warn = document.getElementById('stale-note');
-    if (warn) warn.classList.remove('on');
     if (wsold.length) congratulate(wsold);
   }
   /* ---------- rotating through more than one store ----------
@@ -1248,6 +1284,19 @@ export function LEADERBOARD_HTML(p, PIX) {
      refresh of the same store and completely wrong across a hand-over. */
   var SWITCHING = false;
   var HANDING = false;      // one hand-over at a time
+  var pendingHomeRefresh = false;
+  function refreshHomeAfterRotaChange(){
+    var cached = displayedByStore.get(HOME.key);
+    if (cached && lastGoodKey !== HOME.key) { renderHeldStore(cached, HOME.key); showStatus(); }
+    loop();
+  }
+  function finishHandover(){
+    HANDING = false;
+    if (pendingHomeRefresh) {
+      pendingHomeRefresh = false;
+      refreshHomeAfterRotaChange();
+    }
+  }
 
   /* The convoy.
      The board's own unit mark is a car, so the hand-over is that car making the
@@ -1296,22 +1345,33 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (r) { r.classList.remove('drive-out'); r.classList.add('drive-in');
         setTimeout(function(){ r.classList.remove('drive-in'); }, 1150); }
     }, 1250);
-    setTimeout(function(){ lane.remove(); HANDING = false; }, 3600);
+    setTimeout(function(){ lane.remove(); finishHandover(); }, 3600);
   }
 
   async function nextStore(){
     var list = rotaList();
     if (list.length < 2 || HANDING) return;
     HANDING = true;
+    var epoch = ++requestEpoch;
     var at = (ROT_I + 1) % list.length;
     var id = list[at];
     var key = 'lpc:board:' + id + ':v1';
     var s = await getStoreByKey(key);
+    if (epoch !== requestEpoch) { finishHandover(); return; }
     if (!s || s.__err) {
       /* That store has never been published, or the network blinked. Stay where we
          are and let the next pass try the one after it, rather than driving the
          room to an empty board. */
       HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
+      failedByStore.add(key); showStatus();
+      return;
+    }
+    failedByStore.delete(key);
+    var previous = displayedByStore.get(key);
+    if (previous && tooDifferent(previous, s)) {
+      heldByStore.add(key);
+      HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
+      showStatus();
       return;
     }
     ROT_I = at;
@@ -1320,10 +1380,26 @@ export function LEADERBOARD_HTML(p, PIX) {
     var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
     var name = s.storeName || (id === HOME.id ? HOME.name : (known && known.name)) || 'Next store';
     driveTo(name, function(){
+      if (epoch !== requestEpoch) return;
       storeShownAt = Date.now();
       SWITCHING = true;
       renderStore(s);
     });
+  }
+
+  // Reuse only the last displayed row when a selected store's new row is held.
+  // A cached render is not a successful read and must retain its original time.
+  function renderHeldStore(s, key){
+    if (s.storeName) CFG.storeName = s.storeName;
+    if (s.icon !== undefined) CFG.icon = s.icon;
+    if (s.brand) CFG.brand = s.brand;
+    if (s.thresholds) CFG.thresholds = s.thresholds;
+    LAST = s; lastGoodKey = key; lastGoodAt = lastCheckByStore.get(key) || null;
+    var own = tsizeMine(CFG.storeId);
+    var published = s.boardDisplay && s.boardDisplay.tscale != null ? s.boardDisplay.tscale : null;
+    DISP.tscale = own != null ? own : (published != null ? published : 1);
+    currentFreshness = publicationProblem(s, Date.now());
+    applyDisp(); render(s); wireTuner(); applyDisp();
   }
 
   /* The tail of loop(), reusable: the hand-over already has the row in hand and
@@ -1336,7 +1412,12 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (s.brand) CFG.brand = s.brand;
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
-    if (s && !s.__err) LAST = s;
+    if (s && !s.__err) {
+      LAST = s; displayedByStore.set(CFG.storeKey, s); heldByStore.delete(CFG.storeKey); lastGoodKey = CFG.storeKey; lastGoodAt = new Date(); lastCheckByStore.set(CFG.storeKey, lastGoodAt);
+      failedByStore.delete(CFG.storeKey);
+      currentFreshness = publicationProblem(s, lastGoodAt.getTime());
+      showStatus();
+    }
     applyDisp();
     render(s);
     wireTuner();
@@ -1370,14 +1451,30 @@ export function LEADERBOARD_HTML(p, PIX) {
 
   /* One drawing for both, the list the tool hands in and the list a wall
      reads for itself, so the two can never drift apart. */
+  function pruneRotationIssues(){
+    var active = new Set([HOME.key].concat((DISP.rotate || []).map(function(id){ return 'lpc:board:' + id + ':v1'; })));
+    failedByStore.forEach(function(key){ if (!active.has(key)) failedByStore.delete(key); });
+    heldByStore.forEach(function(key){ if (!active.has(key)) heldByStore.delete(key); });
+    showStatus();
+  }
+  function selectHomeAfterRotaChange(){
+    ROT_I = 0;
+    if (CFG.storeId === HOME.id && (!lastGoodKey || lastGoodKey === HOME.key)) return;
+    CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
+    CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
+    CFG.thresholds = HOME.thresholds; SWITCHING = true;
+    if (HANDING) pendingHomeRefresh = true; else refreshHomeAfterRotaChange();
+  }
   function drawRota(rl, sibs){
-    if (!sibs.length) { rl.innerHTML = '<div class="none">This is the only store on this account.</div>'; return; }
     /* A store that has since left the group stops being a tickable row, and
        stops being in the rota. Only ever run against a list that was actually
        read: dropping ids against a list that failed to load would quietly
        empty a working wall's rota. */
+    var before = (DISP.rotate || []).length;
     DISP.rotate = (DISP.rotate || []).filter(function(id){
       return sibs.some(function(x){ return x.id === id; }); });
+    if (DISP.rotate.length !== before) { ++requestEpoch; pruneRotationIssues(); selectHomeAfterRotaChange(); }
+    if (!sibs.length) { rl.innerHTML = '<div class="none">This is the only store on this account.</div>'; return; }
     rl.innerHTML = sibs.map(function(x){
       var on = (DISP.rotate || []).indexOf(x.id) >= 0;
       return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
@@ -1389,12 +1486,10 @@ export function LEADERBOARD_HTML(p, PIX) {
         var id = b.getAttribute('data-rot');
         var at = (DISP.rotate || []).indexOf(id);
         if (at >= 0) DISP.rotate.splice(at, 1); else (DISP.rotate = DISP.rotate || []).push(id);
+        ++requestEpoch; pruneRotationIssues();
         /* Back to the home board whenever the list changes, so what is on
            screen always matches what is ticked. */
-        ROT_I = 0;
-        if (CFG.storeId !== HOME.id) { CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
-          CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
-          CFG.thresholds = HOME.thresholds; SWITCHING = true; loop(); }
+        selectHomeAfterRotaChange();
         wireTuner();
       };
     });
@@ -1478,6 +1573,7 @@ export function LEADERBOARD_HTML(p, PIX) {
 
     document.getElementById('tsave').onclick = async function(){
       var msg = document.getElementById('tmsg');
+      var visitingSaved = false;
       try {
         // Always keep it on the screen itself first, so a reboot, a nightly
         // reload or a new build cannot undo what someone set by hand.
@@ -1498,25 +1594,34 @@ export function LEADERBOARD_HTML(p, PIX) {
             var home = await getStoreByKey(HOME.key);
             var homeNext = {}; for (var dk in DISP) homeNext[dk] = DISP[dk];
             homeNext.tscale = (home && !home.__err && home.boardDisplay && home.boardDisplay.tscale != null) ? home.boardDisplay.tscale : 1;
-            ok = (await op.__lpcSaveBoardDisplay(CFG.storeId, curNext)) && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
+            visitingSaved = await op.__lpcSaveBoardDisplay(CFG.storeId, curNext);
+            ok = visitingSaved && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
           }
-          msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
+          msg.textContent = ok ? 'Saved for this store, on every screen.' : (visitingSaved ? 'Saved for the current store. Home store not saved.' : (kept ? 'Saved on this screen only.' : 'Could not save.'));
         } else {
           msg.textContent = kept ? 'Saved on this screen. Save from the tool to set it everywhere.' : 'Could not save.';
         }
-      } catch (e) { msg.textContent = 'Could not save.'; }
+      } catch (e) { msg.textContent = visitingSaved ? 'Saved for the current store. Home store not saved.' : 'Could not save.'; }
       setTimeout(function(){ msg.textContent = ''; }, 4000);
     };
   }
 
   var LAST = null;   // last store payload, so a text-size change can re-render
 
-  // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
-  // was pointless: the reports only change when a manager uploads one.
+  // A bounded retry keeps the wall current after the network or an import recovers.
   // The clock is separate and ticks every 10 seconds, so the minute on screen is
   // always right regardless of when the data last refreshed.
+  var displayedMonth = easternMonth();
   loop();
-  setInterval(loop, 15 * 60 * 1000);
-  setInterval(tick, 10000);
+  setInterval(loop, 60 * 1000);
+  setInterval(function(){
+    tick();
+    var month = easternMonth();
+    if (month !== displayedMonth) {
+      displayedMonth = month;
+      if (LAST && !LAST.__err) render(LAST);
+      loop();
+    }
+  }, 10000);
 </script></body></html>`;
 }
