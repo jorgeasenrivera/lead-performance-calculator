@@ -1,4 +1,7 @@
 {
+  "git": {
+    "deploymentEnabled": { "codex/tv-month-refresh-slice": false }
+  },
   "functions": {
     "api/ingest.mjs": {
       "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf{,.worker}.js"
