@@ -106,3 +106,20 @@ is missing, implausibly future-dated, or at least two hours old. Two hours is a
 warning threshold based on the hourly import schedule, not proof of source-report
 freshness. A successful network read updates the last check time; it does not
 make an old publication fresh.
+
+The current browser candidate retains a per-store last-displayed baseline while
+the screen runs and holds a large drop when rotating back to a store. That
+baseline is not a verified source revision and is lost on reload. Report source
+freshness is always shown as unverified; a recent board publication or a payload
+flag does not establish it.
+
+The isolated `validated-revision.sql` experiment models immutable attestations
+from a separate trusted verifier, tied to the current locked private-store
+revision and exact synthetic source snapshot. The snapshot is a test-only way
+to catch revision reuse; it is not a recommendation to duplicate private data. It can publish an attested downward correction and separately carries a
+source as-of timestamp. It does not implement an actual report verifier, real
+store authorization, the complete production payload or a deployable migration.
+The browser does not trust or consume those synthetic fields. A real design must
+establish the verifier's identity and authority, source period and metric,
+immutable evidence, atomic revocation or replacement rules, and legacy-writer
+exclusion before a revision can release a held correction.

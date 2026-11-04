@@ -19,9 +19,12 @@ if [[ "$ready" != 1 ]]; then echo 'Isolated Postgres did not become ready' >&2; 
 "${docker_cmd[@]}" exec -i "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres < "$root/setup.sql"
 "${docker_cmd[@]}" exec "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'grant update on private_store to tv_rpc_owner'
 "${docker_cmd[@]}" exec -i "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres < "$root/projection.sql"
+"${docker_cmd[@]}" exec -i "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres < "$root/validated-revision.sql"
 python3 "$root/derived-test.py"
 "${docker_cmd[@]}" exec -i "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres < "$root/patch.sql"
 "${docker_cmd[@]}" exec "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'revoke execute on function save_settings(text,bigint,jsonb,jsonb) from client,service_role'
 python3 "$root/patch-test.py"
 
 python3 "$root/transaction-test.py"
+
+python3 "$root/validated-revision-test.py"

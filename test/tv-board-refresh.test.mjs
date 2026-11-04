@@ -63,7 +63,7 @@ test('repeated large drop remains held until data returns to the trusted range',
  const rendered=[], note={textContent:'',classList:{on:false,add(){this.on=true;},remove(){this.on=false;}}};
  let row=publisherRow(0);const ctx={CFG:{storeKey:'k'},HANDING:false,SWITCHING:false,LAST:publisherRow(20),norm:s=>s.trim().toLowerCase(),getStore:async()=>row,
  newlySold:()=>[],document:{getElementById:()=>note},renderStore(s){rendered.push(s);ctx.LAST=s;},congratulate(){},Date,Intl};
- vm.createContext(ctx);vm.runInContext(check+loop,ctx);
+ vm.createContext(ctx);vm.runInContext(check+loop,ctx);ctx.displayedByStore.set('k',ctx.LAST);
  await ctx.loop();assert.equal(rendered.length,0);assert.equal(note.classList.on,true);assert.match(note.textContent,/large change/i);
  await ctx.loop();assert.equal(rendered.length,0);assert.equal(note.classList.on,true);
  row=publisherRow(19);await ctx.loop();assert.equal(rendered.length,1);assert.equal(rendered[0].months['2026-07'].stats['alex jones'].internetUnits,19);
@@ -82,7 +82,7 @@ test('a failed current-store poll shows last successful check and older response
 test('only a successful rendered row records and clears current-store staleness',()=>{
  const code=block('  function renderStore(s){','  /* ---------- display tuning ----------');
  const note={classList:{on:true,remove(){this.on=false;}}};
- const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,Date,publicationProblem:()=>null,
+ const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),heldByStore:new Set(),Date,publicationProblem:()=>null,
  document:{getElementById:()=>note},applyDisp(){},render(){},wireTuner(){}};
  vm.createContext(ctx);vm.runInContext(code,ctx);
  ctx.renderStore({__err:'offline'});assert.equal(note.classList.on,true);assert.equal(ctx.lastGoodAt,null);
@@ -93,8 +93,9 @@ test('publication age is distinct from a successful network check',()=>{
  const code=block('  function publicationProblem(row, now){','  async function loop(){');
  const ctx={Date,Number};vm.createContext(ctx);vm.runInContext(code,ctx);
  const now=Date.parse('2026-07-08T12:00:00Z');
- assert.equal(ctx.publicationProblem({updatedAt:'2026-07-08T11:59:00Z'},now),null);
- assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T09:59:00Z'},now),/Last published:.*ET/);
+ assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T11:59:00Z'},now),/Report freshness is not verified/);
+ assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T11:59:00Z',sourceVerified:true,sourceAsOf:'2026-07-08T11:59:00Z'},now),/Report freshness is not verified/, 'untrusted payload flags do not establish verification');
+ assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T09:59:00Z'},now),/Board last published:.*ET/);
  assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T12:10:00Z'},now),/unavailable/);
  assert.match(ctx.publicationProblem({},now),/unavailable/);
  assert.match(ctx.publicationProblem({updatedAt:'2026-02-30T11:59:00Z'},now),/unavailable/);
@@ -105,10 +106,31 @@ test('successful read of an old publication keeps a stale notice visible',()=>{
  const age=block('  function publicationProblem(row, now){','  async function loop(){');
  const render=block('  function renderStore(s){','  /* ---------- display tuning ----------');
  const note={textContent:'',classList:{on:false,add(){this.on=true;},remove(){this.on=false;}}};
- const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,Date,Number,
+ const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),heldByStore:new Set(),Date,Number,
  document:{getElementById:()=>note},applyDisp(){},render(){},wireTuner(){},markStale(reason){note.textContent=reason;note.classList.add('on');}};
  vm.createContext(ctx);vm.runInContext(age+render,ctx);
  ctx.renderStore({...publisherRow(2),updatedAt:'2020-01-01T00:00:00Z'});
- assert.equal(note.classList.on,true);assert.match(note.textContent,/Last published/);assert.equal(ctx.lastGoodKey,'demo');
- ctx.renderStore({...publisherRow(3),updatedAt:new Date().toISOString()});assert.equal(note.classList.on,false);
+ assert.equal(note.classList.on,true);assert.match(note.textContent,/Board last published/);assert.equal(ctx.lastGoodKey,'demo');
+ ctx.renderStore({...publisherRow(3),updatedAt:new Date().toISOString()});assert.equal(note.classList.on,true);assert.match(note.textContent,/Report freshness is not verified/);
+});
+
+test('rotation A to B to A cannot bypass A’s held large-drop baseline',async()=>{
+ const check=block('  function tooDifferent(prev, next){','  // Who sold since the last good refresh');
+ const next=block('  async function nextStore(){','  /* The tail of loop(), reusable:');
+ const keyA='lpc:board:a:v1',keyB='lpc:board:b:v1', shown=[];
+ const ctx={CFG:{storeId:'a',storeKey:keyA},HOME:{id:'a'},ROT_I:0,HANDING:false,SWITCHING:false,requestEpoch:0,storeShownAt:0,Date,
+ displayedByStore:new Map([[keyA,publisherRow(20,'2026-07','a')]]),heldByStore:new Set(),rotaList:()=>['a','b'],norm:s=>s.trim().toLowerCase(),
+ getStoreByKey:async key=>key===keyB?publisherRow(3,'2026-07','b'):publisherRow(0,'2026-07','a'),
+ driveTo(_name,swap){swap();ctx.HANDING=false;},renderStore(row){shown.push(row.storeId);ctx.displayedByStore.set(ctx.CFG.storeKey,row);},startScroll(){},markStale(message){ctx.warning=message;}};
+ vm.createContext(ctx);vm.runInContext(check+next,ctx);
+ await ctx.nextStore();assert.equal(ctx.CFG.storeId,'b');assert.deepEqual(shown,['b']);
+ await ctx.nextStore();assert.equal(ctx.CFG.storeId,'b');assert.deepEqual(shown,['b']);assert.match(ctx.warning,/large change/);assert.equal(ctx.displayedByStore.get(keyA).months['2026-07'].stats['alex jones'].internetUnits,20);
+});
+
+test('a successful refresh of another store does not clear a held store warning',()=>{
+ const render=block('  function renderStore(s){','  /* ---------- display tuning ----------');
+ const ctx={CFG:{storeKey:'b'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),heldByStore:new Set(['a']),Date,
+ publicationProblem:()=> 'Report freshness is not verified.', document:{getElementById:()=>({classList:{remove(){}}})},applyDisp(){},render(){},wireTuner(){},markStale(msg){ctx.message=msg;}};
+ vm.createContext(ctx);vm.runInContext(render,ctx);ctx.renderStore(publisherRow(3,'2026-07','b'));
+ assert.match(ctx.message,/Another store has a large change/);assert.equal(ctx.heldByStore.has('a'),true);
 });

@@ -1174,24 +1174,24 @@ export function LEADERBOARD_HTML(p, PIX) {
     setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
   }
 
-  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null;
-  function markStale(reason){
+  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, displayedByStore = new Map(), heldByStore = new Set();
+  function markStale(reason, retrying){
     var note = document.getElementById('stale-note');
     if (!note) return;
     var stamp = lastGoodKey === CFG.storeKey && lastGoodAt
       ? ' Last successful check: ' + lastGoodAt.toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.'
       : '';
-    note.textContent = reason + stamp + ' Retrying.';
+    note.textContent = reason + stamp + (retrying === false ? '' : ' Retrying.');
     note.classList.add('on');
   }
   // The import is scheduled hourly. Two hours is a warning threshold, not a
   // guarantee that the report itself is current or correctly scoped.
   function publicationProblem(row, now){
-    if (!row || typeof row.updatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(row.updatedAt)) return 'Board publication time is unavailable.';
+    if (!row || typeof row.updatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(row.updatedAt)) return 'Report freshness is not verified. Board publication time is unavailable.';
     var t = Date.parse(row.updatedAt);
-    if (!Number.isFinite(t) || new Date(t).toISOString().slice(0,19) !== row.updatedAt.slice(0,19) || t > now + 5 * 60 * 1000) return 'Board publication time is unavailable.';
-    if (now - t >= 2 * 60 * 60 * 1000) return 'Board data may be out of date. Last published: ' + new Date(t).toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.';
-    return null;
+    if (!Number.isFinite(t) || new Date(t).toISOString().slice(0,19) !== row.updatedAt.slice(0,19) || t > now + 5 * 60 * 1000) return 'Report freshness is not verified. Board publication time is unavailable.';
+    if (now - t >= 2 * 60 * 60 * 1000) return 'Report freshness is not verified. Board last published: ' + new Date(t).toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.';
+    return 'Report freshness is not verified.';
   }
   async function loop(){
     if (HANDING) return;
@@ -1200,10 +1200,10 @@ export function LEADERBOARD_HTML(p, PIX) {
     if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
     if ((!s || s.__err) && LAST && !LAST.__err) { markStale('Cannot refresh the board.'); return; }
     var switched = SWITCHING; SWITCHING = false;
-    // Failsafe: a good previous board plus a suspicious new one = keep the old one.
-    // Skipped across a hand-over: two different dealerships are supposed to look
-    // nothing like each other, and this check would refuse every rotation.
-    if (!switched && LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
+    // Compare with the last displayed row for this store, including after rotation.
+    var previous = displayedByStore.get(key);
+    if (previous && s && !s.__err && tooDifferent(previous, s)) {
+      heldByStore.add(key);
       markStale('A large change needs verification.');
       return;
     }
@@ -1344,6 +1344,13 @@ export function LEADERBOARD_HTML(p, PIX) {
       HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
       return;
     }
+    var previous = displayedByStore.get(key);
+    if (previous && tooDifferent(previous, s)) {
+      heldByStore.add(key);
+      HANDING = false; storeShownAt = Date.now(); startScroll();
+      markStale('The next store has a large change that needs verification.');
+      return;
+    }
     ROT_I = at;
     CFG.storeId = id;
     CFG.storeKey = key;
@@ -1368,10 +1375,11 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
     if (s && !s.__err) {
-      LAST = s; lastGoodKey = CFG.storeKey; lastGoodAt = new Date();
+      LAST = s; displayedByStore.set(CFG.storeKey, s); heldByStore.delete(CFG.storeKey); lastGoodKey = CFG.storeKey; lastGoodAt = new Date();
       var stale = document.getElementById('stale-note');
       var ageProblem = publicationProblem(s, lastGoodAt.getTime());
-      if (ageProblem) markStale(ageProblem);
+      if (heldByStore.size) ageProblem = (ageProblem ? ageProblem + ' ' : '') + 'Another store has a large change that needs verification.';
+      if (ageProblem) markStale(ageProblem, false);
       else if (stale) stale.classList.remove('on');
     }
     applyDisp();
