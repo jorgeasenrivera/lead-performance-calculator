@@ -628,17 +628,18 @@ inspected code, interpretations and unresolved questions stay distinct.
 Sage is metrics-first. RockEd is a manual manager yes/no against a store
 threshold and is not on TV. TV store totals are whole units, not rounded credit
 sums. Online should help BDC/managers choose the best fit for an unassigned
-Internet lead from associates who raise their hands. Lead ingestion is not
-available; no automatic assignment, fixed rotation or matching criteria are
-specified.
+Internet lead from associates who raise their hands. Factors are monthly leads
+taken, especially that day, performance, physical presence, vehicle and lead
+source. Lead ingestion remains unavailable; weights and tie-breaks remain open.
+No automatic assignment or fixed rotation is specified.
 Pending associates may be scheduled but cannot view schedules until approved.
 Preserve the schedule viewer/editor split and existing room workflows.
 
 Continue approved work, tying fixes to an area, violated requirement, observed
 evidence, owner and acceptance check. Product questions are not invented fixes.
 Existing owners, visual approvals, review gates and production holds remain.
-Draft-PR publication is approved. No app source change, merge or deployment;
-this branch has its own automatic-deployment stop.
+Docs-only publication and merge are approved after review and passing checks.
+No app behavior changes; the review branch keeps its automatic-deployment stop.
 
 
 **H-X70 · Protected synthetic manager showcase, separate from WT8.**
