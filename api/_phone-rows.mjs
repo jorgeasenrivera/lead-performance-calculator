@@ -43,26 +43,24 @@ export function phoneExtras(sdata, roster, month, norm) {
   return { goals, off };
 }
 
-/* RockEd for one person on one day, the checkout sheet's rule: a tick wins,
-   a legacy star count is measured against the bar, no mark at all is unknown. */
-export function rockedFor(sdata, day, nameKey, rockEdStars = 40) {
+/* RockEd is the manager's explicit checkout mark; no mark is unknown. */
+export function rockedFor(sdata, day, nameKey) {
   const q = sdata && sdata.qualified && sdata.qualified[day] && sdata.qualified[day][nameKey];
   if (q === true) return true;
   if (q === false) return false;
-  const stars = sdata && sdata.stars && sdata.stars[day] && sdata.stars[day][nameKey];
-  if (stars == null) return null;
-  return stars >= rockEdStars;
+  return null;
 }
 
 /* The day's rows with each person's RockEd answer folded in, ready to slim. A
    person with no mark keeps no field, so "unknown" stays distinguishable from
    "did not qualify" on the phone. */
-export function withRocked(sdata, day, rows, rockEdStars = 40) {
+export function withRocked(sdata, day, rows) {
   const out = {};
   for (const [k, r] of Object.entries(rows || {})) {
     if (!r) continue;
-    const rk = rockedFor(sdata, day, k, rockEdStars);
-    out[k] = rk == null ? { ...r } : { ...r, rocked: rk };
+    const rk = rockedFor(sdata, day, k);
+    const { rocked: ignoredImportedMark, ...clean } = r;
+    out[k] = rk == null ? clean : { ...clean, rocked: rk };
   }
   return out;
 }
