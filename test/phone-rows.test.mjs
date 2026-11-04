@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as P from "../api/_phone-rows.mjs";
+import { slimFloorStats, withChannels } from "../api/_store-keys.mjs";
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 test("a month-specific goal beats the standing one", () => {
@@ -31,16 +32,37 @@ test("the extras are keyed like the stats and stay silent when empty", () => {
   assert.deepEqual(x.off, { "bo lee": ["2026-09-07"] });
 });
 
-test("RockEd follows the checkout rule: tick, then legacy stars, else unknown", () => {
+test("RockEd follows explicit manager marks; legacy stars and imported marks cannot supply it", () => {
   const sdata = { qualified: { "2026-09-01": { "ana diaz": true, "bo lee": false } }, stars: { "2026-09-01": { "cy ng": 55, "di ok": 12 } } };
   assert.equal(P.rockedFor(sdata, "2026-09-01", "ana diaz"), true);
   assert.equal(P.rockedFor(sdata, "2026-09-01", "bo lee"), false);
-  assert.equal(P.rockedFor(sdata, "2026-09-01", "cy ng"), true);
-  assert.equal(P.rockedFor(sdata, "2026-09-01", "di ok"), false);
+  assert.equal(P.rockedFor(sdata, "2026-09-01", "cy ng"), null);
+  assert.equal(P.rockedFor(sdata, "2026-09-01", "di ok"), null);
   assert.equal(P.rockedFor(sdata, "2026-09-01", "ed po"), null);
   const rows = P.withRocked(sdata, "2026-09-01", { "ana diaz": { calls: 20 }, "ed po": { calls: 5 } });
   assert.equal(rows["ana diaz"].rocked, true);
   assert.ok(!("rocked" in rows["ed po"]));
+  const incoming = { "ana diaz": { calls: 2, rocked: false }, "bo lee": { calls: 3, rocked: true }, "cy ng": { rocked: { private: "hidden" } }, "di ok": { rocked: true } };
+  const projected = P.withRocked(sdata, "2026-09-01", incoming, 0);
+  assert.equal(projected["ana diaz"].rocked, true);
+  assert.equal(projected["bo lee"].rocked, false);
+  assert.ok(!Object.hasOwn(projected["cy ng"], "rocked"));
+  assert.ok(!Object.hasOwn(projected["di ok"], "rocked"));
+  assert.doesNotMatch(JSON.stringify(projected), /hidden|private/);
+  assert.deepEqual(incoming["cy ng"].rocked, { private: "hidden" });
+});
+
+test("browser and ingest serialize the same explicit RockEd marks", () => {
+  const day = "2026-09-01";
+  const rows = { yes: { calls: 2, rocked: false }, no: { calls: 3, rocked: true }, unknown: { calls: 4, rocked: { private: "hidden" } } };
+  const data = { qualified: { [day]: { yes: true, no: false } }, stars: { [day]: { unknown: 999 } } };
+  const project = (bar) => JSON.parse(JSON.stringify(slimFloorStats(withChannels(P.withRocked(data, day, rows, bar), data, day))));
+  const browser = project(60), ingest = project(undefined);
+  assert.deepEqual(browser, ingest);
+  assert.equal(browser.yes.rocked, true);
+  assert.equal(browser.no.rocked, false);
+  assert.equal(Object.hasOwn(browser.unknown, "rocked"), false);
+  assert.doesNotMatch(JSON.stringify(browser), /private|hidden/);
 });
 
 test("points on the phone are the desk's points", () => {
