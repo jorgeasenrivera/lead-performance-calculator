@@ -29,6 +29,7 @@ import { phoneExtras, withRocked } from "./_phone-rows.mjs";
    cannot disagree about who this store's people are. */
 import { admitsEveryone, holdPerson } from "./_people-status.mjs";
 import { supabaseUrl } from "./_env.mjs";
+import { parseEmailSentDate, activityDateConflict, easternDayForInstant } from "./_email-sent-date.mjs";
 import { serverFault } from "./_report.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
@@ -119,14 +120,6 @@ export async function extractPdfLines(buffer) {
 
 /* Delivery Summary rows are pre-shaped, so they bypass parseReport(). */
 
-function activityDateFrom(name) {
-  const s = String(name || "");
-  let m = s.match(/(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})/);
-  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
-  m = s.match(/(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})/);
-  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
-  return null;
-}
 
 /* ---------- Supabase (PostgREST, service role) ---------- */
 const SB = () => ({ url: supabaseUrl(), key: process.env.SUPABASE_SERVICE_ROLE_KEY });
@@ -208,7 +201,7 @@ async function sbPutActivityDay(storeId, day, rows) {
    with no account can read. Without this a salesperson can never see their own day:
    the store rows require a signed-in session and a sign-in page has none. Counts
    only, one day, for the people on the floor. */
-async function sbPutFloorStats(storeId, day, rows, sdata) {
+async function sbPutFloorStats(storeId, day, rows, sdata, sentAt) {
   const key = floorStatsKey(storeId, day);
   const slim = slimFloorStats(withChannels(withRocked(sdata, day, rows), sdata, day));
   /* Cumulative, so the row is read back before it is written over. This is the
@@ -216,7 +209,7 @@ async function sbPutFloorStats(storeId, day, rows, sdata) {
      arrives every hour, and an import that clobbered the earlier buckets would
      leave a day holding only its final hour. */
   const prev = await sbGet(key);
-  slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
+  slim.__hours = stampHours(prev && prev.__hours, rows, new Date(sentAt));
   await sbPut(key, slim);
 }
 
@@ -274,8 +267,8 @@ async function refreshBoardRow(storeId, sdata) {
 }
 
 /* ---------- the merge: a faithful port of the app's applyEntries ---------- */
-function applyToStore(data, entries, sourceLabel) {
-  const month = ymET(); const day = todayET();
+function applyToStore(data, entries, sourceLabel, processingDay) {
+  const day = processingDay; const month = day.slice(0, 7);
   const archiveDue = [];   // activitySnaps day keys old enough for the cold store
   const next = JSON.parse(JSON.stringify(data || {}));
   next.roster = next.roster || [];
@@ -324,8 +317,9 @@ function applyToStore(data, entries, sourceLabel) {
   if (next.snapshots) delete next.snapshots;
 
   const nowISO = new Date().toISOString();
-  for (const { rows, type, fileName, actDay: fileDay, rollup, stated } of entries) {
-    const actDay = (fileDay && fileDay <= day) ? fileDay : day;
+  for (const { rows, type, fileName, actDay: fileDay, sentAt, rollup, stated } of entries) {
+    if (type === "activity" && (!fileDay || !sentAt || fileDay > day)) throw new Error("activity sender date missing or in the future");
+    const actDay = type === "activity" ? fileDay : day;
     /* ---- The store's own line, which is not a person and never becomes one ----
        Filed beside the month's people rather than among them, because it answers
        a different question: the people rows say who sold what, and this says how
@@ -411,7 +405,7 @@ function applyToStore(data, entries, sourceLabel) {
       }
     }
 
-    M.names[type] = Object.keys(parsed);
+    if (type !== "activity" || actDay === day) M.names[type] = Object.keys(parsed);
     /* The combined Delivery Summary already ticks every per-channel box in
        M.imports. It never did the same for M.names, and M.names is what the
        per-associate "incomplete file" check reads. So for every store on the PDF
@@ -461,8 +455,9 @@ function applyToStore(data, entries, sourceLabel) {
           tasks: r.tasks, units: r.units,
         };
       }
-      const daySnaps = (next.activitySnaps[actDay] || []).filter((x) => x.t !== nowISO);
-      daySnaps.push({ t: nowISO, rows: snapRows });
+      const daySnaps = (next.activitySnaps[actDay] || []).filter((x) => x.t !== sentAt);
+      daySnaps.push({ t: sentAt, rows: snapRows });
+      daySnaps.sort((a, b) => String(a.t).localeCompare(String(b.t)));
       next.activitySnaps[actDay] = daySnaps.slice(-16);
       /* And the days themselves leave the hot row after three weeks -- but they
          are ARCHIVED, not deleted. The intraday deltas are the only record of
@@ -480,7 +475,7 @@ function applyToStore(data, entries, sourceLabel) {
       archiveDue.push(...Object.keys(next.activitySnaps).filter((k) => k < keepFrom));
     }
 
-    for (const [key, rec] of Object.entries(parsed)) {
+    for (const [key, rec] of Object.entries(type === "activity" && actDay !== day ? {} : parsed)) {
       const prevStat = M.stats[key] || {};
       const trend = { ...(prevStat.prevPct || {}) };
       const pctDay = { ...(prevStat.pctDay || {}) };
@@ -499,7 +494,13 @@ function applyToStore(data, entries, sourceLabel) {
       if (type !== "activity") count++;
     }
 
-    M.imports[day][type] = true;
+    if (type === "activity" && actDay !== day) {
+      const sentMonth = actDay.slice(0, 7);
+      const sentM = (next.months[sentMonth] = next.months[sentMonth] || { stats: {}, names: {}, imports: {} });
+      sentM.imports = sentM.imports || {};
+      sentM.imports[actDay] = sentM.imports[actDay] || {};
+      sentM.imports[actDay][type] = true;
+    } else M.imports[day][type] = true;
     if (type === "delivery-internet") M.imports[day]["delivery"] = true;
     if (type === "delivery") M.imports[day]["delivery-internet"] = true;
     // the combined summary satisfies every per-channel checklist tick
@@ -510,7 +511,8 @@ function applyToStore(data, entries, sourceLabel) {
 
     next.importLog = [
       { id: uid(), t: new Date().toISOString(), type, label: type, file: fileName, count, skipped,
-        by: sourceLabel, snapT, day: type === "activity" ? actDay : null },
+        by: sourceLabel, snapT, day: type === "activity" ? actDay : null,
+        ...(type === "activity" ? { senderDate: sentAt, daySource: "sender-date-header" } : {}) },
       ...(next.importLog || []),
     ].slice(0, 200);
 
@@ -524,7 +526,8 @@ function applyToStore(data, entries, sourceLabel) {
         rosterKeys.add(key);
       }
     }
-    results.push({ file: fileName, type, day: type === "activity" ? actDay : day, count, skipped, held: heldCount });
+    results.push({ file: fileName, type, day: type === "activity" ? actDay : day, count, skipped, held: heldCount,
+      ...(type === "activity" ? { senderDate: sentAt, daySource: "sender-date-header" } : {}) });
   }
   return { next, results, archiveDue, restorePoint };
 }
@@ -575,6 +578,9 @@ export default async function handler(req, res) {
   try {
     const raw = await readRaw(req);
     const mail = await PostalMime.parse(raw);
+    const processingTime = new Date();
+    const processingDay = easternDayForInstant(processingTime);
+    const senderDate = parseEmailSentDate(mail.headers, processingTime.getTime());
     const to = (mail.to?.[0]?.address || req.headers["x-envelope-to"] || "").toLowerCase();
     const subject = mail.subject || "";
 
@@ -597,6 +603,13 @@ export default async function handler(req, res) {
     const entries = [];
     const skippedFiles = [];
     const pdfReads = [];
+    const activityDate = (filename) => {
+      const why = !senderDate.ok ? senderDate.reason : activityDateConflict(senderDate.day, filename, subject) ? "activity date conflicts with email sent day" : null;
+      if (!why) return senderDate;
+      skippedFiles.push({ file: filename, why });
+      failures.push({ file: filename, why });
+      return null;
+    };
     // Anything that parsed cleanly and then had nowhere to go. This is the case
     // that used to answer 200 and disappear, taking a whole day's report with it.
     const failures = [];
@@ -640,8 +653,10 @@ export default async function handler(req, res) {
         failures.push({ file: a.filename, why });
         continue;
       }
+      const date = type === "activity" ? activityDate(a.filename || "email.csv") : null;
+      if (type === "activity" && !date) continue;
       entries.push({ store: addressStore, rows, type, fileName: a.filename || "email.csv",
-        actDay: activityDateFrom(a.filename),
+        actDay: date?.day || null, sentAt: date?.sentAt || null,
         fileB64: Buffer.from(a.content).toString("base64"), fileMime: "text/csv" });
     }
 
@@ -671,10 +686,10 @@ export default async function handler(req, res) {
             failures.push({ file: a.filename, why: note });
             continue;
           }
+          const date = kind === "activity" ? activityDate(a.filename || "email.pdf") : null;
+          if (kind === "activity" && !date) continue;
           entries.push({ store: hit.store, rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
-            actDay: kind === "activity"
-              ? (activityDateFrom(a.filename) || activityDateFrom(subject))
-              : null,
+            actDay: date?.day || null, sentAt: date?.sentAt || null,
             /* The grid prints the store's own totals above the people. They used
                to be read and thrown away; they are the one figure that counts a
                delivery once, so they are filed alongside the people now. */
@@ -780,7 +795,7 @@ export default async function handler(req, res) {
       // rather than replaying against the copy we first read.
       let next = null, lastResults = [], lastArchiveDue = [], lastRestorePoint = null;
       const swap = await sbSwap(key, (cur) => {
-        const out = applyToStore(cur, mine, "Auto-import (email)");
+        const out = applyToStore(cur, mine, "Auto-import (email)", processingDay);
         next = out.next; lastResults = out.results; lastArchiveDue = out.archiveDue;
         lastRestorePoint = out.restorePoint;
         return out.next;
@@ -871,7 +886,7 @@ export default async function handler(req, res) {
         if (!rows) continue;
         try {
           await sbPutActivityDay(st.id, r.day, rows);
-          await sbPutFloorStats(st.id, r.day, rows, next);
+          await sbPutFloorStats(st.id, r.day, rows, next, r.senderDate);
           dayWrites.push(r.day);
         } catch (e) { console.error("ingest: day row write failed", st.id, r.day, String(e.message || e)); }
       }
