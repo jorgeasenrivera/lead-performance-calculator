@@ -635,7 +635,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         res = await withTimeout(fetch(url, { headers: headers() }), 12000);
       }
       if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
-      var rows = await res.json();
+      var rows = await withTimeout(res.json(), 12000);
       return (rows && rows[0]) ? rows[0].value : null;
     } catch (e) {
       return { __err: 'No connection to the database. Retrying...' };
@@ -715,6 +715,12 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
+  function easternMonth(){
+    var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+    var year = parts.find(function(p){ return p.type === 'year'; }).value;
+    var month = parts.find(function(p){ return p.type === 'month'; }).value;
+    return year + '-' + month;
+  }
   function render(store){
     CAR_ROW = 0;
     var root = document.getElementById('root');
@@ -724,7 +730,8 @@ export function LEADERBOARD_HTML(p, PIX) {
       return;
     }
     if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
-    var M = (store.months||{})[CFG.ym] || {stats:{}};
+    var M = (store.months||{})[easternMonth()];
+    if (!M || !M.stats) { root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
 
     // CFG.roles already excludes any role turned off for The Board (BDC by default),
     // so only the people who actually deliver units show up here.
@@ -1166,8 +1173,13 @@ export function LEADERBOARD_HTML(p, PIX) {
     setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
   }
 
+  var requestEpoch = 0;
   async function loop(){
+    if (HANDING) return;
+    var epoch = ++requestEpoch, key = CFG.storeKey;
     var s = await getStore();
+    if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
+    if (s && s.__err && LAST && !LAST.__err) return;
     var switched = SWITCHING; SWITCHING = false;
     // Failsafe: a good previous board plus a suspicious new one = keep the old one.
     // Skipped across a hand-over: two different dealerships are supposed to look
@@ -1303,10 +1315,12 @@ export function LEADERBOARD_HTML(p, PIX) {
     var list = rotaList();
     if (list.length < 2 || HANDING) return;
     HANDING = true;
+    var epoch = ++requestEpoch;
     var at = (ROT_I + 1) % list.length;
     var id = list[at];
     var key = 'lpc:board:' + id + ':v1';
     var s = await getStoreByKey(key);
+    if (epoch !== requestEpoch) { HANDING = false; return; }
     if (!s || s.__err) {
       /* That store has never been published, or the network blinked. Stay where we
          are and let the next pass try the one after it, rather than driving the
@@ -1320,6 +1334,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
     var name = s.storeName || (id === HOME.id ? HOME.name : (known && known.name)) || 'Next store';
     driveTo(name, function(){
+      if (epoch !== requestEpoch) return;
       storeShownAt = Date.now();
       SWITCHING = true;
       renderStore(s);
@@ -1478,6 +1493,7 @@ export function LEADERBOARD_HTML(p, PIX) {
 
     document.getElementById('tsave').onclick = async function(){
       var msg = document.getElementById('tmsg');
+      var visitingSaved = false;
       try {
         // Always keep it on the screen itself first, so a reboot, a nightly
         // reload or a new build cannot undo what someone set by hand.
@@ -1498,25 +1514,34 @@ export function LEADERBOARD_HTML(p, PIX) {
             var home = await getStoreByKey(HOME.key);
             var homeNext = {}; for (var dk in DISP) homeNext[dk] = DISP[dk];
             homeNext.tscale = (home && !home.__err && home.boardDisplay && home.boardDisplay.tscale != null) ? home.boardDisplay.tscale : 1;
-            ok = (await op.__lpcSaveBoardDisplay(CFG.storeId, curNext)) && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
+            visitingSaved = await op.__lpcSaveBoardDisplay(CFG.storeId, curNext);
+            ok = visitingSaved && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
           }
-          msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
+          msg.textContent = ok ? 'Saved for this store, on every screen.' : (visitingSaved ? 'Saved for the current store. Home store not saved.' : (kept ? 'Saved on this screen only.' : 'Could not save.'));
         } else {
           msg.textContent = kept ? 'Saved on this screen. Save from the tool to set it everywhere.' : 'Could not save.';
         }
-      } catch (e) { msg.textContent = 'Could not save.'; }
+      } catch (e) { msg.textContent = visitingSaved ? 'Saved for the current store. Home store not saved.' : 'Could not save.'; }
       setTimeout(function(){ msg.textContent = ''; }, 4000);
     };
   }
 
   var LAST = null;   // last store payload, so a text-size change can re-render
 
-  // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
-  // was pointless: the reports only change when a manager uploads one.
+  // A bounded retry keeps the wall current after the network or an import recovers.
   // The clock is separate and ticks every 10 seconds, so the minute on screen is
   // always right regardless of when the data last refreshed.
+  var displayedMonth = easternMonth();
   loop();
-  setInterval(loop, 15 * 60 * 1000);
-  setInterval(tick, 10000);
+  setInterval(loop, 60 * 1000);
+  setInterval(function(){
+    tick();
+    var month = easternMonth();
+    if (month !== displayedMonth) {
+      displayedMonth = month;
+      if (LAST && !LAST.__err) render(LAST);
+      loop();
+    }
+  }, 10000);
 </script></body></html>`;
 }
