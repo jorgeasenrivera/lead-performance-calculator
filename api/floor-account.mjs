@@ -76,10 +76,11 @@ async function run(req, res) {
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
-  const { data: me } = await db.from("profiles").select("role, stores").eq("id", who.user.id).maybeSingle();
+  const { data: me } = await db.from("profiles").select("role, stores, active, pending").eq("id", who.user.id).maybeSingle();
   const isAdmin = me && me.role === "admin";
   const managesStore = me && Array.isArray(me.stores) && me.stores.includes(store);
-  if (!me || (!isAdmin && !managesStore)) {
+  // A valid session does not mean the account is still approved to manage a store.
+  if (!me || me.active !== true || (!isAdmin && (me.pending !== false || !managesStore))) {
     return res.status(403).json({ error: "only a manager of this store can do that" });
   }
 
