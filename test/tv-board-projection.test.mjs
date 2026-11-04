@@ -14,3 +14,23 @@ test('unverified legacy count is omitted, and wrong store fails closed',()=>{
  assert.equal(projectBoard({...args,data:legacy}).months[month].storeTotal,undefined);
  assert.throws(()=>projectBoard({...args,storeId:'elsewhere'}),/store not found/);
 });
+
+test('malformed public values cannot carry nested private data',()=>{
+ const bad=structuredClone(data),badConfig=structuredClone(config);
+ badConfig.stores[0].icon={private:'hidden'};
+ badConfig.stores[0].brand={primary:{private:'hidden'},deep:'#112233',accent:'url(private)'};
+ bad.roster.push({id:{private:'hidden'},name:'Bad',roleId:'sales'},{id:'x',name:{private:'hidden'},roleId:'sales'},{id:'z',name:'<img src=x>',roleId:'sales'});
+ bad.goals.a={monthly:{private:'hidden'}};
+ bad.daysOff.a=['2026-07-03',{private:'hidden'},'2026-07-99'];
+ bad.boardDisplay={style:'private',bg:{private:'hidden'},rotate:['ok',{private:'hidden'}],pad:{private:'hidden'}};
+ bad.months[month].stats['alex jones'].internetPct={private:'hidden'};
+ bad.months[month].stats['alex jones'].prevPct={internet:{private:'hidden'},phone:0.25};
+ const row=projectBoard({...args,config:badConfig,data:bad,updatedAt:{private:'hidden'}});
+ assert.equal(row.icon,null);assert.equal(row.updatedAt,null);assert.deepEqual(row.goals,{});assert.deepEqual(row.off,{'alex jones':['2026-07-03']});
+ assert.deepEqual(row.months[month].stats['alex jones'].prevPct,{phone:0.25});assert.equal(row.months[month].stats['alex jones'].internetPct,undefined);
+ assert.deepEqual(row.boardDisplay,{});assert.deepEqual(row.roster.map(x=>x.id),['a']);assert.doesNotMatch(JSON.stringify(row),/hidden|private/);
+});
+test('cropped PNG logo remains available but unsafe icon schemes and objects do not',()=>{
+ for(const icon of ['https://example.test/logo.png','javascript:alert(1)',{private:'x'}]) assert.equal(projectBoard({...args,config:{...config,stores:[{id:'demo',name:'Demo',icon}]}}).icon,null);
+ assert.equal(projectBoard({...args,config:{...config,stores:[{id:'demo',name:'Demo',icon:'data:image/png;base64,aGVsbG8='}]}}).icon,'data:image/png;base64,aGVsbG8=');
+});

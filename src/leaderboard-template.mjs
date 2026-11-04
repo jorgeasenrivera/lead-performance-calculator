@@ -508,7 +508,7 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 </style></head>
 <body>
-<div class="stale-note" id="stale-note">Holding the last board: the newest report looked incomplete. Updating on the next cycle.</div>
+<div class="stale-note" id="stale-note" role="status" aria-live="polite"></div>
 <div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
 
 <!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
@@ -1117,7 +1117,8 @@ export function LEADERBOARD_HTML(p, PIX) {
   // units moved by more than half, on a board that had real numbers to begin with.
   function tooDifferent(prev, next){
     try {
-      if (!prev || !prev.store || !next || !next.store) return false;
+      if (!prev || !next || !prev.ym || prev.ym !== next.ym) return false;
+      if (prev.storeId && next.storeId && prev.storeId !== next.storeId) return false;
       function totalUnits(st){
         var t = 0, r = (st.roster||[]);
         for (var i=0;i<r.length;i++){
@@ -1173,21 +1174,41 @@ export function LEADERBOARD_HTML(p, PIX) {
     setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
   }
 
-  var requestEpoch = 0;
+  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, heldDrop = null;
+  function markStale(reason){
+    var note = document.getElementById('stale-note');
+    if (!note) return;
+    var stamp = lastGoodKey === CFG.storeKey && lastGoodAt
+      ? ' Last successful check: ' + lastGoodAt.toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.'
+      : '';
+    note.textContent = reason + stamp + ' Retrying.';
+    note.classList.add('on');
+  }
+  function dropFingerprint(row){
+    var stats = (row.months && row.months[row.ym] && row.months[row.ym].stats) || {};
+    var entries = (row.roster || []).map(function(p){
+      var v = stats[norm(p.name)] || {};
+      return [norm(p.name),v.internetUnits,v.phoneUnits,v.showroomUnits,v.campaignUnits];
+    }).sort(function(a,b){ return a[0].localeCompare(b[0]); });
+    return JSON.stringify([row.storeId,row.ym,entries]);
+  }
   async function loop(){
     if (HANDING) return;
     var epoch = ++requestEpoch, key = CFG.storeKey;
     var s = await getStore();
     if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
-    if (s && s.__err && LAST && !LAST.__err) return;
+    if ((!s || s.__err) && LAST && !LAST.__err) { heldDrop = null; markStale('Cannot refresh the board.'); return; }
     var switched = SWITCHING; SWITCHING = false;
     // Failsafe: a good previous board plus a suspicious new one = keep the old one.
     // Skipped across a hand-over: two different dealerships are supposed to look
     // nothing like each other, and this check would refuse every rotation.
     if (!switched && LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
-      var warn = document.getElementById('stale-note');
-      if (warn) warn.classList.add('on');
-      return;                                        // skip this render entirely
+      var fingerprint = dropFingerprint(s);
+      if (!heldDrop || heldDrop.key !== key || heldDrop.fingerprint !== fingerprint) {
+        heldDrop = {key:key, fingerprint:fingerprint};
+        markStale('A large change needs another check.');
+        return;
+      }
     }
     /* Nobody "just delivered" anything because the screen changed store, so the
        congratulations are held across a hand-over too. */
@@ -1230,8 +1251,7 @@ export function LEADERBOARD_HTML(p, PIX) {
        carries a name, and brand, icon and thresholds all differ per store. */
     SWITCHING = switched;
     renderStore(s);
-    var warn = document.getElementById('stale-note');
-    if (warn) warn.classList.remove('on');
+    heldDrop = null;
     if (wsold.length) congratulate(wsold);
   }
   /* ---------- rotating through more than one store ----------
@@ -1351,7 +1371,11 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (s.brand) CFG.brand = s.brand;
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
-    if (s && !s.__err) LAST = s;
+    if (s && !s.__err) {
+      LAST = s; lastGoodKey = CFG.storeKey; lastGoodAt = new Date(); heldDrop = null;
+      var stale = document.getElementById('stale-note');
+      if (stale) stale.classList.remove('on');
+    }
     applyDisp();
     render(s);
     wireTuner();
