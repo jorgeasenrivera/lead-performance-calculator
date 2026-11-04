@@ -36,7 +36,7 @@ begin
  if not tv_fixture.publish_projected(sid,month,'[]'::jsonb) then return false; end if;
  k := 'lpc:board:' || sid || ':v1';
  update public.app_data set value=jsonb_set(value,'{data}',(value->'data') || jsonb_build_object(
-   'verifiedSourceRev',proof.source_rev,'verifiedSourceAsOf',proof.source_asof,'verifiedPeriodStart',proof.period_start,'verifiedPeriodEnd',proof.period_end,'verifiedMetric',proof.metric,'verifiedCount',proof.whole_count)) where key=k;
+   'verifiedSourceRev',proof.source_rev,'verifiedEvidenceObservedAt',proof.source_asof,'verifiedPeriodStart',proof.period_start,'verifiedPeriodEnd',proof.period_end,'verifiedReportThrough',proof.period_end,'verifiedMetric',proof.metric,'verifiedCount',proof.whole_count)) where key=k;
  return true;
 end $$;
 alter function tv_fixture.publish_validated(text,bigint,text) owner to tv_rpc_owner;

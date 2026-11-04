@@ -4,7 +4,7 @@ exec(open(os.path.join(os.path.dirname(__file__),'derived-test.py')).read().spli
 # independent verifier. This does not prove any real report or verifier exists.
 sql("truncate app_data, tv_fixture.verified_source; update private_store set rev=20,value='{\"roster\":[]}' where id='demo'; insert into tv_fixture.verified_source select 'demo',20,'2026-07-08T12:00:00Z','2026-07-01','2026-07-08','deals-delivered',value,4 from private_store where id='demo';")
 assert sql("select tv_fixture.publish_validated('demo',20,'2026-07');").stdout.strip()=='t'
-a=read();assert a['data']['verifiedSourceRev']==20 and a['data']['verifiedCount']==4 and a['data']['verifiedSourceAsOf'].startswith('2026-07-08T12:00:00') and a['data']['verifiedMetric']=='deals-delivered' and a['data']['verifiedPeriodStart']=='2026-07-01' and a['data']['verifiedPeriodEnd']=='2026-07-08'
+a=read();assert a['data']['verifiedSourceRev']==20 and a['data']['verifiedCount']==4 and a['data']['verifiedEvidenceObservedAt'].startswith('2026-07-08T12:00:00') and a['data']['verifiedMetric']=='deals-delivered' and a['data']['verifiedPeriodStart']=='2026-07-01' and a['data']['verifiedPeriodEnd']=='2026-07-08'
 print('PASS synthetic attestation binds count and source as-of to locked source revision')
 for role in ('client','service_role'):
  p=sql(f"set role {role}; insert into tv_fixture.verified_source values ('demo',21,now(),'2026-07-01','2026-07-08','deals-delivered','{{}}',9);",False);assert p.returncode and 'permission denied' in p.stderr
@@ -47,3 +47,10 @@ assert sql("select tv_fixture.publish_validated('demo',null,'2026-07');").stdout
 sql("update private_store set rev=28 where id='demo'; insert into tv_fixture.verified_source select 'demo',28,'2099-07-08T12:00:00Z','2099-07-01','2099-07-08','deals-delivered',value,1 from private_store where id='demo';")
 assert sql("select tv_fixture.publish_validated('demo',28,'2099-07');").stdout.strip()=='f' and read()==before
 print('PASS null scope and future as-of fail closed')
+
+# Observation on July 8 does not make a report ending July 5 current through July 8.
+sql("update private_store set rev=29 where id='demo'; insert into tv_fixture.verified_source select 'demo',29,'2026-07-08T12:00:00Z','2026-07-01','2026-07-05','deals-delivered',value,3 from private_store where id='demo';")
+assert sql("select tv_fixture.publish_validated('demo',29,'2026-07');").stdout.strip()=='t'
+a=read()['data']; assert a['verifiedEvidenceObservedAt'].startswith('2026-07-08') and a['verifiedReportThrough']=='2026-07-05'
+assert sql("select (value->'data'->>'verifiedReportThrough')::date = date '2026-07-08' from app_data where key='lpc:board:demo:v1';").stdout.strip()=='f'
+print('PASS report-through date remains distinct from later evidence observation')

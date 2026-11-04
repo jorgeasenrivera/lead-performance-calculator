@@ -135,3 +135,11 @@ stores can still appear and the held store is retried on a later cycle. Connecti
 source-freshness and held-store conditions are composed into one status; one
 condition does not hide another. This remains an in-memory safeguard, not a
 verified persistent baseline.
+
+The renderer candidate tracks connection failures per board key. A different
+store's successful read does not clear a failed store; a successful read of that
+store or its removal from the rotation clears its failure. Removing a store does
+not erase its in-memory last-displayed baseline. The synthetic attestation carries
+both evidence observation time and the verified report-through date; freshness
+comparisons in the fixture use the latter. Neither field is trusted by the app
+until a real source verifier and protected publication boundary exist.

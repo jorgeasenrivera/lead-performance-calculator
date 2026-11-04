@@ -1175,16 +1175,16 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 
   var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, displayedByStore = new Map(), heldByStore = new Set();
-  var connectionIssue = null, currentFreshness = 'Report freshness is not verified.';
+  var failedByStore = new Set(), currentFreshness = 'Report freshness is not verified.';
   function showStatus(){
     var note = document.getElementById('stale-note');
     if (!note) return;
     var parts = [];
-    if (connectionIssue) parts.push(connectionIssue);
+    if (failedByStore.size) parts.push('Cannot refresh one or more stores.');
     if (currentFreshness) parts.push(currentFreshness);
     if (heldByStore.size) parts.push('A store has a large change that needs verification.');
     if (lastGoodKey === CFG.storeKey && lastGoodAt) parts.push('Last successful check: ' + lastGoodAt.toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.');
-    if (connectionIssue || heldByStore.size) parts.push('Retrying.');
+    if (failedByStore.size || heldByStore.size) parts.push('Retrying.');
     note.textContent = parts.join(' ');
     if (parts.length) note.classList.add('on'); else note.classList.remove('on');
   }
@@ -1202,7 +1202,10 @@ export function LEADERBOARD_HTML(p, PIX) {
     var epoch = ++requestEpoch, key = CFG.storeKey;
     var s = await getStore();
     if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
-    if ((!s || s.__err) && LAST && !LAST.__err) { connectionIssue = 'Cannot refresh the board.'; showStatus(); return; }
+    if (!s || s.__err) {
+      failedByStore.add(key); showStatus();
+      if (LAST && !LAST.__err) return;
+    } else failedByStore.delete(key);
     var switched = SWITCHING; SWITCHING = false;
     // Compare with the last displayed row for this store, including after rotation.
     var previous = displayedByStore.get(key);
@@ -1346,9 +1349,10 @@ export function LEADERBOARD_HTML(p, PIX) {
          are and let the next pass try the one after it, rather than driving the
          room to an empty board. */
       HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
-      connectionIssue = 'Cannot refresh the next store.'; showStatus();
+      failedByStore.add(key); showStatus();
       return;
     }
+    failedByStore.delete(key);
     var previous = displayedByStore.get(key);
     if (previous && tooDifferent(previous, s)) {
       heldByStore.add(key);
@@ -1381,7 +1385,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     }
     if (s && !s.__err) {
       LAST = s; displayedByStore.set(CFG.storeKey, s); heldByStore.delete(CFG.storeKey); lastGoodKey = CFG.storeKey; lastGoodAt = new Date();
-      connectionIssue = null;
+      failedByStore.delete(CFG.storeKey);
       currentFreshness = publicationProblem(s, lastGoodAt.getTime());
       showStatus();
     }
@@ -1418,14 +1422,22 @@ export function LEADERBOARD_HTML(p, PIX) {
 
   /* One drawing for both, the list the tool hands in and the list a wall
      reads for itself, so the two can never drift apart. */
+  function pruneRotationIssues(){
+    var active = new Set([HOME.key].concat((DISP.rotate || []).map(function(id){ return 'lpc:board:' + id + ':v1'; })));
+    failedByStore.forEach(function(key){ if (!active.has(key)) failedByStore.delete(key); });
+    heldByStore.forEach(function(key){ if (!active.has(key)) heldByStore.delete(key); });
+    showStatus();
+  }
   function drawRota(rl, sibs){
-    if (!sibs.length) { rl.innerHTML = '<div class="none">This is the only store on this account.</div>'; return; }
     /* A store that has since left the group stops being a tickable row, and
        stops being in the rota. Only ever run against a list that was actually
        read: dropping ids against a list that failed to load would quietly
        empty a working wall's rota. */
+    var before = (DISP.rotate || []).length;
     DISP.rotate = (DISP.rotate || []).filter(function(id){
       return sibs.some(function(x){ return x.id === id; }); });
+    if (DISP.rotate.length !== before) { ++requestEpoch; pruneRotationIssues(); }
+    if (!sibs.length) { rl.innerHTML = '<div class="none">This is the only store on this account.</div>'; return; }
     rl.innerHTML = sibs.map(function(x){
       var on = (DISP.rotate || []).indexOf(x.id) >= 0;
       return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
@@ -1437,6 +1449,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         var id = b.getAttribute('data-rot');
         var at = (DISP.rotate || []).indexOf(id);
         if (at >= 0) DISP.rotate.splice(at, 1); else (DISP.rotate = DISP.rotate || []).push(id);
+        ++requestEpoch; pruneRotationIssues();
         /* Back to the home board whenever the list changes, so what is on
            screen always matches what is ticked. */
         ROT_I = 0;
