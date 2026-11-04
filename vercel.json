@@ -1,6 +1,6 @@
 {
   "git": {
-    "deploymentEnabled": { "codex/rocked-manual-only": false, "codex/product-area-contracts": false }
+    "deploymentEnabled": { "codex/rocked-manual-only": false, "codex/product-area-contracts": false, "codex/online-presence-contract": false }
   },
   "functions": {
     "api/ingest.mjs": {
