@@ -63,7 +63,7 @@ test('repeated large drop remains held until data returns to the trusted range',
  const rendered=[], note={textContent:'',classList:{on:false,add(){this.on=true;},remove(){this.on=false;}}};
  let row=publisherRow(0);const ctx={CFG:{storeKey:'k'},HANDING:false,SWITCHING:false,LAST:publisherRow(20),norm:s=>s.trim().toLowerCase(),getStore:async()=>row,
  newlySold:()=>[],document:{getElementById:()=>note},renderStore(s){rendered.push(s);ctx.LAST=s;},congratulate(){},Date,Intl};
- vm.createContext(ctx);vm.runInContext(check+loop,ctx);ctx.displayedByStore.set('k',ctx.LAST);
+ vm.createContext(ctx);vm.runInContext(check+loop,ctx);ctx.displayedByStore.set('k',ctx.LAST);ctx.lastGoodKey='k';
  await ctx.loop();assert.equal(rendered.length,0);assert.equal(note.classList.on,true);assert.match(note.textContent,/large change/i);
  await ctx.loop();assert.equal(rendered.length,0);assert.equal(note.classList.on,true);
  row=publisherRow(19);await ctx.loop();assert.equal(rendered.length,1);assert.equal(rendered[0].months['2026-07'].stats['alex jones'].internetUnits,19);
@@ -82,7 +82,7 @@ test('a failed current-store poll shows last successful check and older response
 test('only a successful rendered row records and clears current-store staleness',()=>{
  const code=block('  function renderStore(s){','  /* ---------- display tuning ----------');
  const note={textContent:'',classList:{on:true,add(){this.on=true;},remove(){this.on=false;}}};
- const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(['demo']),Date,publicationProblem:()=>null,
+ const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),lastCheckByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(['demo']),Date,publicationProblem:()=>null,
  document:{getElementById:()=>note},applyDisp(){},render(){},wireTuner(){},showStatus(){}};
  vm.createContext(ctx);vm.runInContext(code,ctx);
  ctx.renderStore({__err:'offline'});assert.equal(note.classList.on,true);assert.equal(ctx.lastGoodAt,null);
@@ -106,7 +106,7 @@ test('successful read of an old publication keeps a stale notice visible',()=>{
  const age=block('  function publicationProblem(row, now){','  async function loop(){');
  const render=block('  function renderStore(s){','  /* ---------- display tuning ----------');
  const note={textContent:'',classList:{on:false,add(){this.on=true;},remove(){this.on=false;}}};
- const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(),Date,Number,
+ const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),lastCheckByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(),Date,Number,
  document:{getElementById:()=>note},applyDisp(){},render(){},wireTuner(){},showStatus(){note.textContent=ctx.currentFreshness;note.classList.add('on');}};
  vm.createContext(ctx);vm.runInContext(age+render,ctx);
  ctx.renderStore({...publisherRow(2),updatedAt:'2020-01-01T00:00:00Z'});
@@ -129,7 +129,7 @@ test('rotation A to B to A cannot bypass A’s held large-drop baseline',async()
 
 test('a successful refresh of another store does not clear a held store warning',()=>{
  const render=block('  function renderStore(s){','  /* ---------- display tuning ----------');
- const ctx={CFG:{storeKey:'b'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),heldByStore:new Set(['a']),failedByStore:new Set(),Date,
+ const ctx={CFG:{storeKey:'b'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,displayedByStore:new Map(),lastCheckByStore:new Map(),heldByStore:new Set(['a']),failedByStore:new Set(),Date,
  publicationProblem:()=> 'Report freshness is not verified.', document:{getElementById:()=>({classList:{remove(){}}})},applyDisp(){},render(){},wireTuner(){},showStatus(){ctx.message=ctx.currentFreshness+(ctx.heldByStore.size?' A store has a large change that needs verification.':'');}};
  vm.createContext(ctx);vm.runInContext(render,ctx);ctx.renderStore(publisherRow(3,'2026-07','b'));
  assert.match(ctx.message,/A store has a large change/);assert.equal(ctx.heldByStore.has('a'),true);
@@ -163,7 +163,7 @@ test('a failure for B survives successful A and clears only when B succeeds',asy
  const render=block('  function renderStore(s){','  /* ---------- display tuning ----------');
  const keys=['a','b','c'].map(x=>'lpc:board:'+x+':v1');let bFails=true;
  const ctx={CFG:{storeId:'a',storeKey:keys[0]},HOME:{id:'a'},ROT_I:0,HANDING:false,SWITCHING:false,requestEpoch:0,storeShownAt:0,Date,
- displayedByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(),lastGoodAt:null,lastGoodKey:null,rotaList:()=>['a','b','c'],tooDifferent:()=>false,
+ displayedByStore:new Map(),lastCheckByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(),lastGoodAt:null,lastGoodKey:null,rotaList:()=>['a','b','c'],tooDifferent:()=>false,
  getStoreByKey:async key=>key===keys[1]&&bFails?{__err:'offline'}:publisherRow(3,'2026-07',key===keys[0]?'a':key===keys[1]?'b':'c'),
  driveTo(_name,swap){swap();ctx.HANDING=false;},startScroll(){},showStatus(){},publicationProblem:()=>null,document:{getElementById:()=>null},applyDisp(){},render(){},wireTuner(){}};
  vm.createContext(ctx);vm.runInContext(next+render,ctx);
@@ -185,7 +185,7 @@ test('unchecking a failed rotated store removes only its warning',()=>{
  const code=block('  function pruneRotationIssues(){','  function wireTuner(){');
  const a='lpc:board:a:v1',b='lpc:board:b:v1',c='lpc:board:c:v1',button={getAttribute:()=> 'b'};
  const rl={innerHTML:'',querySelectorAll:()=>[button]};
- const ctx={HOME:{id:'a',key:a},CFG:{storeId:'a'},DISP:{rotate:['b','c']},failedByStore:new Set([b,c]),heldByStore:new Set([b]),requestEpoch:0,ROT_I:0,showStatus(){},wireTuner(){},loop(){}};
+ const ctx={HOME:{id:'a',key:a},CFG:{storeId:'a'},lastGoodKey:a,HANDING:false,DISP:{rotate:['b','c']},failedByStore:new Set([b,c]),heldByStore:new Set([b]),requestEpoch:0,ROT_I:0,showStatus(){},wireTuner(){},loop(){}};
  vm.createContext(ctx);vm.runInContext(code,ctx);ctx.drawRota(rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);button.onclick();
  assert.deepEqual(ctx.DISP.rotate,['c']);assert.equal(ctx.failedByStore.has(b),false);assert.equal(ctx.failedByStore.has(c),true);assert.equal(ctx.heldByStore.has(b),false);
 });
@@ -193,7 +193,7 @@ test('unchecking a failed rotated store removes only its warning',()=>{
 test('a verified empty sibling list removes stale rotation warnings',()=>{
  const code=block('  function pruneRotationIssues(){','  function wireTuner(){');
  const a='lpc:board:a:v1',b='lpc:board:b:v1',rl={innerHTML:''};
- const ctx={HOME:{id:'a',key:a},DISP:{rotate:['b']},failedByStore:new Set([b]),heldByStore:new Set([b]),requestEpoch:0,showStatus(){}};
+ const ctx={HOME:{id:'a',key:a},CFG:{storeId:'a'},lastGoodKey:a,HANDING:false,DISP:{rotate:['b']},failedByStore:new Set([b]),heldByStore:new Set([b]),requestEpoch:0,showStatus(){}};
  vm.createContext(ctx);vm.runInContext(code,ctx);ctx.drawRota(rl,[]);
  assert.equal(ctx.DISP.rotate.length,0);assert.equal(ctx.failedByStore.has(b),false);assert.equal(ctx.heldByStore.has(b),false);assert.match(rl.innerHTML,/only store/);
 });
@@ -202,8 +202,76 @@ test('late failed response cannot restore a warning after its store is removed',
  const next=block('  async function nextStore(){','  /* The tail of loop(), reusable:');
  const home='lpc:board:a:v1',b='lpc:board:b:v1';let resolve;
  const ctx={CFG:{storeId:'a',storeKey:home},HOME:{id:'a'},ROT_I:0,HANDING:false,requestEpoch:0,storeShownAt:0,Date,
- displayedByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(),rotaList:()=>['a','b'],getStoreByKey:()=>new Promise(r=>{resolve=r;}),startScroll(){},showStatus(){}};
+ displayedByStore:new Map(),lastCheckByStore:new Map(),heldByStore:new Set(),failedByStore:new Set(),rotaList:()=>['a','b'],getStoreByKey:()=>new Promise(r=>{resolve=r;}),startScroll(){},showStatus(){},finishHandover(){ctx.HANDING=false;}};
  vm.createContext(ctx);vm.runInContext(next,ctx);const pending=ctx.nextStore();
  ctx.requestEpoch++;resolve({__err:'offline'});await pending;
  assert.equal(ctx.failedByStore.has(b),false);assert.equal(ctx.HANDING,false);assert.equal(ctx.CFG.storeId,'a');
+});
+
+function cancellationHarness(mode){
+ const loop=block('  var requestEpoch = 0,','  /* ---------- rotating through more than one store');
+ const finish=block('  function finishHandover(){','  /* The convoy.');
+ const drive=block('  function driveTo(label, swap){','  async function nextStore(){');
+ const next=block('  async function nextStore(){','  // Reuse only the last displayed row');
+ const held=block('  function renderHeldStore(s, key){','  /* The tail of loop(), reusable:');
+ const rota=block('  function pruneRotationIssues(){','  function wireTuner(){');
+ const keys=['a','b','c'].map(x=>'lpc:board:'+x+':v1'),shown=[],timers=[];let resolveFetch;
+ const note={textContent:'',classList:{add(){},remove(){}}},root={classList:{add(){},remove(){}}};
+ const button={getAttribute:()=> 'c'},rl={innerHTML:'',querySelectorAll:()=>[button]};
+ const ctx={CFG:{storeId:'b',storeKey:keys[1],storeName:'B'},HOME:{id:'a',key:keys[0],name:'A'},ROT_I:1,HANDING:false,pendingHomeRefresh:false,SWITCHING:false,storeShownAt:0,Date,Intl,
+  DISP:{rotate:['b','c']},LAST:publisherRow(3,'2026-07','b'),lastGoodKey:keys[1],
+  rotaList:()=>['a',...ctx.DISP.rotate],norm:s=>s.toLowerCase(),tooDifferent:()=>false,newlySold:()=>[],
+  getStoreByKey:()=>mode==='fetch'?new Promise(r=>{resolveFetch=r;}):Promise.resolve(publisherRow(4,'2026-07','c')),
+  getStore:async()=>publisherRow(2,'2026-07','a'),
+  document:{getElementById:id=>id==='root'?root:note,createElement:()=>({remove(){}}),body:{appendChild(){}}},
+  pix:()=>'',setTimeout(fn,ms){timers.push({fn,ms});},startScroll(){},wireTuner(){},tsizeMine:()=>null,applyDisp(){},congratulate(){},render(row){shown.push(row.storeId);},
+  renderStore(row){shown.push(row.storeId);ctx.LAST=row;ctx.lastGoodKey=ctx.CFG.storeKey;}};
+ vm.createContext(ctx);vm.runInContext(loop+finish+drive+next+held+rota,ctx);ctx.lastGoodKey=keys[1];
+ return {ctx,keys,shown,timers,rl,button,resolve:row=>resolveFetch(row)};
+}
+
+test('rotation removal during a pending fetch refreshes home after cancellation',async()=>{
+ const h=cancellationHarness('fetch'),p=h.ctx.nextStore();assert.equal(h.ctx.HANDING,true);
+ h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();
+ assert.equal(h.ctx.CFG.storeId,'a');assert.equal(h.ctx.pendingHomeRefresh,true);assert.deepEqual(h.shown,[]);
+ h.resolve(publisherRow(4,'2026-07','c'));await p;await new Promise(setImmediate);
+ assert.equal(h.ctx.HANDING,false);assert.equal(h.ctx.pendingHomeRefresh,false);assert.deepEqual(h.shown,['a']);
+});
+
+test('rotation removal during active animation refreshes home when animation ends',async()=>{
+ const h=cancellationHarness('animation');await h.ctx.nextStore();assert.equal(h.ctx.HANDING,true);assert.equal(h.ctx.CFG.storeId,'c');
+ h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();
+ assert.equal(h.ctx.CFG.storeId,'a');assert.equal(h.ctx.pendingHomeRefresh,true);
+ h.timers.find(t=>t.ms===1250).fn();assert.deepEqual(h.shown,[]);
+ h.timers.find(t=>t.ms===3600).fn();await new Promise(setImmediate);
+ assert.equal(h.ctx.HANDING,false);assert.equal(h.ctx.pendingHomeRefresh,false);assert.deepEqual(h.shown,['a']);
+});
+
+test('rotation removal after the animation swap still returns home at completion',async()=>{
+ const h=cancellationHarness('animation');await h.ctx.nextStore();
+ h.timers.find(t=>t.ms===1250).fn();assert.deepEqual(h.shown,['c']);assert.equal(h.ctx.lastGoodKey,h.keys[2]);
+ h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();
+ assert.equal(h.ctx.CFG.storeId,'a');assert.equal(h.ctx.pendingHomeRefresh,true);
+ h.timers.find(t=>t.ms===3600).fn();await new Promise(setImmediate);
+ assert.deepEqual(h.shown,['c','a']);assert.equal(h.ctx.HANDING,false);
+});
+
+test('cancelled handover displays the last home row if the new home row is held',async()=>{
+ const h=cancellationHarness('fetch'),checked=new Date('2026-07-01T12:00:00Z');
+ h.ctx.displayedByStore.set(h.keys[0],publisherRow(20,'2026-07','a'));h.ctx.lastCheckByStore.set(h.keys[0],checked);
+ h.ctx.tooDifferent=(prev,next)=>prev.months['2026-07'].stats['alex jones'].internetUnits===20 && next.months['2026-07'].stats['alex jones'].internetUnits===0;
+ h.ctx.getStore=async()=>publisherRow(0,'2026-07','a');
+ const p=h.ctx.nextStore();h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();
+ h.resolve(publisherRow(4,'2026-07','c'));await p;await new Promise(setImmediate);
+ assert.deepEqual(h.shown,['a']);assert.equal(h.ctx.LAST.months['2026-07'].stats['alex jones'].internetUnits,20);
+ assert.equal(h.ctx.lastGoodAt,checked);assert.equal(h.ctx.heldByStore.has(h.keys[0]),true);
+});
+
+test('cancelled handover restores cached home while its refresh is offline',async()=>{
+ const h=cancellationHarness('fetch'),checked=new Date('2026-07-01T12:00:00Z');
+ h.ctx.displayedByStore.set(h.keys[0],publisherRow(20,'2026-07','a'));h.ctx.lastCheckByStore.set(h.keys[0],checked);
+ h.ctx.getStore=async()=>({__err:'offline'});
+ const p=h.ctx.nextStore();h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();
+ h.resolve(publisherRow(4,'2026-07','c'));await p;await new Promise(setImmediate);
+ assert.deepEqual(h.shown,['a']);assert.equal(h.ctx.lastGoodAt,checked);assert.equal(h.ctx.failedByStore.has(h.keys[0]),true);
 });

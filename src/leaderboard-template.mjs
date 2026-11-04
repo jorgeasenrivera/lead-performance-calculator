@@ -1174,7 +1174,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
   }
 
-  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, displayedByStore = new Map(), heldByStore = new Set();
+  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, displayedByStore = new Map(), lastCheckByStore = new Map(), heldByStore = new Set();
   var failedByStore = new Set(), currentFreshness = 'Report freshness is not verified.';
   function showStatus(){
     var note = document.getElementById('stale-note');
@@ -1211,6 +1211,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     var previous = displayedByStore.get(key);
     if (previous && s && !s.__err && tooDifferent(previous, s)) {
       heldByStore.add(key);
+      if (lastGoodKey !== key) renderHeldStore(previous, key);
       showStatus();
       return;
     }
@@ -1283,6 +1284,16 @@ export function LEADERBOARD_HTML(p, PIX) {
      refresh of the same store and completely wrong across a hand-over. */
   var SWITCHING = false;
   var HANDING = false;      // one hand-over at a time
+  var pendingHomeRefresh = false;
+  function finishHandover(){
+    HANDING = false;
+    if (pendingHomeRefresh) {
+      pendingHomeRefresh = false;
+      var cached = displayedByStore.get(HOME.key);
+      if (cached && lastGoodKey !== HOME.key) { renderHeldStore(cached, HOME.key); showStatus(); }
+      loop();
+    }
+  }
 
   /* The convoy.
      The board's own unit mark is a car, so the hand-over is that car making the
@@ -1331,7 +1342,7 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (r) { r.classList.remove('drive-out'); r.classList.add('drive-in');
         setTimeout(function(){ r.classList.remove('drive-in'); }, 1150); }
     }, 1250);
-    setTimeout(function(){ lane.remove(); HANDING = false; }, 3600);
+    setTimeout(function(){ lane.remove(); finishHandover(); }, 3600);
   }
 
   async function nextStore(){
@@ -1343,7 +1354,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     var id = list[at];
     var key = 'lpc:board:' + id + ':v1';
     var s = await getStoreByKey(key);
-    if (epoch !== requestEpoch) { HANDING = false; return; }
+    if (epoch !== requestEpoch) { finishHandover(); return; }
     if (!s || s.__err) {
       /* That store has never been published, or the network blinked. Stay where we
          are and let the next pass try the one after it, rather than driving the
@@ -1373,6 +1384,21 @@ export function LEADERBOARD_HTML(p, PIX) {
     });
   }
 
+  // Reuse only the last displayed row when a selected store's new row is held.
+  // A cached render is not a successful read and must retain its original time.
+  function renderHeldStore(s, key){
+    if (s.storeName) CFG.storeName = s.storeName;
+    if (s.icon !== undefined) CFG.icon = s.icon;
+    if (s.brand) CFG.brand = s.brand;
+    if (s.thresholds) CFG.thresholds = s.thresholds;
+    LAST = s; lastGoodKey = key; lastGoodAt = lastCheckByStore.get(key) || null;
+    var own = tsizeMine(CFG.storeId);
+    var published = s.boardDisplay && s.boardDisplay.tscale != null ? s.boardDisplay.tscale : null;
+    DISP.tscale = own != null ? own : (published != null ? published : 1);
+    currentFreshness = publicationProblem(s, Date.now());
+    applyDisp(); render(s); wireTuner(); applyDisp();
+  }
+
   /* The tail of loop(), reusable: the hand-over already has the row in hand and
      must not fetch it a second time. */
   function renderStore(s){
@@ -1384,7 +1410,7 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
     if (s && !s.__err) {
-      LAST = s; displayedByStore.set(CFG.storeKey, s); heldByStore.delete(CFG.storeKey); lastGoodKey = CFG.storeKey; lastGoodAt = new Date();
+      LAST = s; displayedByStore.set(CFG.storeKey, s); heldByStore.delete(CFG.storeKey); lastGoodKey = CFG.storeKey; lastGoodAt = new Date(); lastCheckByStore.set(CFG.storeKey, lastGoodAt);
       failedByStore.delete(CFG.storeKey);
       currentFreshness = publicationProblem(s, lastGoodAt.getTime());
       showStatus();
@@ -1428,6 +1454,14 @@ export function LEADERBOARD_HTML(p, PIX) {
     heldByStore.forEach(function(key){ if (!active.has(key)) heldByStore.delete(key); });
     showStatus();
   }
+  function selectHomeAfterRotaChange(){
+    ROT_I = 0;
+    if (CFG.storeId === HOME.id && (!lastGoodKey || lastGoodKey === HOME.key)) return;
+    CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
+    CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
+    CFG.thresholds = HOME.thresholds; SWITCHING = true;
+    if (HANDING) pendingHomeRefresh = true; else loop();
+  }
   function drawRota(rl, sibs){
     /* A store that has since left the group stops being a tickable row, and
        stops being in the rota. Only ever run against a list that was actually
@@ -1436,7 +1470,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     var before = (DISP.rotate || []).length;
     DISP.rotate = (DISP.rotate || []).filter(function(id){
       return sibs.some(function(x){ return x.id === id; }); });
-    if (DISP.rotate.length !== before) { ++requestEpoch; pruneRotationIssues(); }
+    if (DISP.rotate.length !== before) { ++requestEpoch; pruneRotationIssues(); selectHomeAfterRotaChange(); }
     if (!sibs.length) { rl.innerHTML = '<div class="none">This is the only store on this account.</div>'; return; }
     rl.innerHTML = sibs.map(function(x){
       var on = (DISP.rotate || []).indexOf(x.id) >= 0;
@@ -1452,10 +1486,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         ++requestEpoch; pruneRotationIssues();
         /* Back to the home board whenever the list changes, so what is on
            screen always matches what is ticked. */
-        ROT_I = 0;
-        if (CFG.storeId !== HOME.id) { CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
-          CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
-          CFG.thresholds = HOME.thresholds; SWITCHING = true; loop(); }
+        selectHomeAfterRotaChange();
         wireTuner();
       };
     });

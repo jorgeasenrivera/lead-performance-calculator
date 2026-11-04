@@ -143,3 +143,9 @@ not erase its in-memory last-displayed baseline. The synthetic attestation carri
 both evidence observation time and the verified report-through date; freshness
 comparisons in the fixture use the latter. Neither field is trusted by the app
 until a real source verifier and protected publication boundary exist.
+
+If a rotation edit cancels a fetch or an active handover, the candidate resumes
+its home-store refresh after the handover ends. Where available it first redraws
+the previously displayed home row without changing that row's last-check time;
+a failed refresh stays visible as a connection warning. These are synthetic
+script tests, not a continuously running TV or physical-device verification.
