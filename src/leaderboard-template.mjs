@@ -1285,13 +1285,16 @@ export function LEADERBOARD_HTML(p, PIX) {
   var SWITCHING = false;
   var HANDING = false;      // one hand-over at a time
   var pendingHomeRefresh = false;
+  function refreshHomeAfterRotaChange(){
+    var cached = displayedByStore.get(HOME.key);
+    if (cached && lastGoodKey !== HOME.key) { renderHeldStore(cached, HOME.key); showStatus(); }
+    loop();
+  }
   function finishHandover(){
     HANDING = false;
     if (pendingHomeRefresh) {
       pendingHomeRefresh = false;
-      var cached = displayedByStore.get(HOME.key);
-      if (cached && lastGoodKey !== HOME.key) { renderHeldStore(cached, HOME.key); showStatus(); }
-      loop();
+      refreshHomeAfterRotaChange();
     }
   }
 
@@ -1460,7 +1463,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
     CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
     CFG.thresholds = HOME.thresholds; SWITCHING = true;
-    if (HANDING) pendingHomeRefresh = true; else loop();
+    if (HANDING) pendingHomeRefresh = true; else refreshHomeAfterRotaChange();
   }
   function drawRota(rl, sibs){
     /* A store that has since left the group stops being a tickable row, and

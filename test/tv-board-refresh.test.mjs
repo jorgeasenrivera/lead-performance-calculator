@@ -210,7 +210,7 @@ test('late failed response cannot restore a warning after its store is removed',
 
 function cancellationHarness(mode){
  const loop=block('  var requestEpoch = 0,','  /* ---------- rotating through more than one store');
- const finish=block('  function finishHandover(){','  /* The convoy.');
+ const finish=block('  function refreshHomeAfterRotaChange(){','  /* The convoy.');
  const drive=block('  function driveTo(label, swap){','  async function nextStore(){');
  const next=block('  async function nextStore(){','  // Reuse only the last displayed row');
  const held=block('  function renderHeldStore(s, key){','  /* The tail of loop(), reusable:');
@@ -274,4 +274,13 @@ test('cancelled handover restores cached home while its refresh is offline',asyn
  const p=h.ctx.nextStore();h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();
  h.resolve(publisherRow(4,'2026-07','c'));await p;await new Promise(setImmediate);
  assert.deepEqual(h.shown,['a']);assert.equal(h.ctx.lastGoodAt,checked);assert.equal(h.ctx.failedByStore.has(h.keys[0]),true);
+});
+
+test('removing the visible store restores cached home when its refresh is offline',async()=>{
+ const h=cancellationHarness('fetch'),checked=new Date('2026-07-01T12:00:00Z');
+ h.ctx.displayedByStore.set(h.keys[0],publisherRow(20,'2026-07','a'));h.ctx.lastCheckByStore.set(h.keys[0],checked);
+ h.ctx.getStore=async()=>({__err:'offline'});h.button.getAttribute=()=> 'b';
+ h.ctx.drawRota(h.rl,[{id:'b',name:'B'},{id:'c',name:'C'}]);h.button.onclick();await new Promise(setImmediate);
+ assert.equal(h.ctx.CFG.storeId,'a');assert.deepEqual(h.shown,['a']);assert.equal(h.ctx.lastGoodAt,checked);
+ assert.equal(h.ctx.failedByStore.has(h.keys[0]),true);
 });
