@@ -1174,7 +1174,7 @@ export function LEADERBOARD_HTML(p, PIX) {
     setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
   }
 
-  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, heldDrop = null;
+  var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null;
   function markStale(reason){
     var note = document.getElementById('stale-note');
     if (!note) return;
@@ -1184,31 +1184,28 @@ export function LEADERBOARD_HTML(p, PIX) {
     note.textContent = reason + stamp + ' Retrying.';
     note.classList.add('on');
   }
-  function dropFingerprint(row){
-    var stats = (row.months && row.months[row.ym] && row.months[row.ym].stats) || {};
-    var entries = (row.roster || []).map(function(p){
-      var v = stats[norm(p.name)] || {};
-      return [norm(p.name),v.internetUnits,v.phoneUnits,v.showroomUnits,v.campaignUnits];
-    }).sort(function(a,b){ return a[0].localeCompare(b[0]); });
-    return JSON.stringify([row.storeId,row.ym,entries]);
+  // The import is scheduled hourly. Two hours is a warning threshold, not a
+  // guarantee that the report itself is current or correctly scoped.
+  function publicationProblem(row, now){
+    if (!row || typeof row.updatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(row.updatedAt)) return 'Board publication time is unavailable.';
+    var t = Date.parse(row.updatedAt);
+    if (!Number.isFinite(t) || new Date(t).toISOString().slice(0,19) !== row.updatedAt.slice(0,19) || t > now + 5 * 60 * 1000) return 'Board publication time is unavailable.';
+    if (now - t >= 2 * 60 * 60 * 1000) return 'Board data may be out of date. Last published: ' + new Date(t).toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.';
+    return null;
   }
   async function loop(){
     if (HANDING) return;
     var epoch = ++requestEpoch, key = CFG.storeKey;
     var s = await getStore();
     if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
-    if ((!s || s.__err) && LAST && !LAST.__err) { heldDrop = null; markStale('Cannot refresh the board.'); return; }
+    if ((!s || s.__err) && LAST && !LAST.__err) { markStale('Cannot refresh the board.'); return; }
     var switched = SWITCHING; SWITCHING = false;
     // Failsafe: a good previous board plus a suspicious new one = keep the old one.
     // Skipped across a hand-over: two different dealerships are supposed to look
     // nothing like each other, and this check would refuse every rotation.
     if (!switched && LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
-      var fingerprint = dropFingerprint(s);
-      if (!heldDrop || heldDrop.key !== key || heldDrop.fingerprint !== fingerprint) {
-        heldDrop = {key:key, fingerprint:fingerprint};
-        markStale('A large change needs another check.');
-        return;
-      }
+      markStale('A large change needs verification.');
+      return;
     }
     /* Nobody "just delivered" anything because the screen changed store, so the
        congratulations are held across a hand-over too. */
@@ -1251,7 +1248,6 @@ export function LEADERBOARD_HTML(p, PIX) {
        carries a name, and brand, icon and thresholds all differ per store. */
     SWITCHING = switched;
     renderStore(s);
-    heldDrop = null;
     if (wsold.length) congratulate(wsold);
   }
   /* ---------- rotating through more than one store ----------
@@ -1372,9 +1368,11 @@ export function LEADERBOARD_HTML(p, PIX) {
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
     if (s && !s.__err) {
-      LAST = s; lastGoodKey = CFG.storeKey; lastGoodAt = new Date(); heldDrop = null;
+      LAST = s; lastGoodKey = CFG.storeKey; lastGoodAt = new Date();
       var stale = document.getElementById('stale-note');
-      if (stale) stale.classList.remove('on');
+      var ageProblem = publicationProblem(s, lastGoodAt.getTime());
+      if (ageProblem) markStale(ageProblem);
+      else if (stale) stale.classList.remove('on');
     }
     applyDisp();
     render(s);

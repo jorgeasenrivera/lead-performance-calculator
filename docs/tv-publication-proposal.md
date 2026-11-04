@@ -27,8 +27,12 @@ properties for synthetic data, not the production authorization or payload.
 The offline JavaScript projection is not callable in a database transaction and
 is not integrated. Its evidence validator checks metadata shape, not authenticity.
 
-A CSV store roll-up counts `Deals Delivered`, but its current parser does not
-establish the source period. The PDF parser skips its date-range preamble and its
+A CSV store roll-up counts `Deals Delivered`. The existing parser does not
+establish the source period, but `test/parsers.test.mjs` contains a fixture with
+a `Delivery Summary` title and an `M/D/YYYY - M/D/YYYY` range. An offline
+candidate parser now recognizes only that fixture shape, requires a unique exact
+store match and a whole count, and marks its result unverified. The fixture is
+not evidence that the live report uses that shape or that its figures are right. The PDF parser skips its date-range preamble and its
 summary counts a different delivered/F&I metric. Both publishers discard the
 stated total. Obtain an authorized representative report or a documented source
 contract and validate store identity, period, metric and completeness before
@@ -88,3 +92,17 @@ is not wired to imports and proves nothing about actual DriveCentric reports.
 The cross-store gear test confirms a visiting-store write can succeed before a
 home-store write fails. The local candidate reports that partial success; it
 does not make the two writes atomic or grant any new permission.
+
+The candidate status is a safety marker, not cryptographic verification or
+authorization. An offline test simulates a separate trusted verification step
+and proves the projection retains 0.5 person credits alongside a whole store
+count. No real verifier or source-to-publisher integration exists yet.
+
+A same-month large drop is held and marked for verification; identical repeated
+reads do not establish that it is correct. This can hold a legitimate correction
+until a trustworthy publication mechanism exists, so it is not a finished
+correction workflow. The TV separately warns when the board publication timestamp
+is missing, implausibly future-dated, or at least two hours old. Two hours is a
+warning threshold based on the hourly import schedule, not proof of source-report
+freshness. A successful network read updates the last check time; it does not
+make an old publication fresh.

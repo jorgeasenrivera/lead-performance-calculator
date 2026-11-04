@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { verifiedBoardCount } from '../api/_board-provenance.mjs';
-const good = {source:'store-rollup', storeId:'fictional', periodStart:'2026-07-01', periodEnd:'2026-07-08', deliveries:4};
+const good = {status:'verified',source:'store-rollup', storeId:'fictional', periodStart:'2026-07-01', periodEnd:'2026-07-08', deliveries:4};
 const read = (r = good, store = 'fictional', month = '2026-07', day = '2026-07-08') => verifiedBoardCount(r, store, month, day);
 test('only a whole count with explicit matching store and month-to-date scope is accepted', () => {
   assert.equal(read(), 4);
   assert.equal(read({...good, deliveries:0}), 0);
-  for (const patch of [{deliveries:3.5}, {deliveries:-1}, {deliveries:'4'}, {source:'summary-grid'}, {storeId:'other'}, {periodStart:'2026-07-02'}, {periodEnd:'2026-07-07'}, {periodEnd:'2026-07-09'}, {periodEnd:'2026-02-30'}, {periodStart:undefined}]) assert.equal(read({...good, ...patch}), null);
+  for (const patch of [{status:'unverified'}, {status:undefined}, {deliveries:3.5}, {deliveries:-1}, {deliveries:'4'}, {source:'summary-grid'}, {storeId:'other'}, {periodStart:'2026-07-02'}, {periodEnd:'2026-07-07'}, {periodEnd:'2026-07-09'}, {periodEnd:'2026-02-30'}, {periodStart:undefined}]) assert.equal(read({...good, ...patch}), null);
   assert.equal(read(good, 'other'), null);
   assert.equal(read(good, 'fictional', '2026-06'), null);
   assert.equal(read({source:'roll-up', deliveries:4}), null, 'legacy metadata does not establish report scope');

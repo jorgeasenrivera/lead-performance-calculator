@@ -57,7 +57,7 @@ test('large-drop check accepts publisher-shaped rows and ignores month or store 
  assert.equal(ctx.tooDifferent(publisherRow(20),publisherRow(0,'2026-07','other')),false);
 });
 
-test('large correction is held once and accepted when the same current-store figures repeat',async()=>{
+test('repeated large drop remains held until data returns to the trusted range',async()=>{
  const loop=block('  var requestEpoch = 0,','  /* ---------- rotating through more than one store');
  const check=block('  function tooDifferent(prev, next){','  // Who sold since the last good refresh');
  const rendered=[], note={textContent:'',classList:{on:false,add(){this.on=true;},remove(){this.on=false;}}};
@@ -65,7 +65,8 @@ test('large correction is held once and accepted when the same current-store fig
  newlySold:()=>[],document:{getElementById:()=>note},renderStore(s){rendered.push(s);ctx.LAST=s;},congratulate(){},Date,Intl};
  vm.createContext(ctx);vm.runInContext(check+loop,ctx);
  await ctx.loop();assert.equal(rendered.length,0);assert.equal(note.classList.on,true);assert.match(note.textContent,/large change/i);
- await ctx.loop();assert.equal(rendered.length,1);assert.equal(rendered[0].months['2026-07'].stats['alex jones'].internetUnits,0);
+ await ctx.loop();assert.equal(rendered.length,0);assert.equal(note.classList.on,true);
+ row=publisherRow(19);await ctx.loop();assert.equal(rendered.length,1);assert.equal(rendered[0].months['2026-07'].stats['alex jones'].internetUnits,19);
 });
 
 test('a failed current-store poll shows last successful check and older responses cannot clear it',async()=>{
@@ -81,9 +82,33 @@ test('a failed current-store poll shows last successful check and older response
 test('only a successful rendered row records and clears current-store staleness',()=>{
  const code=block('  function renderStore(s){','  /* ---------- display tuning ----------');
  const note={classList:{on:true,remove(){this.on=false;}}};
- const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,heldDrop:null,Date,
+ const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,Date,publicationProblem:()=>null,
  document:{getElementById:()=>note},applyDisp(){},render(){},wireTuner(){}};
  vm.createContext(ctx);vm.runInContext(code,ctx);
  ctx.renderStore({__err:'offline'});assert.equal(note.classList.on,true);assert.equal(ctx.lastGoodAt,null);
  ctx.renderStore(publisherRow(2));assert.equal(note.classList.on,false);assert.equal(ctx.lastGoodKey,'demo');assert.ok(ctx.lastGoodAt instanceof Date);
+});
+
+test('publication age is distinct from a successful network check',()=>{
+ const code=block('  function publicationProblem(row, now){','  async function loop(){');
+ const ctx={Date,Number};vm.createContext(ctx);vm.runInContext(code,ctx);
+ const now=Date.parse('2026-07-08T12:00:00Z');
+ assert.equal(ctx.publicationProblem({updatedAt:'2026-07-08T11:59:00Z'},now),null);
+ assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T09:59:00Z'},now),/Last published:.*ET/);
+ assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T12:10:00Z'},now),/unavailable/);
+ assert.match(ctx.publicationProblem({},now),/unavailable/);
+ assert.match(ctx.publicationProblem({updatedAt:'2026-02-30T11:59:00Z'},now),/unavailable/);
+ assert.match(ctx.publicationProblem({updatedAt:'2026-07-08T11:59:00'},now),/unavailable/);
+});
+
+test('successful read of an old publication keeps a stale notice visible',()=>{
+ const age=block('  function publicationProblem(row, now){','  async function loop(){');
+ const render=block('  function renderStore(s){','  /* ---------- display tuning ----------');
+ const note={textContent:'',classList:{on:false,add(){this.on=true;},remove(){this.on=false;}}};
+ const ctx={CFG:{storeKey:'demo'},SWITCHING:false,LAST:null,lastGoodKey:null,lastGoodAt:null,Date,Number,
+ document:{getElementById:()=>note},applyDisp(){},render(){},wireTuner(){},markStale(reason){note.textContent=reason;note.classList.add('on');}};
+ vm.createContext(ctx);vm.runInContext(age+render,ctx);
+ ctx.renderStore({...publisherRow(2),updatedAt:'2020-01-01T00:00:00Z'});
+ assert.equal(note.classList.on,true);assert.match(note.textContent,/Last published/);assert.equal(ctx.lastGoodKey,'demo');
+ ctx.renderStore({...publisherRow(3),updatedAt:new Date().toISOString()});assert.equal(note.classList.on,false);
 });

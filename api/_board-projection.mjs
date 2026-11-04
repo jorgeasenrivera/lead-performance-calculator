@@ -54,7 +54,7 @@ export function projectBoard({ config, storeId, data, month, today, updatedAt, d
   const total = verifiedBoardCount(source.boardCountEvidence, storeId, month, today);
   const rawBrand = store.brand || defaults.brand || {};
   const fallbackBrand = {primary:'#2A5E9B',deep:'#1D4674',accent:'#C1D730'};
-  const brand = Object.fromEntries(Object.keys(fallbackBrand).map(k => [k, /^#[0-9a-f]{6}$/i.test(rawBrand[k] || '') ? rawBrand[k] : fallbackBrand[k]]));
+  const brand = Object.fromEntries(Object.keys(fallbackBrand).map(k => [k, typeof rawBrand[k] === 'string' && /^#[0-9a-f]{6}$/i.test(rawBrand[k]) ? rawBrand[k] : fallbackBrand[k]]));
   const normalized = normalizeThresholds(store.thresholds);
   const thresholds = Object.fromEntries(['internet','phone','showroom','apptVideoDayPct','engagedVideoPct'].map(k => [k, Object.fromEntries(['green','yellow'].filter(v => typeof normalized[k]?.[v] === 'number' && Number.isFinite(normalized[k][v])).map(v => [v, normalized[k][v]]))]));
   const icon = typeof store.icon === 'string' && store.icon.length <= 6000000 && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(store.icon) ? store.icon : null;
