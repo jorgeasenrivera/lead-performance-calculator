@@ -123,3 +123,15 @@ The browser does not trust or consume those synthetic fields. A real design must
 establish the verifier's identity and authority, source period and metric,
 immutable evidence, atomic revocation or replacement rules, and legacy-writer
 exclusion before a revision can release a held correction.
+
+The synthetic attestation additionally binds a report metric and inclusive start
+and end dates. The synthetic publisher refuses an unsupported metric, a period
+outside the requested month, a period beginning after the first, or an end date
+later than the attested as-of date in Eastern time. These checks do not validate
+the real report or establish who may attest it.
+
+In the renderer candidate, a held store advances the rotation cursor so later
+stores can still appear and the held store is retried on a later cycle. Connection,
+source-freshness and held-store conditions are composed into one status; one
+condition does not hide another. This remains an in-memory safeguard, not a
+verified persistent baseline.

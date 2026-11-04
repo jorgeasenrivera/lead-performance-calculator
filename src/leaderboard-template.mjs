@@ -1175,14 +1175,18 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 
   var requestEpoch = 0, lastGoodAt = null, lastGoodKey = null, displayedByStore = new Map(), heldByStore = new Set();
-  function markStale(reason, retrying){
+  var connectionIssue = null, currentFreshness = 'Report freshness is not verified.';
+  function showStatus(){
     var note = document.getElementById('stale-note');
     if (!note) return;
-    var stamp = lastGoodKey === CFG.storeKey && lastGoodAt
-      ? ' Last successful check: ' + lastGoodAt.toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.'
-      : '';
-    note.textContent = reason + stamp + (retrying === false ? '' : ' Retrying.');
-    note.classList.add('on');
+    var parts = [];
+    if (connectionIssue) parts.push(connectionIssue);
+    if (currentFreshness) parts.push(currentFreshness);
+    if (heldByStore.size) parts.push('A store has a large change that needs verification.');
+    if (lastGoodKey === CFG.storeKey && lastGoodAt) parts.push('Last successful check: ' + lastGoodAt.toLocaleString('en-US', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' ET.');
+    if (connectionIssue || heldByStore.size) parts.push('Retrying.');
+    note.textContent = parts.join(' ');
+    if (parts.length) note.classList.add('on'); else note.classList.remove('on');
   }
   // The import is scheduled hourly. Two hours is a warning threshold, not a
   // guarantee that the report itself is current or correctly scoped.
@@ -1198,13 +1202,13 @@ export function LEADERBOARD_HTML(p, PIX) {
     var epoch = ++requestEpoch, key = CFG.storeKey;
     var s = await getStore();
     if (epoch !== requestEpoch || key !== CFG.storeKey || HANDING) return;
-    if ((!s || s.__err) && LAST && !LAST.__err) { markStale('Cannot refresh the board.'); return; }
+    if ((!s || s.__err) && LAST && !LAST.__err) { connectionIssue = 'Cannot refresh the board.'; showStatus(); return; }
     var switched = SWITCHING; SWITCHING = false;
     // Compare with the last displayed row for this store, including after rotation.
     var previous = displayedByStore.get(key);
     if (previous && s && !s.__err && tooDifferent(previous, s)) {
       heldByStore.add(key);
-      markStale('A large change needs verification.');
+      showStatus();
       return;
     }
     /* Nobody "just delivered" anything because the screen changed store, so the
@@ -1342,13 +1346,14 @@ export function LEADERBOARD_HTML(p, PIX) {
          are and let the next pass try the one after it, rather than driving the
          room to an empty board. */
       HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
+      connectionIssue = 'Cannot refresh the next store.'; showStatus();
       return;
     }
     var previous = displayedByStore.get(key);
     if (previous && tooDifferent(previous, s)) {
       heldByStore.add(key);
-      HANDING = false; storeShownAt = Date.now(); startScroll();
-      markStale('The next store has a large change that needs verification.');
+      HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
+      showStatus();
       return;
     }
     ROT_I = at;
@@ -1376,11 +1381,9 @@ export function LEADERBOARD_HTML(p, PIX) {
     }
     if (s && !s.__err) {
       LAST = s; displayedByStore.set(CFG.storeKey, s); heldByStore.delete(CFG.storeKey); lastGoodKey = CFG.storeKey; lastGoodAt = new Date();
-      var stale = document.getElementById('stale-note');
-      var ageProblem = publicationProblem(s, lastGoodAt.getTime());
-      if (heldByStore.size) ageProblem = (ageProblem ? ageProblem + ' ' : '') + 'Another store has a large change that needs verification.';
-      if (ageProblem) markStale(ageProblem, false);
-      else if (stale) stale.classList.remove('on');
+      connectionIssue = null;
+      currentFreshness = publicationProblem(s, lastGoodAt.getTime());
+      showStatus();
     }
     applyDisp();
     render(s);
