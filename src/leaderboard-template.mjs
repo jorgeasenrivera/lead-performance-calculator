@@ -612,7 +612,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         body: JSON.stringify({ refresh_token: TOK.refresh })
       }), 12000);
       if (!r.ok) return false;
-      var d = await r.json();
+      var d = await withTimeout(r.json(), 12000);
       if (!d.access_token) return false;
       TOK.access = d.access_token;
       if (d.refresh_token) TOK.refresh = d.refresh_token;
@@ -635,7 +635,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         res = await withTimeout(fetch(url, { headers: headers() }), 12000);
       }
       if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
-      var rows = await res.json();
+      var rows = await withTimeout(res.json(), 12000);
       return (rows && rows[0]) ? rows[0].value : null;
     } catch (e) {
       return { __err: 'No connection to the database. Retrying...' };
@@ -715,6 +715,12 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
+  function easternMonth(){
+    var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+    var year = parts.find(function(p){ return p.type === 'year'; }).value;
+    var month = parts.find(function(p){ return p.type === 'month'; }).value;
+    return year + '-' + month;
+  }
   function render(store){
     CAR_ROW = 0;
     var root = document.getElementById('root');
@@ -724,7 +730,8 @@ export function LEADERBOARD_HTML(p, PIX) {
       return;
     }
     if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
-    var M = (store.months||{})[CFG.ym] || {stats:{}};
+    var M = (store.months||{})[easternMonth()];
+    if (!M || !M.stats) { root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
 
     // CFG.roles already excludes any role turned off for The Board (BDC by default),
     // so only the people who actually deliver units show up here.
