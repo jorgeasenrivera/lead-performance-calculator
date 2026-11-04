@@ -627,9 +627,10 @@ inspected code, interpretations and unresolved questions stay distinct.
 
 Sage is metrics-first. RockEd is a manual manager yes/no against a store
 threshold and is not on TV. TV store totals are whole units, not rounded credit
-sums. Online is intended to guide BDC/managers to the next recipient of an
-unassigned Internet lead within seconds; lead ingestion and assignment rules
-are not yet defined or available.
+sums. Online should help BDC/managers choose the best fit for an unassigned
+Internet lead from associates who raise their hands. Lead ingestion is not
+available; no automatic assignment, fixed rotation or matching criteria are
+specified.
 Pending associates may be scheduled but cannot view schedules until approved.
 Preserve the schedule viewer/editor split and existing room workflows.
 
