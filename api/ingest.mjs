@@ -6,7 +6,9 @@
 
 import PostalMime from "postal-mime";
 import Papa from "papaparse";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
+import * as pdfjsNs from "pdfjs-dist/legacy/build/pdf.js";
+// Native ESM and bundled CommonJS expose this UMD package differently.
+const pdfjs = typeof pdfjsNs.getDocument === "function" ? pdfjsNs : pdfjsNs.default;
 /* The reader for the scheduled reports. Shared verbatim with the app, which
    reads the same PDFs when a manager drops one in by hand — see the note at the
    top of that file for what living as two copies cost. */
