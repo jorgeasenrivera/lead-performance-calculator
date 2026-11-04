@@ -1517,6 +1517,17 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 
   var LAST = null;   // last store payload, so a text-size change can re-render
+  var renderedMonth = easternMonth();
+  function clockTick(){
+    tick();
+    var month = easternMonth();
+    // Do not render while the convoy is switching the visible store. The next
+    // existing clock tick will retry once the handover is complete.
+    if (month !== renderedMonth && !HANDING) {
+      renderedMonth = month;
+      if (LAST) render(LAST);
+    }
+  }
 
   // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
   // was pointless: the reports only change when a manager uploads one.
@@ -1524,6 +1535,6 @@ export function LEADERBOARD_HTML(p, PIX) {
   // always right regardless of when the data last refreshed.
   loop();
   setInterval(loop, 15 * 60 * 1000);
-  setInterval(tick, 10000);
+  setInterval(clockTick, 10000);
 </script></body></html>`;
 }

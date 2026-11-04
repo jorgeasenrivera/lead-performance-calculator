@@ -17,6 +17,17 @@ test('missing current month does not display invented zero sales',()=>{
  vm.createContext(ctx);vm.runInContext(code+'\n}',ctx);ctx.render({months:{'2026-06':{stats:{}}}});
  assert.match(root.innerHTML,/No data yet/);assert.doesNotMatch(root.innerHTML,/total-num|Units Delivered/);
 });
+test('an open board redraws at Eastern rollover on its existing clock without fetching',()=>{
+ const code=block('  var LAST = null;','  // Data is pulled every 15 minutes.');
+ let month='2026-06',ticks=0,fetches=0;const rendered=[];
+ const ctx={easternMonth:()=>month,HANDING:false,tick(){ticks++;},render(row){rendered.push([month,row]);},getStore(){fetches++;}};
+ vm.createContext(ctx);vm.runInContext(code,ctx);
+ const row={months:{'2026-06':{stats:{}}}};ctx.LAST=row;
+ ctx.clockTick();assert.equal(rendered.length,0);
+ month='2026-07';ctx.HANDING=true;ctx.clockTick();assert.equal(rendered.length,0);
+ ctx.HANDING=false;ctx.clockTick();assert.equal(rendered.length,1);assert.equal(rendered[0][0],'2026-07');assert.equal(rendered[0][1],row);
+ ctx.clockTick();assert.equal(rendered.length,1);assert.equal(fetches,0);assert.equal(ticks,4);
+});
 test('a stalled board response body times out and a later request can succeed',async()=>{
  const code=block('  function withTimeout(promise, ms){','  // keep the session alive');let calls=0;
  const ctx={setTimeout:fn=>setTimeout(fn,5),DB:{url:'https://example.invalid',anonKey:'fixture'},TOK:null,CFG:{storeKey:'fictional'},fetch:async()=>({ok:true,status:200,json:()=>++calls===1?new Promise(()=>{}):Promise.resolve([{value:{version:2}}])})};
