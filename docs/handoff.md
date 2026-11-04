@@ -619,6 +619,29 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X71 · Read the area contract before calling something a defect.**
+
+Jorge approved this docs-only, non-production exception. The durable record is
+[Product area contracts](product-area-contracts.md): explicit decisions,
+inspected code, interpretations and unresolved questions stay distinct.
+
+Sage is metrics-first. RockEd is a manual manager yes/no against a store
+threshold and is not on TV. TV store totals are whole units, not rounded credit
+sums. Online should help BDC/managers choose the best fit for an unassigned
+Internet lead from associates who raise their hands. Factors are monthly leads
+taken, especially that day, performance, physical presence, vehicle and lead
+source. Lead ingestion remains unavailable; weights and tie-breaks remain open.
+No automatic assignment or fixed rotation is specified.
+Pending associates may be scheduled but cannot view schedules until approved.
+Preserve the schedule viewer/editor split and existing room workflows.
+
+Continue approved work, tying fixes to an area, violated requirement, observed
+evidence, owner and acceptance check. Product questions are not invented fixes.
+Existing owners, visual approvals, review gates and production holds remain.
+Docs-only publication and merge are approved after review and passing checks.
+No app behavior changes; the review branch keeps its automatic-deployment stop.
+
+
 **H-X70 · Protected synthetic manager showcase, separate from WT8.**
 
 The parent requested a full showcase and assigned Codex separate assembly. X27 names the new-file boundary. Read existing source without changing WT8 or any other owner files. Keep the normal Vercel environment out of the build, blank backend settings and restrictive connection policy. Publish only isolated static synthetic artifacts to protected non-production preview. Verify routes, coherent sample records, keyboard/reduced motion and desktop/mobile browser layouts; no physical-device claim. Existing preview e3caf183 remains available while this work proceeds. No ownership transfer or renewal, production merge/deploy, live persistence, data, credentials or permissions change.
