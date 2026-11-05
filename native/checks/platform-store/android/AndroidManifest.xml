@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.sageonline.journalprobe">
+  <application android:label="Synthetic journal probe" android:allowBackup="false">
+    <service android:name="com.sageonline.sagelive.JournalLockService" android:process=":journal_probe" android:exported="false" />
+  </application>
+  <instrumentation android:name="com.sageonline.sagelive.JournalStoreProbe" android:targetPackage="com.sageonline.journalprobe" android:functionalTest="true" />
+</manifest>
