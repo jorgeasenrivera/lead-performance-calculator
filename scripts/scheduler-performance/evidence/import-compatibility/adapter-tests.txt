@@ -1,0 +1,28 @@
+✔ saved snapshot preserves off with unknown reason, provenance and historical membership (26.872432ms)
+✔ daysOff-only source does not manufacture missing original metadata (8.467571ms)
+✔ unresolved IDs and dateless unmatched names block entire batch until explicit skip (12.690481ms)
+✔ store/month mismatches and malformed data are rejected without filtering (3.225928ms)
+✔ representative grid expands only explicit legends and times, blanks remain unknown (88.646955ms)
+✔ grid keep decision preserves unknown historical teams instead of using current teams (10.835404ms)
+✔ ambiguous grid cells, dates and legends fail closed (7.615198ms)
+✔ later files are additive, duplicates retain original provenance, contradictions reject atomically (12.568258ms)
+✔ stale review and row expansion bounds are enforced (6.432958ms)
+✔ grid matching is exact after canonical normalization, with ambiguous and contradictory identities blocked (16.655947ms)
+✔ legacy off remains a known off-day in audit without vacation or scheduled minutes (19.235311ms)
+✔ valid off-days apply with unknown store hours and incomplete weekly totals (2.646094ms)
+✔ reordered and resaved identical off-days are idempotent (2.699758ms)
+✔ manual clearing cannot be silently resurrected by re-upload (6.24707ms)
+✔ blank grid cells are exact no-ops over existing off or work (2.781156ms)
+✔ disjoint files commute and repeated apply is idempotent (13.255459ms)
+✔ date-only year boundaries and leap dates survive host timezone changes (26.843501ms)
+✔ a conflicting edit after preview is retained when stale apply rejects (1.565674ms)
+✔ mixed review accounting distinguishes duplicate, ready, blocked, skipped and blank unchanged entries (4.47533ms)
+✔ notes that resemble a team legend never become people or membership (0.359934ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 542.0073
