@@ -2,6 +2,7 @@
 
 | ID | Item | Owner | Branch | Files | Status | PR |
 |---|---|---|---|---|---|---|
+| X-SCHED-20261106 | Reconcile the accepted scheduler calendar and editor on current main, source-only and synthetic. The exact bounded handoff below is the complete scope; implementation remains held until this record is published and verified. | Codex task `01a1a757-5dbc-77a8-8f87-c10a67df702c` | `codex/scheduler-integration-current-main` | Enumerated below | handoff recorded; no implementation or activation | - |
 | X-DOCS-20261104 | Record product area contracts and a short Codex handoff pointer. Jorge approved the docs-only, non-production exception to the shared-file reservation on 4 November. Originally a local-only claim. Jorge subsequently approved sanitized public draft-PR publication and the docs-only merge after review and passing checks; no application behavior change. Preserve every existing writer and source-file claim. | Codex coordinator | `codex/product-area-contracts` | new `docs/product-area-contracts.md`, own H-X71 in `docs/handoff.md`, this row, branch-only `vercel.json` deployment stop | sanitized contract and confirmed Online factors; docs-only merge approved, pending exact-head review and checks; no app behavior change | - |
 | C118 | **A store with no row can be created by its first save only from the copy that was read as absent.** Branch-local record, written for this one draft pull request; it is not a claim commit to `main`. The change: the screen copy, the cache copy and the saves that start from them carry a proof that the row was absent when read; the proof is lost when a row is seen, when anyone signs in or out, when a newer copy is installed in the slot the save reads from, or when the save succeeds. Exactly eleven paths: `src/LeadPerformanceCalculator.jsx`, `api/_store-merge.mjs`, `api/_month-intent.mjs`, `api/_value-equality.mjs`, `scripts/scheduler-performance/build.mjs` (one line: the core pin, authored by the original X26 owner and applied here apply-only and verbatim from its pin-only patch, sha256 `7587ce9f01af87a71e88d5567eb0beec8b0932165e0f0b93d0c02c6b25342012`, which replaces the earlier pin patch `4b0525ba6b549917820287473886bda74f480dd0d679de3377db2a2c303c7e92`; the pinned core is `2a72f748250d01e21e44a99363d2379e9f4b2272a29d235e65760422a576ed89` and the resulting build.mjs is `582f8483acaaacb29375624e2e17cdeb70bc1fe19fbb13fa387f171721f7c640`; this branch does not author or edit the guard), `test/month-intent.test.mjs`, `test/month-intent-first-save.test.mjs`, `test/load-provenance.test.mjs`, `test/board-display-merge.test.mjs`, `test/failed-save-recovery.test.mjs` and `test/failed-save-warning.test.mjs` (the three new tests), plus this row. Authority: Jorge's bounded local core and merge repair exception, and his "Yes" of 25 October 22:55 UTC to a draft integration pull request that is not merged and has no production deployment, his "Yes" of 26 October 13:28:15 UTC to the retry-recovery and overlapping-save repair on this same draft, and his "Approve all four" (A1 to A4) of 26 October 16:32 UTC on the published visual proposal page https://chatgpt.com/space/page_4077667781d08191a476e29201bf1868, which covers the shown synthetic prototype of the Save not completed notice only. The centred Save not completed message (proposal A1R1b, body "Your attempted changes are kept here for review. Some updates may already have been saved.") was shown to him next: on 26 October at 19:28 UTC he wrote on the selected proposal page "My apologies, I thought I also approved that", and at 20:42 UTC "All approved". Nothing else moves: C97 (#433), C103 (#458), C92, C96, C93 and X26 keep their claims and branches; X26 keeps sole authorship of the core pin, and if X26's own held core edit lands the pin changes again and one side rebases. The pull request has no live-backend verification: the runs behind it used a local mock and synthetic data. A refused save is now kept, in that browser window only, in a Save not completed notice with its changed fields; Load latest saved data can show the saved row or an empty store, and the next ordinary editor or import action makes a new save, so nothing is replayed. The board display now merges its six known keys. The refusal is also announced by a centred Save not completed message, shown once per refused save; the on-page notice stays the record, and closing the message never retries, discards or loads. It waits while someone is typing, another dialog is open or the sign-in arrival owns the screen. The physical phone try is still required before merge and is not done. Evidence is Chromium at 375 and 1200 wide against a local mock with synthetic data, not a phone and not a live backend; a refused save may already have written activity-day rows or an import restore point. The entry-preservation and missing-stock companion patches are not part of it. | Claude | `claude/load-provenance-first-save` | `src/LeadPerformanceCalculator.jsx`, `api/_store-merge.mjs`, `api/_month-intent.mjs`, `api/_value-equality.mjs`, `scripts/scheduler-performance/build.mjs`, `test/month-intent.test.mjs`, `test/month-intent-first-save.test.mjs`, `test/load-provenance.test.mjs`, `test/board-display-merge.test.mjs`, `test/failed-save-recovery.test.mjs`, `test/failed-save-warning.test.mjs`, `docs/in-flight.md` | draft pull request, not for merge, no production deployment; the protected automatic preview may build and no hosted preview is opened or exercised | - |
 | X27 | **Protected synthetic manager showcase.** Parent coordinator assigned a full showcase on 19 October. Assemble only existing approved manager/scheduler behavior in an isolated static build from verified WT8 checkpoint b6cd4798d6daa0ab950f6e8e142f6df6479521f4. Performance, Daily Activity, People/team lookup, Phone context and Schedule share synthetic fixtures; no live requests or room creation. Save/publish feedback must describe in-memory simulation. | Codex, parent 01a118c8-416c-7086-a222-eef156b1403d | `codex/manager-showcase` | new `scripts/manager-showcase/` build, fixture, entry, probe and evidence files only; these coordination entries | in progress; separate assembly, no WT8 source edits | - |
@@ -17,6 +18,94 @@
 | X23 | **Compare backdrop-scoped desktop updates without changing the app.** Jorge requested continuing desktop performance work alongside X22's trace shutdown fix. Reuse pinned fictional data, actual Signal source and immutable accepted driver; compare root versus backdrop writes for the same parallax value in an isolated browser-only experiment. Retain motion values, coefficients, colours and reduced-motion behavior. Diagnostic overhead is not a speed improvement. No app source, shared mock edit, shipped override, real service, calendar activation, merge or deployment. Any actual fix remains on X11's sole owned branch. | Codex | `codex/desktop-background-scope` | new `scripts/desktop-background*.mjs`, `test/desktop-background.test.mjs`, `.github/workflows/desktop-background.yml`, `docs/desktop-background.md`, coordination docs | in progress | - |
 | X22 | **Profile desktop board rendering before choosing a fix.** Jorge authorized continuation after the accepted X21 baseline. Reuse its immutable fictional workflow and actual Signal build; collect bounded, sanitized Chromium CPU and timeline evidence for Performance, associate opening and scrolling. Diagnostic runs are not before/after benchmarks. No app source, pixels, motion, data math, dependency change, calendar activation, live service access or deployment. Any later app fix stays on X11's sole owned branch. | Codex | `codex/desktop-board-profile` | new `scripts/desktop-profile*.mjs`, `test/desktop-profile.test.mjs`, `.github/workflows/desktop-profile.yml`, `docs/desktop-profile.md`, coordination docs | in review: implementation and artifact cleared at `ec1ca53`; bounded reconciliation and merge authorized; final candidate review and CI required; X22 closes with #466 merge | [#466](https://github.com/jorgeasenrivera/lead-performance-calculator/pull/466) |
 | X21 | **Measure desktop manager smoothness before changing it.** Jorge selected desktop first and authorized continuation on 2 October. Measure actual production Signal screen switches, list scrolling, coaching and hover interactions in a local fictional fixture. Isolated probe, deterministic metric tests and read-only browser workflow, pinned to reviewed Signal source. No Manager/core edit, shipped instrumentation, animation change, dependency change, real account/data access, calendar activation or deployment. | Codex | `codex/desktop-baseline` | new `scripts/desktop-baseline*.mjs`, `test/desktop-baseline.test.mjs`, `.github/workflows/desktop-baseline.yml`, `docs/desktop-performance.md`, coordination docs | in progress | - |
+
+**X-SCHED-20261106 bounded current-main handoff.** The coordinator designates Codex task `01a1a757-5dbc-77a8-8f87-c10a67df702c` as the sole writer for the scheduler-only reconciliation on new non-production branch `codex/scheduler-integration-current-main`, after this two-document record is published and verified. Base main `02612b8503dcec02dd01c938a5edd4d49f569960`; accepted visual `e3caf183ada1c4ce2b555e224f9a5f5056c3119d`; PR491 `6e2e159f9bfe53599f68d7c4225f31558bea2cac`; dependent PR494 `b6cd4798d6daa0ab950f6e8e142f6df6479521f4`. Reconfirm exact heads and main before writing. This is a temporary scheduler-only exception, not a release or erasure of X26, X11, C97, C92, C93 or any broader claim. X26 and its sessions remain held. No other writer may touch the named scope during this handoff. Preserve all original branches, worktrees, claims and candidate bytes.
+
+The two shared-file exceptions are `src/Manager.jsx` only for calendar/editor entry and bindings, and `src/LeadPerformanceCalculator.jsx` only for scheduler load provenance and integration hooks. Preserve current main's security, saving, TV, generator and unrelated changes. The following existing PR494 runtime dependencies are individually within reconciliation scope, based on the H-X67 34-path manifest closure plus the three calendar paths. Listing them grants no unrelated behavior change:
+
+- `scripts/scheduler-performance/assignment-view.mjs`
+- `scripts/scheduler-performance/calendar-key.mjs`
+- `scripts/scheduler-performance/calendar-tokens.css`
+- `scripts/scheduler-performance/day-edit-state.mjs`
+- `scripts/scheduler-performance/day-motion.mjs`
+- `scripts/scheduler-performance/demand-context.mjs`
+- `scripts/scheduler-performance/generation-ui.mjs`
+- `scripts/scheduler-performance/generation.mjs`
+- `scripts/scheduler-performance/haptics.mjs`
+- `scripts/scheduler-performance/import-compatibility.mjs`
+- `scripts/scheduler-performance/import-ui.mjs`
+- `scripts/scheduler-performance/mobile-roster.mjs`
+- `scripts/scheduler-performance/month-app-core.mjs`
+- `scripts/scheduler-performance/month-model.mjs`
+- `scripts/scheduler-performance/name-key.mjs`
+- `scripts/scheduler-performance/off-day-command.mjs`
+- `scripts/scheduler-performance/off-day-ui.mjs`
+- `scripts/scheduler-performance/planner.css`
+- `scripts/scheduler-performance/sage-icons.mjs`
+- `scripts/scheduler-performance/schedule-import.mjs`
+- `scripts/scheduler-performance/shared-system.css`
+- `scripts/scheduler-performance/shift-intervals.mjs`
+- `scripts/scheduler-performance/store-editor.mjs`
+- `scripts/scheduler-performance/team-balance.mjs`
+- `scripts/scheduler-performance/team-model.mjs`
+- `scripts/scheduler-performance/team-ui.mjs`
+- `scripts/scheduler-performance/weekly-hours.mjs`
+- `scripts/scheduler-proposal/model.mjs`
+- `src/reported-auth.mjs`
+- `src/reported-month.mjs`
+- `src/scheduler-editor-adapter.mjs`
+- `src/scheduler-editor.jsx`
+- `src/scheduler-load-context.mjs`
+- `src/use-reported-month.mjs`
+- `src/scheduler-calendar.jsx`
+- `src/scheduler-calendar-model.mjs`
+- `src/scheduler-calendar.css`
+
+Only the following synthetic tests and probes are in scope when needed to reconcile the listed components; preserve existing assertions, frozen baselines, evidence and negative controls:
+
+- `scripts/probe-scheduler-calendar.mjs`
+- `scripts/probe-scheduler-editor.mjs`
+- `scripts/probe-scheduler-integration.mjs`
+- `test/scheduler-calendar-model.test.mjs`
+- `test/scheduler-draft-bridge.test.mjs`
+- `test/scheduler-editor-adapter.test.mjs`
+- `test/scheduler-load-context.test.mjs`
+- `scripts/scheduler-performance/assignment-view.test.mjs`
+- `scripts/scheduler-performance/calendar-key.test.mjs`
+- `scripts/scheduler-performance/day-edit-state.test.mjs`
+- `scripts/scheduler-performance/day-motion.test.mjs`
+- `scripts/scheduler-performance/demand-context.test.mjs`
+- `scripts/scheduler-performance/generation.test.mjs`
+- `scripts/scheduler-performance/haptics.test.mjs`
+- `scripts/scheduler-performance/import-compatibility.test.mjs`
+- `scripts/scheduler-performance/isolation.test.mjs`
+- `scripts/scheduler-performance/mobile-roster.test.mjs`
+- `scripts/scheduler-performance/month-model.test.mjs`
+- `scripts/scheduler-performance/off-day-command.test.mjs`
+- `scripts/scheduler-performance/schedule-import.test.mjs`
+- `scripts/scheduler-performance/store-editor.test.mjs`
+- `scripts/scheduler-performance/team-model.test.mjs`
+- `scripts/scheduler-performance/weekly-hours.test.mjs`
+- `scripts/scheduler-performance/probe-editor.mjs`
+- `scripts/scheduler-performance/probe-editor-focus.mjs`
+- `scripts/scheduler-performance/probe-editor-exclusions.mjs`
+- `scripts/scheduler-performance/probe-embedded-navigation.mjs`
+- `scripts/scheduler-performance/probe-embedded-sheet.mjs`
+- `scripts/scheduler-performance/probe-generation.mjs`
+- `scripts/scheduler-performance/probe-guided-recovery.mjs`
+- `scripts/scheduler-performance/probe-history.mjs`
+- `scripts/scheduler-performance/probe-import.mjs`
+- `scripts/scheduler-performance/probe-mobile-sheet.mjs`
+- `scripts/scheduler-performance/probe-navigation-review.mjs`
+- `scripts/scheduler-performance/probe-off-day.mjs`
+- `scripts/scheduler-performance/probe-polish.mjs`
+- `scripts/scheduler-performance/probe-tools-focus.mjs`
+
+Build/configuration exceptions are limited to `scripts/scheduler-performance/build.mjs`, `scripts/search-runtime.scheduler-v1.sha256`, `vercel.json`, `.github/workflows/manager-spacing.yml`, `.github/workflows/scheduler-editor.yml` and `.github/workflows/scheduler-integration.yml`, only when necessary for the reconciled candidate and its non-production guard. The `vercel.json` exception permits only adding `git.deploymentEnabled["codex/scheduler-integration-current-main"] = false` on that branch, preserving all other settings and guard entries; no main runtime configuration change. Do not modify the original frozen `scripts/search-runtime.sha256`, relax any safety check, blindly re-pin, or broaden scope. Report any missing path before expanding it. No API, SQL, migration, permissions or backend wiring is authorized by this handoff.
+
+The mobile candidate `codex/mobile-action-handoff` visual `aaf5160f2eb72756aad656f9f5d2fdd21b023024` and application `136e6567c0b06d2a741e09614c6e9208d67bebbe`, the configuration candidate `codex/config-save-handoff` at `b8478e9f45654a03cc1f2212896a4eb59a491366` with its local modifications and helpers, and UI branch `codex/interface-refinements` at `9c42f1c251e226f5a8a941efd1abf01e678d7411` remain held and untouched. Do not reset, stash, overwrite or silently integrate them. The denied UI packet and denied source range remain excluded; the account-route experiment remains paused. Hero concepts remain unselected proposals, separate from this accepted-design integration.
+
+Use synthetic data only. No endpoint activation, production data, credentials, access changes, production merge or deployment. An explicit branch-specific deployment stop and independent review are required before any later source publication; verify exact remote/CI identities and absence of deployment. Separate live authorization, durable persistence, publication, browser/device and release gates remain open. Stop on a denial without workaround. This record changes coordination only.
 
 **X26 source-only live-app integration extension, approved 18 October at 22:21:04 UTC.** Jorge answered "Yes" to expanding Claude's scheduler work into live-app integration files coordinated with the dashboard owner (message `Sentinel_fb436c6825188191891966e1aa969942`, parent thread `01a118c8-416c-7086-a222-eef156b1403d`). Claude remains X26's coding owner. Codex records this bounded amendment only; no ownership transfer or claim renewal.
 

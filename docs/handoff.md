@@ -619,6 +619,11 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X72 · Bounded accepted-scheduler reconciliation.**
+
+The board records the sole Codex writer `01a1a757-5dbc-77a8-8f87-c10a67df702c`, new non-production branch, exact checkpoints, enumerated scheduler-only paths and temporary claim exceptions. X26 remains held; no historical claim or other candidate is released. Preserve main's security, saving, TV and generator work and the held mobile, configuration and UI candidates. Do not access the denied UI packet or source range, restart held sessions, activate a backend, or deploy. The accepted design remains the reference; the separate hero concepts are not selected. This is coordination only, and implementation waits for publication and verification of this record.
+
+
 **H-X71 · Read the area contract before calling something a defect.**
 
 Jorge approved this docs-only, non-production exception. The durable record is
