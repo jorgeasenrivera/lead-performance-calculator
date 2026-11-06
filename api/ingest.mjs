@@ -605,6 +605,13 @@ export default async function handler(req, res) {
       const text = Buffer.from(a.content).toString("utf8").replace(/^\ufeff/, "");
       const rows = Papa.parse(text, { skipEmptyLines: true }).data;
       let type = detectReportType(rows, a.filename || "");
+      // The parser's rejection marker is not an importable report type.
+      if (type === "wrong-channel-report") {
+        const why = "wrong report export; use Delivery Summary filtered by source instead";
+        skippedFiles.push({ file: a.filename, why });
+        failures.push({ file: a.filename, why });
+        continue;
+      }
       /* The store roll-up carries no people at all, and it names its own store in
          its one row, so it does not depend on the address the way the other CSVs
          do. It is the store's own count of deliveries and it is filed as that. */
