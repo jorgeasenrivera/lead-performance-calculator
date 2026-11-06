@@ -517,8 +517,10 @@ function mapDeliverySummaryGrid(lines) {
   const g = (src, i) => (storeSources[src] ? storeSources[src][i] : null);
   const dcUnits = { internet: g("internet", 4), phone: g("phone", 4),
     showroom: g("showroom", 4), campaign: g("campaign", 4) };
-  const dcTotal = ["internet", "phone", "showroom", "campaign"]
-    .reduce((n, c) => (dcUnits[c] == null ? n : n + dcUnits[c]), 0);
+  // A stock-only block or blank delivery cells do not report zero deliveries.
+  // Keep existing nonempty channel sums, including an explicitly reported zero.
+  const reportedUnits = Object.values(dcUnits).filter((n) => n != null);
+  const dcTotal = reportedUnits.length ? reportedUnits.reduce((n, u) => n + u, 0) : null;
   const dcLeads = { internet: g("internet", 0), phone: g("phone", 0), showroom: g("showroom", 0) };
   /* The store's own New and Used rows, which were being parsed and then dropped
      three lines from here. They were kept in storeSources by the same branch
