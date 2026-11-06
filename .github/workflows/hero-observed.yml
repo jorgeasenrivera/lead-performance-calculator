@@ -1,0 +1,106 @@
+name: hero-observed
+# What the Performance heroes SHOW when a figure is missing, a real zero, negative or infinite, in both engines. scripts/hero-observed.mjs changes the
+# video figures of a few salespeople in the fictional store and checks the phone's dials, popups and "Who is below" list and the desk's dial cards and
+# weakest standard against numbers worked out from the fixture it builds, never read back from a page. It fails on any assertion, on any page error,
+# and on any run that cannot say exactly what it tested; it keeps its evidence when it does.
+#
+# The tree under test is the tree the event checks out. The evidence (hero-observed/evidence.json, uploaded) records it exactly: the commit (on a
+# pull request, GitHub's merge of the pull request into its base, as manager-spacing.yml records it), the probe's own hash, the hash of every built
+# file and of what the preview served, and the browser's version. With REQUIRE_IDENTITY=1 a run that cannot say those things fails.
+#
+# It runs on a pull request, and on a push to main, that changes something the heroes are built from: the app source, the shared api modules the app
+# imports, the build inputs, the mock and the seed it reads, or this probe and workflow. Docs, the scheduler and the other probes do not start it.
+#
+# What it does NOT cover. A green run is not a claim about any of these; the probe writes the same list into its evidence as notCovered.
+#   - BH Video's "Who is below" list: a row has no BH dot, so the list is empty while the dial counts people (a documented gap with a todo test).
+#     Only BH's dial and popup are asserted.
+#   - The role tab and the role filter: the dial counts every role and the list is the tab showing. Every figure outside the Sales tab is at the
+#     control value, so the cases do not exercise the difference.
+#   - The fallback tier: where a tier names no bar the dial uses the gentlest tier and the list uses the store threshold. The cases use only zero and a
+#     figure above every bar, which the two agree on.
+#   - NaN: JSON cannot carry it, so it is covered by the unit tests of api/_standard-rollup.mjs and not here.
+#   - Every other screen: the roster rows, the person card and the import log are not read. Nor is a real phone or the native app.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - api/_*.mjs
+      - public/**
+      - index.html
+      - vite.config.js
+      - package.json
+      - package-lock.json
+      - scripts/mock-supabase.mjs
+      - scripts/demo-seed.mjs
+      - scripts/hero-observed.mjs
+      - .github/workflows/hero-observed.yml
+  pull_request:
+    paths:
+      - src/**
+      - api/_*.mjs
+      - public/**
+      - index.html
+      - vite.config.js
+      - package.json
+      - package-lock.json
+      - scripts/mock-supabase.mjs
+      - scripts/demo-seed.mjs
+      - scripts/hero-observed.mjs
+      - .github/workflows/hero-observed.yml
+permissions:
+  contents: read
+jobs:
+  observed:
+    name: observed (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record the commit that is actually under test
+        # actions/checkout puts github.sha on disk. On a pull request that is the synthetic merge of the PR into its base,
+        # so the evidence says which tree was measured, as manager-spacing.yml does.
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          under_test=$(git rev-parse HEAD)
+          test "$under_test" = "${{ github.sha }}"
+          echo "TESTED_SHA=$under_test" >> "$GITHUB_ENV"
+          echo "tree under test: $under_test"
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Build fictional app
+        run: |
+          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          npm run build
+      - name: Read what the heroes show for missing, zero and invalid figures
+        env:
+          FEEL_BROWSER: ${{ matrix.engine }}
+          DIST_DIR: dist
+          REQUIRE_IDENTITY: "1"
+        run: |
+          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
+          for port in 5433 5178; do
+            for i in $(seq 1 100); do curl -sf http://127.0.0.1:$port/ > /dev/null && break; sleep 0.2; done
+          done
+          node scripts/hero-observed.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hero-observed-${{ matrix.engine }}
+          path: |
+            hero-observed/
+            mock.log
+            preview.log
+          if-no-files-found: warn
+          retention-days: 14
