@@ -619,6 +619,18 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-DATE-20261107: serialized app-wide American date display.**
+
+X-DATE-20261107 in `docs/in-flight.md` is the exact file and behavior boundary.
+The date worker is the temporary single writer for core and Manager date labels;
+scheduler integration writes to those files wait for its reviewed commit and
+handoff. The current scheduler scratch preview may continue independently.
+All other claims, candidates, effective dates and machine contracts remain.
+This is a coordination-only record based on verified main `c132611d707d5df91fca73cb7572802d47113f46`.
+Implementation starts only after its remote claim is verified. No production
+merge or deployment is authorized. Return candidate hashes before any separately
+owned scheduler pin reconciliation; do not broaden or loosen the guards.
+
 **H-X72 · Bounded accepted-scheduler reconciliation.**
 
 The board records the sole Codex writer `01a1a757-5dbc-77a8-8f87-c10a67df702c`, new non-production branch, exact checkpoints, enumerated scheduler-only paths and temporary claim exceptions. X26 remains held; no historical claim or other candidate is released. Preserve main's security, saving, TV and generator work and the held mobile, configuration and UI candidates. Do not access the denied UI packet or source range, restart held sessions, activate a backend, or deploy. The accepted design remains the reference; the separate hero concepts are not selected. This is coordination only, and implementation waits for publication and verification of this record.
