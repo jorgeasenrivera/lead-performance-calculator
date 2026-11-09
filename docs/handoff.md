@@ -619,6 +619,14 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SCHED-SEED-20261109: dormant preservation proof, not a save path.**
+
+X-SCHED-SEED-20261109 on the board reserves exactly two new files for `/root/advance_scheduler_seeding` on new `codex/scheduler-seed-preservation`. Publish and verify the bundled claim before tracked implementation. Preserve the pinned scratch semantics, adapt test imports/paths only, rerun independent review and keep `applyReady: false`. The actual legacy merge is read-only characterization. A later legacy-document transition, not CSV `applyImport`, is the relevant boundary; no transition, runtime import, live save or persistence is authorized. Scratch tests do not prove durable correctness. Existing scheduler ownership and all other claims remain.
+
+**H-X-SCHED-RECONCILER-20261109: dormant published-reader lifecycle, no provider.**
+
+X-SCHED-RECONCILER-20261109 on the board reserves exactly two new files for `/root/advance_scheduler_delivery` on new `codex/scheduler-published-reconciler`. Publish and verify the bundled claim before tracked implementation. Preserve the pinned injected-port controller, retarget only the relative test import, and independently review the tracked candidate. The scheduler owner accepted paths only and has not reviewed the unavailable code; do not report that reservation as code approval. Scratch lifecycle tests do not establish server authorization or seconds-to-app delivery. No provider, runtime import, polling activation, access, persistence or deployment scope is granted. Draft-only source `2861377` and every existing owner remain untouched; later wiring requires separate scope and review.
+
 **H-X-SCHED-SWITCH-20261109: individual two-date Move review.**
 
 X-SCHED-SWITCH-20261109 on the board names the exact seven-path behavior extension for the existing scheduler writer. Publish and verify it on main before implementation. The vacated-source-day prompt has explicit Yes/No paths; only switch Yes requires a separate recurrence answer. Unanswered/requested recurrence cannot apply a partial date-only change. Team handling and durable recurrence stay held and must be described as unavailable. The 10/10 isolated synthetic result is design evidence, not integration acceptance. All prior claims, held candidates and release gates remain.
