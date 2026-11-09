@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SAVE-HOTFIX-RESPONSIVE-20261109: same-scope responsive editor retention.**
+
+The board records the confirmed responsive-unmount defect, the sole author's exact bounded correction and conditional reviewed hash-pin sequence. Publish and verify this amendment before correction. Preserve old checkpoint/v3 evidence, the other 107 manifest entries and every CI/source/hosted/device/production safeguard. Renew source review, all required checks and actual-entry 1280/701/700/1280 keyboard/focus QA before coordinator source-publication clearance.
+
 **H-X-SAVE-HOTFIX-CLOSURE-20261109: two dependency pins, no source expansion.**
 
 The board adds the completed source-history/import-closure finding and explicitly supersedes only the prior candidate's 106/no-addition limit. Preserve all original 106 ordered entries and eight exact substitutions, then append only the pinned month/equality helpers: 108 entries, 9,501 bytes, candidate SHA256 `4e721923ac8d2ddbf1e0ef2f49e1d53b32c4955124b15bab9e85dd05d33d19e4`. No API editing authority, original-manifest change, new writer/ref or weaker negative/gate. Publish and verify this amendment before revised CI authoring; every exact review, guarded-publication and production/UI/device/hosted hold remains.
