@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SCHED-STAGING-STACK-20261109: exact three-file local bootstrap port.**
+
+The board reserves only `proposals/scheduler-staging-stack/bootstrap.sql`, `bootstrap.test.mjs` and `README.md` for the existing sole SQL writer/check runner `01a1a9a7-967f-77cb-8a45-a7ae5e1ae023`, coordinated by `/root/assess_scheduler_storage`. Publish and verify the main claim, then use that writer's safe boundary after its disjoint scratch composition. New local-only `codex/scheduler-staging-stack` starts directly at exact repaired R `4d2722e07e8a43e11f1eb6cab8d462dd6ed8c222`/tree `20aa8458d7c50168ff722493143e80157c516c0a`, not main/manual/Auth. Preserve the board's exact patch/file hashes and all existing installers, candidates, owners and holds.
+
+The independent scratch source review passed; its syntax/discovery/four early refusals are distinct from producer PostgreSQL evidence. Default discovery adds one no-SQL file result. Explicit local SQL needs a separate clean exact-R root and only a newly created owned disposable synthetic Unix-socket cluster. No hosted call, ambient target, install fallback, broader composition or new dependency. Apply the board's exact-input/import/carrier/C113 preflight, final full tests/build/carrier and independent exact-branch review before the local checkpoint; reuse SQL evidence unless changes require focused rerun. Any non-pinned implementation change returns for coordination. The completed catalog read grants no future access. All hosted/persistence/access/activation/production and source push/PR/preview/merge remain held. This additive coordination-only record preserves every prior byte, active hotfix ownership, C93 protections and X26 held. Docs publication requires the board's non-author clearance, checks, committed first-parent identity/ignore exit 0, expected-head update and exact remote/ignored-build/unchanged-production verification.
+
 **H-X-SAVE-HOTFIX-20261109: same unpublished claim, bounded simpler tag recovery.**
 
 The board records the retained Manager owner's conditional authoring yield to sole native `/root/coordinate_scheduler_integration/assemble_save_integrity_hotfix`, after revised claim publication/verification. Same five paths, exact frozen API/test bytes, bounded Manager tag/recovery sites, existing Floor tests and final reviewed Manager pin only. Initial five-file review is the baseline; no broader owner/path is released.
