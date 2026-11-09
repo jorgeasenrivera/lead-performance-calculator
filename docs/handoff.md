@@ -619,6 +619,14 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SAVE-HOTFIX-CLOSURE-20261109: two dependency pins, no source expansion.**
+
+The board adds the completed source-history/import-closure finding and explicitly supersedes only the prior candidate's 106/no-addition limit. Preserve all original 106 ordered entries and eight exact substitutions, then append only the pinned month/equality helpers: 108 entries, 9,501 bytes, candidate SHA256 `4e721923ac8d2ddbf1e0ef2f49e1d53b32c4955124b15bab9e85dd05d33d19e4`. No API editing authority, original-manifest change, new writer/ref or weaker negative/gate. Publish and verify this amendment before revised CI authoring; every exact review, guarded-publication and production/UI/device/hosted hold remains.
+
+**H-X-SCHED-STAGING-RUNTIME-20261109: same SQL writer, exact Auth-based local port.**
+
+The board reserves five exact additions for existing SQL task `01a1a9a7-967f-77cb-8a45-a7ae5e1ae023`, coordinated by `/root/assess_scheduler_storage`, after main claim verification and a safe writer boundary. New LOCAL `codex/scheduler-staging-runtime` starts directly at Auth `6b9f1f86ba0d116b4b3dcf90c30b8b013866f2d1`; only the pinned config is copied from S, with no other old staging scope. Follow the board's patch/file/dependency identities, explicit 21-case loopback evidence, fresh full tests/build/carrier/C113 gates and independent final tree review. Preserve trusted environment/Pool/fetch assumptions and disclose default skips. No SQL rerun without changed code, source publication, hosted/access/credential/activation action or production change. All earlier claims and holds survive. The coordinator alone owns these additive docs and applies the board's normal independent-clearance/publication gates.
+
 **H-X-SAVE-HOTFIX-CI-20261109: same hotfix writer, bounded CI successor.**
 
 The board records the active parent's explicit successor designation of `/root/coordinate_scheduler_integration/assemble_save_integrity_hotfix` for only `.github/workflows/manager-spacing.yml`, new `scripts/search-runtime.save-integrity-v1.sha256` and future use of exact existing disabled `codex/scheduler-candidate-current-main`. This is not historical-owner consent, a broad transfer or X26/WT8 renewal. Preserve old `98b268a5` ancestry and immutable five-file checkpoint `8f7624e3`/tree `726432fea769c51f027efd499d31cf8066b6ba03`; no product-source drift, config or existing-manifest edit. Publish and verify this normal additive main claim before CI authoring.
