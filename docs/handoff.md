@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-DATE-PINS-20261107: accepted two-literal owner delegation.**
+
+The additive X-DATE-PINS-20261107 record names exact date candidate `506134574ecc48d3c6f10027275f472eb67a75af`, patch SHA256 `8aef0903231bc1fd4539ff40e54b69bfae82d17926afb35064fdf15275156841` and before/after build hashes. Scheduler owner `01a1a757-5dbc-77a8-8f87-c10a67df702c` accepted the exact patch in assistant message `msg_00c59ebc95cca9e1016aefbb18b39887d0b94afd31cab1a417`, verified and relayed by the coordinator. Its delegation covers apply-only use of those two existing source-guard literals by the date worker, not ownership of the builder or permission to author pins. This accepted two-document amendment must be published and verified before the bounded application. The owner explicitly excludes release and resolution of the separate frozen-manifest CI issue. Every other claim, pin, manifest, runtime transform and publication restriction remains; shared-file ownership is not handed back by this note. The isolated green tests/builds do not satisfy browser or phone acceptance.
+
 **H-X-DATE-20261107: serialized app-wide American date display.**
 
 X-DATE-20261107 in `docs/in-flight.md` is the exact file and behavior boundary.
