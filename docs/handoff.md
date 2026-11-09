@@ -619,6 +619,11 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-MOBILE-RACE-20261109: exact local successor repair.**
+
+See X-MOBILE-RACE-20261109 on the board. Historical native owner acknowledged the exact three-file yield, and the same successor `01a1b1cb-40db-7191-a86b-3bac1251702c` accepted after a successful read-only main comparison. Once this claim is published and verified, repair only synchronous delivery reservation and recovered-batch ordering in `native/action-handoff.mjs`, `native/App.js` and `native/test/readiness.test.mjs` on the preserved local mobile branch. Keep the other two readiness findings open, uncertain operations non-replayed and the journal disabled. No source publication, native CI/build, integration or release is included. All other owners and frozen work remain intact.
+
+
 **H-X-SAVE-HOTFIX-RESPONSIVE-20261109: same-scope responsive editor retention.**
 
 The board records the confirmed responsive-unmount defect, the sole author's exact bounded correction and conditional reviewed hash-pin sequence. Publish and verify this amendment before correction. Preserve old checkpoint/v3 evidence, the other 107 manifest entries and every CI/source/hosted/device/production safeguard. Renew source review, all required checks and actual-entry 1280/701/700/1280 keyboard/focus QA before coordinator source-publication clearance.
