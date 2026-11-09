@@ -619,6 +619,10 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SCHED-SWITCH-20261109: individual two-date Move review.**
+
+X-SCHED-SWITCH-20261109 on the board names the exact seven-path behavior extension for the existing scheduler writer. Publish and verify it on main before implementation. The vacated-source-day prompt has explicit Yes/No paths; only switch Yes requires a separate recurrence answer. Unanswered/requested recurrence cannot apply a partial date-only change. Team handling and durable recurrence stay held and must be described as unavailable. The 10/10 isolated synthetic result is design evidence, not integration acceptance. All prior claims, held candidates and release gates remain.
+
 **H-X-SCHED-RUNTIME-20261109: accepted runtime dependencies, no X26 source edit.**
 
 The additive X-SCHED-RUNTIME-20261109 record on the board is the complete eight-runtime/nine-test/probe scope for existing writer `01a1a757-5dbc-77a8-8f87-c10a67df702c` on `codex/scheduler-integration-current-main`. Publish and verify this docs-only amendment before implementing those additions. Preserve `month-app.mjs` byte-for-byte and deliberately port the accepted final `r27hmyu6b` behavior into already-scoped `month-app-core.mjs`; the earlier v55 source/CSS differ and are not equivalent. Use injected store-scoped inputs with missing-input fail-closed behavior, lifecycle disposal and no synthetic model fallback. The build-time model alias is not live schedule data.
