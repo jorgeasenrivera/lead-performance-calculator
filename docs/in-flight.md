@@ -2,6 +2,7 @@
 
 | ID | Item | Owner | Branch | Files | Status | PR |
 |---|---|---|---|---|---|---|
+| X-SCHED-RUNTIME-20261109 | Add only the accepted scheduler runtime dependencies and synthetic verification paths enumerated below to X-SCHED-20261106; implementation waits for this amendment to be published and verified. | Existing Codex task `01a1a757-5dbc-77a8-8f87-c10a67df702c` | `codex/scheduler-integration-current-main` | Exactly eight runtime and nine test/probe additions below; this additive board entry and own Codex handoff | coordination only; bounded implementation pending publication and verification | - |
 | X-DATE-PINS-20261107 | Apply only the independently reviewed Manager and core SHA256 literals for exact date candidate `506134574ecc48d3c6f10027275f472eb67a75af`, after publication/verification of this accepted amendment. | Codex date-format worker `/root/fix_sage_date_formats`, apply-only delegate of scheduler owner `01a1a757-5dbc-77a8-8f87-c10a67df702c`; exact owner acceptance recorded | `codex/us-date-display` | `scripts/scheduler-performance/build.mjs`, exactly two hash literals; this additive row and own handoff | owner accepted; application awaits published and verified amendment; no source publication | - |
 | X-DATE-20261107 | Apply American month/day/year to app-authored full-date displays, preserving date-only and instant semantics, existing timezone policy, partial calendar context and all machine contracts. Implementation starts only after this coordination record is published and verified. | Codex date-format worker `/root/fix_sage_date_formats`, parent task `01a1a7b0-c4fa-716f-ae2c-65fced8bf0ff` | `codex/us-date-display` | Enumerated below | claim recorded; implementation pending remote verification | - |
 | X-SCHED-20261106 | Reconcile the accepted scheduler calendar and editor on current main, source-only and synthetic. The exact bounded handoff below is the complete scope; implementation remains held until this record is published and verified. | Codex task `01a1a757-5dbc-77a8-8f87-c10a67df702c` | `codex/scheduler-integration-current-main` | Enumerated below | handoff recorded; no implementation or activation | - |
@@ -135,6 +136,43 @@ Build/configuration exceptions are limited to `scripts/scheduler-performance/bui
 The mobile candidate `codex/mobile-action-handoff` visual `aaf5160f2eb72756aad656f9f5d2fdd21b023024` and application `136e6567c0b06d2a741e09614c6e9208d67bebbe`, the configuration candidate `codex/config-save-handoff` at `b8478e9f45654a03cc1f2212896a4eb59a491366` with its local modifications and helpers, and UI branch `codex/interface-refinements` at `9c42f1c251e226f5a8a941efd1abf01e678d7411` remain held and untouched. Do not reset, stash, overwrite or silently integrate them. The denied UI packet and denied source range remain excluded; the account-route experiment remains paused. Hero concepts remain unselected proposals, separate from this accepted-design integration.
 
 Use synthetic data only. No endpoint activation, production data, credentials, access changes, production merge or deployment. An explicit branch-specific deployment stop and independent review are required before any later source publication; verify exact remote/CI identities and absence of deployment. Separate live authorization, durable persistence, publication, browser/device and release gates remain open. Stop on a denial without workaround. This record changes coordination only.
+
+**X-SCHED-RUNTIME-20261109 additive accepted-runtime amendment.** Based on verified main `6951eb1499a568303e2ba3fa789c59fc37327cad`, this extends only the existing X-SCHED-20261106 writer, Codex task `01a1a757-5dbc-77a8-8f87-c10a67df702c`, on `codex/scheduler-integration-current-main`. Its local implementation checkpoint is `683cad12a9a885a53b9c1ca4f560558d5c1b2a07`, based on that main. The first inactive model slice passed 33 focused tests, all 1,381 tests and the build; these are checkpoint results, not accepted-runtime, browser, phone or release verification. Publish and verify this coordination-only amendment before editing the additional paths.
+
+Exactly eight additional runtime paths, scheduler-only and only as required for the accepted behavior:
+
+- `scripts/scheduler-performance/date-display.mjs`: US calendar and contextual display dates.
+- `scripts/scheduler-performance/roster-hours.mjs`: exact and split shift hour labels.
+- `scripts/scheduler-performance/shift-agenda.mjs`: day/week person-shift entries.
+- `scripts/scheduler-performance/shift-agenda-drag.mjs`: pointer/touch shift interaction.
+- `scripts/scheduler-performance/shift-transfer.mjs`: move/copy planning.
+- `scripts/scheduler-performance/shift-transfer-ui.mjs`: contextual move/copy review.
+- `scripts/scheduler-performance/week-rows.mjs`: week boundaries and navigation.
+- `scripts/scheduler-performance/week-timeline.mjs`: time-positioned shifts, overlaps and month projection.
+
+Exactly nine additional synthetic test/probe paths:
+
+- `scripts/scheduler-performance/date-display.test.mjs`
+- `scripts/scheduler-performance/shift-agenda.test.mjs`
+- `scripts/scheduler-performance/shift-transfer.test.mjs`
+- `scripts/scheduler-performance/week-rows.test.mjs`
+- `scripts/scheduler-performance/week-timeline.test.mjs`
+- New `scripts/scheduler-performance/roster-hours.test.mjs`: exact, split and unknown hours.
+- New `scripts/scheduler-performance/shift-agenda-drag.test.mjs`: gestures and cancellation.
+- New `test/scheduler-accepted-scope.test.mjs`: injected store/principal scope, missing inputs and no fixture fallback.
+- New `scripts/probe-scheduler-accepted.mjs`: mounted Week/Month/popups, keyboard/touch, multiple mounts and disposal.
+
+The dependency review found no need to change `scripts/scheduler-performance/month-app.mjs`. Preserve it byte-for-byte, along with X26's broader claim, held Claude session WT8 and every held branch/candidate. No X26 acknowledgment is asserted or needed for that excluded edit; no held session is resumed. Port accepted behavior deliberately into already-scoped `scripts/scheduler-performance/month-app-core.mjs`, using explicitly injected root, stores, assignments and clock with disposal. Its existing scope, `planner.css`, adapters, build file and bounded Manager/core hooks are not broadened by this amendment. `scripts/scheduler-performance/generation-worker.mjs` already matches accepted bytes and stays unchanged; diagnostic code is excluded.
+
+The accepted final sample is identified by suffix `r27hmyu6b`: `planner/app.mjs` SHA256 `711b1f8bd645883d0dc40542a786a236a1706b75c17990f56a14a6fd4323ba3f` and `planner/style.css` SHA256 `6bb871a8590a69a750e853ea48744936e1dc0c6e3256be069c8969b3928052d6`. Earlier v55 `month-app` source SHA256 `5b0272b710967572b9b2423144de712a0f2bd80f8e34d3763c9d7ad164637b97` and CSS SHA256 `3c1a57dc9d4ade5760952692b418c5469460d81b22df1d49c0de5c8aadbd028b` differ. Preserve and review the accepted final behavior through the deliberate port; v55 is not an equivalent source substitute. These identifiers do not assert a full preview URL.
+
+`planner/model.mjs` is a build-time alias of existing synthetic `scripts/scheduler-proposal/model.mjs`, not live schedule data. Never propagate fictional personnel/store facts or invented intervals into production. Require explicitly injected store-scoped inputs and fail closed on missing inputs, with no fixture fallback or global listener/observer leaks. Synthetic verification is not evidence of live authorization or durable schedule storage. Same-person separate-date lost-edit prevention belongs to separate storage-transition work, not these runtime files.
+
+The coordinator records X-DATE stopped and frozen at `cf42eb19a549de75e698635f2a5867ffe9dc958d` after explicit no-pending-writes handback; preserve that candidate and its broad date release gates. X-SCHED already regained its bounded Manager/core scope; this amendment grants no new shared-file scope. `api/_date-display.mjs`, `test/date-display.test.mjs` and broader X-DATE app changes are distinct and excluded here.
+
+Preserve all existing document bytes, owners and historical statuses. Broad C92/C93/C96/C97/C103/X11/X26 and all other claims remain, with an exception only for the exact added test/docs paths where necessary and the eight enumerated scheduler runtime dependencies. No directory, blanket test, fixture-host-file or other tracked-path scope is granted; enumerate and coordinate any further path separately before writing. Keep all source-guard policies, assertions and negative controls, every release safeguard and the original frozen `scripts/search-runtime.sha256` unchanged. No API, SQL, storage, persistence, authorization, staff publication, seeding, backend, credential, access or production change is authorized by this source-only amendment.
+
+Only `docs/in-flight.md` and this amendment's new Codex entry in `docs/handoff.md` change in the coordination commit. Require exact-diff review, current-main verification, prior-byte preservation, required tests/build and first-parent product-tree identity with the existing ignored-build command returning 0 before its single expected-SHA, non-force publication. Verify remote identity and hosted deployment suppression afterward. User approval of the eventual scheduler merge does not waive independent review, source/CI identity, browser/device, protected-preview, deployment or release gates. See H-X-SCHED-RUNTIME-20261109.
 
 **X26 source-only live-app integration extension, approved 18 October at 22:21:04 UTC.** Jorge answered "Yes" to expanding Claude's scheduler work into live-app integration files coordinated with the dashboard owner (message `Sentinel_fb436c6825188191891966e1aa969942`, parent thread `01a118c8-416c-7086-a222-eef156b1403d`). Claude remains X26's coding owner. Codex records this bounded amendment only; no ownership transfer or claim renewal.
 

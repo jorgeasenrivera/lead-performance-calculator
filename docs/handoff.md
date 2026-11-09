@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SCHED-RUNTIME-20261109: accepted runtime dependencies, no X26 source edit.**
+
+The additive X-SCHED-RUNTIME-20261109 record on the board is the complete eight-runtime/nine-test/probe scope for existing writer `01a1a757-5dbc-77a8-8f87-c10a67df702c` on `codex/scheduler-integration-current-main`. Publish and verify this docs-only amendment before implementing those additions. Preserve `month-app.mjs` byte-for-byte and deliberately port the accepted final `r27hmyu6b` behavior into already-scoped `month-app-core.mjs`; the earlier v55 source/CSS differ and are not equivalent. Use injected store-scoped inputs with missing-input fail-closed behavior, lifecycle disposal and no synthetic model fallback. The build-time model alias is not live schedule data.
+
+X26/WT8 and all held branches stay held, with no invented acknowledgment or owner transfer. The coordinator reports X-DATE's explicit no-pending-writes handback at frozen `cf42eb19a549de75e698635f2a5867ffe9dc958d`; its broad date release gates remain, and no shared-file scope is added here. Preserve all prior records, source guards, assertions, negative controls and the original frozen manifest. No backend, storage-transition, staff publication or production work is granted. The eventual scheduler merge still requires the existing verification and deployment gates; checkpoint tests are not acceptance of the completed runtime.
+
 **H-X-DATE-PINS-20261107: accepted two-literal owner delegation.**
 
 The additive X-DATE-PINS-20261107 record names exact date candidate `506134574ecc48d3c6f10027275f472eb67a75af`, patch SHA256 `8aef0903231bc1fd4539ff40e54b69bfae82d17926afb35064fdf15275156841` and before/after build hashes. Scheduler owner `01a1a757-5dbc-77a8-8f87-c10a67df702c` accepted the exact patch in assistant message `msg_00c59ebc95cca9e1016aefbb18b39887d0b94afd31cab1a417`, verified and relayed by the coordinator. Its delegation covers apply-only use of those two existing source-guard literals by the date worker, not ownership of the builder or permission to author pins. This accepted two-document amendment must be published and verified before the bounded application. The owner explicitly excludes release and resolution of the separate frozen-manifest CI issue. Every other claim, pin, manifest, runtime transform and publication restriction remains; shared-file ownership is not handed back by this note. The isolated green tests/builds do not satisfy browser or phone acceptance.
