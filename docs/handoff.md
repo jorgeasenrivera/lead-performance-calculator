@@ -619,6 +619,11 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-PRINTED-STORE-TOTAL-20261109: printed store total, local parser slice.**
+
+See X-PRINTED-STORE-TOTAL-20261109. Current root designated the same TV task as bounded successor to inactive historical X14 ownership, without claiming an old acknowledgment. Claude expressly yielded its own parser/new-test reservations and exactly two existing fixture additions after the approved contacts. Once the exact claim is published and verified, use only the printed store Total Delivered column, preserve unknown/zero and associate fractions, keep the two existing assertions unchanged and retain the `stated` object when total is missing. No other X14 work, consumer, manifest/pin, source publication or release is included. Recheck actual base blobs and stop on overlap.
+
+
 **H-X-MOBILE-RACE-20261109: exact local successor repair.**
 
 See X-MOBILE-RACE-20261109 on the board. Historical native owner acknowledged the exact three-file yield, and the same successor `01a1b1cb-40db-7191-a86b-3bac1251702c` accepted after a successful read-only main comparison. Once this claim is published and verified, repair only synchronous delivery reservation and recovered-batch ordering in `native/action-handoff.mjs`, `native/App.js` and `native/test/readiness.test.mjs` on the preserved local mobile branch. Keep the other two readiness findings open, uncertain operations non-replayed and the journal disabled. No source publication, native CI/build, integration or release is included. All other owners and frozen work remain intact.
