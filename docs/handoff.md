@@ -1700,3 +1700,7 @@ The board assigns sole native writer `/root/advance_scheduler_readiness` only th
 **H-X-STORE-RECOVERY-SQL-20261111**
 
 The board assigns the existing sole SQL writer only three new local-source proposal/test/README paths. No existing SQL candidate is edited or imported. The writer begins only after the exact claim is published/verified and its plan is accepted, then runs real synthetic SQL transaction/authority/retention checks and independent review before a local checkpoint. No hosted installation, real permission change, runtime integration or publication/release follows from this source assignment. All-store restore and shared core/Manager work stay separately held.
+
+**H-X-STORE-RECOVERY-TRANSPORT-20261111**
+
+The board assigns the sole native writer two new adapter/test paths only. The main claim is the coordination lock; the frozen local helper is the separate source dependency. Existing helper and SQL bytes remain unchanged. Use the real typed RPC contract, strict lifecycle/origin guards and a separate committed-record read before success. No app wiring, all-store restore change, hosted call, source publication or release follows. Begin authoring only after the exact claim is published and verified; obtain independent review and full local checks before checkpointing.
