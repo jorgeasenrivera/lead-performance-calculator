@@ -1,0 +1,80 @@
+[
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 1,
+    "input": "pointer",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "chromium",
+    "width": 1440,
+    "scale": 2,
+    "input": "pointer",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 1,
+    "input": "pointer",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "chromium",
+    "width": 390,
+    "scale": 2,
+    "input": "pointer",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 1,
+    "input": "pointer",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  },
+  {
+    "engine": "chromium",
+    "width": 320,
+    "scale": 2,
+    "input": "pointer",
+    "legacy": true,
+    "grid": true,
+    "scope": true,
+    "duplicate": true,
+    "axeScans": 2,
+    "noNetwork": true,
+    "noPersistence": true
+  }
+]

@@ -1025,7 +1025,10 @@ main.compact-month .schedule-layout { order:2; margin-top:4px; }
 .schedule-layout .month-day.is-today { border-width:1px; }
 /* Import review reuses the planner's paper panels and controls. */
 #import-sheet { scroll-margin-top:6rem; }
-#import-sheet input[type=file], .import-row select { width:100%; max-width:100%; min-width:0; }
+/* WebKit native menu contents overflow when the select is blockified at enlarged text sizes. */
+#import-sheet label:has(select), .absence-choice { display:block; }
+#import-sheet label > select, .absence-choice > select { display:inline-block; margin-block-start:6px; }
+#import-sheet input[type=file], #import-sheet select { width:100%; max-width:100%; min-width:0; }
 #import-sheet pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.8125rem; }
 .import-row { border-top:1px solid var(--line); padding:12px 0; overflow-wrap:anywhere; }
 .import-row h4 { margin:8px 0; }

@@ -37,7 +37,7 @@ export function teamBalance(planner,index,month) {
     for(const p of new Map(row.store.people.map(p=>[p.id,p])).values()){
       if(!open&&!row.ids.includes(p.id)&&!(row.record?.off||[]).includes(p.id)&&!row.record?.unknownNotes?.[p.id])continue;
       const metric=empty(),intervals=personIntervals(row.record,p.id,row.rule),eligible=row.eligibleIds.includes(p.id),kind=absenceKind(row.record,p.id),weekday=new Date(row.day+'T12:00:00Z').getUTCDay();
-      const known=Array.isArray(p.off)&&Number.isFinite(p.start)&&Number.isFinite(p.end)&&p.end>p.start;
+      const known=kind!=='legacy-off'&&Array.isArray(p.off)&&Number.isFinite(p.start)&&Number.isFinite(p.end)&&p.end>p.start;
       const unavailable=!known||p.off.includes(weekday)||kind==='vacation'||kind==='unavailable';
       const available=!open||unavailable?[]:[[Math.max(row.rule.open,p.start)*60,Math.min(row.rule.close,p.end)*60]];
       const assigned=row.ids.includes(p.id),duration=assigned?durationFor(row,p.id):{knownMinutes:0,unknownDuration:false};
@@ -48,7 +48,7 @@ export function teamBalance(planner,index,month) {
       metric.closing=eligible?overlap(intervals,Math.max(row.rule.open,row.rule.close-1)*60,row.rule.close*60):0;
       metric.closingAvailable=!open?0:overlap(available,Math.max(row.rule.open,row.rule.close-1)*60,row.rule.close*60);
       metric.busy=highDays.has(row.day)?metric.scheduled:0;metric.busyAvailable=highDays.has(row.day)?metric.available:0;
-      metric.offDays=kind==='off'?1:0;metric.vacationDays=kind==='vacation'?1:0;
+      metric.offDays=['off','legacy-off'].includes(kind)?1:0;metric.vacationDays=kind==='vacation'?1:0;
       metric.unavailableDays=kind!=='vacation'&&(kind==='unavailable'||known&&p.off.includes(weekday))?1:0;
       metric.unknownDays=dayAbsence(row.store,row.record,row.day,p.id)==='unknown'?1:0;metric.unknownAvailabilityDays=known?0:1;metric.unknownCapDays=Number(!Number.isFinite(p.maxHours)||p.maxHours<0);
       metric.conflictDays=row.conflicts[p.id]?1:0;metric.mismatchDays=mismatches.has(p.id)?1:0;metric.memberDays=Number(open);

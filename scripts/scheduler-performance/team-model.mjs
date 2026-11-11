@@ -25,7 +25,7 @@ export function teamsOnDay(store,record,day,mode='mixed') {
   return (store.teams||[]).map(t=>({...t,ids:[...new Set(store.people.filter(p=>assignedMembership(store,record,day,p.id).teamIds.includes(t.id)).map(p=>p.id))]})).filter(t=>t.ids.length);
 }
 export function absenceKind(record,id) { return record?.off?.includes(id)?record.absences?.[id]?.kind||'off':null; }
-export const absenceLabel = kind => ({off:'Scheduled off',vacation:'Vacation',unavailable:'Unavailable',unknown:'Unknown'}[kind]||'Unknown');
+export const absenceLabel = kind => ({off:'Scheduled off','legacy-off':'Off, reason unknown (legacy)',vacation:'Vacation',unavailable:'Unavailable',unknown:'Unknown'}[kind]||'Unknown');
 export function dayAbsence(store,record,day,id) {
   const kind=absenceKind(record,id);if(kind)return kind;
   const p=store.people.find(p=>p.id===id),weekday=new Date(day+'T12:00:00Z').getUTCDay();
