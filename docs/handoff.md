@@ -1688,3 +1688,7 @@ Jorge's phone preview. X5 and #410 are separate.
 
 H-X2 is closed by H-C6 and the merge of #409. C84 is acknowledged and remains
 separate from X4, the per-store text sizing repair Jorge has now approved.
+
+**H-X-MOBILE-LIFECYCLE-GUARD-20261111**
+
+The existing successor accepts only the two-file dormant slice above. Source authoring starts after the exact additive amendment is published/verified and no overlap is confirmed. The previous race claim explicitly excluded lifecycle work. This partial boundary does not solve runtime lifecycle binding; broader propagation remains separately held. Preserve `cff085b`, all earlier evidence, unresolved records, race guarantees and the disabled journal.
