@@ -1,0 +1,321 @@
+{
+  "storeId": "fictional-a",
+  "month": "2026-09",
+  "days": [
+    {
+      "date": "2026-09-01",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-02",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-03",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-04",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-05",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-06",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-07",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-08",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-09",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-10",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-11",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-12",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-13",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-14",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-15",
+      "status": "conflict",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-16",
+      "status": "incomplete",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-17",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-18",
+      "status": "provisional",
+      "count": 7,
+      "vehicles": {
+        "new": 4,
+        "used": 3
+      },
+      "asOf": {
+        "timestamp": "2026-09-18T22:00:00.000Z",
+        "basis": "report_sent"
+      }
+    },
+    {
+      "date": "2026-09-19",
+      "status": "provisional",
+      "count": 0,
+      "vehicles": {
+        "new": 0,
+        "used": 0
+      },
+      "asOf": {
+        "timestamp": "2026-09-19T22:00:00.000Z",
+        "basis": "report_sent"
+      }
+    },
+    {
+      "date": "2026-09-20",
+      "status": "provisional",
+      "count": 5,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": {
+        "timestamp": "2026-09-20T22:00:00.000Z",
+        "basis": "report_sent"
+      }
+    },
+    {
+      "date": "2026-09-21",
+      "status": "provisional",
+      "count": 3,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": {
+        "timestamp": "2026-09-21T22:00:00.000Z",
+        "basis": "report_received"
+      }
+    },
+    {
+      "date": "2026-09-22",
+      "status": "provisional",
+      "count": 2,
+      "vehicles": {
+        "new": 1,
+        "used": 1
+      },
+      "asOf": {
+        "timestamp": "2026-09-22T15:30:00.000Z",
+        "basis": "report_sent"
+      }
+    },
+    {
+      "date": "2026-09-23",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-24",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-25",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-26",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-27",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-28",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-29",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    },
+    {
+      "date": "2026-09-30",
+      "status": "missing",
+      "count": null,
+      "vehicles": {
+        "new": null,
+        "used": null
+      },
+      "asOf": null
+    }
+  ]
+}

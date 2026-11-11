@@ -1,0 +1,19 @@
+{
+  "status": "Local proposal only, no production integration or publication",
+  "sourceCommit": "0f165a2e5d7c7c55fe569619553b800893b97122",
+  "sourceTree": "8ca19814ec1f70b39787495be18b18669b68cc04",
+  "sourcePR": "https://github.com/jorgeasenrivera/lead-performance-calculator/pull/459",
+  "managerOwner": "External Codex X11",
+  "managerGitBlob": "8565bf2003531f0dd858cfbef1c81328b8a02869",
+  "files": {
+    "src/Manager.jsx": "fd27fcc2561a15bf39f487c6999b3f8e4a6e30fabb4181d7558b0d411ac6dc16",
+    "src/manager-signal.css": "e2c712c8518302b4082695230be54c629bdd53a0b5dd95d45d6be83b05eaa363",
+    "src/manager-signal.mjs": "55f35a47aa90337c5de831d92e1322d396a25bb8162fa051ae5e8070bc17e5ab",
+    "src/LeadPerformanceCalculator.jsx": "c7455aead78b8d4994c95914080aa61d068eb5934b9d279f02672d8520b2676a",
+    "scripts/demo-seed.mjs": "0b9795b96f360373e17cdca5abe19624134d47f0ea2ca87d4dfc351fd65ff962",
+    "index.html": "ed172e04ef81c3f0ed00c86d92561717b27cbd5568128b67886dfc816e8633d4"
+  },
+  "endpoint": "Draft #456, synthetic payloads only; no production route is invoked",
+  "displayClock": "2026-09-22T16:00:00.000Z",
+  "timeZone": "America/New_York"
+}

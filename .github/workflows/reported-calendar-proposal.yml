@@ -1,0 +1,74 @@
+name: reported-calendar-proposal
+
+on:
+  pull_request:
+    paths:
+      - scripts/daily-calendar-proposal/**
+      - .github/workflows/reported-calendar-proposal.yml
+
+permissions:
+  contents: read
+
+jobs:
+  actual-signal-calendar:
+    timeout-minutes: 12
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check out the pinned owner source without changing it
+        uses: actions/checkout@v4
+        with:
+          ref: 0f165a2e5d7c7c55fe569619553b800893b97122
+          path: .calendar-source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm i --no-save playwright@1.63.0
+      - name: Check preservation and adversarial request generations
+        env:
+          SIGNAL_SOURCE_ROOT: ${{ github.workspace }}/.calendar-source
+          PROPOSAL_DEPENDENCIES_ROOT: ${{ github.workspace }}/node_modules
+        run: node --test scripts/daily-calendar-proposal/signal-calendar-proposal/proposal-check.mjs
+      - name: Build only the isolated fictional proposal
+        env:
+          SIGNAL_SOURCE_ROOT: ${{ github.workspace }}/.calendar-source
+          PROPOSAL_DEPENDENCIES_ROOT: ${{ github.workspace }}/node_modules
+        run: node scripts/daily-calendar-proposal/signal-calendar-proposal/build.mjs
+      - name: Capture and exercise actual phone and desktop components
+        shell: bash
+        env:
+          FEEL_BROWSER: ${{ matrix.browser }}
+        run: |
+          set -euo pipefail
+          node scripts/daily-calendar-proposal/signal-calendar-proposal/serve.mjs > calendar-preview.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 100); do
+            if curl -fs http://127.0.0.1:49217/ > /dev/null; then ready=1; break; fi
+            sleep 0.2
+          done
+          test "$ready" = 1
+          node scripts/daily-calendar-proposal/signal-calendar-proposal/capture.mjs
+      - name: Preserve fictional preview and actual browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reported-calendar-${{ matrix.browser }}
+          path: |
+            scripts/daily-calendar-proposal/signal-calendar-proposal/evidence/
+            scripts/daily-calendar-proposal/signal-calendar-proposal/dist/
+            calendar-preview.log
+          if-no-files-found: error
+          retention-days: 14
