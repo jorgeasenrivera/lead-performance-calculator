@@ -1692,3 +1692,7 @@ separate from X4, the per-store text sizing repair Jorge has now approved.
 **H-X-MOBILE-LIFECYCLE-GUARD-20261111**
 
 The existing successor accepts only the two-file dormant slice above. Source authoring starts after the exact additive amendment is published/verified and no overlap is confirmed. The previous race claim explicitly excluded lifecycle work. This partial boundary does not solve runtime lifecycle binding; broader propagation remains separately held. Preserve `cff085b`, all earlier evidence, unresolved records, race guarantees and the disabled journal.
+
+**H-X-STORE-RECOVERY-INTENT-20261111**
+
+The board assigns sole native writer `/root/advance_scheduler_readiness` only the two new dormant helper/test paths above. The isolated local prototype has no app import or persistence. A tracked port begins only after the exact additive main claim is published/verified and independent review passes, on a new local-only branch. No existing source or owner is yielded. Runtime integration, all-store restore and all publication/release actions remain held.
