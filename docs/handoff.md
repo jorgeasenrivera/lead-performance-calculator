@@ -1696,3 +1696,7 @@ The existing successor accepts only the two-file dormant slice above. Source aut
 **H-X-STORE-RECOVERY-INTENT-20261111**
 
 The board assigns sole native writer `/root/advance_scheduler_readiness` only the two new dormant helper/test paths above. The isolated local prototype has no app import or persistence. A tracked port begins only after the exact additive main claim is published/verified and independent review passes, on a new local-only branch. No existing source or owner is yielded. Runtime integration, all-store restore and all publication/release actions remain held.
+
+**H-X-STORE-RECOVERY-SQL-20261111**
+
+The board assigns the existing sole SQL writer only three new local-source proposal/test/README paths. No existing SQL candidate is edited or imported. The writer begins only after the exact claim is published/verified and its plan is accepted, then runs real synthetic SQL transaction/authority/retention checks and independent review before a local checkpoint. No hosted installation, real permission change, runtime integration or publication/release follows from this source assignment. All-store restore and shared core/Manager work stay separately held.
