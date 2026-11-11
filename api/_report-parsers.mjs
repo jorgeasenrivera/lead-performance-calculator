@@ -376,6 +376,30 @@ const DS_VOCAB = new Set(["total","leads","totalleads","ups","totalups","showroo
 const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
 const DS_VEHICLE = ["New", "Used", "Other", "Total"];
 
+function summaryPrintedPeriod(lines) {
+  const ranges = [], pages = [];
+  for (const L of lines || []) {
+    const text = L.parts.map((p) => p.str).join(" ").trim();
+    if (!/\d{1,2}\/\d{1,2}\/\d{4}\s*[-\u2013]/.test(text)) continue;
+    pages.push(L.pg ?? 1);
+    const match = /^(?:(?:Date range|Report period):?\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})\s*[-\u2013]\s*(\d{1,2})\/(\d{1,2})\/(\d{4})$/i.exec(text);
+    if (!match) { ranges.push(null); continue; }
+    const days = [];
+    for (const offset of [1, 4]) {
+      const month = Number(match[offset]), day = Number(match[offset + 1]), year = Number(match[offset + 2]);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      days.push(date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+        ? date.toISOString().slice(0, 10) : null);
+    }
+    ranges.push(days.every(Boolean) && days[0] <= days[1] && days[0].endsWith("-01") && days[0].slice(0, 7) === days[1].slice(0, 7)
+      ? { startDay: days[0], endDay: days[1] } : null);
+  }
+  // Printed dates identify a month, never the instant this report was sent.
+  const printedRange = ranges.length && new Set(pages).size === pages.length
+    && ranges.every((range) => range && range.startDay === ranges[0]?.startDay && range.endDay === ranges[0]?.endDay) ? ranges[0] : null;
+  return { reportMonth: printedRange ? printedRange.startDay.slice(0, 7) : null, printedRange };
+}
+
 function mapDeliverySummaryGrid(lines) {
   // Split deals are credited in halves, so the Delivered column legitimately
   // reads 3.5 or 13.5. The old pattern had no decimal point, so those tokens
@@ -403,6 +427,8 @@ function mapDeliverySummaryGrid(lines) {
      was the one number the app could not quote back. Kept now, so the board can
      be checked against the report it came from instead of against memory. */
   const storeSources = {};
+  const printedStoreTotals = [];
+  const totalHeaderTokens = new Set([...DS_VOCAB].map(squashT).filter(Boolean));
   let curName = null;
   let pendingFrags = [];
   const people = {};       // norm(name) -> { displayName, sources }
@@ -430,6 +456,20 @@ function mapDeliverySummaryGrid(lines) {
     // A data row ends the header block, so commit whatever name accumulated.
     if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
       commitName();
+      if (rowTag === "Total" && storeName && (!curName || norm(curName) === norm(storeName))) {
+        // Validate before filtering tokens, which could shift a malformed cell
+        // into the Delivered column. Repeated store totals are ambiguous.
+        const cells = texts.slice(1);
+        const headerOnly = cells.some((t) => totalHeaderTokens.has(squashT(t)))
+          && cells.every((t) => t === "%" || totalHeaderTokens.has(squashT(t)));
+        if (!headerOnly) {
+          if (cells.length === 7 && cells[6] === "%") cells.pop();
+          const printed = cells[4];
+          const count = typeof printed === "string" && /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.0+)?$/.test(printed)
+            ? Number(printed.replace(/,/g, "")) : null;
+          printedStoreTotals.push(!curName && cells.length === 6 && cells.every(isNum) && Number.isSafeInteger(count) && count >= 0 ? count : null);
+        }
+      }
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 6) continue;
       const k = curName ? norm(curName) : null;
@@ -517,8 +557,7 @@ function mapDeliverySummaryGrid(lines) {
   const g = (src, i) => (storeSources[src] ? storeSources[src][i] : null);
   const dcUnits = { internet: g("internet", 4), phone: g("phone", 4),
     showroom: g("showroom", 4), campaign: g("campaign", 4) };
-  const dcTotal = ["internet", "phone", "showroom", "campaign"]
-    .reduce((n, c) => (dcUnits[c] == null ? n : n + dcUnits[c]), 0);
+  const dcTotal = printedStoreTotals.length === 1 ? printedStoreTotals[0] : null;
   const dcLeads = { internet: g("internet", 0), phone: g("phone", 0), showroom: g("showroom", 0) };
   /* The store's own New and Used rows, which were being parsed and then dropped
      three lines from here. They were kept in storeSources by the same branch
@@ -529,9 +568,9 @@ function mapDeliverySummaryGrid(lines) {
      read from. */
   const dcVeh = { new: g("new", 4), used: g("used", 4), other: g("other", 4) };
   const anyVeh = ["new", "used", "other"].some((k) => dcVeh[k] != null);
-  const stated = Object.keys(storeSources).length
+  const stated = Object.keys(storeSources).length || printedStoreTotals.length
     ? { units: dcUnits, total: dcTotal, leads: dcLeads, ...(anyVeh ? { vehicles: dcVeh } : {}) } : null;
-  return { storeName, rows, pairings, stated };
+  return { storeName, rows, pairings, stated, ...summaryPrintedPeriod(lines) };
 }
 
 /* Delivery Summary rows are pre-shaped, so they bypass parseReport(). */
