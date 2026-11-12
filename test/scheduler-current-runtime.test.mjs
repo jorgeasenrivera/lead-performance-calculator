@@ -151,3 +151,128 @@ test('CI checks out into an owned child without any Git trust exception',()=>{
   assert.equal(ownership.repositories.length,9);assert.ok(ownership.repositories.every(r=>r.checkoutUid===process.getuid()&&r.gitUid===process.getuid()));
   assert.throws(()=>execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:program.replace('const uid = process.getuid();','const uid = process.getuid() + 1;'),stdio:['pipe','pipe','pipe']}),/Command failed/,'a mismatched process owner refuses before Git');
 });
+
+actionTraceTests();
+function actionTraceTests(){
+  const workflow=readFileSync(resolve(sourceRoot,QUALIFICATION[0]),'utf8');
+  const observerText=workflow.match(/const observerSource = String.raw`([\s\S]*?)`;/)[1].split('\n').map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
+  const prep=workflow.match(/node --input-type=module <<'CORSPREP'\n([\s\S]*?)\n          CORSPREP/)[1].split('\n').map(line=>line.slice(10)).join('\n');
+  let api;
+  before(async()=>{
+    const {createRequire}=await import('node:module');
+    const file=resolve(root,'trace-tool/observer-under-test.cjs');mkdirSync(dirname(file),{recursive:true});writeFileSync(file,observerText);
+    api=createRequire(import.meta.url)(file);
+  });
+  test('trace metadata has a strict allowlist and cannot emit credentials, cookies, bodies or raw URLs',()=>{
+    const secret='DO_NOT_EMIT_credential_cookie_body';
+    const input=Object.freeze({authorization:secret,apikey:secret,cookie:secret,'set-cookie':secret,origin:'http://127.0.0.1:5178',referer:'http://127.0.0.1:5181/private?token='+secret,'access-control-request-headers':'authorization,cookie,x-client-info,'+secret});
+    const output=api.safe({kind:'request',source:'browser',...api.headers(input),...api.cors({'set-cookie':secret,'access-control-allow-origin':'*','access-control-allow-headers':'authorization,cookie,'+secret,'access-control-allow-methods':'POST,'+secret}),body:secret,authorization:secret,cookie:secret,url:'https://example.invalid/'+secret,failure:secret});
+    const json=JSON.stringify(output);assert.ok(!json.includes(secret));assert.ok(!json.includes('cookie'));assert.ok(!json.includes('private'));
+    assert.equal(output.origin,'http://127.0.0.1:5178');assert.equal(output.referrer,'http://127.0.0.1:5181');assert.deepEqual(output.requestedHeaders,['authorization','x-client-info']);assert.deepEqual(output.allowedMethods,['POST']);
+    assert.equal(api.safe({origin:'http://user:'+secret+'@127.0.0.1:5178/'}).origin,'other');
+    assert.equal(api.location('https://external.invalid/'+secret).origin,'other');assert.equal(api.safe({origin:api.location('null').origin}).origin,'opaque-null');
+  });
+  test('mock observer preserves OPTIONS, POST and response objects and logs only safe preflight metadata',async()=>{
+    const {EventEmitter}=await import('node:events');const seen=[],calls=[],secret='DO_NOT_EMIT_mock_body';
+    const original=function(...args){calls.push(args);const server=new EventEmitter();server.on('request',args[0]);return server;};
+    const http={createServer:original};const restore=api.createObserver(row=>seen.push(row)).installMock(http);let handled=0;
+    const handler=(req,res)=>{handled++;assert.equal(req.headers.authorization,secret);res.emit('finish');};
+    const options={fixture:true},server=http.createServer(handler,options);assert.equal(calls[0][0],handler);assert.equal(calls[0][1],options);
+    for(const method of ['OPTIONS','POST']){
+      const req={url:'/rest/v1/app_data?on_conflict=key&hidden='+secret,method,headers:Object.freeze({authorization:secret,cookie:secret,origin:'http://127.0.0.1:5181','access-control-request-method':'POST','access-control-request-headers':'authorization,content-type'})};
+      Object.defineProperty(req,'body',{get(){throw new Error('observer must not read a body');}});
+      const res=new EventEmitter();res.statusCode=method==='OPTIONS'?204:201;res.getHeaders=()=>({'access-control-allow-origin':'*','access-control-allow-methods':'*','access-control-allow-headers':'authorization,content-type','set-cookie':secret});
+      server.emit('request',req,res);
+    }
+    restore();assert.equal(http.createServer,original);assert.equal(handled,2);
+    assert.deepEqual(seen.filter(x=>x.kind==='mock-response').map(x=>x.status),[204,201]);assert.ok(seen.every(x=>x.origin==='http://127.0.0.1:5181'));
+    assert.ok(!JSON.stringify(seen).includes(secret));assert.ok(!JSON.stringify(seen).includes('cookie'));
+  });
+  test('actual ServerResponse writeHead-only CORS headers are captured without parsing raw wire data',async()=>{
+    const {EventEmitter}=await import('node:events');const {ServerResponse}=await import('node:http');const rows=[];
+    const http={createServer:handler=>{const server=new EventEmitter();server.on('request',handler);return server;}};
+    api.createObserver(row=>rows.push(row)).installMock(http);
+    const explicit=Object.freeze({'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'authorization, content-type','Set-Cookie':'DO_NOT_EMIT_writeHead_cookie'});
+    const server=http.createServer((req,res)=>{assert.equal(res.writeHead(204,'No Content',explicit),res);assert.equal(Object.keys(res.getHeaders()).length,0,'real Node does not cache writeHead-only headers');res.emit('finish');});
+    const req={method:'OPTIONS',url:'/rest/v1/app_data',headers:{origin:'http://127.0.0.1:5181'},httpVersionMajor:1,httpVersionMinor:1};
+    server.emit('request',req,new ServerResponse(req));
+    const result=rows.find(row=>row.kind==='mock-response');assert.equal(result.status,204);assert.equal(result.allowOrigin,'*');assert.deepEqual(result.allowedMethods,['OPTIONS','POST']);assert.deepEqual(result.allowedHeaders,['authorization','content-type']);assert.ok(!JSON.stringify(rows).includes('DO_NOT_EMIT'));
+    const invalid=http.createServer((request,response)=>response.writeHead(201,{'x-invalid':'\n'}));
+    assert.throws(()=>invalid.emit('request',{...req,method:'POST'},new ServerResponse(req)),error=>error.code==='ERR_INVALID_CHAR','original writeHead errors are not replaced or swallowed');
+    assert.doesNotMatch(observerText,/\._header\b|rawHeaders/);
+  });
+  test('browser observer preserves requests/responses/errors and correlates late completion with the originating navigation',async()=>{
+    const {EventEmitter}=await import('node:events');const seen=[],forwarded=[],secret='DO_NOT_EMIT_browser_body';
+    const page=new EventEmitter();page.current='http://127.0.0.1:5178/';page.url=()=>page.current;
+    const frame={page:()=>page,url:()=>page.current,parentFrame:()=>null};page.mainFrame=()=>frame;
+    const context=new EventEmitter();let registered;context.route=function(...args){registered=args;return Promise.resolve('route-result');};context.newPage=async()=>page;
+    const browser={newContext:async options=>{forwarded.push(options);return context;},close:async options=>{forwarded.push(options);return 'closed';}};
+    const engine={launch:async options=>{forwarded.push(options);return browser;}};const originalLaunch=engine.launch;const restore=api.createObserver(row=>seen.push(row)).installBrowser(engine);
+    const launchOptions=Object.freeze({headless:true}),contextOptions=Object.freeze({serviceWorkers:'block'});assert.equal(await engine.launch(launchOptions),browser);assert.equal(await browser.newContext(contextOptions),context);assert.equal(await context.newPage(),page);
+    const req={url:()=> 'http://127.0.0.1:5433/rest/v1/app_data?on_conflict=key&secret='+secret,headers:()=>Object.freeze({authorization:secret,cookie:secret,origin:'http://127.0.0.1:5178',referer:'http://127.0.0.1:5178/private?'+secret}),method:()=> 'POST',frame:()=>frame,isNavigationRequest:()=>false,failure:()=>({errorText:'access control checks '+secret})};
+    const response={headers:()=>({'access-control-allow-origin':'*','set-cookie':secret}),status:()=>201};
+    const fetchOptions={postData:secret},fulfillOptions={response,json:{body:secret}},requestCalls=[];
+    const route={request:()=>req,fetch:async value=>{requestCalls.push(value);return response;},fulfill:async value=>{requestCalls.push(value);return 'fulfilled';}};
+    context.emit('request',req);
+    const handler=async observed=>{assert.equal(observed.request(),req);assert.equal(await observed.fetch(fetchOptions),response);page.current='http://127.0.0.1:5181/';page.emit('framenavigated',frame);assert.equal(await observed.fulfill(fulfillOptions),'fulfilled');};
+    const routeOptions={times:5};assert.equal(await context.route('synthetic-pattern',handler,routeOptions),'route-result');assert.equal(registered[0],'synthetic-pattern');assert.equal(registered[2],routeOptions);await registered[1](route,req);
+    assert.equal(requestCalls[0],fetchOptions);assert.equal(requestCalls[1],fulfillOptions);
+    const originalErrors=[];page.on('pageerror',error=>originalErrors.push(error));const error=new Error('access control checks '+secret);page.emit('pageerror',error);assert.equal(originalErrors[0],error);assert.throws(()=>assert.deepEqual(originalErrors,[]),'the real no-error guard still fails');
+    context.emit('requestfailed',req);const closeOptions={reason:secret};assert.equal(await browser.close(closeOptions),'closed');assert.deepEqual(forwarded,[launchOptions,contextOptions,closeOptions]);
+    const late=seen.find(x=>x.kind==='route-fulfill-done');assert.equal(late.phase,'candidate');assert.equal(late.origin,'http://127.0.0.1:5178');assert.equal(late.ownerNav,0);assert.equal(late.currentNav,1);assert.equal(late.pageOrigin,'http://127.0.0.1:5181');
+    assert.equal(seen.find(x=>x.kind==='page-error').pagePhase,'baseline');assert.ok(!('phase' in seen.find(x=>x.kind==='page-error')),'current page is not assumed to own a late error');assert.equal(late.phaseBasis,'origin');assert.equal(seen.find(x=>x.kind==='request-failed').failure,'access-control');assert.ok(!JSON.stringify(seen).includes(secret));restore();assert.equal(engine.launch,originalLaunch);
+    const rejection=new Error('DO_NOT_EMIT_original_rejection');route.fetch=async()=>{throw rejection;};await assert.rejects(()=>registered[1](route,req),value=>value===rejection);
+    route.fetch=async()=>response;const fulfillRejection=new Error('synthetic fulfill failure');route.fulfill=async()=>{throw fulfillRejection;};await assert.rejects(()=>registered[1](route,req),value=>value===fulfillRejection);
+  });
+  test('telemetry failures never swallow or replace real request errors',async()=>{
+    const {EventEmitter}=await import('node:events');let fault=0,handled=0;const http={createServer:handler=>{const server=new EventEmitter();server.on('request',handler);return server;}};
+    api.createObserver(()=>{throw new Error('synthetic sink failure');},()=>fault++).installMock(http);
+    const server=http.createServer(()=>handled++);server.emit('request',{url:'/rest/v1/app_data',method:'POST',headers:{}},new EventEmitter());assert.equal(handled,1);assert.ok(fault>0);
+  });
+  test('a recovered mock sink permanently marks the diagnostic partial without changing requests',async()=>{
+    const {EventEmitter}=await import('node:events');let first=true,handled=0;const rows=[];
+    const http={createServer:handler=>{const server=new EventEmitter();server.on('request',handler);return server;}};
+    api.createObserver(row=>{if(first){first=false;throw new Error('one synthetic lost record');}rows.push(row);}).installMock(http);
+    const server=http.createServer((req,res)=>{handled++;res.emit('finish');});
+    for(let n=0;n<2;n++){const res=new EventEmitter();res.statusCode=201;res.getHeaders=()=>({});server.emit('request',{url:'/rest/v1/app_data',method:'POST',headers:{}},res);}
+    assert.equal(handled,2);assert.ok(rows.length>0);assert.ok(rows.every(row=>row.incomplete===true),'later successful mock records cannot claim completeness');
+  });
+  test('trace limits mark incompleteness while every real request still reaches the handler',async()=>{
+    const {EventEmitter}=await import('node:events');const rows=[];let handled=0;
+    const http={createServer:handler=>{const server=new EventEmitter();server.on('request',handler);return server;}};
+    api.createObserver(row=>rows.push(row)).installMock(http);const server=http.createServer((req,res)=>{handled++;res.emit('finish');});
+    const req={url:'/rest/v1/app_data',method:'POST',headers:{}};
+    for(let n=0;n<10010;n++){const res=new EventEmitter();res.statusCode=201;res.getHeaders=()=>({});server.emit('request',req,res);}
+    assert.equal(handled,10010);assert.ok(rows.some(row=>row.kind==='observer-incomplete'));assert.ok(rows.length<=20001);
+  });
+  test('preparation emits a hash-bound observer only with an explicit empty-options context',()=>{
+    const dir=resolve(root,'trace-tool/prep');mkdirSync(dir,{recursive:true});
+    const pkg=resolve(root,'node_modules/playwright');mkdirSync(pkg,{recursive:true});
+    writeFileSync(resolve(pkg,'package.json'),JSON.stringify({name:'synthetic-playwright-fixture',version:'1.63.0',exports:{'.':{require:'./index.cjs',import:'./index.mjs'},'./package.json':'./package.json'}}));
+    writeFileSync(resolve(pkg,'index.cjs'),'module.exports={webkit:{synthetic:true}};\n');
+    writeFileSync(resolve(pkg,'index.mjs'),"import driver from './index.cjs';export const webkit=driver.webkit;\n");
+    const envFile=resolve(dir,'env.out');writeFileSync(envFile,'');const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');
+    execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:prep,env:{...clean,RUNNER_TEMP:dir,GITHUB_ENV:envFile}});
+    const generated=readFileSync(resolve(dir,'manager-cors-observer.cjs'),'utf8');assert.equal(generated,observerText);
+    const record=JSON.parse(readFileSync(resolve(root,'manager-runtime-qualification/cors-observer.json')));assert.equal(record.diagnosticOnly,true);assert.equal(record.sha256,createHash('sha256').update(observerText).digest('hex'));
+    const envText=readFileSync(envFile,'utf8');assert.ok(envText.includes('SAGE_CORS_TRACE=1\n'));assert.ok(envText.includes('NODE_OPTIONS=--require='+resolve(dir,'manager-cors-observer.cjs')+'\n'));
+    assert.throws(()=>execFileSync(process.execPath,['--require',resolve(dir,'manager-cors-observer.cjs'),resolve(root,'scripts/mock-supabase.mjs')],{cwd:root,env:{...clean,SAGE_CORS_TRACE:'1',SAGE_CORS_TRACE_PATH:resolve(root,'manager-runtime-qualification/cors-trace.ndjson')},stdio:['pipe','pipe','pipe']}),/frozen diagnostic entry/,'a different entry never gains an observer');
+  });
+  test('diagnostic summary reports partial/unknown metadata and never replaces the real measurement outcome',()=>{
+    const summary=workflow.match(/node --input-type=module <<'CORSSUMMARY'\n([\s\S]*?)\n          CORSSUMMARY/)[1].split('\n').map(line=>line.slice(10)).join('\n');
+    const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');const dir=resolve(root,'trace-tool/prep'),trace=resolve(root,'manager-runtime-qualification/cors-trace.ndjson');
+    writeFileSync(trace,JSON.stringify({kind:'mock-response',source:'mock',incomplete:true,authorization:'DO_NOT_EMIT_summary_secret'})+'\n');
+    const run=()=>execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:summary,env:{...clean,RUNNER_TEMP:dir,GITHUB_STEP_SUMMARY:resolve(dir,'summary.out'),MEASUREMENT_OUTCOME:'failure'},encoding:'utf8'});
+    const output=run();assert.ok(!output.includes('DO_NOT_EMIT'));const report=JSON.parse(output.split('\n').find(line=>line.startsWith('CORS_TRACE_REPORT ')).slice('CORS_TRACE_REPORT '.length));
+    assert.equal(report.collection,'partial');assert.equal(report.mockCompleteness,'unknown-background-source');assert.equal(report.measurementOutcome,'failure');assert.equal(report.diagnosticOnly,true);
+    writeFileSync(trace,'not JSON');const missing=run();assert.ok(missing.includes('missing-or-invalid'));assert.ok(missing.includes('"measurementOutcome":"failure"'));
+  });
+  test('diagnostic preparation requires unchanged Node options and binds exact frozen inputs and real driver identity',()=>{
+    assert.match(workflow,/if: matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93'/);
+    assert.ok(observerText.includes('1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972'));assert.ok(observerText.includes('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3'));
+    assert.match(prep,/assert\.ok\(!process\.env\.NODE_OPTIONS/);assert.match(prep,/assert\.equal\(esm\.webkit, require\('playwright'\)\.webkit/);
+    const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');
+    assert.throws(()=>execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:prep,env:{...clean,NODE_OPTIONS:'--no-warnings'},stdio:['pipe','pipe','pipe']}),/trace requires unchanged empty Node options/);
+    assert.doesNotMatch(observerText,/postData\(|\.body\(|response\.json\(|req\.on\(['"]data|disable-web-security|setExtraHTTPHeaders|route\.abort|unroute/);
+  });
+}
