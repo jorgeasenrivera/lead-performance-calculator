@@ -6,7 +6,7 @@
 
 import PostalMime from "postal-mime";
 import Papa from "papaparse";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
+import * as pdfjsNamespace from "pdfjs-dist/legacy/build/pdf.js";
 /* The reader for the scheduled reports. Shared verbatim with the app, which
    reads the same PDFs when a manager drops one in by hand — see the note at the
    top of that file for what living as two copies cost. */
@@ -33,6 +33,8 @@ import { serverFault } from "./_report.mjs";
 import { sourceHash } from "./_report-version.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
+// Native Node and bundled CommonJS expose the same reader through different exports.
+const pdfjs = typeof pdfjsNamespace.getDocument === "function" ? pdfjsNamespace : pdfjsNamespace.default;
 try {
   pdfjs.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
 } catch (e) { /* bundled include covers it */ }
