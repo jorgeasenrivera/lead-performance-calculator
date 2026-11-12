@@ -1,10 +1,12 @@
 // The accepted scheduler uses a private frame and an explicit current host lease.
-// Synthetic preview remains separate. This component performs no save or publish.
+// Synthetic preview remains separate. No draft transport is enabled by default.
 import {useLayoutEffect,useMemo,useRef,useState} from 'react';
 import css from '../scripts/scheduler-performance/planner.css?inline';
 import shared from '../scripts/scheduler-performance/shared-system.css?inline';
 import {mountMonthApp} from '../scripts/scheduler-performance/month-app-core.mjs';
 import {editorProps} from './scheduler-editor-adapter.mjs';
+import {createSchedulerDraftBinding} from './scheduler-draft-binding.mjs';
+import {draftError} from './scheduler-draft-transport.mjs';
 
 const reasons={activation:'The connected scheduler is not available yet.','not-ready':'This store’s people are still loading.',principal:'This sign-in’s store data is not ready.',timezone:'The store’s time zone is unavailable.',store:'This store cannot be opened.',roster:'This roster needs review.',assignments:'The schedule source is unavailable.'};
 const FRAME=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}html,body,#app{min-height:100%;} ${css}</style><style>${shared}</style></head><body><main id="app"></main></body></html>`;
@@ -23,7 +25,7 @@ export default function SchedulerEditor({store,data,timezone,now,principalEpoch,
   useLayoutEffect(()=>{
     if(!built.ok || !loaded || loaded.identity!==identity || !loaded.frame.isConnected)return;
     const frame=loaded.frame, doc=frame.contentDocument;
-    let handle=null,unsubscribe=null,api=null,offKeyboard=null;
+    let handle=null,unsubscribe=null,api=null,offKeyboard=null,binding=null,bindingOwner=null;
     const requestClose=()=>{if(!handle || handle.disposed || mounted.current?.handle!==handle)return false;if(handle.hasDraft() && !(latest.current.confirm?latest.current.confirm('Discard the unsaved schedule changes?'):frame.contentWindow.confirm('Discard the unsaved schedule changes?')))return false;latest.current.onClose?.();return true;};
     try {
       handle=mountMonthApp({...built,root:doc.getElementById('app'),preview:preview===true,localDraft:localDraft===true,isCurrent:()=>lease?.isCurrent?.()===true,embedded:true,keyTarget:doc,requireMaterializedSources:true,
@@ -31,12 +33,28 @@ export default function SchedulerEditor({store,data,timezone,now,principalEpoch,
         onClose:()=>latest.current.onClose?.(),onSummary:detail=>latest.current.onSummary?.(detail),
         onError:error=>latest.current.onError?.(error),
         ...(latest.current.draftCodec?{draftCodec:{verify:p=>latest.current.draftCodec.verify(p)}}:{})});
-      api={hasDraft:()=>handle.hasDraft(),requestClose,retire:()=>handle.dispose(),
+      api={hasDraft:()=>handle.hasDraft(),requestClose,retire:()=>{binding?.dispose();handle.dispose();},
         reviewMaterialization:(...args)=>handle.reviewMaterialization(...args),applyMaterialization:(...args)=>handle.applyMaterialization(...args),
         exportMonth:(...args)=>handle.exportMonth(...args),acknowledgeMonth:(...args)=>handle.acknowledgeMonth(...args),
-        hydrateMonth:(...args)=>handle.hydrateMonth(...args),draftStatus:(...args)=>handle.draftStatus(...args)};
+        hydrateMonth:(...args)=>handle.hydrateMonth(...args),draftStatus:(...args)=>handle.draftStatus(...args),
+        // Private host connection only. No client, token or network operation is
+        // created until the caller supplies the existing scoped transport.
+        connectDraft({auth,transport}={}){
+          const principal=auth?.getSnapshot?.();
+          if(handle.disposed || mounted.current?.api!==api || handle.draftStatus().ok!==true
+            || principal?.sessionReady!==true || principal.disposed || principal.principalEpoch!==principalEpoch)throw draftError('inactive');
+          if(binding?.getSnapshot().active){
+            if(bindingOwner.auth===auth && bindingOwner.transport===transport)return binding;
+            throw draftError('already-connected');
+          }
+          binding?.dispose();
+          binding=createSchedulerDraftBinding({auth,transport,getEditor:()=>mounted.current?.api,
+            storeId:built.stores[0].id,index:0,lifetime:identity});
+          bindingOwner={auth,transport};
+          return binding;
+        }};
       mounted.current={identity,handle,api};
-      unsubscribe=handle.subscribeDraft(event=>latest.current.onDraftChange?.(event));
+      unsubscribe=handle.subscribeDraft(event=>{binding?.onDraftChange(event);latest.current.onDraftChange?.(event);});
       const boundaryKey=event=>{
         if(event.key!=='Tab' || !latest.current.onBoundaryTab)return;
         if([...doc.querySelectorAll('[role="dialog"]')].some(node=>node.getClientRects().length))return;
@@ -46,8 +64,8 @@ export default function SchedulerEditor({store,data,timezone,now,principalEpoch,
       };
       doc.addEventListener('keydown',boundaryKey,true);offKeyboard=()=>doc.removeEventListener('keydown',boundaryKey,true);
       if(day)handle.view({day,store:built.stores[0].id});
-    } catch(error) {handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;setFailed(identity);latest.current.onError?.(error);}
-    return ()=>{offKeyboard?.();unsubscribe?.();handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;};
+    } catch(error) {binding?.dispose();handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;setFailed(identity);latest.current.onError?.(error);}
+    return ()=>{binding?.dispose();offKeyboard?.();unsubscribe?.();handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;};
   },[built,loaded,identity]);
   useLayoutEffect(()=>{
     const api=mounted.current?.api||null;

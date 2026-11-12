@@ -396,9 +396,9 @@ export function createPlanner(stores, { assignmentForDay = () => null, explicitA
     try { verified = verify(structuredClone(candidate)); } catch { return refuse("codec-refused"); }
     if (verified === false || verified === null || verified === undefined) return refuse("codec-refused");
     if (verified !== true) { try { candidate = structuredClone(verified); } catch { return refuse("codec-refused"); } }
-    if (candidate?.storeId !== scope.storeId || candidate?.month !== scope.month) return refuse("scope");
     const bad = shapeProblem(candidate, index);
     if (bad) return refuse(bad);
+    if (candidate.storeId !== scope.storeId || candidate.month !== scope.month) return refuse("scope");
     if(requireMaterializedSources){try{if(missingSources(sourceVector(index,candidate.month,candidate.overrides),candidate.overrides).length)return refuse('source-not-materialized');}catch{return refuse('source-unavailable');}}
     try { stable(candidate); } catch { return refuse('shape'); }
     const k = key(index, candidate.month);

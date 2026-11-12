@@ -12,11 +12,33 @@ try {
   await symlink(join(repo,'node_modules'),join(dir,'node_modules'),'dir');
   await writeFile(join(dir,'index.html'),'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0"><h1 id="host-heading">Host</h1><div id="root" style="height:80vh"></div><script type="module" src="/fixture.jsx"></script></body></html>');
   await writeFile(join(dir,'fixture.jsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import SchedulerEditor from '/@fs/${repo}/src/scheduler-editor.jsx';
+import {createSchedulerDraftTransport} from '/@fs/${repo}/src/scheduler-draft-transport.mjs';import {schedulerDraftCodec} from '/@fs/${repo}/src/scheduler-draft-codec.mjs';import {manualDraftFetch} from '/@fs/${repo}/src/scheduler-manual-setup.mjs';
 const root=createRoot(document.getElementById('root'));let props;window.guard=React.createRef();window.closeCount=0;window.confirmations=[];window.allowClose=false;window.errors=[];window.draftEvents=[];
 const now=()=>new Date('2026-11-02T17:00:00Z'),store={id:'fictional',name:'Fictional'},data={__storeId:'fictional',roster:[{id:'a',name:'Alex',roleId:'sales'}],departed:[]};
 const explicitAssignmentForDay=(day,index)=>day==='2026-11-02'&&index===0?{storeId:store.id,day,record:{on:[],off:['a'],absences:{a:{kind:'off',source:{kind:'fictional legacy input'}}}}}:null;
 const original={store,data,timezone:'America/New_York',now,principalEpoch:3,dataEpoch:3,preview:false,guardRef:window.guard,explicitAssignmentForDay,onClose:()=>window.closeCount++,onError:e=>window.errors.push(e.message),onDraftChange:e=>window.draftEvents.push(e),confirm:message=>{window.confirmations.push(message);return window.allowClose;}};
-window.original=original;window.update=(over={})=>{props={...(props||original),...over};flushSync(()=>root.render(<React.StrictMode><SchedulerEditor {...props}/></React.StrictMode>));};window.unmount=()=>flushSync(()=>root.unmount());window.update();`);
+window.original=original;window.update=(over={})=>{props={...(props||original),...over};flushSync(()=>root.render(<React.StrictMode><SchedulerEditor {...props}/></React.StrictMode>));};window.unmount=()=>flushSync(()=>root.unmount());
+window.connect=()=>{
+ const auth={getSnapshot:()=>({principalEpoch:props.principalEpoch,sessionReady:true,disposed:false}),subscribe:()=>()=>{},getAccessToken:async()=>window.draftBearer};
+ window.draftBearer='fixture-first';window.draftCalls=[];window.draftRevision=1;window.draftDocument=window.guard.current.exportMonth('2026-11').projection;
+ const replay=new Map();let sequence=0;
+ const transport=createSchedulerDraftTransport({auth,codec:schedulerDraftCodec,requestId:()=> 'fixture-'+(++sequence),fetchImpl:manualDraftFetch(async(url,init)=>{
+  const body=JSON.parse(init.body);window.draftCalls.push({url,body,bearer:init.headers.Authorization});
+  if(url!=='/api/scheduler-manual')throw Error('Wrong manual route');
+  const answer=(status,payload)=>({status,json:async()=>structuredClone(payload)});
+  if(body.action==='load')return answer(200,{result:{kind:'draft',revision:window.draftRevision,schedule:window.draftDocument}});
+  if(replay.has(body.requestId)){const prior=replay.get(body.requestId);if(prior.body!==init.body)return answer(409,{error:'idempotency-conflict'});return answer(200,{...prior.receipt,replayed:true});}
+  if(body.baseRev!==window.draftRevision)return answer(409,{error:'conflict'});
+  window.draftDocument=structuredClone(body.draft);window.draftRevision++;
+  const receipt={result:{head:{draftRev:window.draftRevision,publishedRev:0}},replayed:false};replay.set(body.requestId,{body:init.body,receipt});
+  if(window.dropNextDraftResponse){window.dropNextDraftResponse=false;throw Error('Synthetic committed response lost');}
+  if(window.holdNextDraftResponse){window.holdNextDraftResponse=false;await new Promise(resolve=>window.finishDraftResponse=resolve);}
+  return answer(200,receipt);
+ })});
+ window.draftBinding=window.guard.current.connectDraft({auth,transport});
+ return window.guard.current.connectDraft({auth,transport})===window.draftBinding;
+};
+window.update();`);
   server=await createServer({root:dir,configFile:false,plugins:[react()],publicDir:join(repo,'public'),server:{host:'127.0.0.1',port:0,fs:{allow:[dir,repo]}}});
   await server.listen();const origin=`http://127.0.0.1:${server.httpServer.address().port}`;
   const pw=await import(process.env.FEEL_PLAYWRIGHT||'playwright'),engine=process.env.FEEL_BROWSER==='webkit'?pw.webkit:pw.chromium;
@@ -45,6 +67,38 @@ window.original=original;window.update=(over={})=>{props={...(props||original),.
     await page.evaluate(()=>window.update({data:window.original.data,principalEpoch:4,dataEpoch:4,explicitAssignmentForDay:undefined,draftCodec:{verify:projection=>projection}}));await page.frameLocator('iframe').locator('#workspace').waitFor();await page.waitForFunction(()=>Boolean(window.guard.current));
     assert.equal((await page.evaluate(()=>window.guard.current.hydrateMonth(window.saved))).ok,true);const restored=await page.evaluate(()=>window.guard.current.exportMonth('2026-11'));assert.deepEqual(restored.projection.overrides['2026-11-02'].off,['a']);assert.equal(restored.projection.overrides['2026-11-02'].shifts,undefined);assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),false);
     assert.equal(await page.evaluate(()=>window.previous.requestClose()),false);assert.equal(await page.evaluate(()=>window.closeCount),1);
+    if(width===1280){
+      // Real React handle, binding, codec and manual request mapping; only auth
+      // and the in-memory endpoint are synthetic doubles. No SQL is exercised.
+      assert.equal(await page.evaluate(()=>window.connect()),true,'reconnecting the same private dependencies is idempotent');
+      await page.evaluate(()=>window.draftBinding.load('2026-11'));
+      assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].loadAccepted),true);
+      const editRule=async minimum=>{
+        const frame=page.frameLocator('iframe');if(!await frame.locator('#setup').count())await frame.locator('#workspace').click();
+        await frame.locator('#setup').click();await frame.locator('#rules').click();
+        for(const [name,value]of [['open','9'],['close','17'],['minimum',String(minimum)],['capacity','8']])await frame.locator(`#settings-sheet [name=${name}]`).fill(value);
+        await frame.locator('#settings-sheet button.primary').click();
+      };
+      await editRule(1);assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),true);
+      await page.evaluate(()=>window.draftBinding.save('2026-11'));
+      assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),false);
+      assert.equal(await page.evaluate(()=>window.draftRevision),2);
+      await editRule(2);await page.evaluate(()=>{window.dropNextDraftResponse=true;return window.draftBinding.save('2026-11');});
+      assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].controller.status),'uncertain');
+      assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),true);
+      await page.evaluate(()=>{window.draftBearer='fixture-fresh';return window.draftBinding.retry('2026-11');});
+      const replay=await page.evaluate(()=>window.draftCalls.filter(call=>call.body.action==='save').slice(-2));
+      assert.deepEqual(replay[0].body,replay[1].body);assert.notEqual(replay[0].bearer,replay[1].bearer);
+      assert.equal(await page.evaluate(()=>window.draftRevision),3);assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),false);
+      await editRule(3);await page.evaluate(()=>{window.holdNextDraftResponse=true;window.savingDraft=window.draftBinding.save('2026-11');});
+      await page.waitForFunction(()=>Boolean(window.finishDraftResponse));await editRule(4);
+      await page.evaluate(()=>{window.finishDraftResponse();return window.savingDraft;});
+      assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),true,'edits made after submission remain dirty');
+      assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].controller.status),'dirty');
+      const calls=await page.evaluate(()=>window.draftCalls);
+      for(const call of calls){assert.equal(call.url,'/api/scheduler-manual');assert.deepEqual(Object.keys(call.body).sort(),(call.body.action==='load'?['action','storeId','month']:['action','storeId','month','draft','baseRev','requestId']).sort());}
+      console.log('PASS actual mounted draft connection: manual envelopes, receipt tokens, fresh-bearer exact replay and edits during save (synthetic endpoint)');
+    }
     if(width===1280&&process.env.SCHEDULER_EDITOR_EXPORT_DIRECTORY){
       // An explicitly authored fictional completion, not hours inferred from
       // a legacy Off list. All dates have deliberate Off or exact work choices.
@@ -66,6 +120,6 @@ window.original=original;window.update=(over={})=>{props={...(props||original),.
       const result=await page.evaluate(()=>{const reviewed=window.guard.current.reviewMaterialization('2026-11');window.breakClock=true;return window.guard.current.applyMaterialization(reviewed.review);});assert.equal(result.ok,true);assert.equal(result.rendered,false);assert.deepEqual((await page.evaluate(()=>window.guard.current.exportMonth('2026-11'))).projection.overrides['2026-11-02'].off,['a']);
       const notified=await page.evaluate(()=>{window.breakClock=false;return window.errors.splice(0);});assert.deepEqual(notified,['Scheduler input unavailable: timezone']);
     }
-    await page.evaluate(()=>window.unmount());assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.errors),[]);console.log(`PASS ${width}x${height}: actual React host, activation hold, scoped inputs, detached export, draft protection, same-scope refresh, StrictMode disposal and auth invalidation`);await page.close();
+    await page.evaluate(()=>window.unmount());if(width===1280)assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().active),false);assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>window.errors),[]);console.log(`PASS ${width}x${height}: actual React host, activation hold, scoped inputs, detached export, draft protection, same-scope refresh, StrictMode disposal and auth invalidation`);await page.close();
   }
 } finally {await browser?.close();await server?.close();await rm(dir,{recursive:true,force:true});}
