@@ -7,6 +7,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPlanner } from "../scripts/scheduler-performance/month-model.mjs";
 import { mountMonthApp } from "../scripts/scheduler-performance/month-app-core.mjs";
+import {schedulerDraftCodec} from '../src/scheduler-draft-codec.mjs';
+import {createSchedulerDraftTransport} from '../src/scheduler-draft-transport.mjs';
+import {createSchedulerDraftBinding} from '../src/scheduler-draft-binding.mjs';
+import {manualDraftFetch} from '../src/scheduler-manual-setup.mjs';
 
 const SOURCE = { on: ["b"], off: ["a"], absences: { a: { kind: "legacy-off", source: { file: "original.csv", line: 4 } } }, teamSnapshot: { a: { teamIds: ["old"], unknown: false } }, shifts: [{ personId: "b", startMinute: 540, endMinute: 600 }], unknownNotes: { c: { source: "keep" } }, generationLocks: ["b"] };
 const people = () => ["a", "b", "c"].map((id) => ({ id, name: id.toUpperCase(), off: [], start: 9, end: 17, maxHours: 40 }));
@@ -30,6 +34,94 @@ const withSeededRoster = (planner) => {
 const allow = (projection) => projection;
 const EDIT = { on: ["b"], off: ["a"] };
 const SHAPE_KEYS = ["month", "overrides", "storeId", "store"].sort();
+
+const wireStore=()=>{
+  const store=baseStore();store.rules=store.rules.map(rule=>({...rule,capacity:8,useCapacity:false}));
+  store.people[0].hiredAt='2008-05-15';store.people[1].departedAt='2026-11-03';
+  Object.assign(store.people[2],{start:null,end:null,off:null,maxHours:null,hiredAt:null});return store;
+};
+const wireRecord=()=>({on:['a'],off:['b'],breaksKnown:false,
+  shifts:[{storeId:'store-a',personId:'a',date:'2026-11-02',endDate:'2026-11-02',timezone:'America/New_York',startMinute:555,endMinute:1005,source:{kind:'CSV',file:'synthetic.csv',line:2}}],
+  absences:{b:{kind:'vacation',source:{kind:'manual',at:null}}},unknownNotes:{c:{source:{kind:'hours unavailable'}}},
+  teamSnapshot:{a:{storeId:'store-a',personId:'a',date:'2026-11-02',teamIds:['old']}},
+  generation:{unlocked:['a'],signatures:{a:'synthetic retained signature'}},generationLocks:['b']});
+const wirePlanner=(source={})=>createPlanner([wireStore()],{strictHours:true,requireMaterializedSources:true,
+  explicitAssignmentForDay:day=>source[day]?{storeId:'store-a',day,record:source[day]}:null});
+const savedWire=()=>{const p=wirePlanner();p.setAssignment(0,'2026-11-02',wireRecord());return p.exportMonth(0,'2026-11').projection;};
+const answer=(status,payload)=>({status,json:async()=>structuredClone(payload)});
+const held=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};};
+const bindingFixture=(planner,respond=()=>answer(200,{result:{kind:'draft',revision:0,schedule:null}}))=>{
+  const calls=[],listeners=new Set();let pending=false,epoch=1,sequence=0,hydrations=0,acks=0,applies=0;
+  const auth={getSnapshot:()=>({principalEpoch:epoch,sessionReady:true,disposed:false}),getAccessToken:async()=> 'synthetic-bearer',subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn);}};
+  const transport=createSchedulerDraftTransport({auth,codec:schedulerDraftCodec,requestId:()=> 'fixture-'+(++sequence),fetchImpl:manualDraftFetch(async(url,init)=>{const command=JSON.parse(init.body);calls.push({url,command});return respond(command);})});
+  const editor={
+    exportMonth:(month,index)=>{try{return{ok:true,...planner.exportMonth(index,month)};}catch(error){return{ok:false,reason:error.code||'scope'};}},
+    reviewMaterialization:(month,index)=>{if(pending)return{ok:false,reason:'pending-choices'};try{return{ok:true,review:planner.reviewMaterialization(index,month)};}catch{return{ok:false,reason:'source-unavailable'};}},
+    applyMaterialization:token=>{applies++;return planner.applyMaterialization(token);},
+    hydrateMonth:(projection,index,scope)=>{hydrations++;return planner.hydrateMonth(index,projection,schedulerDraftCodec.verify,scope);},
+    acknowledgeMonth:(month,token,index)=>{acks++;return planner.acknowledgeMonth(index,month,token);},
+    draftStatus:index=>({ok:true,...planner.draftStatus(index),pending}),hasDraft:()=>planner.unsaved||pending,
+  };
+  const binding=createSchedulerDraftBinding({auth,transport,getEditor:()=>editor,storeId:'store-a',lifetime:'synthetic-mounted-editor'});
+  const off=planner.subscribe(event=>binding.onDraftChange(event));
+  return{binding,calls,editor,setPending:value=>pending=value,setEpoch:value=>{epoch=value;for(const fn of listeners)fn();},
+    counts:()=>({hydrations,acks,applies}),dispose:()=>{off();binding.dispose();}};
+};
+
+test('actual draft codec round-trip and hydration preserve employment, unknowns, minute shifts and complete provenance',()=>{
+  const original=savedWire(),scope={storeId:'store-a',month:'2026-11'},decoded=schedulerDraftCodec.decode(schedulerDraftCodec.encode(original,scope),scope);
+  assert.deepEqual(decoded,original);assert.equal(decoded.store.people[0].hiredAt,'2008-05-15');assert.equal(decoded.store.people[2].maxHours,null);
+  const p=wirePlanner();assert.equal(p.hydrateMonth(0,decoded,schedulerDraftCodec.verify,scope).ok,true);assert.deepEqual(p.exportMonth(0,scope.month).projection,original);
+  assert.deepEqual(p.record(0,'2026-11-02'),original.overrides['2026-11-02']);
+  assert.equal(p.record(0,'2026-11-02').teamSnapshot.c.unknown,true);assert.equal(p.unsaved,false);
+});
+test('employment storage bounds support real Gregorian dates and preserve unknowns without widening other schema fields',()=>{
+  const scope={storeId:'store-a',month:'2026-11'};
+  for(const bounds of [{hiredAt:'0001-01-01'},{hiredAt:'2000-02-29'},{hiredAt:'1600-02-29'},{hiredAt:null,departedAt:null},{hiredAt:'2008-05-15',departedAt:'2008-05-15'}]){
+    const p=savedWire();Object.assign(p.store.people[0],bounds);assert.deepEqual(schedulerDraftCodec.decode(schedulerDraftCodec.encode(p,scope),scope),p);
+  }
+  for(const bounds of [{hiredAt:'0000-01-01'},{hiredAt:'1900-02-29'},{hiredAt:'1700-02-29'},{hiredAt:'2008-13-01'},{hiredAt:'2008-04-31'},{hiredAt:''},{hiredAt:false},{hiredAt:0},{hiredAt:'2008-01-01T00:00:00Z'},{hiredAt:'2008-05-16',departedAt:'2008-05-15'},{employmentApproved:true}]){
+    const p=savedWire();Object.assign(p.store.people[0],bounds);assert.throws(()=>schedulerDraftCodec.encode(p,scope),{code:'unsupported-data'});
+  }
+  const p=savedWire();p.store.rules[0].effective='2008-05-15';assert.throws(()=>schedulerDraftCodec.encode(p,scope),{code:'unsupported-data'},'schedule-date range remains unchanged');
+});
+test('manual request-ID boundaries refuse malformed identities before any dispatch and preserve valid prepared bytes',async()=>{
+  const projection=savedWire(),scope={storeId:'store-a',month:'2026-11'};let calls=0;
+  const make=id=>createSchedulerDraftTransport({auth:{getSnapshot:()=>({principalEpoch:1}),getAccessToken:async()=> 'synthetic'},codec:schedulerDraftCodec,requestId:()=>id,fetchImpl:async()=>{calls++;return answer(200,{result:{head:{draftRev:1,publishedRev:0}},replayed:false});}});
+  for(const id of ['', 'a'.repeat(81),' has-space','has space','slash/id','dot.id','a\n','é',null,1])assert.throws(()=>make(id).prepareSave(scope,0,projection),{code:'unsupported-data'});
+  assert.equal(calls,0);
+  for(const id of ['a','A0_-','a'.repeat(80)]){const t=make(id),command=t.prepareSave(scope,0,projection);assert.equal(JSON.parse(command.body).requestId,id);await t.send(command,{expectedEpoch:1});assert.equal(JSON.parse(command.body).requestId,id);}
+  assert.equal(calls,3);
+});
+test('pristine source loading accepts a complete saved projection without applying or acknowledging seed facts',async()=>{
+  const source={'2026-11-02':wireRecord()},remote=savedWire(),p=wirePlanner(source),f=bindingFixture(p,()=>answer(200,{result:{kind:'draft',revision:7,schedule:remote}}));
+  await f.binding.load('2026-11');assert.equal(f.binding.getSnapshot().months[0].loadAccepted,true);
+  assert.deepEqual(p.exportMonth(0,'2026-11').projection,remote);assert.deepEqual(f.counts(),{hydrations:1,acks:0,applies:0});assert.equal(p.unsaved,false);f.dispose();
+});
+test('confirmed absence keeps source facts unmaterialized; unavailable load cannot establish revision zero',async()=>{
+  for(const unavailable of [false,true]){
+    const p=wirePlanner({'2026-11-02':wireRecord()}),f=bindingFixture(p,()=>unavailable?answer(503,{error:'storage-not-configured'}):answer(200,{result:{kind:'draft',revision:0,schedule:null}}));
+    await f.binding.load('2026-11');const entry=f.binding.getSnapshot().months[0];assert.equal(entry.loadAccepted,!unavailable);assert.equal(entry.controller.draftRev,unavailable?null:0);
+    assert.deepEqual(p.get(0,'2026-11').overrides,{});assert.deepEqual(f.counts(),{hydrations:0,acks:0,applies:0});assert.equal(p.unsaved,false);
+    assert.throws(()=>f.binding.save('2026-11'),{code:unavailable?'load-not-accepted':'source-not-materialized'});f.dispose();
+  }
+});
+test('dirty and pending pristine source drafts refuse before starting a load',()=>{
+  for(const pending of [true,false]){const p=wirePlanner({'2026-11-02':wireRecord()}),f=bindingFixture(p);if(pending)f.setPending(true);else p.setAssignment(0,'2026-11-03',{on:[],off:['a']});
+    assert.throws(()=>f.binding.load('2026-11'));assert.equal(f.calls.length,0);assert.deepEqual(f.counts(),{hydrations:0,acks:0,applies:0});f.dispose();}
+});
+for(const race of ['source-change','new-source','pending','edit','edit-and-revert','principal'])test(`pristine load fences ${race} before any hydration or acknowledgement`,async()=>{
+  const source={'2026-11-02':wireRecord()},p=wirePlanner(source),gate=held(),f=bindingFixture(p,()=>gate.promise);
+  const loading=f.binding.load('2026-11');for(let i=0;i<20&&!f.calls.length;i++)await Promise.resolve();assert.equal(f.calls.length,1);
+  if(race==='source-change')source['2026-11-02'].shifts[0].source.file='changed.csv';
+  if(race==='new-source')source['2026-11-04']={on:[],off:['c']};
+  if(race==='pending')f.setPending(true);
+  if(race==='edit'||race==='edit-and-revert'){p.setAssignment(0,'2026-11-03',{on:[],off:['a']});if(race==='edit-and-revert')p.reset(0,'2026-11');}
+  if(race==='principal')f.setEpoch(2);
+  gate.resolve(answer(200,{result:{kind:'draft',revision:3,schedule:savedWire()}}));await loading;
+  const snapshot=f.binding.getSnapshot();assert.equal(snapshot.active?snapshot.months[0].loadAccepted:false,false);
+  assert.deepEqual(f.counts(),{hydrations:0,acks:0,applies:0});if(race==='edit')assert.deepEqual(p.record(0,'2026-11-03').off,['a']);f.dispose();
+});
 
 test('hydration captures requested scope before codec code and refuses redirects without any month mutation',()=>{
   for(const redirect of ['2026-12','other-store']){

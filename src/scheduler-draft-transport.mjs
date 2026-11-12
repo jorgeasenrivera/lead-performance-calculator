@@ -72,7 +72,7 @@ export function createSchedulerDraftTransport({auth, codec, fetchImpl, requestId
       const scope = scopeOf(value);
       if (!revision(baseRev)) fail();
       const draft = encode(model, scope), id = requestId();
-      if (typeof id !== 'string' || !id.trim()) fail();
+      if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(id)) fail();
       return prepare({op: 'save', ...scope, requestId: id, input: {baseRev, draft}});
     },
     async send(command, {expectedEpoch, signal} = {}) {

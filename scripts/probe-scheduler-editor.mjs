@@ -15,18 +15,23 @@ try {
 import {createSchedulerDraftTransport} from '/@fs/${repo}/src/scheduler-draft-transport.mjs';import {schedulerDraftCodec} from '/@fs/${repo}/src/scheduler-draft-codec.mjs';import {manualDraftFetch} from '/@fs/${repo}/src/scheduler-manual-setup.mjs';
 const root=createRoot(document.getElementById('root'));let props;window.guard=React.createRef();window.closeCount=0;window.confirmations=[];window.allowClose=false;window.errors=[];window.draftEvents=[];
 const now=()=>new Date('2026-11-02T17:00:00Z'),store={id:'fictional',name:'Fictional'},data={__storeId:'fictional',roster:[{id:'a',name:'Alex',roleId:'sales'}],departed:[]};
-const explicitAssignmentForDay=(day,index)=>day==='2026-11-02'&&index===0?{storeId:store.id,day,record:{on:[],off:['a'],absences:{a:{kind:'off',source:{kind:'fictional legacy input'}}}}}:null;
+const explicitAssignmentForDay=(day,index)=>day==='2026-11-02'&&index===0?{storeId:store.id,day,record:{on:[],off:['a'],absences:{a:{kind:'off',source:{kind:'fictional legacy input',file:window.sourceFile||'synthetic-legacy.csv'}}}}}:null;
 const original={store,data,timezone:'America/New_York',now,principalEpoch:3,dataEpoch:3,preview:false,guardRef:window.guard,explicitAssignmentForDay,onClose:()=>window.closeCount++,onError:e=>window.errors.push(e.message),onDraftChange:e=>window.draftEvents.push(e),confirm:message=>{window.confirmations.push(message);return window.allowClose;}};
 window.original=original;window.update=(over={})=>{props={...(props||original),...over};flushSync(()=>root.render(<React.StrictMode><SchedulerEditor {...props}/></React.StrictMode>));};window.unmount=()=>flushSync(()=>root.unmount());
-window.connect=()=>{
+window.prepareEmployment=epoch=>{
+ const data={...original.data,roster:[{...original.data.roster[0],hiredAt:'2008-05-15'}]};
+ window.connectedDocument=structuredClone(window.saved);window.connectedDocument.store.people[0].hiredAt='2008-05-15';
+ window.update({data,principalEpoch:epoch,dataEpoch:epoch,explicitAssignmentForDay:original.explicitAssignmentForDay,draftCodec:schedulerDraftCodec});
+};
+window.connect=({reuse=false}={})=>{
  const auth={getSnapshot:()=>({principalEpoch:props.principalEpoch,sessionReady:true,disposed:false}),subscribe:()=>()=>{},getAccessToken:async()=>window.draftBearer};
- window.draftBearer='fixture-first';window.draftCalls=[];window.draftRevision=1;window.draftDocument=window.guard.current.exportMonth('2026-11').projection;
- const replay=new Map();let sequence=0;
- const transport=createSchedulerDraftTransport({auth,codec:schedulerDraftCodec,requestId:()=> 'fixture-'+(++sequence),fetchImpl:manualDraftFetch(async(url,init)=>{
+ window.draftBearer='fixture-first';if(!reuse){window.draftCalls=[];window.draftRevision=1;window.draftDocument=window.connectedDocument||window.guard.current.exportMonth('2026-11').projection;window.draftReplay=new Map();window.draftSequence=0;}
+ const replay=window.draftReplay;
+ const transport=createSchedulerDraftTransport({auth,codec:schedulerDraftCodec,requestId:()=> 'fixture-'+(++window.draftSequence),fetchImpl:manualDraftFetch(async(url,init)=>{
   const body=JSON.parse(init.body);window.draftCalls.push({url,body,bearer:init.headers.Authorization});
   if(url!=='/api/scheduler-manual')throw Error('Wrong manual route');
   const answer=(status,payload)=>({status,json:async()=>structuredClone(payload)});
-  if(body.action==='load')return answer(200,{result:{kind:'draft',revision:window.draftRevision,schedule:window.draftDocument}});
+  if(body.action==='load'){const payload={result:{kind:'draft',revision:window.draftRevision,schedule:structuredClone(window.draftDocument)}};if(window.holdNextDraftLoad){window.holdNextDraftLoad=false;await new Promise(resolve=>window.finishDraftLoad=resolve);}return answer(200,payload);}
   if(replay.has(body.requestId)){const prior=replay.get(body.requestId);if(prior.body!==init.body)return answer(409,{error:'idempotency-conflict'});return answer(200,{...prior.receipt,replayed:true});}
   if(body.baseRev!==window.draftRevision)return answer(409,{error:'conflict'});
   window.draftDocument=structuredClone(body.draft);window.draftRevision++;
@@ -70,9 +75,13 @@ window.update();`);
     if(width===1280){
       // Real React handle, binding, codec and manual request mapping; only auth
       // and the in-memory endpoint are synthetic doubles. No SQL is exercised.
+      await page.evaluate(()=>window.prepareEmployment(5));await page.frameLocator('iframe').locator('#workspace').waitFor();await page.waitForFunction(()=>Boolean(window.guard.current));
+      assert.equal(await page.evaluate(()=>window.guard.current.exportMonth('2026-11').reason),'source-not-materialized');
       assert.equal(await page.evaluate(()=>window.connect()),true,'reconnecting the same private dependencies is idempotent');
       await page.evaluate(()=>window.draftBinding.load('2026-11'));
       assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].loadAccepted),true);
+      assert.equal(await page.evaluate(()=>window.guard.current.exportMonth('2026-11').projection.store.people[0].hiredAt),'2008-05-15');
+      assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),false,'pristine source load does not auto-apply seeds');
       const editRule=async minimum=>{
         const frame=page.frameLocator('iframe');if(!await frame.locator('#setup').count())await frame.locator('#workspace').click();
         await frame.locator('#setup').click();await frame.locator('#rules').click();
@@ -90,23 +99,37 @@ window.update();`);
       const replay=await page.evaluate(()=>window.draftCalls.filter(call=>call.body.action==='save').slice(-2));
       assert.deepEqual(replay[0].body,replay[1].body);assert.notEqual(replay[0].bearer,replay[1].bearer);
       assert.equal(await page.evaluate(()=>window.draftRevision),3);assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),false);
+      const persisted=await page.evaluate(()=>structuredClone(window.draftDocument));
+      await page.evaluate(()=>{window.retiredBinding=window.draftBinding;window.prepareEmployment(6);});await page.frameLocator('iframe').locator('#workspace').waitFor();await page.waitForFunction(()=>Boolean(window.guard.current));
+      assert.equal(await page.evaluate(()=>window.retiredBinding.getSnapshot().active),false);
+      await page.evaluate(()=>{window.connect({reuse:true});return window.draftBinding.load('2026-11');});
+      assert.deepEqual(await page.evaluate(()=>window.guard.current.exportMonth('2026-11').projection),persisted);assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].controller.draftRev),3);
       await editRule(3);await page.evaluate(()=>{window.holdNextDraftResponse=true;window.savingDraft=window.draftBinding.save('2026-11');});
       await page.waitForFunction(()=>Boolean(window.finishDraftResponse));await editRule(4);
       await page.evaluate(()=>{window.finishDraftResponse();return window.savingDraft;});
       assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),true,'edits made after submission remain dirty');
       assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].controller.status),'dirty');
+      await page.evaluate(()=>{window.draftRevision++;window.draftDocument.store.rules[0].minimum=5;return window.draftBinding.save('2026-11');});
+      assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].controller.status),'conflict');assert.equal(await page.evaluate(()=>window.guard.current.hasDraft()),true);
+      assert.equal(await page.evaluate(()=>window.guard.current.exportMonth('2026-11').projection.store.rules[0].minimum),4,'conflict preserves the local draft');
       const calls=await page.evaluate(()=>window.draftCalls);
       for(const call of calls){assert.equal(call.url,'/api/scheduler-manual');assert.deepEqual(Object.keys(call.body).sort(),(call.body.action==='load'?['action','storeId','month']:['action','storeId','month','draft','baseRev','requestId']).sort());}
-      console.log('PASS actual mounted draft connection: manual envelopes, receipt tokens, fresh-bearer exact replay and edits during save (synthetic endpoint)');
+      await page.evaluate(()=>window.prepareEmployment(7));await page.frameLocator('iframe').locator('#workspace').waitFor();await page.waitForFunction(()=>Boolean(window.guard.current));
+      await page.evaluate(()=>{window.connect({reuse:true});window.holdNextDraftLoad=true;window.loadingDraft=window.draftBinding.load('2026-11');});await page.waitForFunction(()=>Boolean(window.finishDraftLoad));
+      await page.evaluate(()=>{window.sourceFile='changed-legacy.csv';window.finishDraftLoad();return window.loadingDraft;});
+      assert.equal(await page.evaluate(()=>window.draftBinding.getSnapshot().months[0].loadAccepted),false);assert.equal(await page.evaluate(()=>window.guard.current.exportMonth('2026-11').reason),'source-not-materialized');
+      console.log('PASS actual mounted draft connection: employment, pristine sources, remount/reload, manual envelopes, receipt tokens, exact replay, concurrent edits and conflict (synthetic endpoint)');
     }
     if(width===1280&&process.env.SCHEDULER_EDITOR_EXPORT_DIRECTORY){
       // An explicitly authored fictional completion, not hours inferred from
       // a legacy Off list. All dates have deliberate Off or exact work choices.
+      await page.evaluate(()=>window.update({data:window.original.data,principalEpoch:9,dataEpoch:9,explicitAssignmentForDay:undefined,draftCodec:{verify:projection=>projection}}));await page.frameLocator('iframe').locator('#workspace').waitFor();await page.waitForFunction(()=>Boolean(window.guard.current));
+      assert.equal((await page.evaluate(()=>window.guard.current.hydrateMonth(window.saved))).ok,true);
       const months=['2026-10','2026-11','2026-12'],completed={};
       for(const month of months){const count=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5)),0)).getUTCDate();const overrides={};for(let n=1;n<=count;n++){const date=month+'-'+String(n).padStart(2,'0');overrides[date]=date==='2026-11-03'?{on:['a'],off:[],shifts:[{storeId:'fictional',personId:'a',date,endDate:date,startMinute:540,endMinute:1020,timezone:'America/New_York',role:'sales'}]}:{on:[],off:['a'],absences:{a:{kind:'off',source:{kind:'explicit fictional manager choice'}}}};}
         completed[month]={storeId:'fictional',month,store:{timezone:'America/New_York',people:[{id:'a',name:'Alex',off:[],start:9,end:17,maxHours:60,maxHoursSource:'manager-confirmed'}],rules:[{effective:'2014-01-01',open:9,close:17,minimum:1,capacity:8,useCapacity:false,closedDays:[0,1,2,3,4,5,6],holidays:{'2026-11-03':'open'}}],teams:[],memberships:[{storeId:'fictional',personId:'a',teamIds:[],from:'2014-01-01',to:'2100-12-31',unknown:false}]},overrides};
       }
-      const sparse=await page.evaluate(()=>window.guard.current.exportMonth('2026-11').projection);
+      const sparseResult=await page.evaluate(()=>window.guard.current.exportMonth('2026-11'));assert.equal(sparseResult.ok,true);const sparse=sparseResult.projection;
       await page.evaluate(()=>window.update({data:window.original.data,principalEpoch:5,dataEpoch:5,explicitAssignmentForDay:undefined,draftCodec:{verify:x=>x}}));await page.frameLocator('iframe').locator('#workspace').waitFor();await page.waitForFunction(()=>Boolean(window.guard.current));
       const exports={};for(const month of months){assert.equal((await page.evaluate(p=>window.guard.current.hydrateMonth(p),completed[month])).ok,true);exports[month]=await page.evaluate(m=>window.guard.current.exportMonth(m).projection,month);}
       const knownEmployment=structuredClone(completed['2026-11']);knownEmployment.store.people[0].hiredAt='2008-05-15';

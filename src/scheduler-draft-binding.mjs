@@ -135,14 +135,28 @@ export function createSchedulerDraftBinding({auth, transport, getEditor, storeId
       if (running) return running;
       if (e.accepted || e.submission) throw draftError('already-loaded');
       const expectedScope = Object.freeze({storeId, month});
-      const before = exportMonth(month).projection, initial = status();
+      // A pristine legacy source is not exportable until explicitly reviewed
+      // and included. Its read-only review can fence a load without applying
+      // those facts, issuing a save token or acknowledging them as saved.
+      const baseline = () => {
+        try { return {kind: 'projection', value: exportMonth(month).projection}; }
+        catch (error) {
+          if (error?.code !== 'source-not-materialized') throw error;
+          const reviewed = editor.reviewMaterialization?.(month, index);
+          if (reviewed?.ok !== true) throw draftError(reviewed?.reason || 'source-review-unavailable');
+          const review = copyDraftJson(reviewed.review);
+          if (review?.storeId !== storeId || review.month !== month || review.index !== index) throw draftError('scope');
+          return {kind: 'source-review', value: review};
+        }
+      };
+      const before = baseline(), initial = status();
       if (initial.pending || initial.dirtyMonths.includes(month)) throw draftError('unsaved-editor-changes');
       return start(e, 'load', () => e.controller.load(), operation => {
         const s = e.controller.getSnapshot();
         if (!operation.response || !['ready', 'absent'].includes(s.status)) { e.error = s.error || 'load-failed'; return; }
-        const latest = status();
+        const after = baseline(), latest = status();
         if (operation.changed || latest.pending || latest.dirtyMonths.includes(month)
-            || !equal(before, exportMonth(month).projection)) { e.error = 'editor-changed-during-load'; return; }
+            || !equal(before, after)) { e.error = 'editor-changed-during-load'; return; }
         if (s.status === 'ready') {
           if (s.draft?.storeId !== expectedScope.storeId || s.draft?.month !== expectedScope.month) { e.error = 'scope'; return; }
           const hydrated = editor.hydrateMonth(s.draft, index, expectedScope);

@@ -137,6 +137,15 @@ const textOk = (value, max = LIMITS.text) => typeof value === 'string' && value.
 
 function checkPeople(people, out) {
   const ids = new Set();
+  // Employment may predate the planner's scheduling range. Keep that range's
+  // date gate unchanged and validate these optional bounds independently.
+  const employmentDate = value => {
+    if (typeof value !== 'string' || !/^(?!0000)\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [year, month, day] = value.split('-').map(Number);
+    const last = month === 2 ? (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28)
+      : [4, 6, 9, 11].includes(month) ? 30 : 31;
+    return month >= 1 && month <= 12 && day >= 1 && day <= last;
+  };
   if (!Array.isArray(people) || people.length > LIMITS.people) {
     out.push(problem('store.people', 'people-count', `Use a list of up to ${LIMITS.people} people.`));
     return ids;
@@ -144,7 +153,13 @@ function checkPeople(people, out) {
   people.forEach((person, i) => {
     const at = `store.people[${i}]`;
     if (!isObject(person)) return out.push(problem(at, 'not-object', 'A person is an object.'));
-    exactKeys(person, ['id', 'name', 'start', 'end', 'off', 'maxHours'], ['maxHoursSource', 'teamIds'], at, out);
+    exactKeys(person, ['id', 'name', 'start', 'end', 'off', 'maxHours'], ['maxHoursSource', 'teamIds', 'hiredAt', 'departedAt'], at, out);
+    for (const field of ['hiredAt', 'departedAt']) {
+      if (Object.hasOwn(person, field) && person[field] !== null && !employmentDate(person[field]))
+        out.push(problem(`${at}.${field}`, 'bad-employment-date', 'Use a real employment date, YYYY-MM-DD, or null if unknown.'));
+    }
+    if (employmentDate(person.hiredAt) && employmentDate(person.departedAt) && person.departedAt < person.hiredAt)
+      out.push(problem(`${at}.departedAt`, 'reversed-employment', 'Employment cannot end before it starts.'));
     if (typeof person.id !== 'string' || !PERSON_ID.test(person.id)) out.push(problem(`${at}.id`, 'bad-person-id', 'Use a person id of letters, digits, . : _ or -.'));
     else if (ids.has(person.id)) out.push(problem(`${at}.id`, 'duplicate-person', 'Two people share an id.'));
     else ids.add(person.id);
