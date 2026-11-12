@@ -7,14 +7,15 @@ import {mountMonthApp} from '../scripts/scheduler-performance/month-app-core.mjs
 import {editorProps} from './scheduler-editor-adapter.mjs';
 import {createSchedulerDraftBinding} from './scheduler-draft-binding.mjs';
 import {draftError} from './scheduler-draft-transport.mjs';
+import {validMonth} from '../scripts/scheduler-performance/month-model.mjs';
 
 const reasons={activation:'The connected scheduler is not available yet.','not-ready':'This store’s people are still loading.',principal:'This sign-in’s store data is not ready.',timezone:'The store’s time zone is unavailable.',store:'This store cannot be opened.',roster:'This roster needs review.',assignments:'The schedule source is unavailable.'};
 const FRAME=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}html,body,#app{min-height:100%;} ${css}</style><style>${shared}</style></head><body><main id="app"></main></body></html>`;
 
 export default function SchedulerEditor({store,data,timezone,now,principalEpoch,dataEpoch,explicitAssignmentForDay,
-  preview=false,localDraft=false,lease=null,day,title='Schedule editor',onClose,onError,onSummary,confirm,guardRef,draftCodec,onDraftChange,onBoundaryTab}) {
+  preview=false,localDraft=false,lease=null,day,title='Schedule editor',onClose,onError,onSummary,confirm,guardRef,draftCodec,onDraftChange,onBoundaryTab,onReady,onDraftStatus}) {
   const [loaded,setLoaded]=useState(null), [failed,setFailed]=useState(null), frameRef=useRef(null), mounted=useRef(null), latest=useRef({});
-  latest.current={onClose,onError,onSummary,confirm,now,draftCodec,onDraftChange,onBoundaryTab};
+  latest.current={onClose,onError,onSummary,confirm,now,draftCodec,onDraftChange,onBoundaryTab,onReady,onDraftStatus};
   const identity=JSON.stringify([store?.id,principalEpoch,dataEpoch,timezone,preview,localDraft]);
   // Capture one input snapshot per scope. Ordinary dashboard refreshes must not
   // replace a manager's open draft. Closing and reopening captures fresh inputs.
@@ -25,15 +26,17 @@ export default function SchedulerEditor({store,data,timezone,now,principalEpoch,
   useLayoutEffect(()=>{
     if(!built.ok || !loaded || loaded.identity!==identity || !loaded.frame.isConnected)return;
     const frame=loaded.frame, doc=frame.contentDocument;
-    let handle=null,unsubscribe=null,api=null,offKeyboard=null,binding=null,bindingOwner=null;
-    const requestClose=()=>{if(!handle || handle.disposed || mounted.current?.handle!==handle)return false;if(handle.hasDraft() && !(latest.current.confirm?latest.current.confirm('Discard the unsaved schedule changes?'):frame.contentWindow.confirm('Discard the unsaved schedule changes?')))return false;latest.current.onClose?.();return true;};
+    let handle=null,unsubscribe=null,api=null,offKeyboard=null,binding=null,bindingOwner=null,offBinding=null,bindingAttention=false,offStatus=null;
+    const requestClose=()=>{if(!handle || handle.disposed || mounted.current?.handle!==handle)return false;const message=bindingAttention?'A save request may already have completed. Close and clear its local recovery state?':'Discard the unsaved schedule changes?';if(api.hasDraft() && !(latest.current.confirm?latest.current.confirm(message):frame.contentWindow.confirm(message)))return false;latest.current.onClose?.();return true;};
     try {
       handle=mountMonthApp({...built,root:doc.getElementById('app'),preview:preview===true,localDraft:localDraft===true,isCurrent:()=>lease?.isCurrent?.()===true,embedded:true,keyTarget:doc,requireMaterializedSources:true,
         confirm:message=>latest.current.confirm?latest.current.confirm(message):frame.contentWindow.confirm(message),
-        onClose:()=>latest.current.onClose?.(),onSummary:detail=>latest.current.onSummary?.(detail),
+        onClose:()=>bindingAttention?requestClose():latest.current.onClose?.(),onSummary:detail=>latest.current.onSummary?.(detail),
         onError:error=>latest.current.onError?.(error),
         ...(latest.current.draftCodec?{draftCodec:{verify:p=>latest.current.draftCodec.verify(p)}}:{})});
-      api={hasDraft:()=>handle.hasDraft(),requestClose,retire:()=>{binding?.dispose();handle.dispose();},
+      const viewMonth=()=>{const month=doc.getElementById('app')?.dataset.hapticMonth;return validMonth(month)?month:null;};
+      api={hasDraft:()=>!handle.disposed&&(handle.hasDraft()||bindingAttention),hasUnconfirmedSave:()=>!handle.disposed&&bindingAttention,
+        currentViewMonth:viewMonth,requestClose,retire:()=>{if(mounted.current?.api===api)mounted.current.readyOff?.();offBinding?.();binding?.dispose();bindingAttention=false;handle.dispose();},
         reviewMaterialization:(...args)=>handle.reviewMaterialization(...args),applyMaterialization:(...args)=>handle.applyMaterialization(...args),
         exportMonth:(...args)=>handle.exportMonth(...args),acknowledgeMonth:(...args)=>handle.acknowledgeMonth(...args),
         hydrateMonth:(...args)=>handle.hydrateMonth(...args),draftStatus:(...args)=>handle.draftStatus(...args),
@@ -47,9 +50,10 @@ export default function SchedulerEditor({store,data,timezone,now,principalEpoch,
             if(bindingOwner.auth===auth && bindingOwner.transport===transport)return binding;
             throw draftError('already-connected');
           }
-          binding?.dispose();
+          offBinding?.();binding?.dispose();bindingAttention=false;
           binding=createSchedulerDraftBinding({auth,transport,getEditor:()=>mounted.current?.api,
             storeId:built.stores[0].id,index:0,lifetime:identity});
+          offBinding=binding.subscribe(()=>{const s=binding.getSnapshot();bindingAttention=s.active&&s.months.some(e=>['save','retry'].includes(e.operation)||e.awaitingAcknowledgement||e.controller.status==='uncertain');});
           bindingOwner={auth,transport};
           return binding;
         }};
@@ -63,14 +67,20 @@ export default function SchedulerEditor({store,data,timezone,now,principalEpoch,
         if((event.shiftKey && doc.activeElement===targets[0]) || (!event.shiftKey && doc.activeElement===targets.at(-1))){event.preventDefault();latest.current.onBoundaryTab(event.shiftKey);}
       };
       doc.addEventListener('keydown',boundaryKey,true);offKeyboard=()=>doc.removeEventListener('keydown',boundaryKey,true);
+      const status=()=>queueMicrotask(()=>{if(mounted.current?.api===api&&!handle.disposed)latest.current.onDraftStatus?.();});
+      doc.addEventListener('input',status);doc.addEventListener('change',status);
+      offStatus=()=>{doc.removeEventListener('input',status);doc.removeEventListener('change',status);};
       if(day)handle.view({day,store:built.stores[0].id});
     } catch(error) {binding?.dispose();handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;setFailed(identity);latest.current.onError?.(error);}
-    return ()=>{binding?.dispose();offKeyboard?.();unsubscribe?.();handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;};
+    return ()=>{if(mounted.current?.handle===handle)mounted.current.readyOff?.();offBinding?.();binding?.dispose();bindingAttention=false;offStatus?.();offKeyboard?.();unsubscribe?.();handle?.dispose();if(mounted.current?.handle===handle)mounted.current=null;};
   },[built,loaded,identity]);
   useLayoutEffect(()=>{
     const api=mounted.current?.api||null;
     if(guardRef)guardRef.current=api;
-    return ()=>{if(guardRef?.current===api)guardRef.current=null;};
+    let done=false;const release=api?latest.current.onReady?.(api):null;
+    const readyOff=()=>{if(done)return;done=true;if(typeof release==='function')release();};
+    if(mounted.current?.api===api)mounted.current.readyOff=readyOff;
+    return ()=>{readyOff();if(guardRef?.current===api)guardRef.current=null;};
   },[guardRef,built,loaded,identity]);
 
   if(!built.ok)return <p role="status">{reasons[built.reason]||'The schedule inputs need review.'}</p>;

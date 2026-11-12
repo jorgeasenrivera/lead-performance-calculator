@@ -6,6 +6,9 @@ import {calendarCells,monthText,STORE_TIME_ZONE} from './scheduler-calendar-mode
 import {createLegacyScheduleResolver,editorStore,zonedToday} from './scheduler-editor-adapter.mjs';
 import {currentReportedAuth,registerLeaveGuard,trustedFor} from './scheduler-load-context.mjs';
 import {useReportedMonth} from './use-reported-month.mjs';
+import {createLocalManualDraftConnection,manualDraftView} from './scheduler-manual-setup.mjs';
+import {validMonth} from '../scripts/scheduler-performance/month-model.mjs';
+import {timeLabel} from '../scripts/scheduler-performance/shift-intervals.mjs';
 
 const Editor=lazy(()=>import('./scheduler-editor.jsx'));
 const EMPTY=Object.freeze({principalEpoch:null,sessionReady:false,disposed:true});
@@ -32,7 +35,8 @@ function closePlan(){
   if(entry)queueMicrotask(()=>{if(!state.open)entry.focus();});
 }
 function requestClose(){
-  if(guard.current?.hasDraft() && !window.confirm('Close the editor and discard this page’s unsaved changes?'))return false;
+  const message=guard.current?.hasUnconfirmedSave?.()?'A save request may already have completed. Close and clear its local recovery state?':'Close the editor and discard this page’s unsaved changes?';
+  if(guard.current?.hasDraft() && !window.confirm(message))return false;
   closePlan();return true;
 }
 function openPlan(props){
@@ -76,30 +80,87 @@ function PlannerHost(){
   const auth=currentReportedAuth()||NO_AUTH;
   useSyncExternalStore(auth.subscribe,auth.getSnapshot,auth.getSnapshot);
   const close=useRef(null);
+  const session=useRef(null),[draft,setDraft]=useState(null),[sourceReview,setSourceReview]=useState(null);
+  const props=view.props;
+  const connection=useMemo(()=>view.open&&valid(props)?createLocalManualDraftConnection({
+    selection:{mode:import.meta.env.MODE,calendarFlag:import.meta.env.VITE_SCHEDULER_CALENDAR,draftFlag:import.meta.env.VITE_SCHEDULER_DRAFT_LOCAL,origin:window.location.origin},
+    auth,fetchImpl:window.fetch.bind(window),requestId:()=>window.crypto.randomUUID(),
+  }):null,[view.open,props?.key,auth]);
+  const current=s=>Boolean(s&&session.current===s&&!s.closed&&valid(s.props));
+  const refresh=()=>{
+    const s=session.current;if(!current(s))return;
+    const month=s.api.currentViewMonth();if(!validMonth(month))return;
+    setDraft({...manualDraftView(s.binding.getSnapshot(),month,s.errors.get(month)),key:s.props.key});
+    if(s.review&&s.review.month!==month)s.review=null;
+    setSourceReview(previous=>previous&&previous.month!==month?null:previous);
+  };
+  const run=(kind)=>{
+    const s=session.current;if(!current(s))return;
+    const month=s.api.currentViewMonth();if(!validMonth(month))return;
+    s.errors.delete(month);s.requested.add(month);s.review=null;setSourceReview(null);
+    let action;try{action=s.binding[kind](month);}catch(error){s.errors.set(month,error?.code||'unavailable');}
+    refresh();
+    Promise.resolve(action).catch(error=>{if(current(s))s.errors.set(month,error?.code||'unavailable');}).finally(()=>{if(current(s))refresh();});
+  };
+  const ready=api=>{
+    if(!connection||!valid(props))return;
+    let binding;try{binding=api.connectDraft(connection);}catch{setDraft({key:props.key,message:'Draft connection unavailable.',canLoad:false,canSave:false,canRetry:false,canReview:false});return;}
+    const s={api,binding,props,closed:false,errors:new Map(),requested:new Set(),review:null};session.current=s;
+    const off=binding.subscribe(refresh);refresh();
+    const month=api.currentViewMonth();if(validMonth(month))run('load');
+    return()=>{if(s.closed)return;s.closed=true;s.review=null;off();s.errors.clear();s.requested.clear();if(session.current===s){session.current=null;setDraft(null);setSourceReview(null);}};
+  };
+  const summary=()=>{
+    const s=session.current;if(!current(s))return;
+    const month=s.api.currentViewMonth();refresh();
+    // The editor summary also emits today's month. Read its actual view, and
+    // make at most one automatic read for each visible month in this lifetime.
+    if(validMonth(month)&&!s.requested.has(month))run('load');
+  };
+  const reviewSources=()=>{
+    const s=session.current;if(!current(s))return;
+    const month=s.api.currentViewMonth();if(!validMonth(month))return;
+    if(!manualDraftView(s.binding.getSnapshot(),month,s.errors.get(month)).canReview)return;
+    const checked=s.api.reviewMaterialization(month);
+    if(checked?.ok!==true){s.errors.set(month,checked?.reason||'source-review-unavailable');refresh();return;}
+    s.review={key:s.props.key,month,token:checked.review};setSourceReview(s.review);
+  };
+  const includeSources=()=>{
+    const s=session.current,r=s?.review;if(!current(s)||!r||r.key!==s.props.key||r.month!==s.api.currentViewMonth())return;
+    if(!manualDraftView(s.binding.getSnapshot(),r.month,s.errors.get(r.month)).canReview)return;
+    s.review=null;
+    const result=s.api.applyMaterialization(r.token);setSourceReview(null);
+    if(result?.ok!==true)s.errors.set(r.month,result?.reason||'source-review-changed');else s.errors.delete(r.month);
+    refresh();
+  };
   useLayoutEffect(()=>{
     if(!view.open)return;
     const off=registerLeaveGuard(()=>{
-      if(guard.current?.hasDraft() && !window.confirm('Leave this page and discard its unsaved changes?'))return false;
+      const message=guard.current?.hasUnconfirmedSave?.()?'A save request may already have completed. Leave and clear its local recovery state?':'Leave this page and discard its unsaved changes?';
+      if(guard.current?.hasDraft() && !window.confirm(message))return false;
       closePlan();return true;
     },closePlan);
     const before=event=>{if(guard.current?.hasDraft()){event.preventDefault();event.returnValue='';}};
     window.addEventListener('beforeunload',before);
     return()=>{off();window.removeEventListener('beforeunload',before);};
   },[view.open]);
-  const props=view.props;
   const lease=useMemo(()=>({isCurrent:()=>valid(props)}),[props]);
   if(!view.open || !props || !valid(props))return null;
-  return <ScheduleDialog hidden={!view.visible} closeRef={close} onClose={requestClose} storeName={props.store.name}>
+  const shown=connection&&draft?.key===props.key?draft:null;
+  return <ScheduleDialog hidden={!view.visible} closeRef={close} onClose={requestClose} storeName={props.store.name}
+    draft={shown} onDraftAction={run} onReviewSources={reviewSources} sourceReview={sourceReview?.key===props.key?sourceReview:null}
+    onIncludeSources={includeSources} onCancelSources={()=>{if(session.current)session.current.review=null;setSourceReview(null);}} people={props.data.roster}>
     <EditorBoundary key={props.key}>
       <Suspense fallback={<p role="status">Opening the planner.</p>}>
         <Editor {...props} preview={false} localDraft={true} lease={lease} guardRef={guard} onClose={closePlan}
+          draftCodec={connection?.codec} onReady={ready} onSummary={summary} onDraftStatus={refresh}
           onBoundaryTab={()=>close.current?.focus()}/>
       </Suspense>
     </EditorBoundary>
   </ScheduleDialog>;
 }
 
-function ScheduleDialog({hidden,closeRef,onClose,storeName,children}){
+function ScheduleDialog({hidden,closeRef,onClose,storeName,children,draft,onDraftAction,onReviewSources,sourceReview,onIncludeSources,onCancelSources,people}){
   const box=useRef(null);
   useLayoutEffect(()=>{
     const was=document.body.style.overflow;document.body.style.overflow='hidden';
@@ -121,7 +182,23 @@ function ScheduleDialog({hidden,closeRef,onClose,storeName,children}){
   return createPortal(<div className="sc-scrim" style={hidden?{display:'none'}:undefined} onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
     <style>{css}</style>
     <section className="sc-planner-dialog" ref={box} role="dialog" aria-modal="true" aria-label={`${storeName}, schedule`}>
-      <header className="sc-dialog-bar"><h2>{storeName}</h2><span>Not saved</span><button type="button" ref={closeRef} className="sc-close" onClick={onClose}>Close</button></header>
+      <header className="sc-dialog-bar"><h2>{storeName}</h2><span>{draft?'Local draft':'Not saved'}</span><button type="button" ref={closeRef} className="sc-close" onClick={onClose}>Close</button></header>
+      {draft&&<div className="sc-draft-controls" data-draft-state={draft.phase}>
+        <p role="status" aria-live="polite">{draft.month?monthText(draft.month)+': ':''}{draft.message}</p>
+        <button type="button" disabled={!draft.canLoad} onClick={()=>onDraftAction('load')}>Load draft</button>
+        <button type="button" disabled={!draft.canSave} onClick={()=>onDraftAction('save')}>Save draft</button>
+        {draft.canRetry&&<button type="button" onClick={()=>onDraftAction('retry')}>Retry same save</button>}
+        <button type="button" disabled={!draft.canReview} onClick={onReviewSources}>Review existing schedule</button>
+      </div>}
+      {draft&&sourceReview&&<section className="sc-source-review" aria-label="Review existing schedule facts">
+        <h3>Include these recorded facts in this draft?</h3><p>These are the source facts captured when you opened the store. No working hours are inferred. This does not save the draft.</p>
+        <ul>{sourceReview.token.dates.map(date=>{const r=sourceReview.token.records[date],name=id=>people?.find(p=>p.id===id)?.name||id;
+          return <li key={date}><strong>{date}</strong><div>Off: {(r.off||[]).map(name).join(', ')||'None recorded'}</div>
+            <div>Unknown: {Object.keys(r.unknownNotes||{}).map(name).join(', ')||'None recorded'}</div>
+            <div>Working intervals: {(r.shifts||[]).map(s=>name(s.personId)+' '+timeLabel(s.startMinute)+' to '+timeLabel(s.endMinute)).join(', ')||'None supplied'}</div></li>;
+        })}</ul>
+        <button type="button" onClick={onIncludeSources}>Include reviewed facts</button><button type="button" onClick={onCancelSources}>Cancel</button>
+      </section>}
       <div className="sc-planner-body">{children}</div>
     </section>
   </div>,container);
