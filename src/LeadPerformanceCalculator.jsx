@@ -34,6 +34,7 @@ import {
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { stampHours } from "../api/_hours.mjs";
+import { selectReportedTotal } from "../api/_board-provenance.mjs";
 import { stationPlanOf, claimStation, releaseStation,
   releasePerson, stationOf, sitsFor,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
@@ -4083,7 +4084,7 @@ function buildBoardPayload(config, storeId, sdata) {
     roster,
     people,
     departed: [...gone],
-    months: { [key]: { stats } },
+    months: { [key]: { stats, reportedTotal: selectReportedTotal(sdata?.deliverySummaryObservations, storeId, key) } },
     updatedAt: new Date().toISOString(),
   };
 }

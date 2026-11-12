@@ -789,7 +789,16 @@ export function LEADERBOARD_HTML(p, PIX) {
     })();
 
     var totalSold = people.reduce(function(n,x){ return n + x.sold; }, 0);
-    var grandFlag = Math.abs(totalSold - Math.round(totalSold)) > 0.01;
+    // This public projection is provisional report evidence, not report freshness.
+    var reported = M.reportedTotal;
+    var reportedShape = reported && typeof reported === 'object' && !Array.isArray(reported)
+      && Object.keys(reported).length === 4
+      && Object.keys(reported).every(function(k){ return ['count','status','month','asOf'].indexOf(k) >= 0; })
+      && reported.month === easternMonth() && reported.asOf === null;
+    var reportedKnown = reportedShape && reported.status === 'provisional'
+      && Number.isSafeInteger(reported.count) && reported.count >= 0;
+    var reportedStatus = reportedKnown ? 'Provisional &middot; Report time unknown'
+      : (reportedShape && reported.status === 'conflict' && reported.count === null ? 'Unknown &middot; Reports disagree' : 'Unknown &middot; Report time unknown');
 
     // Everyone has to fit on one screen with no scrolling, so the rows scale to the
     // size of the team rather than being a fixed height.
@@ -905,7 +914,10 @@ export function LEADERBOARD_HTML(p, PIX) {
       '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
       '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
       '<div class="head-r">'+
-        '<div class="total"><div class="total-num"><span class="totnum" data-to="'+totalSold+'">0</span>'+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
+        '<div class="total"><div class="total-num">'+(reportedKnown ? reported.count : '-')+'</div>'+
+        '<div class="total-cap">Reported Total Delivered</div>'+
+        '<div class="total-cap" role="status">'+reportedStatus+'</div>'+
+        '<div class="total-cap">Displayed associate credits: '+totalSold+'</div></div>'+
         '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
       '</div></div>'+
       '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+

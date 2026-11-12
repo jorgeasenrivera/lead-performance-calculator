@@ -31,6 +31,7 @@ import { admitsEveryone, holdPerson } from "./_people-status.mjs";
 import { supabaseUrl } from "./_env.mjs";
 import { serverFault } from "./_report.mjs";
 import { sourceHash } from "./_report-version.mjs";
+import { selectReportedTotal } from "./_board-provenance.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 // Native Node and bundled CommonJS expose the same reader through different exports.
@@ -270,7 +271,7 @@ async function refreshBoardRow(storeId, sdata) {
     goals: extras.goals,
     off: extras.off,
     boardDisplay: (sdata && sdata.boardDisplay) || prev.boardDisplay || null,
-    months: { [month]: { stats } },
+    months: { [month]: { stats, reportedTotal: selectReportedTotal(sdata?.deliverySummaryObservations, storeId, month) } },
     updatedAt: new Date().toISOString(),
   });
   return { published: true, people: roster.length };
