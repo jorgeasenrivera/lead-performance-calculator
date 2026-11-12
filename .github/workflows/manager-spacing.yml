@@ -21,6 +21,9 @@ on:
 jobs:
   spacing:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spacing-runtime
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     permissions:
@@ -33,46 +36,77 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 50
+          path: spacing-runtime
+          set-safe-directory: false
       - uses: actions/checkout@v4
         with:
           ref: 5bf65105003b3e01227c774ea82e08d5d595bb68
-          path: .spacing-baseline
+          path: spacing-runtime/.spacing-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 2024e009ad40408926907beb8bf0d820bc235031
-          path: .header-baseline
+          path: spacing-runtime/.header-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 4d050292aea1904d1b6dc35a07116dc9137e9f4f
-          path: .dock-baseline
+          path: spacing-runtime/.dock-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: c4d5c032158e573314ca9a12a23a211ec24c7a4c
-          path: .rail-baseline
+          path: spacing-runtime/.rail-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 99644a52fce58ce91ace9b9a5299661ba116a775
-          path: .composition-baseline
+          path: spacing-runtime/.composition-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 3573082e31d716c866021eec0f6e87f1f7367ce4
-          path: .color-baseline
+          path: spacing-runtime/.color-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 57c381c4e07c8d815819bb5e2feed00d104ba4f8
-          path: .hero-baseline
+          path: spacing-runtime/.hero-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: e6d087c203bb88685159efbc272e04ce868e4c89
-          path: .freshness-baseline
+          path: spacing-runtime/.freshness-baseline
+          set-safe-directory: false
           persist-credentials: false
+      - name: Verify normally owned checkout context
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main'
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {lstatSync, mkdirSync, writeFileSync} from 'node:fs';
+          import {BASELINES} from './scripts/scheduler-current-runtime/verify.mjs';
+          const uid = process.getuid();
+          const repositories = ['.', ...Object.keys(BASELINES)].map(path => {
+            const directory = lstatSync(path), metadata = lstatSync(path + '/.git');
+            assert.ok(directory.isDirectory() && !directory.isSymbolicLink(), 'regular checkout directory: ' + path);
+            assert.ok(metadata.isDirectory() && !metadata.isSymbolicLink(), 'regular Git directory: ' + path);
+            assert.equal(directory.uid, uid, 'checkout is owned by this process: ' + path);
+            assert.equal(metadata.uid, uid, 'Git directory is owned by this process: ' + path);
+            return {path, checkoutUid: directory.uid, gitUid: metadata.uid};
+          });
+          mkdirSync('manager-runtime-qualification', {recursive: true});
+          const evidence = {uid, cwd: process.cwd(), home: process.env.HOME, repositories};
+          writeFileSync('manager-runtime-qualification/ownership.json', JSON.stringify(evidence, null, 2) + '\n');
+          console.log(JSON.stringify(evidence));
+          NODE
       - name: Qualify exact scheduler source before installation
         if: github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main'
         env:
@@ -143,14 +177,14 @@ jobs:
         with:
           name: manager-spacing-${{ matrix.engine }}
           path: |
-            manager-runtime-qualification/
-            manager-spacing/
-            manager-selector/
-            search-keyboard/
-            color-phone/
-            hero-bars/
-            manager-viewports/
-            room-hero-colors/
-            hero-freshness/
-            hero-freshness-before/
+            spacing-runtime/manager-runtime-qualification/
+            spacing-runtime/manager-spacing/
+            spacing-runtime/manager-selector/
+            spacing-runtime/search-keyboard/
+            spacing-runtime/color-phone/
+            spacing-runtime/hero-bars/
+            spacing-runtime/manager-viewports/
+            spacing-runtime/room-hero-colors/
+            spacing-runtime/hero-freshness/
+            spacing-runtime/hero-freshness-before/
           retention-days: 14

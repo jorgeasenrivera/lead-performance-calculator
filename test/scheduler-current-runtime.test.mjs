@@ -134,3 +134,20 @@ test('production wrapper binds the exact reviewed source and has no fixture or C
   const source=readFileSync(resolve(sourceRoot,QUALIFICATION[2]),'utf8');
   assert.match(source,/const evidence = verifySource\(/);assert.doesNotMatch(source,/process\.env\.(?:SOURCE|BASE|POLICY|SKIP)/);
 });
+
+test('CI checks out into an owned child without any Git trust exception',()=>{
+  const workflow=readFileSync(resolve(sourceRoot,QUALIFICATION[0]),'utf8');
+  assert.match(workflow,/defaults:\n      run:\n        working-directory: spacing-runtime/);
+  assert.match(workflow,/fetch-depth: 50\n          path: spacing-runtime\n          set-safe-directory: false/);
+  for(const path of Object.keys(BASELINES))assert.ok(workflow.includes('path: spacing-runtime/'+path+'\n          set-safe-directory: false'));
+  assert.equal((workflow.match(/set-safe-directory: false/g)||[]).length,9);
+  assert.doesNotMatch(workflow,/safe\.directory|(?:chown|chmod)\b|--user|--privileged/);
+  const artifactBlock=workflow.slice(workflow.indexOf('      - uses: actions/upload-artifact@v4'));
+  for(const path of ['manager-runtime-qualification','manager-spacing','manager-selector','search-keyboard','color-phone','hero-bars','manager-viewports','room-hero-colors','hero-freshness','hero-freshness-before'])assert.ok(artifactBlock.includes('spacing-runtime/'+path+'/'));
+  const program=workflow.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/)[1].split('\n').map(line=>line.slice(10)).join('\n');
+  for(const path of Object.keys(BASELINES))mkdirSync(resolve(root,path,'.git'),{recursive:true});
+  execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:program});
+  const ownership=JSON.parse(readFileSync(resolve(root,'manager-runtime-qualification/ownership.json')));
+  assert.equal(ownership.repositories.length,9);assert.ok(ownership.repositories.every(r=>r.checkoutUid===process.getuid()&&r.gitUid===process.getuid()));
+  assert.throws(()=>execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:program.replace('const uid = process.getuid();','const uid = process.getuid() + 1;'),stdio:['pipe','pipe','pipe']}),/Command failed/,'a mismatched process owner refuses before Git');
+});
