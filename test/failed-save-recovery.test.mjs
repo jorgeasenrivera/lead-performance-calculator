@@ -21,6 +21,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {beginLoad,acceptLoad} from "../src/scheduler-load-context.mjs";
 import { storeKey } from "../api/_store-keys.mjs";
 
 const app = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -117,7 +118,12 @@ const latestCtx = (over = {}) => {
   };
   return ctx;
 };
-const latest = (ctx, code = PIECES.latest) => run(code.replace("const loadLatestSaved =", "const loadLatestSaved ="), ctx, "loadLatestSaved");
+const latest = (ctx, code = PIECES.latest) => {
+  ctx.reportedAuth ||= {getSnapshot:()=>({principalEpoch:ctx.authEpoch,sessionReady:true,disposed:false})};
+  ctx.startSchedulerLoad = (id,lane)=>beginLoad(ctx.reportedAuth,id,lane);
+  ctx.acceptLoad = acceptLoad;
+  return run(code,ctx,"loadLatestSaved");
+};
 test("a successful read of an existing row installs it in both slots and says loaded", async () => {
   const ctx = latestCtx({ loadStore: async () => ({ roster: [{ name: "A" }], __storeId: "s1" }) });
   assert.equal(await latest(ctx)(ctx.rec), "loaded");
@@ -240,4 +246,12 @@ test("control: dropping the queue check lets a refresh replace the screen under 
   const bad = mutate(mutate(PIECES.latest, "    if (pendingSaves.current > 0) {", "    if (false) {"), "pendingSaves.current === 0 && ", "");
   const ctx = latestCtx(); ctx.st.pending = 1;
   assert.equal(await latest(ctx, bad)(ctx.rec), "absent");
+});
+
+test("a scheduler principal change during recovery refuses the install without weakening legacy guards",async()=>{
+  let schedulerEpoch=1;
+  const ctx=latestCtx({loadStore:async(id,fb)=>{schedulerEpoch++;return fb;}});
+  ctx.reportedAuth={getSnapshot:()=>({principalEpoch:schedulerEpoch,sessionReady:true,disposed:false})};
+  assert.equal(await latest(ctx)(ctx.rec),"skipped");
+  assert.deepEqual([ctx.calls.installs,ctx.calls.stores],[[],[]]);
 });

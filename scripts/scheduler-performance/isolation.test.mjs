@@ -2,6 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { patchManager, patchPhoneLayout } from "./build.mjs";
+import postcss from "postcss";
+
+test("scheduler styles require a scheduler root or an explicit standalone/ghost marker", async () => {
+ for (const name of ["planner.css", "calendar-tokens.css"]) {
+  const source=await readFile(new URL(name, import.meta.url), "utf8"), sheet=postcss.parse(source);
+  sheet.walkRules(rule=>{
+   for(let parent=rule.parent;parent;parent=parent.parent)if(parent.type==="atrule"&&/keyframes/i.test(parent.name))return;
+   for(const selector of postcss.list.comma(rule.selector))assert.match(selector,/scheduler-mounted|scheduler-standalone|scheduler-ghost/,`${name}: ${selector}`);
+  });
+ }
+});
 test("preview refuses to patch a changed Manager ownership boundary", async () => {
   const source = await readFile(
     new URL("../../src/Manager.jsx", import.meta.url),

@@ -1,6 +1,6 @@
 import {monthDays,enteredMonth} from './month-model.mjs';
 import {addDays,weekday,ruleFor} from '../scheduler-proposal/model.mjs';
-import {personIntervals,unionMinutes,shiftProblem,stableLocalDate,storeTimezone,validDate} from './shift-intervals.mjs';
+import {personIntervals,unionMinutes,shiftProblem,stableLocalDate,storeTimezone,validDate,employmentProblem} from './shift-intervals.mjs';
 import {membershipAt,teamSnapshot} from './team-model.mjs';
 import {importSnapshot} from './schedule-import.mjs';
 import {dayDemand} from './demand-context.mjs';
@@ -24,7 +24,7 @@ export function fixtureGenerationPolicy(store) {
  return {confirmed:false,regenerate:true,mode:'mixed',shifts:[{id:'open-hours',fullDay:true}],requiredRoles:{sales:1},people:Object.fromEntries(store.people.map(p=>[p.id,{eligible:true,roles:['sales']}])),market:fictionalMarketSample(),useMarket:true};
 }
 export function generationInput(planner,index,month,policy) {
- const dates=monthDays(month);planner.get(index,month);const start=week(dates[0]),end=addDays(week(dates.at(-1)),6),stores={},records={};
+ const dates=monthDays(month);if(planner.context(index,dates[0]).strictHours)throw Error('Generation is unavailable for strict source data until verified.');planner.get(index,month);const start=week(dates[0]),end=addDays(week(dates.at(-1)),6),stores={},records={};
  for(let day=start;day<=end;day=addDays(day,1)){const c=planner.context(index,day),key=day.slice(0,7);if(!stores[key]){stores[key]=copy(c.store);stores[key].history=[];}records[day]=copy(c.record);}
  const store=planner.get(index,month).store;
  stores[month].planningPolicy={people:copy(policy.people),requiredRoles:copy(policy.requiredRoles)};
@@ -99,7 +99,7 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
  const demand=new Map(dates.map(day=>[day,dayDemand(input.history,day)]));
  const market=policy.useMarket?marketSignal(policy.market,dates[0]):null;
  const known=p=>Array.isArray(p.off)&&Number.isFinite(p.start)&&Number.isFinite(p.end)&&p.end>p.start&&p.start>=0&&p.end<=24&&Number.isFinite(p.maxHours)&&p.maxHours>=0&&p.maxHours<=168&&p.off.every(d=>Number.isInteger(d)&&d>=0&&d<=6);
- for(const day of dates){const r=base.get(day);if(r.state!=='open')continue;for(const p of store.people)if(known(p)&&!p.off.includes(weekday(day))&&!records[day]?.off.includes(p.id)&&!records[day]?.unknownNotes?.[p.id]&&policy.people[p.id]?.eligible===true)opportunity.set(p.id,(opportunity.get(p.id)||0)+Math.max(0,Math.min(p.end,r.rule.close)-Math.max(p.start,r.rule.open))*60);}
+ for(const day of dates){const r=base.get(day);if(r.state!=='open')continue;for(const p of store.people)if(known(p)&&!employmentProblem(p,day)&&!p.off.includes(weekday(day))&&!records[day]?.off.includes(p.id)&&!records[day]?.unknownNotes?.[p.id]&&policy.people[p.id]?.eligible===true)opportunity.set(p.id,(opportunity.get(p.id)||0)+Math.max(0,Math.min(p.end,r.rule.close)-Math.max(p.start,r.rule.open))*60);}
  const priority=day=>(demand.get(day).estimate?.high||0)+(market?.busyWeekdays?.includes(weekday(day))?1:0);
  const ordered=[...dates].sort((a,b)=>priority(b)-priority(a)||a.localeCompare(b));
  for(const day of ordered){
@@ -122,7 +122,7 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
   const segments=()=>{if(row.state!=='open')return [];const all=entries(),points=unique([rr.open*60,rr.close*60,...all.flatMap(e=>[Math.max(rr.open*60,e.a),Math.min(rr.close*60,e.b)])]).filter(x=>x>=rr.open*60&&x<=rr.close*60).sort((a,b)=>a-b);return points.slice(0,-1).map((a,i)=>{const b=points[i+1],active=all.filter(e=>e.a<=a&&e.b>=b);return {start:a,end:b,count:unique(active.map(e=>e.id)).length,roles:Object.fromEntries(Object.keys(policy.requiredRoles).map(role=>[role,unique(active.filter(e=>e.role===role).map(e=>e.id)).length]))};});};
   const gaps=()=>segments().flatMap(s=>[...(s.count<rr.minimum?[{start:s.start,end:s.end,role:null,missing:rr.minimum-s.count}]:[]),...Object.entries(policy.requiredRoles).filter(([role,n])=>(s.roles[role]||0)<n).map(([role,n])=>({start:s.start,end:s.end,role,missing:n-(s.roles[role]||0)}))]);
   if(row.state==='open'&&stableLocalDate(day,storeTimezone(store))){
-   const available=(id,a,b)=>{const p=members.get(id),e=policy.people[id],key=week(day)+':'+id,intervals=personIntervals(r,id,rr);return p&&known(p)&&!retainedIds.includes(id)&&e?.eligible===true&&Array.isArray(e.roles)&&!p.off.includes(weekday(day))&&!r.off.includes(id)&&!r.unknownNotes?.[id]&&!r.generationLocks?.includes(id)&&a>=p.start*60&&b<=p.end*60&&a>=rr.open*60&&b<=rr.close*60&&!unknownWeeks.has(key)&&!intervals.some(([x,y])=>a<y&&b>x)&&(weekly.get(key)||0)+b-a<=Math.min(caps.get(key)??Infinity,p.maxHours*60);};
+   const available=(id,a,b)=>{const p=members.get(id),e=policy.people[id],key=week(day)+':'+id,intervals=personIntervals(r,id,rr);return p&&known(p)&&!employmentProblem(p,day)&&!retainedIds.includes(id)&&e?.eligible===true&&Array.isArray(e.roles)&&!p.off.includes(weekday(day))&&!r.off.includes(id)&&!r.unknownNotes?.[id]&&!r.generationLocks?.includes(id)&&a>=p.start*60&&b<=p.end*60&&a>=rr.open*60&&b<=rr.close*60&&!unknownWeeks.has(key)&&!intervals.some(([x,y])=>a<y&&b>x)&&(weekly.get(key)||0)+b-a<=Math.min(caps.get(key)??Infinity,p.maxHours*60);};
    const memberships=new Map(store.people.map(p=>[p.id,membershipAt(store,p.id,day)]));
    const units=policy.mode==='individual'?[]:(store.teams||[]).map(t=>store.people.filter(p=>memberships.get(p.id).teamIds.includes(t.id)).map(p=>p.id)).filter(ids=>ids.length&&ids.every(id=>!memberships.get(id).unknown));
    if(policy.mode!=='team')units.push(...store.people.map(p=>[p.id]));
