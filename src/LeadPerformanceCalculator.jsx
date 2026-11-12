@@ -3810,15 +3810,7 @@ export default function LeadPerformanceCalculator() {
               <BackupPanel config={config} adminData={adminData} session={session}
                 restorePoints={restorePoints} onLoadRestorePoint={loadRestorePoint}
                 onRestoreAll={async (backup) => {
-                  await saveShared(CONFIG_KEY, backup.config);
-                  saveShared(PUBLIC_STORES_KEY, publicSlice(backup.config)).catch(() => {});
-                  for (const [sid, sdata] of Object.entries(backup.stores || {})) {
-                    await saveShared(storeKey(sid), sdata);
-                  }
-                  if (backup.audit) await saveShared(AUDIT_KEY, backup.audit);
-                  setConfig(backup.config);
-                  setAdminData(backup.stores || {});
-                  await appendAudit({ user: session.name, action: "Restored from backup", detail: backup.exportedAt || "" });
+                  return { ok: false, status: "unavailable", message: "Full restore is temporarily unavailable. Nothing was changed." };
                 }}
                 onRestoreStore={async (storeId, snap) => {
                   const current = adminData[storeId] || emptyStoreData();
