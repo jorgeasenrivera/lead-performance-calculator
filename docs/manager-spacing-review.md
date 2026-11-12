@@ -75,6 +75,29 @@ fictional screenshots and geometry.json. Browser-height changes and synthetic
 safe-area inputs are not physical iOS browser-chrome or keyboard evidence.
 Independent visual comparison and a real-phone trial remain release gates.
 
+### Baseline versions
+
+`scripts/search-runtime.sha256` (v1) freezes the #469 runtime and is never edited or shortened.
+The workflow checks that it is byte-identical to the copy the #469 release carries, and that it
+still describes that release's tree. A later runtime change adds the next manifest
+(`scripts/search-runtime.v2.sha256` is the first) and points the candidate check at it. The
+workflow enforces that the new version keeps every path of the old one, adds only the files it
+declares, and re-hashes only the files it declares, so what changed since the freeze is a short
+list in the open. v2 re-hashes the arrival fix in the core (#479) and `Manager.jsx`, and adds
+`api/_standard-rollup.mjs`. A new version is the previous one's paths, plus any new runtime file,
+hashed again, and the declared lists in the workflow change with it:
+
+```
+( awk '{print $2}' scripts/search-runtime.v2.sha256; echo <new runtime path> ) \
+  | LC_ALL=C sort -u | xargs sha256sum > scripts/search-runtime.v3.sha256
+```
+
+On a pull request the checked-out tree is the synthetic merge of the PR into its base, and the
+evidence labels that commit as the runtime under test and the PR head as the test head. So a
+covered file that the base changed after the PR branched fails the check until the PR is rebased
+and re-versioned. A change to `src/Manager.jsx`, `src/LeadPerformanceCalculator.jsx` or
+`api/_standard-rollup.mjs` now runs this workflow, so the next drift fails the PR that causes it.
+
 Reproduce npm test and npm run build, then follow
 .github/workflows/manager-spacing.yml with the repository's local mock.
 The probe performs no requests to a real data service. Local browser sandbox

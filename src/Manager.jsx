@@ -39,6 +39,7 @@ import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT } from "../
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
+import { isMeasured, attainmentOf, newRollup, addToRollup, readRollup, weakestRollup } from "../api/_standard-rollup.mjs";
 import { doorCheck, readingVerdict, settle, watchCircle } from "../api/_geofence.mjs";
 import { assistWhere } from "../api/_queue-notify.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
@@ -747,6 +748,15 @@ function installBloopManager() {
    colour and glow are the tier, and at goal the stroke thickens like a needle
    pressed to the peg. Drawn for a dark ground. */
 function S2Dial({ value, ratio, size = 56 }) {
+  // No figure is not 0%: the track alone, nothing drawn on it and no verdict.
+  if (ratio == null) {
+    return (
+      <svg viewBox="0 0 36 36" style={{ width: size, height: size, display: "block" }}>
+        <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={3.4} />
+        <text x="18" y="21.2" textAnchor="middle" style={{ font: "700 8px var(--font-mono)", fill: "#fff" }}>–</text>
+      </svg>
+    );
+  }
   const t = goalTier(ratio, 1);
   const p = Math.min(100, ratio * 100);
   const sw = ratio >= 1 ? 4.6 : 3.4;
@@ -5732,7 +5742,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
               learns to stop looking at the place they are meant to look. */}
           {behindCount > 0 && (
             <button className={"btn" + (showBehind ? "" : " f-bl-btn")} onClick={() => setShowBehind((v) => !v)}>
-              {showBehind ? "Hide" : `${behindCount} not signed in`}
+              {showBehind ? "Hide" : `${behindCount} behind the standard`}
             </button>
           )}
           <button className={"btn" + (setup ? " on" : "")} aria-expanded={setup} onClick={() => setSetup((v) => !v)}>Set up</button>
@@ -17127,7 +17137,9 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     return stamps.length ? stamps[stamps.length - 1] : null;
   })();
   /* The three video standards, averaged the way the hero does it: each person
-     against the target their tier sets, capped at the target. */
+     against the target their tier sets, capped at the target. Somebody the
+     reports never mentioned is counted as missing, not scored as 0%: the dial
+     averages the people who were measured, and says how many were not. */
   const videoDials = (() => {
     const roll = {};
     for (const role of config.roles || []) {
@@ -17144,13 +17156,11 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           const min = own.has(m) ? own.get(m) : all.get(m);
           const need = min / 100;
           if (need <= 0) continue;
-          const got = Math.min(1, (st?.[m] ?? 0) / need);
-          const r = roll[m] || (roll[m] = { below: 0, total: 0, sum: 0, min });
-          r.total++; r.sum += got; if (got < 1) r.below++;
+          addToRollup(roll[m] || (roll[m] = { ...newRollup(), min }), attainmentOf(st?.[m], need));
         }
       }
     }
-    return ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].map((m) => (roll[m] ? { m, mean: roll[m].sum / roll[m].total, below: roll[m].below, total: roll[m].total, min: roll[m].min } : null)).filter(Boolean);
+    return ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].map((m) => (roll[m] ? { m, ...readRollup(roll[m]), min: roll[m].min } : null)).filter(Boolean);
   })();
 
   /* ---- the people ---- */
@@ -17186,7 +17196,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const rows = useMemo(() => {
     let list = people.filter((p) => (limitOnly ? p.atLimit : (!roleFilter || p.a.roleId === roleFilter)));
     if (q) list = list.filter((p) => norm(p.a.name).includes(q));
-    if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && (d.state === "bad" || d.state === "warn"); });
+    /* The same admission as the dial's count: only a figure that can be a measurement
+       is below anything. A negative or a NaN reads "bad" on the row's dot, and listing
+       it here would name somebody the dial did not count. A real zero still counts. */
+    if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && isMeasured(d.v) && (d.state === "bad" || d.state === "warn"); });
     if (drill && drill.kind === "channel") list = list.slice().sort((x, y) => ((y.st?.[drill.id + "Pct"] ?? -1) - (x.st?.[drill.id + "Pct"] ?? -1)));
     else list = list.slice().sort((x, y) => y.units - x.units || x.a.name.localeCompare(y.a.name));
     return list;
@@ -17218,9 +17231,14 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     if (pop.k === "dial") {
       const v = videoDials.find((x) => x.m === pop.m);
       if (!v) return null;
-      const under = Math.round(v.mean * 100) < 100;
+      const measured = v.mean != null;
+      const under = measured && Math.round(v.mean * 100) < 100;
       return (<>
-        {hd(METRICS[pop.m].label, <><span className={"fr-st " + (under ? "away" : "in")}>{Math.round(v.mean * 100)}% of target</span><span className="fr-w">{v.below} of {v.total} below</span><span className="fr-w">target {v.min}%</span></>)}
+        {hd(METRICS[pop.m].label, <>
+          {measured
+            ? <><span className={"fr-st " + (under ? "away" : "in")}>{Math.round(v.mean * 100)}% of target</span><span className="fr-w">{v.below} of {v.observed} below</span>{v.missing > 0 && <span className="fr-w">{v.missing} no data</span>}</>
+            : <span className="fr-w">no data yet</span>}
+          <span className="fr-w">target {v.min}%</span></>)}
         <div className="bp-defn">{METRIC_DESC[pop.m] || "Measured month to date."}</div>
         <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { setDrill({ kind: "below", id: pop.m, label: "Below " + (METRIC_TINY[pop.m] || METRICS[pop.m].short) }); setLimitOnly(false); close(); }}>Who is below</button></div>
       </>);
@@ -17397,10 +17415,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           })}
           <span className="bp-sep" />
           {videoDials.map((v) => {
-            const t = goalTier(v.mean, 1);
+            const t = v.mean == null ? null : goalTier(v.mean, 1);
             return (
-              <button type="button" key={v.m} className="bp-dial" onClick={() => setPop({ k: "dial", m: v.m })} style={{ "--v": Math.round(v.mean * 100), "--c": t.col }}>
-                <span className="bp-ring"><span>{Math.round(v.mean * 100)}%</span></span>
+              <button type="button" key={v.m} className="bp-dial" onClick={() => setPop({ k: "dial", m: v.m })} style={{ "--v": t ? Math.round(v.mean * 100) : 0, "--c": t ? t.col : "rgba(255,255,255,.3)" }}>
+                <span className="bp-ring"><span>{t ? Math.round(v.mean * 100) + "%" : "–"}</span></span>
                 <span className="bp-dl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span><SignalQualifier />
               </button>
             );
@@ -17545,16 +17563,17 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         }
       }
       const reqs = [...all.keys()].map((m) => ({ metric: m, min: own.has(m) ? own.get(m) : all.get(m) }));
+      // A figure the reports do not have is missing, not 0%. It is counted
+      // apart and left out of the averages, so a report that has not landed
+      // never reads as a floor that is failing. A measured zero still counts.
       let sum = 0, n = 0;
       for (const req of reqs) {
         const def = METRICS[req.metric];
         const need = def.kind === "pct" ? req.min / 100 : req.min;
         if (need <= 0) continue;
-        const got = Math.min(1, (st?.[req.metric] ?? 0) / need);
-        sum += got; n++;
-        const roll = metricRoll[req.metric] || (metricRoll[req.metric] = { below: 0, total: 0, sum: 0 });
-        roll.total++; roll.sum += got;
-        if (got < 1) roll.below++;
+        const got = attainmentOf(st?.[req.metric], need);
+        addToRollup(metricRoll[req.metric] || (metricRoll[req.metric] = newRollup()), got);
+        if (got != null) { sum += got; n++; }
       }
       if (n) { attSum += sum / n; attN++; }
     }
@@ -17565,9 +17584,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     : pct >= 75 ? "Close to standard across the floor"
     : pct >= 55 ? "Slipping, worth a floor meeting"
     : "Well below standard";
-  const weakest = Object.entries(metricRoll)
-    .map(([metric, r]) => ({ metric, ...r, mean: r.sum / r.total }))
-    .sort((a, b) => a.mean - b.mean)[0] || null;
+  const weakest = weakestRollup(metricRoll);
+  // "Everyone is on target" is only said when nobody is missing a figure.
+  const anyMissing = Object.values(metricRoll).some((r) => r.missing > 0);
 
   // Who to talk to first: below standard, ordered by how close they are to the
   // cap, because that is when being below standard actually costs them leads.
@@ -17815,9 +17834,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   }, [dayUnits]);
   const lastImport = (data.importLog || [])[0] || null;
   const videoDials = ["apptVideoDayPct", "bhVideoPct", "engagedVideoPct"]
-    .map((m) => metricRoll[m]
-      ? { m, mean: metricRoll[m].sum / metricRoll[m].total, below: metricRoll[m].below, total: metricRoll[m].total }
-      : null)
+    .map((m) => metricRoll[m] ? { m, ...readRollup(metricRoll[m]) } : null)
     .filter(Boolean);
   const [dayPick, setDayPick] = useState(null);
   /* The delivery-against-target chart: every channel's close rate, month by
@@ -18107,12 +18124,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 <div className="s2-marks">
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
-                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} /><SignalQualifier />
+                      <S2Dial value={v.mean == null ? null : Math.round(v.mean * 100)} ratio={v.mean} size={54} /><SignalQualifier />
                       <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
-                      <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
+                      <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": v.mean == null ? undefined : goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
-                        <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
-                        <div className="bw-sub">{v.below} of {v.total} below target</div>
+                        <div className="bw-big">{v.mean == null ? "no data yet" : <>{Math.round(v.mean * 100)}% <small>of target on average</small></>}</div>
+                        <div className="bw-sub">{v.mean == null ? `${v.missing} with no data` : `${v.below} of ${v.observed} below target${v.missing > 0 ? ` · ${v.missing} no data` : ""}`}</div>
                         <div className="bw-desc">{METRIC_DESC[v.m] || "Measured month to date."}</div>
                       </BloopWin>
                     </div>
@@ -18220,9 +18237,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         {weakest && (
           <div className={"s2-ansq bloop-host an-" + (weakest.mean >= 1 ? 5 : weakest.mean >= 0.9 ? 4 : weakest.mean >= 0.75 ? 3 : weakest.mean >= 0.5 ? 2 : 1)} tabIndex={0}>
             <div className="s2-an-cap"><Verdict ratio={weakest.mean} size={13} className="on-dark" /> {weakest.below === 0 ? "Standards" : "Weakest standard"}</div>
-            <div className="s2-an-name">{weakest.below === 0 ? "Everyone is on target" : METRICS[weakest.metric].label}</div>
+            <div className="s2-an-name">{weakest.below === 0 ? (anyMissing ? "Everyone measured is on target" : "Everyone is on target") : METRICS[weakest.metric].label}</div>
             <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
-            <div className="s2-an-sub">{weakest.below} of {weakest.total} below<SignalCopy full=" · mouse over for the play" short={null} /></div>
+            <div className="s2-an-sub">{weakest.below} of {weakest.observed} below{weakest.missing > 0 ? ` · ${weakest.missing} no data` : ""}<SignalCopy full=" · mouse over for the play" short={null} /></div>
             <SignalCoachAction metric={weakest.metric} below={weakest.below} />
             <div className="bloopwin dn s2-answin">
               <div className="bw-title">The play</div>
@@ -19240,6 +19257,8 @@ function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, row
   byStandard, channels, thr, trail, trailPct, moLabel, mNow, mPrev, measures, move, totalUnits, single, exportCSV }) {
   const [pop, setPop] = useState(null);
   const close = useCallback(() => setPop(null), []);
+  // Same rule as the desk's tile: the month on screen's own goal, or none.
+  const goalUnits = storeGoalFor(single, month)?.units;
   const hd = (title, meta) => (
     <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
   );
@@ -19276,7 +19295,7 @@ function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, row
     <div className="bp-page cx-page sm-phone">
       <div className="bp-hero cx-hero">
         <div className="cx-hh"><button type="button" className="co-day" onClick={() => setPop({ k: "month" })}><PixIcon glyph="calendar" size={11} />{monthLabel(month)}</button><span className="cx-days">generated {new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</span></div>
-        <div className="cx-big" style={{ cursor: "default" }}><DotNum value={String(Math.round(totalUnits))} dot={8} color="#fff" /><span className="cx-of">delivered{single?.goal?.units ? <><br />of {fmtNum(single.goal.units)} goal</> : null}</span></div>
+        <div className="cx-big" style={{ cursor: "default" }}><DotNum value={String(Math.round(totalUnits))} dot={8} color="#fff" /><span className="cx-of">delivered{goalUnits ? <><br />of {fmtNum(goalUnits)} goal</> : null}</span></div>
         {rows.length > 0 && (
           <div className="co-std">
             <button type="button" onClick={() => setPop({ k: "below" })}><b>{restricted.length}<small>/{rows.length}</small></b><span><PixIcon glyph="warn" size={9} />Below</span></button>
@@ -19527,6 +19546,10 @@ function GMSummary({ config, data, stores }) {
 
   /* ---- the channel panels and month-over-month table, per the drafts ---- */
   const single = stores.length === 1 ? stores[0] : null;
+  /* A goal belongs to the month on screen. The store record still carries the old
+     standing figure, which would show September's goal over any other month, so
+     the month's own entry is the only one read (storeGoalFor), and none shows none. */
+  const goalUnits = storeGoalFor(single, month)?.units;
   const thr = single ? normThresholds(single.thresholds) : null;
   const chFor = (mKey) => {
     const acc = {};
@@ -19629,7 +19652,7 @@ function GMSummary({ config, data, stores }) {
           <div className="da-kpis">
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="sold" size={10} /> Units delivered</div>
               <div className="da-krow"><span className="da-knum">{fmtNum(totalUnits)}</span>
-                {single?.goal?.units ? <span className="da-ksub">goal {fmtNum(single.goal.units)}</span> : null}</div></div>
+                {goalUnits ? <span className="da-ksub">goal {fmtNum(goalUnits)}</span> : null}</div></div>
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Below standard</div>
               <div className="da-krow"><span className="da-knum">{restricted.length}<span className="da-ksub">/{rows.length}</span></span></div></div>
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="nope" size={10} /> Paused right now</div>

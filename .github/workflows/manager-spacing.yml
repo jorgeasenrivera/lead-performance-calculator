@@ -5,10 +5,13 @@ on:
   pull_request:
     paths:
       - src/Manager.jsx
+      - src/LeadPerformanceCalculator.jsx
+      - api/_standard-rollup.mjs
       - src/manager-signal.css
       - scripts/manager-selector.mjs
       - scripts/manager-spacing.mjs
       - scripts/search-runtime.sha256
+      - scripts/search-runtime.v2.sha256
       - scripts/hero-bars.mjs
       - scripts/manager-viewports.mjs
       - scripts/room-hero-colors.mjs
@@ -71,10 +74,59 @@ jobs:
           ref: e6d087c203bb88685159efbc272e04ce868e4c89
           path: .freshness-baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          # The #469 release on main. Its tree equals the frozen runtime 710cc8d on every file the
+          # original manifest lists, and unlike 710cc8d it stays on main's history.
+          ref: d9320e253b603260f6a7355d4bc1c77a59fefa5b
+          path: .frozen-runtime
+          persist-credentials: false
+      - name: Record the commit that is actually under test
+        # On a pull request actions/checkout builds the synthetic merge of the PR into its base, so what
+        # is measured is not github.event.pull_request.head.sha. Label the tree that was checked out and
+        # keep the PR head as SEARCH_TEST_SHA, so the evidence says which is which. Against v2 this is an
+        # integration validation: a covered file the base changed after the PR branched fails until the
+        # PR is rebased and re-versioned.
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          under_test=$(git rev-parse HEAD)
+          test "$under_test" = "${{ github.sha }}"
+          echo "SEARCH_RUNTIME_SHA=$under_test" >> "$GITHUB_ENV"
+          echo "runtime under test: $under_test"
+          echo "pull request head:  ${{ github.event.pull_request.head.sha || 'not a pull request' }}"
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
-      - name: Verify frozen preview runtime
-        run: sha256sum --check scripts/search-runtime.sha256
+      - name: Verify the original frozen baseline is intact
+        # v1 is never edited and never shortened. It must be byte-identical to the file the #469 release
+        # carries (checking the listed hashes alone would let a deleted line pass), and it must still
+        # describe that release's tree.
+        run: |
+          set -eu
+          cmp scripts/search-runtime.sha256 .frozen-runtime/scripts/search-runtime.sha256
+          cd .frozen-runtime && sha256sum --check scripts/search-runtime.sha256
+      - name: Verify the versioned baseline keeps every frozen path and names every change
+        # v2 must cover every path v1 covers, add only the files declared here, and re-hash only the
+        # files declared here. A new runtime file or a re-blessed hash is a visible edit to this list.
+        run: |
+          set -eu
+          export LC_ALL=C
+          awk '{print $2}' scripts/search-runtime.sha256 | sort > /tmp/v1.paths
+          awk '{print $2}' scripts/search-runtime.v2.sha256 | sort > /tmp/v2.paths
+          test -z "$(uniq -d /tmp/v2.paths)" || { echo 'v2 lists a path twice:'; uniq -d /tmp/v2.paths; exit 1; }
+          dropped=$(comm -23 /tmp/v1.paths /tmp/v2.paths)
+          test -z "$dropped" || { printf 'v2 dropped frozen paths:\n%s\n' "$dropped"; exit 1; }
+          added=$(comm -13 /tmp/v1.paths /tmp/v2.paths)
+          test "$added" = 'api/_standard-rollup.mjs' || { printf 'v2 additions are not the declared set. found:\n%s\n' "$added"; exit 1; }
+          changed=$(awk 'NR==FNR { h[$2] = $1; next } ($2 in h) && h[$2] != $1 { print $2 }' scripts/search-runtime.sha256 scripts/search-runtime.v2.sha256 | sort)
+          want=$(printf '%s\n' src/LeadPerformanceCalculator.jsx src/Manager.jsx)
+          test "$changed" = "$want" || { printf 'v2 re-hashes files that are not the declared set. found:\n%s\n' "$changed"; exit 1; }
+          echo "v2 adds: $added"
+          echo "v2 re-hashes: $changed"
+      - name: Verify the candidate runtime against its versioned baseline
+        # The original check, against the candidate. A runtime change after v2 is a new version (v3),
+        # never an edit to this one.
+        run: sha256sum --check scripts/search-runtime.v2.sha256
       - name: Build fictional app
         run: |
           printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
@@ -90,7 +142,6 @@ jobs:
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: 710cc8d78d0363856df2f9000162923859434b73
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
