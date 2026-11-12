@@ -12,15 +12,30 @@ import crypto from "node:crypto";
    starting files are put away up front; the manager's PDF
    reader and the map are kept as they are first used. */
 function sageWorker() {
-  let outDir = "dist";
+  let outDir = "dist", normalStarts = [];
   return {
     name: "sage-worker",
     apply: "build",
     configResolved(c) { outDir = c.build.outDir; },
+    generateBundle(_, bundle) {
+      // The normal app now starts behind the board dispatcher. Cache the same
+      // entry and static dependencies without executing them on a wall screen.
+      const entry = Object.values(bundle).find((file) => file.type === "chunk" && (file.facadeModuleId?.endsWith("/src/app-entry.jsx") || file.moduleIds?.some((id) => id.endsWith("/src/app-entry.jsx"))));
+      const seen = new Set();
+      const add = (name) => {
+        if (seen.has(name)) return;
+        seen.add(name);
+        const chunk = bundle[name];
+        for (const dependency of chunk?.imports || []) add(dependency);
+        for (const css of chunk?.viteMetadata?.importedCss || []) seen.add(css);
+      };
+      if (entry) add(entry.fileName);
+      normalStarts = [...seen].map((name) => "/" + name);
+    },
     closeBundle() {
       const html = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
       const starts = [...new Set([...html.matchAll(/(?:src|href)="(\/(?:assets|fonts)\/[^"]+)"/g)].map((m) => m[1]))];
-      const precache = ["/", ...starts];
+      const precache = [...new Set(["/", ...starts, ...normalStarts])];
       /* The build's moment first, then the hash: a cache name that SORTS. The
          worker keeps the last two builds and drops older ones, and it can only
          know which is older if the names say so. */
