@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {createSchedulerRequestIdentity,createDraftOnlySchedulerServer} from '../api/_scheduler-draft-server.mjs';
 import {createSchedulerIdentityReader} from '../api/_scheduler-authorization.mjs';
 import dormant,{createSchedulerDraftEndpoint} from '../api/scheduler.mjs';
@@ -173,6 +174,50 @@ test('endpoint defaults off without inspecting configuration or initializing a s
  }
  assert.notEqual(process.env.SCHEDULER_DRAFT_PILOT_ENABLED,'1','Default endpoint check requires activation OFF');
  const d=response();await dormant(req(read()),d);assert.equal(d.code,503);
+});
+test('a populated synthetic database setting cannot activate the default endpoint or initialize any service',async()=>{
+ const effects={pool:0,connect:0,query:0,auth:0,profile:0,writes:0,config:0};
+ const env=new Proxy({SCHEDULER_DATABASE_URL:'postgresql://synthetic:synthetic@invalid.example:5432/postgres'},{get(){effects.config++;throw Error('Disabled configuration read');}});
+ const endpoint=createSchedulerDraftEndpoint({env,serverFactory:()=>{
+  effects.pool++;effects.connect++;effects.query++;effects.auth++;effects.profile++;effects.writes++;
+  throw Error('Disabled service initialization');
+ }});
+ const r=response();await endpoint.handler(req(read()),r);await endpoint.close();
+ assert.equal(r.code,503);assert.deepEqual(r.body,{error:'storage-not-configured'});
+ assert.deepEqual(effects,{pool:0,connect:0,query:0,auth:0,profile:0,writes:0,config:0});
+ // A fresh child exercises the actual default export with only synthetic env.
+ // Poisoned service imports make an activation regression fail before networking.
+ const script=`
+  import assert from 'node:assert/strict';
+  import {registerHooks} from 'node:module';
+  let serviceImports=0,configReads=0;
+  registerHooks({resolve(specifier,context,next){
+   if(specifier==='pg'||specifier==='@supabase/supabase-js'||specifier.endsWith('_scheduler-draft-server.mjs')){
+    serviceImports++;throw Error('Unexpected service import');
+   }
+   return next(specifier,context);
+  }});
+  assert.equal(Object.hasOwn(process.env,'SCHEDULER_DATABASE_URL'),true);
+  process.env=new Proxy(process.env,{get(target,key){
+   if(typeof key==='string'&&key.startsWith('SCHEDULER_')&&key!=='SCHEDULER_DRAFT_PILOT_ENABLED'){
+    configReads++;throw Error('Unexpected configuration read');
+   }
+   return Reflect.get(target,key);
+  }});
+  const {default:handler}=await import(${JSON.stringify(new globalThis.URL('../api/scheduler.mjs',import.meta.url).href)});
+  const res={setHeader(){},status(n){this.code=n;return this;},json(v){this.body=v;return this;}};
+  await handler({method:'POST',headers:{},body:{}},res);
+  assert.equal(res.code,503);assert.deepEqual(res.body,{error:'storage-not-configured'});
+  assert.equal(serviceImports,0);assert.equal(configReads,0);
+  console.log(JSON.stringify({serviceImports,configReads,status:res.code}));
+ `;
+ const childEnv={LANG:'C',SCHEDULER_DATABASE_URL:'postgresql://synthetic:synthetic@invalid.example:5432/postgres'};
+ const child=spawnSync(process.execPath,['--input-type=module','--eval',script],{env:childEnv,encoding:'utf8',timeout:10000});
+ assert.equal(child.status,0,child.stderr);
+ assert.deepEqual(JSON.parse(child.stdout),{serviceImports:0,configReads:0,status:503});
+ const control=spawnSync(process.execPath,['--input-type=module','--eval',script],{env:{...childEnv,SCHEDULER_DRAFT_PILOT_ENABLED:'1'},encoding:'utf8',timeout:10000});
+ assert.equal(control.status,1,'Instrumentation must detect activation instead of merely observing unavailable');
+ assert.match(control.stderr,/AssertionError/);
 });
 test('endpoint shares initialization, caps requests, drains close and never executes after close during initialization',async()=>{
  const gate=latch();let init=0,runs=0,closes=0;

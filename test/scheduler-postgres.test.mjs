@@ -269,7 +269,21 @@ test("existing endpoint, contract adapter and wrapper remain byte-identical", ()
     "_scheduler-store.mjs": "55da636812b0d281c3475c110d098d08a235e308bb90b823c11c827d9dccf84e",
     "scheduler.mjs": "47a37141f37dfbd59f14001ddd4754a7a8f116967c9bf763f3153a118f3ea97a",
     "_scheduler-contract.mjs": "0cfdf82de511950c9bff159c2703a2d2b9213593bdb1694f3f4b1f94e320de47",
-  })) assert.equal(hash(fs.readFileSync(new URL(`../api/${name}`, import.meta.url))), expected);
+  })) {
+    // The historical endpoint is immutable evidence. The successor's explicit
+    // activation, identity and lifecycle are checked in draft-server tests.
+    const target = name === "scheduler.mjs"
+      ? new URL("./fixtures/scheduler-endpoint-8b098129.txt", import.meta.url)
+      : new URL(`../api/${name}`, import.meta.url);
+    assert.equal(hash(fs.readFileSync(target)), expected);
+  }
+  // Keep the historical request boundary tied to the actual successor, so a
+  // fixture hash cannot hide a regression in its retained handle or imports.
+  const original = fs.readFileSync(new URL("./fixtures/scheduler-endpoint-8b098129.txt", import.meta.url), "utf8");
+  const boundary = original.indexOf("\nexport default async function handler(");
+  assert.ok(boundary > 0);
+  assert.equal(original.lastIndexOf("\nexport default async function handler("), boundary);
+  assert.ok(fs.readFileSync(new URL("../api/scheduler.mjs", import.meta.url), "utf8").startsWith(original.slice(0, boundary)));
 });
 test("pending SQL is invoker-only, revokes default exposure and never grants access", () => {
   const sql = fs.readFileSync(new URL("../supabase/reference/scheduler-original-transaction.sql", import.meta.url), "utf8");
