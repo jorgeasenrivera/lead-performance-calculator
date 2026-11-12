@@ -13,6 +13,22 @@ export function createLocalManualDraftConnection({selection,auth,fetchImpl,reque
  return Object.freeze({auth,codec:schedulerDraftCodec,transport:createSchedulerDraftTransport({auth,codec:schedulerDraftCodec,fetchImpl:manualDraftFetch(fetchImpl),requestId,timeoutMs})});
 }
 
+// A distinct selector leaves the existing loopback-only manual fixture intact.
+// These build flags expose a client; server identity and SQL grants authorize it.
+export function pilotDraftSelected({mode,calendarFlag,pilotFlag,pilotStoreId,storeId,origin}={}){
+ if(calendarFlag!=='1'||pilotFlag!=='1'||typeof storeId!=='string'
+   ||!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(storeId)||storeId!==pilotStoreId)return false;
+ try{
+  const u=new URL(origin);if(u.origin!==origin)return false;
+  if(mode==='scheduler-pilot-test')return u.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(u.hostname);
+  return mode==='production'&&u.protocol==='https:';
+ }catch{return false;}
+}
+export function createPilotDraftConnection({selection,auth,fetchImpl,requestId,timeoutMs}={}){
+ if(!pilotDraftSelected(selection))return null;
+ return Object.freeze({auth,codec:schedulerDraftCodec,transport:createSchedulerDraftTransport({auth,codec:schedulerDraftCodec,fetchImpl,requestId,timeoutMs})});
+}
+
 // Only status scalars leave the binding here. Drafts and submission tokens stay
 // in their existing private owners, including a command awaiting a retry.
 export function manualDraftView(snapshot,month,error=null){

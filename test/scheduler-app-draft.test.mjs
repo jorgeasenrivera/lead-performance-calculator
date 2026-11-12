@@ -1,8 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {localManualDraftSelected,createLocalManualDraftConnection,manualDraftView} from '../src/scheduler-manual-setup.mjs';
+import {localManualDraftSelected,createLocalManualDraftConnection,pilotDraftSelected,createPilotDraftConnection,manualDraftView} from '../src/scheduler-manual-setup.mjs';
 
 const selected={mode:'scheduler-local-test',calendarFlag:'1',draftFlag:'1',origin:'http://127.0.0.1:5178'};
+const pilot={mode:'production',calendarFlag:'1',pilotFlag:'1',pilotStoreId:'alpha',storeId:'alpha',origin:'https://sage.example'};
+test('pilot requires separate explicit flags and one exact store without widening the local selector',()=>{
+  assert.equal(pilotDraftSelected(pilot),true);
+  assert.equal(localManualDraftSelected(pilot),false);
+  assert.equal(pilotDraftSelected({...pilot,mode:'scheduler-pilot-test',origin:'http://127.0.0.1:5178'}),true);
+  for(const patch of [{pilotFlag:undefined},{pilotFlag:'0'},{calendarFlag:'0'},{pilotStoreId:undefined},{pilotStoreId:['alpha']},{storeId:'other'},
+    {mode:'development'},{mode:'scheduler-local-test'},{origin:'http://sage.example'},{origin:'https://sage.example/path'},
+    {mode:'scheduler-pilot-test',origin:'http://sage.example'}])assert.equal(pilotDraftSelected({...pilot,...patch}),false);
+  assert.equal(createPilotDraftConnection({selection:{...pilot,pilotFlag:'0'}}),null);
+});
+test('pilot uses the existing scheduler envelope, preserves the prepared command and gets a fresh bearer on retry',async()=>{
+  let token=0;const seen=[];
+  const auth={getSnapshot:()=>({principalEpoch:3,disposed:false}),getAccessToken:async()=> 'token'+(++token)};
+  const c=createPilotDraftConnection({selection:pilot,auth,requestId:()=> 'pilot_request-1',fetchImpl:async(url,init)=>{
+    seen.push({url,body:init.body,bearer:init.headers.Authorization});
+    return {status:200,json:async()=>({result:{head:{draftRev:1,publishedRev:0}},replayed:seen.length>1})};
+  }});
+  const projection={storeId:'alpha',month:'2026-11',store:{timezone:'America/New_York',people:[{id:'a',name:'A',off:null,start:null,end:null,maxHours:null,hiredAt:'2010-02-01'}],rules:[],teams:[],memberships:[]},overrides:{}};
+  const prepared=c.transport.prepareSave({storeId:'alpha',month:'2026-11'},0,projection);
+  await c.transport.send(prepared,{expectedEpoch:3});await c.transport.send(prepared,{expectedEpoch:3});
+  assert.ok(seen.every(r=>r.url==='/api/scheduler'));
+  assert.equal(seen[0].body,seen[1].body);assert.notEqual(seen[0].bearer,seen[1].bearer);
+  assert.deepEqual(JSON.parse(seen[0].body),{op:'save',storeId:'alpha',month:'2026-11',requestId:'pilot_request-1',input:{baseRev:0,draft:projection}});
+});
 test('draft app connection requires explicit local mode, both flags and an exact loopback origin',()=>{
   assert.equal(localManualDraftSelected(selected),true);
   for(const origin of ['http://localhost:1','http://[::1]:5178'])assert.equal(localManualDraftSelected({...selected,origin}),true);

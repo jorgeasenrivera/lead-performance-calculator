@@ -6,7 +6,7 @@ import {calendarCells,monthText,STORE_TIME_ZONE} from './scheduler-calendar-mode
 import {createLegacyScheduleResolver,editorStore,zonedToday} from './scheduler-editor-adapter.mjs';
 import {currentReportedAuth,registerLeaveGuard,trustedFor} from './scheduler-load-context.mjs';
 import {useReportedMonth} from './use-reported-month.mjs';
-import {createLocalManualDraftConnection,manualDraftView} from './scheduler-manual-setup.mjs';
+import {createLocalManualDraftConnection,createPilotDraftConnection,manualDraftView} from './scheduler-manual-setup.mjs';
 import {validMonth} from '../scripts/scheduler-performance/month-model.mjs';
 import {timeLabel} from '../scripts/scheduler-performance/shift-intervals.mjs';
 
@@ -84,6 +84,9 @@ function PlannerHost(){
   const props=view.props;
   const connection=useMemo(()=>view.open&&valid(props)?createLocalManualDraftConnection({
     selection:{mode:import.meta.env.MODE,calendarFlag:import.meta.env.VITE_SCHEDULER_CALENDAR,draftFlag:import.meta.env.VITE_SCHEDULER_DRAFT_LOCAL,origin:window.location.origin},
+    auth,fetchImpl:window.fetch.bind(window),requestId:()=>window.crypto.randomUUID(),
+  })||createPilotDraftConnection({
+    selection:{mode:import.meta.env.MODE,calendarFlag:import.meta.env.VITE_SCHEDULER_CALENDAR,pilotFlag:import.meta.env.VITE_SCHEDULER_DRAFT_PILOT,pilotStoreId:import.meta.env.VITE_SCHEDULER_DRAFT_PILOT_STORE_ID,storeId:props?.store?.id,origin:window.location.origin},
     auth,fetchImpl:window.fetch.bind(window),requestId:()=>window.crypto.randomUUID(),
   }):null,[view.open,props?.key,auth]);
   const current=s=>Boolean(s&&session.current===s&&!s.closed&&valid(s.props));
