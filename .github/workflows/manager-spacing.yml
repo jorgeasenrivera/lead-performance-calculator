@@ -16,6 +16,8 @@ on:
       - scripts/color-phone.mjs
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
+      - scripts/scheduler-current-runtime/**
+      - test/scheduler-current-runtime.test.mjs
 jobs:
   spacing:
     runs-on: ubuntu-latest
@@ -71,13 +73,38 @@ jobs:
           ref: e6d087c203bb88685159efbc272e04ce868e4c89
           path: .freshness-baseline
           persist-credentials: false
+      - name: Qualify exact scheduler source before installation
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main'
+        env:
+          VITE_SCHEDULER_CALENDAR: '0'
+          VITE_SCHEDULER_DRAFT_LOCAL: '0'
+          VITE_SCHEDULER_DRAFT_PILOT: '0'
+          SCHEDULER_DRAFT_PILOT_ENABLED: '0'
+        run: node scripts/scheduler-current-runtime/verify.mjs before-install
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Verify frozen preview runtime
-        run: sha256sum --check scripts/search-runtime.sha256
+        id: runtime
+        env:
+          CURRENT_RUNTIME: ${{ github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main' }}
+          VITE_SCHEDULER_CALENDAR: '0'
+          VITE_SCHEDULER_DRAFT_LOCAL: '0'
+          VITE_SCHEDULER_DRAFT_PILOT: '0'
+          SCHEDULER_DRAFT_PILOT_ENABLED: '0'
+        run: |
+          if [ "$CURRENT_RUNTIME" = "true" ]; then
+            node --test test/scheduler-current-runtime.test.mjs
+            node scripts/scheduler-current-runtime/verify.mjs after-install
+            printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\nVITE_SCHEDULER_CALENDAR=0\nVITE_SCHEDULER_DRAFT_LOCAL=0\nVITE_SCHEDULER_DRAFT_PILOT=0\nSCHEDULER_DRAFT_PILOT_ENABLED=0\n' >> "$GITHUB_ENV"
+          else
+            sha256sum --check scripts/search-runtime.sha256
+            printf 'runtime_sha=710cc8d78d0363856df2f9000162923859434b73\ncase_name=historical-search\n' >> "$GITHUB_OUTPUT"
+          fi
       - name: Build fictional app
         run: |
-          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          if [ '${{ steps.runtime.outputs.case_name }}' != 'current-95ad3f93' ]; then
+            printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          fi
           npm run build
           ln -s "$PWD/node_modules" .color-baseline/node_modules
           ln -s "$PWD/node_modules" .hero-baseline/node_modules
@@ -90,7 +117,7 @@ jobs:
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: 710cc8d78d0363856df2f9000162923859434b73
+          SEARCH_RUNTIME_SHA: ${{ steps.runtime.outputs.runtime_sha }}
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
@@ -116,6 +143,7 @@ jobs:
         with:
           name: manager-spacing-${{ matrix.engine }}
           path: |
+            manager-runtime-qualification/
             manager-spacing/
             manager-selector/
             search-keyboard/
