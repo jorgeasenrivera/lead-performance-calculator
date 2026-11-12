@@ -13141,15 +13141,62 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
      restoring a backup throws away real days to fix one field. This keeps every
      byte and corrects the label, after saving the row as it stands. */
   const relabelLive = async () => {
-    const result = { ok: false, status: "unavailable", message: "Store changes are temporarily unavailable. Nothing was changed." };
-    setRecSaid(result.message);
-    return result;
+    const want = recStore;
+    const name = config.stores.find((x) => x.id === want)?.name || want;
+    const live = await loadShared(storeKey(want), null);
+    if (!live) { setRecSaid("There is nothing saved under that store."); return; }
+    const from = config.stores.find((x) => x.id === live.__storeId)?.name || live.__storeId || "no store";
+    if (!(await askConfirm(
+      `Keep everything in the ${name} row and change its label from ${from} to ${name}?\n\n` +
+      `Do this only if the people in it (${(live.roster || []).slice(0, 5).map((a) => a && a.name).filter(Boolean).join(", ")}) ` +
+      `are ${name}'s own. The row as it is now is saved first so this can be undone.`))) return;
+    setBusy(true); setRecSaid("");
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const kept = await saveShared(backupStoreKey(want, `before-relabel-${stamp}`), live);
+      if (!kept) { setRecSaid(`Stopped: the current row could not be saved first, so nothing was changed. ${lastSaveError || ""}`); return; }
+      const put = { ...live, __storeId: want };
+      const ok = await saveShared(storeKey(want), put);
+      if (!ok) { setRecSaid(`Could not write: ${lastSaveError || "unknown"}`); return; }
+      await appendAudit({ user: session?.name, action: "Fixed store label",
+        detail: `${name}: row said ${from}, data kept as is` });
+      setRecSaid(`${name} now says it is ${name}. Reload the page to open it. The row as it was is kept as before-relabel-${stamp}.`);
+      setRecLive(describe(put, want));
+    } catch (e) {
+      setRecSaid(`Could not write: ${String(e.message || e)}`);
+    } finally { setBusy(false); }
   };
 
   const recoverFrom = async (row) => {
-    const result = { ok: false, status: "unavailable", message: "Store changes are temporarily unavailable. Nothing was changed." };
-    setRecSaid(result.message);
-    return result;
+    const want = recStore;
+    const name = config.stores.find((x) => x.id === want)?.name || want;
+    if (!(await askConfirm(
+      `Put ${name} back to the copy from ${new Date(row.t).toLocaleString()}?\n\n` +
+      `That copy has ${row.roster} on the roster${row.names.length ? ": " + row.names.join(", ") : ""}.\n\n` +
+      `Only ${name} is written. Every other store is left alone, and the row as it stands right now is ` +
+      `saved first so this can be undone.`))) return;
+    setBusy(true); setRecSaid("");
+    try {
+      /* Keep what is there now before overwriting it, whosever it turns out to be.
+         A recovery that cannot itself be undone is not a recovery. */
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const live = await loadShared(storeKey(want), null);
+      if (live) {
+        const kept = await saveShared(backupStoreKey(want, `before-recover-${stamp}`), live);
+        if (!kept) { setRecSaid(`Stopped: the current row could not be saved first, so nothing was overwritten. ${lastSaveError || ""}`); return; }
+      }
+      /* Stamped as it is written, so the row says what it is from this moment on
+         and the guard that caught this has something true to check against. */
+      const put = { ...JSON.parse(JSON.stringify(row.data)), __storeId: want };
+      const ok = await saveShared(storeKey(want), put);
+      if (!ok) { setRecSaid(`Could not write: ${lastSaveError || "unknown"}`); return; }
+      await appendAudit({ user: session?.name, action: "Recovered store from backup",
+        detail: `${name} ← ${new Date(row.t).toLocaleString()}` });
+      setRecSaid(`${name} has been put back to ${new Date(row.t).toLocaleString()}. Reload the page to open it. The row as it was is kept as before-recover-${stamp}.`);
+      setRecLive(describe(put, want));
+    } catch (e) {
+      setRecSaid(`Could not write: ${String(e.message || e)}`);
+    } finally { setBusy(false); }
   };
 
   const downloadAuto = async (b) => {
@@ -13168,9 +13215,19 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
   };
 
   const restoreAuto = async (b) => {
-    const result = { ok: false, status: "unavailable", message: "Full restore is temporarily unavailable. Nothing was changed." };
-    setMsg(result.message);
-    return result;
+    if (!(await askConfirm(
+      "Restore the automatic backup from " + new Date(b.t).toLocaleString() + "?" +
+      String.fromCharCode(10, 10) +
+      "This OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and settings. It cannot be undone." +
+      String.fromCharCode(10, 10) +
+      "Download a fresh backup first if you're unsure."
+    ))) return;
+    setBusy(true);
+    const data = await fetchAuto(b);
+    if (!data) { setBusy(false); setMsg("That backup couldn't be read."); return; }
+    await onRestoreAll(data);
+    setBusy(false);
+    setMsg("Restored. Reload the page to see it everywhere.");
   };
 
   const download = async () => {
@@ -13201,9 +13258,22 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
 
   const restore = (file) => {
     if (!file) return;
-    const result = { ok: false, status: "unavailable", message: "Full restore is temporarily unavailable. Nothing was changed." };
-    setMsg(result.message);
-    return result;
+    const r = new FileReader();
+    r.onload = async () => {
+      let data;
+      try { data = JSON.parse(r.result); }
+      catch { setMsg("That file isn't valid JSON."); return; }
+      if (data.app !== "lead-performance-calculator" || !data.config) {
+        setMsg("That doesn't look like a Sage backup file."); return;
+      }
+      const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
+      if (!(await askConfirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`))) return;
+      setBusy(true);
+      await onRestoreAll(data);
+      setBusy(false);
+      setMsg("Restored. Reload the page to see it everywhere.");
+    };
+    r.readAsText(file);
   };
 
   return (
