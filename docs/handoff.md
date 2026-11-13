@@ -619,6 +619,12 @@ author's prefix. Nothing but the id changed.
 
 ## From Codex
 
+**H-X-SIGNUP-COPY-20261113 · Shorten account signup.**
+
+Jorge asked to keep the Salesperson and Manager selectors without the introductory copy, role question or role-specific explanation. Preserve all existing salesperson fields from Your store onward, the manager fields, signup validation and authentication. Keep the selector accessible with a non-visible group name. The main-based branch is `codex/signup-copy-trim`, limited to the Login signup markup in `src/LeadPerformanceCalculator.jsx`, new `test/signup-copy.test.mjs` and the independently reviewed exact core-digest literal in `scripts/scheduler-performance/build.mjs`. Every other core byte, Manager boundary, transform, negative control, manifest and workflow remains unchanged.
+
+The local change is prepared; source publication and routine release require focused and full tests, application and isolated preview builds, independent exact-diff review and browser qualification. Scheduler PR #512 remains separate. Its retained candidate and safeguards are not rewritten by this claim; later scheduler qualification must use the actual new main without overwriting this cleanup. No scheduler saving, database change or unrelated activation is authorized. Every prior coordination record and other reservation remains unchanged.
+
 **H-X-PRINTED-STORE-TOTAL-20261109: printed store total, local parser slice.**
 
 See X-PRINTED-STORE-TOTAL-20261109. Current root designated the same TV task as bounded successor to inactive historical X14 ownership, without claiming an old acknowledgment. Claude expressly yielded its own parser/new-test reservations and exactly two existing fixture additions after the approved contacts. Once the exact claim is published and verified, use only the printed store Total Delivered column, preserve unknown/zero and associate fractions, keep the two existing assertions unchanged and retain the `stated` object when total is missing. No other X14 work, consumer, manifest/pin, source publication or release is included. Recheck actual base blobs and stop on overlap.
