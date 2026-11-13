@@ -55,6 +55,8 @@ import { buzz, MOTION, useNet, AccountSheet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENAB
    salesperson's phone, the TV board, and every manager who never opens the lot
    editor would otherwise carry on every single load. */
 const FenceEditor = React.lazy(() => import("./FenceEditor.jsx"));
+const SCHEDULER_CALENDAR = import.meta.env.VITE_SCHEDULER_CALENDAR === "1";
+const SchedulerCalendarEntry = SCHEDULER_CALENDAR ? React.lazy(() => import("./scheduler-calendar.jsx").then(m => ({default:m.SchedulerCalendarEntry}))) : null;
 
 /* ============================================================
    LEAD PERFORMANCE CALCULATOR v3
@@ -17023,7 +17025,7 @@ const bpFirstTag = (a, strengths) => {
   return [...l, ...st, ...sk].filter(Boolean)[0] || null;
 };
 
-function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach, query = "" }) {
+function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch = null, schedulerCanOpen, canSetGoal, onSaveConfig, onSetRestriction, onCoach, query = "" }) {
   const M = data.months?.[ym()];
   const thr = normThresholds(store.thresholds);
   const restrictions = data.restrictions || {};
@@ -17344,7 +17346,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   const person = pop && pop.k === "person" ? people.find((p) => p.a.id === pop.id) : null;
 
   return (
-    <div className="bp-page">
+    <div className="bp-page" data-scheduler-enabled={SCHEDULER_CALENDAR || undefined}>
       <div className="bp-hero" role="region" aria-label={`Performance for ${store.name}`}>
         <HeroUpdated className="bp-upd" at={updatedAt} />
         <div className="bp-h5">
@@ -17411,6 +17413,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       {canSetGoal && !goalMonth.set && (
         <GoalAskCard store={store} month={ym()} onSave={(d) => saveGoal(d)} />
       )}
+      {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="compact" /></React.Suspense>}
 
       <div className="bp-stand">
         <div className="bp-filt">
@@ -17472,7 +17475,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
   );
 }
 
-function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus, canSetGoal, onSaveConfig }) {
+function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = null, schedulerCanOpen, onGoTab, filter, onFilter, onFocus, canSetGoal, onSaveConfig }) {
   /* The panel hangs off the bottom of this card, and on a short window the last
      of it — the new-and-used split — simply left the screen. A share of the
      screen height cannot fix that on its own, because it says nothing about how
@@ -18154,7 +18157,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             </button>
           </div>
           <div className="s2-chip-state">
-<SignalSchedule onCount={onCount} offCount={offToday.length}>
+<SignalSchedule onCount={onCount} offCount={offToday.length} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
             <div className="s2-rota bloop-host" tabIndex={0}>
               <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
               <div className="bloopwin dn r s2-rotawin">
@@ -26830,11 +26833,12 @@ function SignalLeadMeter({value, cap, children}) {
   return useSignal() ? <span className="sg-lead-meter">{children}<span className="assoc-leads"><b>{value}</b><span className="of-cap">/ {cap ?? "-"}</span></span></span> : children;
 }
 function SignalOriginalLeadCount({cap, children}) { return useSignal() && cap != null ? null : children; }
-function SignalSchedule({onCount, offCount, children}) {
+function SignalSchedule({onCount, offCount, children, store, data, schedulerPrincipalEpoch, schedulerCanOpen}) {
   const signal = useSignal();
   const [hover, setHover] = React.useState(false);
   const [pinned, setPinned] = React.useState(false);
   const panelId = React.useId();
+  if (SCHEDULER_CALENDAR) return <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>;
   const parts = React.Children.toArray(children).filter(React.isValidElement);
   if (!signal) return children;
   const roster = React.Children.toArray(parts[0].props.children)[1];

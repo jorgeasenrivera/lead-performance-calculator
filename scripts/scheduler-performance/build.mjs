@@ -9,9 +9,9 @@ import { fixtures } from "../scheduler-proposal/model.mjs";
 import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 export const MANAGER_SHA =
-  "c18d9641aa4807a58deb969808071f73240d80b80da4b261dc857b56c454d501";
+  "42ef88b561e855eea1064d98874ac3898339d5ad3031c41f37754cb47c3f7e9a";
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "1f56e453cc05d3e4ff42a904fdc12a9c4d1c6bce6d197ffb8650fd5a160bd220") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "85a62b1206adc4d41ee9557581214c600b1efb793a2c4d6a78a22c0e36e358af") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
@@ -139,7 +139,7 @@ export async function buildPreview() {
   const editor = (await readFile("scripts/scheduler-performance/store-editor.mjs", "utf8"))
     .replace("../scheduler-proposal/model.mjs", "./model.mjs");
   await writeFile(planner + "/store-editor.mjs", editor);
-  for (const name of ["haptics.mjs", "day-edit-state.mjs", "day-motion.mjs", "mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "schedule-import.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
+  for (const name of ["haptics.mjs", "day-edit-state.mjs", "day-motion.mjs", "mobile-roster.mjs", "generation-ui.mjs", "generation-worker.mjs", "name-key.mjs", "shift-intervals.mjs", "shift-transfer.mjs", "off-day-command.mjs", "schedule-import.mjs", "import-ui.mjs", "team-model.mjs", "team-balance.mjs", "team-ui.mjs"]) await cp("scripts/scheduler-performance/" + name, planner + "/" + name);
   await writeFile(planner+"/generation.mjs",(await readFile("scripts/scheduler-performance/generation.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await writeFile(planner+"/weekly-hours.mjs",(await readFile("scripts/scheduler-performance/weekly-hours.mjs","utf8")).replace("../scheduler-proposal/model.mjs","./model.mjs"));
   await cp("scripts/scheduler-performance/month-app.mjs", planner + "/app.mjs");
@@ -156,10 +156,11 @@ export async function buildPreview() {
   );
   await writeFile(planner + "/month-model.mjs", monthlyModel);
   await cp("scripts/scheduler-performance/planner.css", planner + "/style.css");
+  await cp("scripts/scheduler-performance/calendar-tokens.css", planner + "/calendar-tokens.css");
   await cp("scripts/scheduler-performance/shared-system.css", planner + "/shared-system.css");
   await writeFile(
     planner + "/index.html",
-    '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; connect-src \'none\'; style-src \'self\' \'unsafe-inline\'; object-src \'none\'; base-uri \'none\'"><title>Plan the month · Sage</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="shared-system.css"></head><body><main id="app"></main><script type="module" src="app.mjs"></script></body></html>',
+    '<!doctype html><html lang="en" data-scheduler-standalone><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; connect-src \'none\'; style-src \'self\' \'unsafe-inline\'; object-src \'none\'; base-uri \'none\'"><title>Plan the month · Sage</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="shared-system.css"></head><body><main id="app" data-scheduler-standalone></main><script type="module" src="app.mjs"></script></body></html>',
   );
   let html = await readFile(outDir + "/index.html", "utf8");
   html = html

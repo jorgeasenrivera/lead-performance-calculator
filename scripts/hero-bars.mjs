@@ -1,21 +1,96 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
+function createFixtureSettlement(context, turn, timeout = 20000) {
+  // A browser abort does not finish an intercepted fetch/fulfill callback.
+  // Keep both kinds of work ahead of shared fixture changes and navigation.
+  const requests = new Set(), routes = new Set(), waiters = new Set();
+  const totals = {requests:0, finished:0, failedRequests:0, routes:0, settledRoutes:0, waits:0, turns:0, quietWindows:0, quietResets:0};
+  let changes = 0, failure, failed = false, waiting = false;
+  const remember = error => { if (!failed) { failed = true; failure = error; } };
+  const relevant = request => {
+    try { const u = new URL(request.url()); return u.origin === 'http://127.0.0.1:5433' && ['/rest/v1/profiles','/rest/v1/app_data'].includes(u.pathname); }
+    catch { return false; }
+  };
+  const wake = () => { for (const resolve of waiters) resolve(); waiters.clear(); };
+  const changed = () => { changes++; wake(); };
+  const start = request => { if (relevant(request)) { requests.add(request); totals.requests++; changed(); } };
+  const finish = request => { if (requests.delete(request)) { totals.finished++; changed(); } };
+  const fail = request => {
+    if (requests.delete(request)) { totals.failedRequests++; remember(new Error('Fixture request failed before settlement')); changed(); }
+  };
+  context.on('request', start); context.on('requestfinished', finish); context.on('requestfailed', fail);
+  return {
+    track(handler) {
+      return async function(route, ...args) {
+        const token = relevant(route.request()) ? {} : null;
+        if (token) { routes.add(token); totals.routes++; changed(); }
+        try { return await Reflect.apply(handler, this, [route, ...args]); }
+        catch (error) { if (token) remember(error); throw error; }
+        finally { if (token) { routes.delete(token); totals.settledRoutes++; changed(); } }
+      };
+    },
+    async wait() {
+      assert.equal(waiting, false, 'one fixture transition at a time'); waiting = true; totals.waits++;
+      let timer, quietTimer, stopped = false;
+      const expired = new Error('Fixture requests and routes did not settle before the deadline');
+      const deadline = new Promise((_, reject) => { timer = setTimeout(() => { remember(expired); reject(failure); }, timeout); });
+      const quiet = () => new Promise(resolve => {
+        const observed = changes;
+        const settle = value => { clearTimeout(quietTimer); quietTimer = undefined; waiters.delete(activity); resolve(value); };
+        const activity = () => { if (changes !== observed) totals.quietResets++; settle(false); };
+        waiters.add(activity); totals.quietWindows++;
+        // Each transition needs a fresh interval after the browser turn.
+        // Relevant activity cancels it; elapsed time never releases a lease.
+        quietTimer = setTimeout(() => settle(true), 500);
+      });
+      const drain = async () => {
+        while (!stopped) {
+          while (requests.size || routes.size) {
+            await new Promise(resolve => waiters.add(resolve));
+            if (stopped) throw expired;
+          }
+          if (failed) throw failure;
+          const observed = changes; totals.turns++;
+          try { await turn(); } catch (error) { remember(error); throw error; }
+          if (stopped) throw expired;
+          if (requests.size || routes.size || changes !== observed) continue;
+          if (failed) throw failure;
+          if (!await quiet()) continue;
+          if (stopped) throw expired;
+          if (requests.size || routes.size || changes !== observed) continue;
+          if (failed) throw failure;
+          assert.equal(requests.size, 0, 'fixture requests complete');
+          assert.equal(routes.size, 0, 'fixture route callbacks complete');
+          return;
+        }
+      };
+      try { await Promise.race([drain(), deadline]); }
+      finally { stopped = true; clearTimeout(timer); clearTimeout(quietTimer); wake(); waiting = false; }
+    },
+    evidence: () => ({...totals, quietMs:500, pendingRequests:requests.size, pendingRoutes:routes.size, failed}),
+    dispose() { context.off('request', start); context.off('requestfinished', finish); context.off('requestfailed', fail); },
+  };
+}
 const engine = process.env.FEEL_BROWSER || 'chromium';
 const url = process.env.FEEL_URL || 'http://127.0.0.1:5178/';
 const browser = await ({ chromium, webkit }[engine]).launch({ headless: true, ...(engine === "webkit" && process.env.FEEL_WEBKIT ? { executablePath: process.env.FEEL_WEBKIT } : {}) });
 const context = await browser.newContext({ viewport: { width: 390, height: 667 },
   isMobile: true, hasTouch: true, reducedMotion: 'reduce', serviceWorkers: 'block' });
+const settlement = createFixtureSettlement(context, async () => {
+  await page.evaluate(() => undefined);
+  await new Promise(resolve => setImmediate(resolve));
+});
 let fixtureRole='admin', dockFixture=null;
 const thresholds={internet:{green:20,yellow:10},phone:{green:25,yellow:12},showroom:{green:30,yellow:15}};
 let rates={internet:7,phone:18,showroom:35};
-await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', async route => {
+await context.route('http://127.0.0.1:5433/rest/v1/profiles?**', settlement.track(async route => {
   const response = await route.fetch(); const data = await response.json();
   const manager = p => ({ ...p, role: fixtureRole, wants: 'manager', onboarded: true,
     stores:['sage-demo','spacing-demo-2'] });
   await route.fulfill({ response, json: Array.isArray(data) ? data.map(manager) : manager(data) });
-});
-await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => {
+}));
+await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', settlement.track(async route => {
   const requestUrl=route.request().url(), second=requestUrl.includes('spacing-demo-2');
   const response=await route.fetch({url:second ? requestUrl.replaceAll('spacing-demo-2','sage-demo') : requestUrl});
   const data=await response.json();
@@ -37,7 +112,7 @@ await context.route('http://127.0.0.1:5433/rest/v1/app_data?**', async route => 
     return row;
   };
   await route.fulfill({response,json:Array.isArray(data)?data.map(fixture):fixture(data)});
-});
+}));
 const page = await context.newPage(), errors = [];
 page.setDefaultTimeout(20000);
 page.setDefaultNavigationTimeout(30000);
@@ -49,8 +124,10 @@ const scenarios=[['mixed',[7,18,35],['bad','warn','ok']],['zero',[0,0,0],['bad',
 const colors={bad:'rgb(240, 138, 128)',warn:'rgb(228, 201, 141)',ok:'rgb(143, 216, 175)',na:'rgb(255, 255, 255)'};
 try{
  for(const phase of ['before','after'])for(const width of [320,360,390,393,412]){
+  await settlement.wait();
   await page.setViewportSize({width,height:844});
   for(const [name,values,states] of scenarios){
+   await settlement.wait();
    rates=Object.fromEntries(Object.keys(thresholds).map((id,i)=>[id,values[i]]));
    await page.goto(phase==='before'?(process.env.HERO_BASELINE_URL||'http://127.0.0.1:5180/'):url);
    await page.locator('input[type="password"],.bp-t5').first().waitFor();
@@ -67,5 +144,6 @@ try{
    if(['mixed','zero','low','at-yellow','full','rounded-up','round-green-edge','round-yellow-edge'].includes(name))await page.locator('.bp-five').screenshot({path:`hero-bars/${phase}-${width}-${name}.png`});
   }
  }
+ await settlement.wait();
  assert.deepEqual(errors,[]);
-}finally{await writeFile('hero-bars/evidence.json',JSON.stringify({engine,results,errors},null,2));await browser.close();}
+}finally{await writeFile('hero-bars/evidence.json',JSON.stringify({engine,results,errors,settlement:settlement.evidence()},null,2));settlement.dispose();await browser.close();}
