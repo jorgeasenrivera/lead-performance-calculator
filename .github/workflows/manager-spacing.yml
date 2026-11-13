@@ -16,9 +16,14 @@ on:
       - scripts/color-phone.mjs
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
+      - scripts/scheduler-current-runtime/**
+      - test/scheduler-current-runtime.test.mjs
 jobs:
   spacing:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spacing-runtime
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble
     permissions:
@@ -31,53 +36,109 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 50
+          path: spacing-runtime
+          set-safe-directory: false
       - uses: actions/checkout@v4
         with:
           ref: 5bf65105003b3e01227c774ea82e08d5d595bb68
-          path: .spacing-baseline
+          path: spacing-runtime/.spacing-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 2024e009ad40408926907beb8bf0d820bc235031
-          path: .header-baseline
+          path: spacing-runtime/.header-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 4d050292aea1904d1b6dc35a07116dc9137e9f4f
-          path: .dock-baseline
+          path: spacing-runtime/.dock-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: c4d5c032158e573314ca9a12a23a211ec24c7a4c
-          path: .rail-baseline
+          path: spacing-runtime/.rail-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 99644a52fce58ce91ace9b9a5299661ba116a775
-          path: .composition-baseline
+          path: spacing-runtime/.composition-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 3573082e31d716c866021eec0f6e87f1f7367ce4
-          path: .color-baseline
+          path: spacing-runtime/.color-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: 57c381c4e07c8d815819bb5e2feed00d104ba4f8
-          path: .hero-baseline
+          path: spacing-runtime/.hero-baseline
+          set-safe-directory: false
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: e6d087c203bb88685159efbc272e04ce868e4c89
-          path: .freshness-baseline
+          path: spacing-runtime/.freshness-baseline
+          set-safe-directory: false
           persist-credentials: false
+      - name: Verify normally owned checkout context
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main'
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {lstatSync, mkdirSync, writeFileSync} from 'node:fs';
+          import {BASELINES} from './scripts/scheduler-current-runtime/verify.mjs';
+          const uid = process.getuid();
+          const repositories = ['.', ...Object.keys(BASELINES)].map(path => {
+            const directory = lstatSync(path), metadata = lstatSync(path + '/.git');
+            assert.ok(directory.isDirectory() && !directory.isSymbolicLink(), 'regular checkout directory: ' + path);
+            assert.ok(metadata.isDirectory() && !metadata.isSymbolicLink(), 'regular Git directory: ' + path);
+            assert.equal(directory.uid, uid, 'checkout is owned by this process: ' + path);
+            assert.equal(metadata.uid, uid, 'Git directory is owned by this process: ' + path);
+            return {path, checkoutUid: directory.uid, gitUid: metadata.uid};
+          });
+          mkdirSync('manager-runtime-qualification', {recursive: true});
+          const evidence = {uid, cwd: process.cwd(), home: process.env.HOME, repositories};
+          writeFileSync('manager-runtime-qualification/ownership.json', JSON.stringify(evidence, null, 2) + '\n');
+          console.log(JSON.stringify(evidence));
+          NODE
+      - name: Qualify exact scheduler source before installation
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main'
+        env:
+          VITE_SCHEDULER_CALENDAR: '0'
+          VITE_SCHEDULER_DRAFT_LOCAL: '0'
+          VITE_SCHEDULER_DRAFT_PILOT: '0'
+          SCHEDULER_DRAFT_PILOT_ENABLED: '0'
+        run: node scripts/scheduler-current-runtime/verify.mjs before-install
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0
       - name: Verify frozen preview runtime
-        run: sha256sum --check scripts/search-runtime.sha256
+        id: runtime
+        env:
+          CURRENT_RUNTIME: ${{ github.event_name == 'pull_request' && github.head_ref == 'codex/scheduler-candidate-current-main' }}
+          VITE_SCHEDULER_CALENDAR: '0'
+          VITE_SCHEDULER_DRAFT_LOCAL: '0'
+          VITE_SCHEDULER_DRAFT_PILOT: '0'
+          SCHEDULER_DRAFT_PILOT_ENABLED: '0'
+        run: |
+          if [ "$CURRENT_RUNTIME" = "true" ]; then
+            node --test test/scheduler-current-runtime.test.mjs
+            node scripts/scheduler-current-runtime/verify.mjs after-install
+            printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\nVITE_SCHEDULER_CALENDAR=0\nVITE_SCHEDULER_DRAFT_LOCAL=0\nVITE_SCHEDULER_DRAFT_PILOT=0\nSCHEDULER_DRAFT_PILOT_ENABLED=0\n' >> "$GITHUB_ENV"
+          else
+            sha256sum --check scripts/search-runtime.sha256
+            printf 'runtime_sha=710cc8d78d0363856df2f9000162923859434b73\ncase_name=historical-search\n' >> "$GITHUB_OUTPUT"
+          fi
       - name: Build fictional app
         run: |
-          printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          if [ '${{ steps.runtime.outputs.case_name }}' != 'current-95ad3f93' ] && [ '${{ steps.runtime.outputs.case_name }}' != 'current-main-579727d' ]; then
+            printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
+          fi
           npm run build
           ln -s "$PWD/node_modules" .color-baseline/node_modules
           ln -s "$PWD/node_modules" .hero-baseline/node_modules
@@ -86,14 +147,194 @@ jobs:
           (cd .hero-baseline && VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build)
           cd .color-baseline
           VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build
+      - name: Prepare observer-only WebKit diagnostic
+        if: matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93' || matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-main-579727d'
+        run: |
+          node --input-type=module <<'CORSPREP'
+          import assert from 'node:assert/strict';
+          import {appendFileSync, mkdirSync, writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {createRequire} from 'node:module';
+          import {pathToFileURL} from 'node:url';
+          import path from 'node:path';
+          const require = createRequire(path.join(process.cwd(), 'package.json'));
+          assert.equal(require('playwright/package.json').version, '1.63.0');
+          const esm = await import(pathToFileURL(path.join(path.dirname(require.resolve('playwright/package.json')), 'index.mjs')).href);
+          assert.equal(esm.webkit, require('playwright').webkit, 'observer and probe share the real WebKit object');
+          const observerSource = String.raw`'use strict';
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const {createRequire} = require('node:module');
+          const ORIGINS = ['http://127.0.0.1:5178','http://127.0.0.1:5181','http://127.0.0.1:5433','http://127.0.0.1:5180','http://127.0.0.1:5185'];
+          const NAMES = new Set(['accept','accept-profile','apikey','authorization','content-type','content-profile','prefer','origin','referer','x-client-info','x-supabase-api-version','access-control-request-method','access-control-request-headers','access-control-allow-origin','access-control-allow-methods','access-control-allow-headers','access-control-allow-credentials','vary']);
+          const METHODS = new Set(['GET','POST','PATCH','PUT','DELETE','OPTIONS','HEAD','*']);
+          const KINDS = new Set(['request','response','request-failed','request-finished','route-fetch-start','route-fetch-response','route-fetch-error','route-fulfill-start','route-fulfill-done','route-fulfill-error','navigation-start','navigation-commit','page-error','mock-request','mock-response','observer-start','observer-summary','observer-incomplete']);
+          function location(value) {
+            if(value==='null')return {origin:'opaque-null',phase:'unknown'};
+            try { const u = new URL(value); if (u.username || u.password || !ORIGINS.includes(u.origin)) return {origin:'other',phase:'unknown'};
+              return {origin:u.origin,phase:u.port==='5178'?'candidate':u.port==='5181'?'baseline':'other-local'};
+            } catch { return {origin:'none',phase:'unknown'}; }
+          }
+          const method = value => METHODS.has(value)?value:'other';
+          const names = value => [...new Set((Array.isArray(value)?value:String(value||'').split(',')).map(x=>String(x).trim().toLowerCase()).filter(x=>NAMES.has(x)))].sort();
+          function safe(record) {
+            const out = {};
+            for (const [key,value] of Object.entries(record)) {
+              if (key==='kind' && KINDS.has(value)) out[key]=value;
+              else if (key==='source' && ['mock','browser'].includes(value)) out[key]=value;
+              else if (['id','page','ownerNav','currentNav','timeMs','eventCount'].includes(key) && Number.isSafeInteger(value) && value>=0) out[key]=value;
+              else if (key==='status' && Number.isInteger(value) && value>=100 && value<=599) out[key]=value;
+              else if (['origin','referrer','pageOrigin','allowOrigin'].includes(key)) out[key]=['*','none','other','opaque-null'].includes(value)?value:location(value).origin;
+              else if (['phase','pagePhase'].includes(key) && ['candidate','baseline','other-local','unknown'].includes(value)) out[key]=value;
+              else if (key==='phaseBasis' && ['origin','referrer','page-at-dispatch'].includes(value)) out[key]=value;
+              else if (['method','requestedMethod'].includes(key)) out[key]=method(value);
+              else if (['headerNames','responseHeaderNames','requestedHeaders','allowedHeaders'].includes(key)) out[key]=names(value);
+              else if (key==='allowedMethods') out[key]=[...new Set(String(value||'').split(',').map(x=>x.trim()).filter(x=>METHODS.has(x)))].sort();
+              else if (['onConflict','allowCredentials','incomplete'].includes(key) && typeof value==='boolean') out[key]=value;
+              else if (key==='failure' && ['access-control','aborted','network','other'].includes(value)) out[key]=value;
+            }
+            return out;
+          }
+          function classification(value) { const text=String(value||''); return /access control|cors/i.test(text)?'access-control':/abort|cancel/i.test(text)?'aborted':/network|fetch|load failed/i.test(text)?'network':'other'; }
+          function headers(value={}) {
+            return {headerNames:Object.keys(value),origin:location(value.origin).origin,referrer:location(value.referer).origin,
+              requestedMethod:method(value['access-control-request-method']),requestedHeaders:value['access-control-request-headers']};
+          }
+          function cors(value={}) {
+            const keys=Array.isArray(value)?value.filter((_,i)=>i%2===0):Object.keys(value), h={};
+            const corsNames=new Set(['access-control-allow-origin','access-control-allow-methods','access-control-allow-headers','access-control-allow-credentials']);
+            for(let i=0;i<keys.length;i++){const key=String(keys[i]).toLowerCase();if(corsNames.has(key))h[key]=Array.isArray(value)?value[i*2+1]:value[keys[i]];}
+            return {responseHeaderNames:keys,allowOrigin:h['access-control-allow-origin']==='*'?'*':location(h['access-control-allow-origin']).origin,
+              allowedMethods:h['access-control-allow-methods'],allowedHeaders:h['access-control-allow-headers'],
+              allowCredentials:h['access-control-allow-credentials']==='true'};
+          }
+          function committedCors(cached,explicit) {
+            const result=cors(cached), override=cors(explicit), explicitNames=names(override.responseHeaderNames);
+            const fields={'access-control-allow-origin':'allowOrigin','access-control-allow-methods':'allowedMethods','access-control-allow-headers':'allowedHeaders','access-control-allow-credentials':'allowCredentials'};
+            for(const [name,field] of Object.entries(fields))if(explicitNames.includes(name))result[field]=override[field];
+            result.responseHeaderNames=names([...result.responseHeaderNames,...override.responseHeaderNames]);return result;
+          }
+          function appData(value) { try { const u=new URL(value,'http://127.0.0.1:5433');return u.origin===ORIGINS[2] && u.pathname==='/rest/v1/app_data';}catch{return false;} }
+          function createObserver(sink, fault=()=>{}) {
+            let count=0, incomplete=false, capped=false;
+            function emit(kind,data={}) {
+              if (count>=20000 && kind!=='observer-summary') {incomplete=true;if(!capped){capped=true;try{sink(safe({kind:'observer-incomplete',source:data.source,timeMs:Date.now(),incomplete:true}));}catch{try{fault();}catch{}}}return;}
+              const record=safe({kind,...data,timeMs:Date.now(),incomplete});count++;
+              try {sink(record);} catch {incomplete=true;try{fault();}catch{}}
+            }
+            function observe(callback) {try{callback();}catch{incomplete=true;emit('observer-incomplete');}}
+            function installMock(http) {
+              const original=http.createServer;
+              function wrapped(...args) {
+                const server=Reflect.apply(original,this,args);
+                server.prependListener('request',(req,res)=>observe(()=>{
+                  if(!appData(req.url))return;
+                  const id=count+1, fields={source:'mock',id,method:method(req.method),...headers(req.headers),phase:location(req.headers.origin||req.headers.referer).phase,onConflict:new URL(req.url,ORIGINS[2]).searchParams.has('on_conflict')};
+                  emit('mock-request',fields);
+                  let committed;const writeHead=res.writeHead;
+                  if(typeof writeHead==='function')res.writeHead=function(...args){
+                    const result=Reflect.apply(writeHead,this,args);
+                    observe(()=>{committed=committedCors(this.getHeaders(),args[typeof args[1]==='string'?2:1]||{});});
+                    return result;
+                  };
+                  res.once('finish',()=>observe(()=>emit('mock-response',{...fields,...(committed||cors(res.getHeaders())),status:res.statusCode})));
+                }));
+                return server;
+              }
+              http.createServer=wrapped;
+              return ()=>{if(http.createServer===wrapped)http.createServer=original;};
+            }
+            function installBrowser(engine) {
+              const launch=engine.launch;
+              engine.launch=async function(...args) {
+                const browser=await Reflect.apply(launch,this,args), newContext=browser.newContext, close=browser.close;
+                browser.close=async function(...closeArgs){try{return await Reflect.apply(close,this,closeArgs);}finally{emit('observer-summary',{source:'browser',eventCount:count,incomplete});}};
+                browser.newContext=async function(...contextArgs) {
+                  const context=await Reflect.apply(newContext,this,contextArgs), pages=new WeakMap(), requests=new WeakMap();let pageCount=0,requestCount=0;
+                  function state(page){if(!pages.has(page))pages.set(page,{page:++pageCount,currentNav:0});return pages.get(page);}
+                  function requestMeta(req){
+                    if(!requests.has(req)){
+                      const page=req.frame().page(), s=state(page), h=req.headers();
+                      requests.set(req,{source:'browser',id:++requestCount,page:s.page,ownerNav:s.currentNav,method:method(req.method()),...headers(h),phase:location(h.origin||h.referer||page.url()).phase,phaseBasis:h.origin?'origin':h.referer?'referrer':'page-at-dispatch',onConflict:new URL(req.url()).searchParams.has('on_conflict')});
+                    }
+                    return {...requests.get(req),currentNav:state(req.frame().page()).currentNav,pageOrigin:location(req.frame().page().url()).origin,pagePhase:location(req.frame().page().url()).phase};
+                  }
+                  context.on('request',req=>observe(()=>{
+                    if(req.isNavigationRequest() && !req.frame().parentFrame())emit('navigation-start',{source:'browser',...state(req.frame().page()),...location(req.url())});
+                    if(appData(req.url()))emit('request',requestMeta(req));
+                  }));
+                  context.on('response',res=>observe(()=>{if(appData(res.url()))emit('response',{...requestMeta(res.request()),...cors(res.headers()),status:res.status()});}));
+                  context.on('requestfailed',req=>observe(()=>{if(appData(req.url()))emit('request-failed',{...requestMeta(req),failure:classification(req.failure()?.errorText)});}));
+                  context.on('requestfinished',req=>observe(()=>{if(appData(req.url()))emit('request-finished',requestMeta(req));}));
+                  const route=context.route,newPage=context.newPage;
+                  context.route=function(pattern,handler,...rest){
+                    return Reflect.apply(route,this,[pattern,async(r,...handlerArgs)=>{
+                      if(!appData(r.request().url()))return handler(r,...handlerArgs);
+                      const proxy=new Proxy(r,{get(target,key){
+                        const original=Reflect.get(target,key,target);
+                        if(!['fetch','fulfill'].includes(key))return typeof original==='function'?original.bind(target):original;
+                        return async(...callArgs)=>{
+                          observe(()=>emit(key==='fetch'?'route-fetch-start':'route-fulfill-start',requestMeta(target.request())));
+                          try{
+                            const value=await Reflect.apply(original,target,callArgs);
+                            observe(()=>emit(key==='fetch'?'route-fetch-response':'route-fulfill-done',{...requestMeta(target.request()),...(key==='fetch'?{...cors(value.headers()),status:value.status()}:{})}));return value;
+                          }catch(error){observe(()=>emit(key==='fetch'?'route-fetch-error':'route-fulfill-error',{...requestMeta(target.request()),failure:classification(error?.message)}));throw error;}
+                        };
+                      }});return handler(proxy,...handlerArgs);
+                    },...rest]);
+                  };
+                  context.newPage=async function(...pageArgs){
+                    const page=await Reflect.apply(newPage,this,pageArgs);state(page);
+                    page.on('framenavigated',frame=>observe(()=>{if(frame===page.mainFrame()){const s=state(page);s.currentNav++;emit('navigation-commit',{source:'browser',...s,...location(frame.url())});}}));
+                    page.on('pageerror',error=>observe(()=>emit('page-error',{source:'browser',...state(page),pageOrigin:location(page.url()).origin,pagePhase:location(page.url()).phase,failure:classification(error?.message)})));
+                    return page;
+                  };
+                  return context;
+                };
+                return browser;
+              };
+              return ()=>{engine.launch=launch;};
+            }
+            return {start:source=>emit('observer-start',{source}),installMock,installBrowser};
+          }
+          module.exports={safe,headers,cors,location,appData,createObserver};
+          if(process.env.SAGE_CORS_TRACE==='1'){
+            const entry=path.resolve(process.argv[1]||''), cwd=process.cwd();
+            const expected=new Map([[path.join(cwd,'scripts/hero-bars.mjs'),'bad198f7ddc2c612e445664644a7c0e272cd64b422a95e6729a62777d08e7908'],[path.join(cwd,'scripts/mock-supabase.mjs'),'5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3']]);
+            if(expected.has(entry)){
+              assert.equal(crypto.createHash('sha256').update(fs.readFileSync(entry)).digest('hex'),expected.get(entry),'frozen diagnostic entry');
+              const destination=path.join(cwd,'manager-runtime-qualification/cors-trace.ndjson');assert.equal(process.env.SAGE_CORS_TRACE_PATH,destination,'fixed diagnostic metadata destination');
+              const observer=createObserver(record=>{console.log('CORS_TRACE '+JSON.stringify(record));fs.appendFileSync(destination,JSON.stringify(record)+'\n');},()=>console.error('CORS_TRACE {"kind":"observer-incomplete"}'));
+              if(entry.endsWith('/mock-supabase.mjs')){observer.installMock(require('node:http'));observer.start('mock');}
+              else {const localRequire=createRequire(path.join(cwd,'package.json'));assert.equal(localRequire('playwright/package.json').version,'1.63.0');observer.installBrowser(localRequire('playwright').webkit);observer.start('browser');}
+            }
+          }
+          `;
+          const file = path.join(process.env.RUNNER_TEMP, 'manager-cors-observer.cjs');
+          assert.match(file, /^\/[A-Za-z0-9_./-]+$/, 'plain owned trace path');
+          const destination = path.join(process.cwd(), 'manager-runtime-qualification/cors-trace.ndjson');
+          assert.ok(!/[\r\n]/.test(destination), 'one-line trace destination');
+          mkdirSync('manager-runtime-qualification', {recursive: true});
+          writeFileSync(file, observerSource);
+          writeFileSync(destination, '');
+          writeFileSync('manager-runtime-qualification/cors-observer.json', JSON.stringify({version:'manager-cors-metadata/1',diagnosticOnly:true,sha256:createHash('sha256').update(observerSource).digest('hex')},null,2)+'\n');
+          appendFileSync(process.env.GITHUB_ENV, 'SAGE_CORS_TRACE=1\nSAGE_CORS_TRACE_PATH='+destination+'\n');
+          CORSPREP
       - name: Measure before and after
+        id: measurement
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SEARCH_RUNTIME_SHA: 710cc8d78d0363856df2f9000162923859434b73
+          SEARCH_RUNTIME_SHA: ${{ steps.runtime.outputs.runtime_sha }}
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
-          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          if [ "$FEEL_BROWSER" = "webkit" ] && [ "${SAGE_CORS_TRACE:-0}" = "1" ]; then
+            SALESPERSON=1 node --require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/mock-supabase.mjs > mock.log 2>&1 &
+          else
+            SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          fi
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
           npx vite preview --outDir .color-baseline/dist --port 5180 --host 127.0.0.1 > color-baseline.log 2>&1 &
@@ -104,7 +345,11 @@ jobs:
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5185/ > /dev/null && break; sleep 0.2; done
           SEARCH_RUNTIME_SHA=e6d087c203bb88685159efbc272e04ce868e4c89 FEEL_URL=http://127.0.0.1:5185/ FRESH_OUT=hero-freshness-before node scripts/hero-freshness.mjs
           FRESH_ASSERT=1 FRESH_BASELINE_FILE=hero-freshness-before/evidence.json node scripts/hero-freshness.mjs
-          node scripts/hero-bars.mjs
+          if [ "$FEEL_BROWSER" = "webkit" ] && [ "${SAGE_CORS_TRACE:-0}" = "1" ]; then
+            node --require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs
+          else
+            node scripts/hero-bars.mjs
+          fi
           node scripts/manager-viewports.mjs
           node scripts/room-hero-colors.mjs
           node scripts/color-phone.mjs
@@ -116,13 +361,35 @@ jobs:
         with:
           name: manager-spacing-${{ matrix.engine }}
           path: |
-            manager-spacing/
-            manager-selector/
-            search-keyboard/
-            color-phone/
-            hero-bars/
-            manager-viewports/
-            room-hero-colors/
-            hero-freshness/
-            hero-freshness-before/
+            spacing-runtime/manager-runtime-qualification/
+            spacing-runtime/manager-spacing/
+            spacing-runtime/manager-selector/
+            spacing-runtime/search-keyboard/
+            spacing-runtime/color-phone/
+            spacing-runtime/hero-bars/
+            spacing-runtime/manager-viewports/
+            spacing-runtime/room-hero-colors/
+            spacing-runtime/hero-freshness/
+            spacing-runtime/hero-freshness-before/
           retention-days: 14
+      - name: Preserve diagnostic metadata without changing measurement outcome
+        if: always() && matrix.engine == 'webkit' && (steps.runtime.outputs.case_name == 'current-95ad3f93' || steps.runtime.outputs.case_name == 'current-main-579727d')
+        env:
+          MEASUREMENT_OUTCOME: ${{ steps.measurement.outcome }}
+        run: |
+          node --input-type=module <<'CORSSUMMARY'
+          import {readFileSync, appendFileSync} from 'node:fs';
+          import {createRequire} from 'node:module';
+          import path from 'node:path';
+          let records=[], collection='missing-or-invalid';
+          try {
+            const sanitize=createRequire(import.meta.url)(path.join(process.env.RUNNER_TEMP,'manager-cors-observer.cjs')).safe;
+            records=readFileSync('manager-runtime-qualification/cors-trace.ndjson','utf8').trim().split('\n').filter(Boolean).map(line=>sanitize(JSON.parse(line)));
+            const active=['mock','browser'].every(source=>records.some(row=>row.kind==='observer-start'&&row.source===source));
+            collection=!active?'not-activated':records.some(row=>row.incomplete||row.kind==='observer-incomplete')?'partial':records.some(row=>!['observer-start','observer-summary'].includes(row.kind))?'observed-snapshot':'no-observations';
+            for(const record of records)console.log('CORS_TRACE '+JSON.stringify(record));
+          } catch { collection='missing-or-invalid'; }
+          const report={diagnosticOnly:true,collection,records:records.length,activation:{mock:records.some(row=>row.kind==='observer-start'&&row.source==='mock'),browser:records.some(row=>row.kind==='observer-start'&&row.source==='browser')},browserCloseSummary:records.some(row=>row.kind==='observer-summary'&&row.source==='browser'),mockCompleteness:'unknown-background-source',measurementOutcome:['success','failure','cancelled','skipped'].includes(process.env.MEASUREMENT_OUTCOME)?process.env.MEASUREMENT_OUTCOME:'unknown'};
+          console.log('CORS_TRACE_REPORT '+JSON.stringify(report));
+          try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Trace-only WebKit diagnostic. Collection is not a fix or replacement acceptance run. Original measurement outcome is preserved. Mock metadata is an open-ended snapshot.\n'); } catch { console.log('CORS_TRACE_REPORT {"summaryWrite":"unavailable","diagnosticOnly":true}'); }
+          CORSSUMMARY

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
@@ -13,6 +13,8 @@ import { openArrivalSurface, startArrivalScan, finishArrivalLanding, prepareArri
 let _papa = null;
 const loadPapa = async () => (_papa || (_papa = import("papaparse").then((m) => m.default || m)));
 import { createClient } from "@supabase/supabase-js";
+import { createReportedAuthAdapter } from "./reported-auth.mjs";
+import { acceptLoad, adoptCached, beginLoad, inheritLoadedUnder, invalidateReportedSession, mayLeave, reportedAuthFor, retireSchedulerViews } from "./scheduler-load-context.mjs";
 /* The mark. One drawing on the same 9x9 grid PixIcon uses, so the identity and
    the app's iconography come off one ruler. Its own file because it is shipped
    artwork rather than a screen: every size, plate and print form is generated
@@ -900,6 +902,20 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
     })
   : null;
 
+
+// Scheduler observations are dormant unless the build explicitly enables the entry.
+const reportedAuth = import.meta.env.VITE_SCHEDULER_CALENDAR === "1" && supabase
+  ? reportedAuthFor(supabase, createReportedAuthAdapter) : null;
+const startSchedulerLoad = (storeId, lane) => reportedAuth ? beginLoad(reportedAuth, storeId, lane) : null;
+const keepSchedulerStamp = (prev, next) => reportedAuth ? inheritLoadedUnder(prev, next) : next;
+const askSchedulerLeave = () => reportedAuth ? mayLeave() : true;
+const noSchedulerSubscription = () => () => {};
+const noSchedulerEpoch = () => null;
+const schedulerEpochNow = () => reportedAuth?.getSnapshot().principalEpoch ?? null;
+const useSchedulerEpoch = () => useSyncExternalStore(reportedAuth?.subscribe || noSchedulerSubscription, schedulerEpochNow, noSchedulerEpoch);
+let schedulerForcedSessionEnd = false;
+const finishDeletedSession = fn => { schedulerForcedSessionEnd = true; try { return fn(); } finally { schedulerForcedSessionEnd = false; } };
+
 const AUTH_ENABLED = true;
 
 /* The same bargain loadRowIfChanged strikes, for the shared rows: ask for the
@@ -1353,6 +1369,7 @@ async function authClaimName(claim) {
   return { error: error ? error.message : null };
 }
 async function authSignIn(email, password) {
+  invalidateReportedSession();
   bumpAuthEpoch();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   return { error: error ? error.message : null };
@@ -1377,6 +1394,7 @@ async function authSignUp(email, password, name, kind, claim = null) {
   return { error: error ? error.message : null };
 }
 async function authSignOut() {
+  invalidateReportedSession();
   bumpAuthEpoch();
   if (supabase) await supabase.auth.signOut();
 }
@@ -1473,7 +1491,11 @@ async function markOnboarded() {
 }
 function onAuthChange(cb) {
   if (!supabase) return () => {};
-  const { data } = supabase.auth.onAuthStateChange((event) => { if (event === "SIGNED_OUT") bumpAuthEpoch(); cb(); });
+  const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT") bumpAuthEpoch();
+    // Profile refresh calls the SDK after this callback releases its auth lock.
+    setTimeout(() => cb(event, session), 0);
+  });
   return () => { try { data.subscription.unsubscribe(); } catch (e) {} };
 }
 async function getTokens() {
@@ -2013,6 +2035,7 @@ export default function LeadPerformanceCalculator() {
   const [view, setViewRaw] = useState(() => lastView() || "admin");
   useEffect(() => { setReportContext({ store: typeof view === "string" ? view : null, screen: appModule }); }, [view, appModule]);
   const setView = useCallback((v) => {
+    if (!askSchedulerLeave()) return;
     setViewRaw(v);
     rememberView(typeof v === "string" ? v : null);
   }, []);
@@ -2030,6 +2053,26 @@ export default function LeadPerformanceCalculator() {
   const [storeLoadError, setStoreLoadError] = useState("");
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
+  const schedulerEpoch = useSchedulerEpoch();
+  const [schedulerPrincipalEpoch, setSchedulerPrincipalEpoch] = useState(null);
+  const schedulerProfileRef = useRef(null);
+  const installSchedulerProfile = useCallback((profile, epoch) => {
+    const current = reportedAuth?.getSnapshot();
+    const next = current?.sessionReady === true && current.principalEpoch === epoch
+      && profile?.active === true && profile.pending !== true
+      && typeof profile.id === "string" && Array.isArray(profile.stores ?? [])
+      && ["admin", "manager", "overseer"].includes(profile.role)
+      ? {epoch, id:profile.id, role:profile.role, stores:[...new Set(profile.stores || [])].sort()} : null;
+    if (JSON.stringify(next) !== JSON.stringify(schedulerProfileRef.current)) retireSchedulerViews("profile-scope-change");
+    schedulerProfileRef.current = next;
+    setSchedulerPrincipalEpoch(next?.epoch ?? null);
+  }, []);
+  const schedulerCanOpen = useCallback(storeId => {
+    const proof = schedulerProfileRef.current, current = reportedAuth?.getSnapshot();
+    return Boolean(proof && current?.sessionReady === true && current.principalEpoch === proof.epoch
+      && (proof.role === "admin" || proof.stores.includes(storeId)));
+  }, []);
+  useEffect(() => () => { if (reportedAuth) retireSchedulerViews("owner-unmount"); }, []);
   /* Restore points, by store, read from their own rows. They are loaded when
      something is about to show or use one rather than with the store, because
      the whole point of moving them out is that the common path never carries
@@ -2042,9 +2085,15 @@ export default function LeadPerformanceCalculator() {
     return point || null;
   }, []);
   const [tab, setTab] = useState("board");
+  useLayoutEffect(() => {
+    if (reportedAuth && (appModule !== "perf" || tab !== "board"
+      || !config?.stores?.some(store => store.id === view) || !schedulerCanOpen(view))) retireSchedulerViews("app-scope-departure");
+  }, [appModule, tab, config?.stores, view, session, schedulerEpoch, schedulerCanOpen]);
   useEffect(() => { try { window.__bgWake && window.__bgWake(4000); } catch (e) {} }, [tab, appModule]);
   // drawerOpen now lives in AppShell, which is the only thing that opens it.
   const [adminTab, setAdminTab] = useState("overview");
+  const chooseSchedulerTab = value => { if (value !== tab && !askSchedulerLeave()) return; setTab(value); };
+  const chooseSchedulerAdminTab = value => { if (value !== adminTab && !askSchedulerLeave()) return; setAdminTab(value); };
   const [dropActive, setDropActive] = useState(false);
   const [importLog, setImportLog] = useState([]);
   const [pendingChannels, setPendingChannels] = useState(null); // { ambiguous:[{rows,fileName}], ready:[] }
@@ -2080,8 +2129,10 @@ export default function LeadPerformanceCalculator() {
   // Who is signed in? Preview returns a stand-in admin; the hosted site
   // reads the real Supabase session and its matching profile row.
   const refreshProfile = useCallback(async () => {
+    const schedulerReadEpoch = reportedAuth?.getSnapshot().principalEpoch ?? null;
     const r = await withTimeout(authGetProfile());
     if (!r.timedOut && !r.error) {
+      installSchedulerProfile(r.value, schedulerReadEpoch);
       setSession(r.value);
       if (r.value) cachePut("profile", r.value); else cacheDel("profile");
       setAuthReady(true);
@@ -2089,6 +2140,7 @@ export default function LeadPerformanceCalculator() {
     }
     /* Slow or dead: the account the phone remembers, as of when it last
        answered. Without one, nothing to show but the truth and a retry. */
+    installSchedulerProfile(null, schedulerReadEpoch);
     const c = cacheGet("profile");
     if (c && c.value) { setSession(c.value); netSet(true, c.at); setAuthReady(true); return; }
     setBootStall(true);
@@ -2284,10 +2336,12 @@ export default function LeadPerformanceCalculator() {
         // First load: pull every accessible store, cache it, pick a starting view.
         const all = {};
         for (const s of accessible) {
+          const schedulerTicket = startSchedulerLoad(s.id, "preload");
           const readGen = loadMark(s.id);
           const got = await withTimeout(loadStrict(storeKey(s.id)));
           const r = got.value || { ok: false };
           let d = r.ok ? r.value : undefined;
+          let schedulerNetworkRead = r.ok === true;
           if (!r.ok) {
             /* Never let a failed read look like an empty store. The copy the
                phone remembers stands in where there is one; a salesperson's
@@ -2303,6 +2357,7 @@ export default function LeadPerformanceCalculator() {
             const legacy = legacyRead.value || { ok: false };
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
+            schedulerNetworkRead = schedulerNetworkRead && legacy.ok === true;
           }
           // Same check as the single-store load: a document that says it belongs
           // to another store never enters the cache, because the cache is read
@@ -2312,6 +2367,7 @@ export default function LeadPerformanceCalculator() {
             continue;
           }
           if (!d.__storeId) d.__storeId = s.id;   // only ever stamps a document that arrived without one
+          if (reportedAuth && schedulerNetworkRead && !acceptLoad(schedulerTicket, reportedAuth, d).ok) continue;
           markLoad(d, s.id, session && session.id, r.ok === true && r.missing === true, readGen);
           all[s.id] = d;
         }
@@ -2354,16 +2410,19 @@ export default function LeadPerformanceCalculator() {
       if (!missing.length) return;
       const add = {};
       for (const s of missing) {
+        const schedulerTicket = startSchedulerLoad(s.id, "missing");
         const readGen = loadMark(s.id);
         const r = await loadStrict(storeKey(s.id));
         if (!r.ok) continue;
         let d = r.value;
-        if (!d) { const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`)); const legacy = legacyRead.value || { ok: false }; d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        let schedulerNetworkRead = true;
+        if (!d) { const legacyRead = await withTimeout(loadStrict(`lpc:store:${s.id}:v1`)); const legacy = legacyRead.value || { ok: false }; schedulerNetworkRead = legacy.ok === true; d = (legacy.ok && legacy.value) || emptyStoreData(); }
         if (d.__storeId && d.__storeId !== s.id) {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
         }
         if (!d.__storeId) d.__storeId = s.id;
+        if (reportedAuth && schedulerNetworkRead && !acceptLoad(schedulerTicket, reportedAuth, d).ok) continue;
         markLoad(d, s.id, session && session.id, r.missing === true, readGen);
         add[s.id] = d;
       }
@@ -2372,7 +2431,7 @@ export default function LeadPerformanceCalculator() {
       if (firstPick) setLoadErr(true);
       else console.error("store refresh failed", error);
     }).finally(() => { if (firstPick) viewPickInFlight.current = false; });
-  }, [config, session]);
+  }, [config, session, schedulerEpoch]);
 
   useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
 
@@ -2482,7 +2541,7 @@ export default function LeadPerformanceCalculator() {
     const want = view;
     (async () => {
       const cached = adminData[view];
-      if (cached) {
+      if (cached && (!reportedAuth || adoptCached(cached, view, reportedAuth).ok)) {
         if (cached.__storeId && cached.__storeId !== view) {
           setStoreMismatch({ want: view, claims: cached.__storeId, found: describeDoc(cached) });
           setStoreData(null); setStoreLoadFailed(true);
@@ -2507,6 +2566,7 @@ export default function LeadPerformanceCalculator() {
            seconds is past any honest load and inside the stuck-screen watchdog,
            so a hung connection ends as a stated failure rather than a spinner. */
         const fallback = emptyStoreData();
+        const schedulerTicket = startSchedulerLoad(want, "screen");
         const readGen = loadMark(want);
         const d = await Promise.race([
           loadStore(view, fallback, true), // throw on a real load error
@@ -2541,6 +2601,7 @@ export default function LeadPerformanceCalculator() {
         // fallback comes back only when the read itself answered "no row", and no
         // proof is issued if anything else observed the row since the read began.
         markLoad(d, want, session && session.id, d === fallback, readGen);
+        if (reportedAuth && !acceptLoad(schedulerTicket, reportedAuth, d).ok) return;
         installBaseline(d, want, "screen");
         setStoreData(d); setStoreLoadFailed(false); setStoreLoadError("");
       } catch (e) {
@@ -2553,7 +2614,7 @@ export default function LeadPerformanceCalculator() {
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view, ready, initialViewReady]); // eslint-disable-line
+  }, [view, ready, initialViewReady, schedulerEpoch]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -2605,8 +2666,11 @@ export default function LeadPerformanceCalculator() {
       try {
         const stamp = await loadStoreStamp(storeKey(view));
         if (!stamp || dead || stamp === storeStampRef.current) return;
+        const schedulerTicket = startSchedulerLoad(view, "refresh");
         const fresh = await loadStore(view, null, true);
         if (!fresh || dead || savingRef.current) return;
+        if (fresh.__storeId && fresh.__storeId !== view) return;
+        if (reportedAuth && !acceptLoad(schedulerTicket, reportedAuth, fresh).ok) return;
         fresh.__storeId = view;
         storeStampRef.current = stamp;
         setStoreData(fresh);
@@ -2659,7 +2723,9 @@ export default function LeadPerformanceCalculator() {
     const absence = proof !== undefined ? (proofHolds(proof, storeId, actor) ? proof : null)
       : (sourceBaseline !== undefined ? null : absenceProof(loaded, storeId, actor, slot));
     const baseline = loaded ? globalThis.structuredClone(loaded) : null;
+    keepSchedulerStamp(loaded, baseline);
     const intended = globalThis.structuredClone(next);
+    keepSchedulerStamp(loaded, intended);
     const fields = globalThis.structuredClone(reportedFields);
     // Who started this save, and in which sign-in. A failure that arrives later is judged against these, not against what the screen is now.
     const epoch0 = authEpoch;
@@ -2770,6 +2836,7 @@ export default function LeadPerformanceCalculator() {
     patchFailed(rec.id, { busy: true, discardNote: null });
     // The store load's own path, with its failures raised: the fallback object is how "no row" is told from a read that failed.
     const fallback = emptyStoreData();
+    const schedulerTicket = startSchedulerLoad(id, "saved-recovery");
     let r;
     try {
       if (!supabase) throw new Error("No database client");
@@ -2793,6 +2860,9 @@ export default function LeadPerformanceCalculator() {
     } else if (d.__storeId && d.__storeId !== id) {
       patchFailed(rec.id, { busy: false, refresh: { state: "failed", at, error: "the saved copy belongs to a different store" } }); return "failed";
     } else d.__storeId = id;
+    if (reportedAuth && !acceptLoad(schedulerTicket, reportedAuth, d).ok) {
+      patchFailed(rec.id, { busy: false, refresh: { state: "skipped", at } }); return "skipped";
+    }
     installBaseline(d, id, "screen"); installBaseline(d, id, "cache");
     setStoreData(d); setAdminData((p) => ({ ...p, [id]: d }));
     patchFailed(rec.id, { busy: false, refresh: { state: r.missing ? "absent" : "loaded", at } });
@@ -2860,6 +2930,7 @@ export default function LeadPerformanceCalculator() {
     if (ok) {
       if (absence) absence.proof.live = false;   // spent: the row exists now, by this save
       const merged = res.value || next;
+      keepSchedulerStamp(next, merged);
       if (seq === saveSeq.current) {
         setStoreData(merged);
         setAdminData((p) => ({ ...p, [storeId]: merged }));
@@ -2896,13 +2967,13 @@ export default function LeadPerformanceCalculator() {
          is; anything else is not ours to write to. */
       if (prev.__storeId && prev.__storeId !== storeId) return prev;
       if (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry)) return prev;
-      return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
+      return keepSchedulerStamp(prev, { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] });
     });
     setAdminData((p) => {
       const cur = p[storeId];
       if (!cur || (cur.__storeId && cur.__storeId !== storeId)) return p;
       if (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry)) return p;
-      return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
+      return { ...p, [storeId]: keepSchedulerStamp(cur, { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] }) };
     });
   }, []);
 
@@ -3476,6 +3547,8 @@ export default function LeadPerformanceCalculator() {
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
+    if (!schedulerForcedSessionEnd && !askSchedulerLeave()) return;
+    if (reportedAuth) retireSchedulerViews("sign-out");
     cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
@@ -3548,6 +3621,7 @@ export default function LeadPerformanceCalculator() {
   // Performance dashboard; the cinematic intro (below) covers the transition on the
   // explicit sign-in. chooseModule stays for the in-app "Tools" button.
   const chooseModule = (mod) => {
+    if (!askSchedulerLeave()) return;
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
       const first = (isAdmin ? config.stores : accessibleStores)[0];
@@ -3588,6 +3662,7 @@ export default function LeadPerformanceCalculator() {
      rather than leaving the page half-exited. */
   const switchTool = (mod) => {
     if (mod === appModule) return;
+    if (!askSchedulerLeave()) return;
     const root = document.documentElement;
     const dir = WARP_ORDER.indexOf(mod) >= WARP_ORDER.indexOf(appModule) ? "r" : "l";
     clearToolMove();
@@ -3624,6 +3699,7 @@ export default function LeadPerformanceCalculator() {
   };
 
   const applyTool = (mod) => {
+    if (!askSchedulerLeave()) return;
     // These four render their own shell and take no tab.
     if (mod === "board" || mod === "floor" || mod === "line" || mod === "online") {
       setAppModule(mod);
@@ -3644,6 +3720,7 @@ export default function LeadPerformanceCalculator() {
      modules actually own an import screen. From the other four it lands on
      Performance's, which is where the files it wants would go anyway. */
   const goImport = () => {
+    if (!askSchedulerLeave()) return;
     if (appModule === "perf" || appModule === "activity") { setTab("import"); return; }
     setAppModule("perf");
     setTab("import");
@@ -3737,13 +3814,13 @@ export default function LeadPerformanceCalculator() {
   let navItems = null, navValue = null, navOnChange = null;
   if (view === "admin" && isAdmin) {
     navItems = [["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["tickets", "Tickets"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]];
-    navValue = adminTab; navOnChange = setAdminTab;
+    navValue = adminTab; navOnChange = chooseSchedulerAdminTab;
   } else if (view === "combined" && isOverseer) {
     navItems = [["board", "Combined Board"], ["gm", "Summary"]];
-    navValue = tab === "board" || tab === "gm" ? tab : "board"; navOnChange = setTab;
+    navValue = tab === "board" || tab === "gm" ? tab : "board"; navOnChange = chooseSchedulerTab;
   } else if (currentStore && storeData && isOverseer) {
     navItems = [["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]];
-    navValue = ["board", "gm", "history"].includes(tab) ? tab : "board"; navOnChange = setTab;
+    navValue = ["board", "gm", "history"].includes(tab) ? tab : "board"; navOnChange = chooseSchedulerTab;
   } else if (currentStore && storeData) {
     if (appModule === "activity") {
       navItems = isAdmin
@@ -3756,7 +3833,7 @@ export default function LeadPerformanceCalculator() {
         : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]];
       navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
     }
-    navOnChange = setTab;
+    navOnChange = chooseSchedulerTab;
   }
 
   return wrap(
@@ -3796,7 +3873,7 @@ export default function LeadPerformanceCalculator() {
           <nav className="seg-wrap no-print">
             <SegControl
               items={[["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["tickets", "Tickets"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]]}
-              value={adminTab} onChange={setAdminTab} />
+              value={adminTab} onChange={chooseSchedulerAdminTab} />
           </nav>
           <div key={adminTab} className="page">
             {adminTab === "overview" && <AdminOverview config={config} adminData={adminData} onOpenStore={setView} />}
@@ -3853,7 +3930,7 @@ export default function LeadPerformanceCalculator() {
           <nav className="seg-wrap no-print">
             <SegControl
               items={[["board", "Combined Board"], ["gm", "Summary"]]}
-              value={tab === "board" || tab === "gm" ? tab : "board"} onChange={setTab} />
+              value={tab === "board" || tab === "gm" ? tab : "board"} onChange={chooseSchedulerTab} />
           </nav>
           <div key={"combined" + tab} className="page">
             {tab === "gm"
@@ -3882,7 +3959,7 @@ export default function LeadPerformanceCalculator() {
           <nav className="seg-wrap no-print">
             <SegControl
               items={[["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]]}
-              value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={setTab} />
+              value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={chooseSchedulerTab} />
             {(tab === "board" || !["gm", "history"].includes(tab)) &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
@@ -3902,7 +3979,7 @@ export default function LeadPerformanceCalculator() {
                   ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
                   : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
                 value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
-                onChange={setTab}
+                onChange={chooseSchedulerTab}
                 attentionId={activityDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
             ) : (
@@ -3913,7 +3990,7 @@ export default function LeadPerformanceCalculator() {
                 value={(isAdmin
                   ? ["board", "import", "gm", "history", "standards", "roster"]
                   : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
-                onChange={setTab}
+                onChange={chooseSchedulerTab}
                 attentionId={reportsDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
             )}
@@ -3957,12 +4034,12 @@ export default function LeadPerformanceCalculator() {
                         row a person, everything a tap into a pop. The desk keeps the
                         hero, the focus grid and the role cards. */}
                     {phone ? (
-                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session} query={assocQuery}
+                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen} query={assocQuery}
                         canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig}
                         onSetRestriction={setRestriction}
                         onCoach={() => { coachAfter.current = true; switchTool("activity"); }} />
                     ) : (<>
-                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
+                    <StoreHero config={config} store={currentStore} data={storeData} session={session} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen} onGoTab={chooseSchedulerTab}
                       filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc}
                       canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig} />
                     {/* The delivery chart now lives inside the hero's rotating display. */}
@@ -4557,7 +4634,7 @@ function AccountSheet({ name, onClose, onDeleted, desk = false }) {
     const out = await apiCall("/api/delete-account", { method: "POST", body: { confirm: "DELETE" } });
     if (!out || out.error) { setBusy(false); setErr((out && out.error) || "That did not go through. Try again."); return; }
     try { sessionStorage.setItem(DELETED_KEY, "1"); } catch (e) {}
-    onDeleted();
+    finishDeletedSession(onDeleted);
   };
   const close = () => { if (!busy) onClose(); };
   return (

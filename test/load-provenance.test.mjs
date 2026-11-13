@@ -26,6 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import {inheritLoadedUnder,invalidateReportedSession} from "../src/scheduler-load-context.mjs";
 import { storeKey } from "../api/_store-keys.mjs";
 import { BOARD_KEYS } from "../api/_store-merge.mjs";
 
@@ -63,13 +64,13 @@ const authApi = (P, src = {}) => {
   const handlers = []; const calls = [];
   const supabase = { auth: { onAuthStateChange: (cb) => { handlers.push(cb); return { data: { subscription: { unsubscribe() {} } } }; }, signInWithPassword: async () => ({ error: null }), signOut: async () => { calls.push("signOut"); } } };
   const text = [src.signIn || PIECES.signIn, src.signOut || PIECES.signOut, src.onAuth || PIECES.onAuth].join("\n");
-  const api = new Function("supabase", "bumpAuthEpoch", `${text}\nreturn { authSignIn, authSignOut, onAuthChange };`)(supabase, P.bumpAuthEpoch);
+  const api = new Function("supabase", "bumpAuthEpoch", "invalidateReportedSession", `${text}\nreturn { authSignIn, authSignOut, onAuthChange };`)(supabase, P.bumpAuthEpoch, invalidateReportedSession);
   return { ...api, fire: (event) => handlers.forEach((h) => h(event)), handlers };
 };
 
 const persistApi = (P, ctx, src = PIECES.persist) => {
   const seen = [];
-  const full = { authEpoch: 0, pendingSaves: { current: 0 }, saveSeq: { current: 0 }, saveChain: { current: Promise.resolve() }, proofHolds: P.proofHolds, absenceProof: P.absenceProof,
+  const full = { keepSchedulerStamp: inheritLoadedUnder, authEpoch: 0, pendingSaves: { current: 0 }, saveSeq: { current: 0 }, saveChain: { current: Promise.resolve() }, proofHolds: P.proofHolds, absenceProof: P.absenceProof,
     persistStoreNow: async (...args) => { seen.push({ storeId: args[0], baseline: args[4], absence: args[6] }); }, session: { id: ACTOR }, view: STORE, storeData: null, adminData: {}, ...ctx };
   const persistStore = new Function("ctx", `with (ctx) { ${src}\nreturn persistStore; }`)(full);
   return { persistStore, seen };
@@ -185,7 +186,7 @@ const MUTANTS = [
     over: () => ({ proof: swap(PIECES.proof, "const observeRowPresent = (key) => { const id = storeIdOfKey(key); if (id) loadGeneration.set(id, (loadGeneration.get(id) || 0) + 1); };", "const observeRowPresent = () => {};", "observeRowPresent") }),
     expect: ["a row observed after the read started denies the proof", "a row observed after install revokes a held capture"] },
   { name: "SIGNED_OUT does not move the epoch",
-    over: () => ({ auth: { onAuth: swap(PIECES.onAuth, "if (event === \"SIGNED_OUT\") bumpAuthEpoch(); ", "", "onAuthChange bump") } }),
+    over: () => ({ auth: { onAuth: swap(PIECES.onAuth, "if (event === \"SIGNED_OUT\") bumpAuthEpoch();", "", "onAuthChange bump") } }),
     expect: ["a read that began before SIGNED_OUT gets no proof, one that began after does"] },
   { name: "sign-out does not move the epoch",
     over: () => ({ auth: { signOut: swap(PIECES.signOut, "  bumpAuthEpoch();\n", "", "authSignOut bump") } }),

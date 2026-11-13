@@ -33,6 +33,7 @@ export function importSnapshot(planner,index) {
 }
 const sameShift=(a,b)=>['storeId','personId','date','endDate','startMinute','endMinute','timezone'].every(k=>a[k]===b[k]);
 export function reviewImport(planner,index,rows,choices={}) {
+  if(planner.context(index,'2014-01-01').strictHours) throw Error('Import is unavailable for strict source data until verified.');
   const snapshot=importSnapshot(planner,index),candidates=new Map(),items=[],membershipChanges=new Map(),declarations=new Map();
   for(const row of rows){
     const raw=row.raw,context=planner.context(index,raw.date),store=context.store;
