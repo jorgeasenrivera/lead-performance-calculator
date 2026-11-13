@@ -30,7 +30,9 @@ const STORE = { id: "classic-mazda", name: "Classic Mazda" };
    and the conditional PATCH the CAS save uses. */
 function fakeSupabase(seed) {
   const db = new Map(Object.entries(seed));
+  const writes = [];
   const fetch = async (url, opts = {}) => {
+    if (opts.method && opts.method !== "GET") writes.push({ url, method: opts.method });
     const u = new URL(url);
     const key = decodeURIComponent((u.searchParams.get("key") || "").replace(/^eq\./, ""));
     const method = opts.method || "GET";
@@ -52,18 +54,20 @@ function fakeSupabase(seed) {
     }
     throw new Error("unexpected " + method);
   };
-  return { db, fetch };
+  return { db, fetch, writes };
 }
 
-/* One CSV attachment, in a body PostalMime will read. */
-function message({ to, subject, filename, csv }) {
+/* CSV attachments, in a body PostalMime will read. */
+function message({ to, subject, filename, csv, attachments = [{ filename, csv }] }) {
   const b = "b0undary";
   return Buffer.from([
     `From: reports@example.com`, `To: ${to}`, `Subject: ${subject}`,
     `MIME-Version: 1.0`, `Content-Type: multipart/mixed; boundary="${b}"`, ``,
     `--${b}`, `Content-Type: text/plain`, ``, `report attached`, ``,
-    `--${b}`, `Content-Type: text/csv; name="${filename}"`,
-    `Content-Disposition: attachment; filename="${filename}"`, ``, csv, ``,
+    ...attachments.flatMap(({ filename, csv }) => [
+      `--${b}`, `Content-Type: text/csv; name="${filename}"`,
+      `Content-Disposition: attachment; filename="${filename}"`, ``, csv, ``,
+    ]),
     `--${b}--`, ``,
   ].join("\r\n"), "utf8");
 }
@@ -90,7 +94,7 @@ async function run(seed, msg) {
   process.env.INGEST_SECRET = SECRET;
   process.env.SUPABASE_URL = "https://sb.test";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-key";
-  try { return { out: await call(msg), db: sb.db }; }
+  try { return { out: await call(msg), db: sb.db, writes: sb.writes }; }
   finally { globalThis.fetch = realFetch; process.env = env; }
 }
 
@@ -172,4 +176,72 @@ test("a refreshed board row lists every roster person under people, whatever the
   assert.deepEqual(board.roster.map((r) => r.id), ["p-fin"], "the wall keeps the board roles only");
   assert.deepEqual(board.people.map((r) => r.id).sort(), ["p-fin", "p-jo", "p-test"], "everyone still on the roster can claim a name");
   assert.ok(!board.people.some((r) => r.id === "p-old"), "the departed cannot");
+});
+
+// The parser's rejection marker must never become an imported report type.
+const wrongChannel = { filename: "Standard-Phone.csv", csv: CSV };
+const delivery = { filename: "delivery-internet.csv", csv: CSV };
+const addressed = attachments => message({
+  to: "lpc-classicmazda@hollercrmreports.com", subject: "Daily Internet Delivery", attachments,
+});
+
+test("wrong-channel email leaves an empty store and all backend rows untouched", async () => {
+  const seed = seeded();
+  const { out, db, writes } = await run(seed, addressed([wrongChannel]));
+  assert.equal(out.code, 422);
+  assert.equal(out.body.ok, false);
+  assert.equal(out.body.failures[0].file, wrongChannel.filename);
+  assert.match(out.body.failures[0].why, /Delivery Summary/);
+  assert.deepEqual(out.body.skippedFiles, out.body.failures);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(Object.fromEntries(db), seed);
+});
+
+test("wrong-channel email cannot clear existing figures or change import history", async () => {
+  const prior = await run(seeded(), addressed([delivery]));
+  assert.equal(prior.out.code, 200);
+  const seed = Object.fromEntries(prior.db);
+  const before = structuredClone(seed);
+  const blank = { ...wrongChannel, csv: CSV.replace("110,7,6.4,5,4.5", "-,-,-,-,-") };
+  const { out, db, writes } = await run(seed, addressed([blank]));
+  assert.equal(out.code, 422);
+  assert.equal(out.body.ok, false);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(Object.fromEntries(db), before);
+});
+
+for (const wrongFirst of [true, false]) {
+  test(`mixed email keeps valid delivery and reports rejected attachment, wrong first=${wrongFirst}`, async () => {
+    const bad = { ...wrongChannel, csv: CSV.replace("Fin Smith", "Rejected Person") };
+    const attachments = wrongFirst ? [bad, delivery] : [delivery, bad];
+    const { out, db } = await run(seeded(), addressed(attachments));
+    assert.equal(out.code, 422);
+    assert.equal(out.body.ok, false);
+    assert.equal(out.body.error, "some attachments could not be filed");
+    assert.equal(out.body.stores.length, 1);
+    assert.equal(out.body.failures.length, 1);
+    assert.equal(out.body.failures[0].file, bad.filename);
+    const wrote = db.get(storeKey(STORE.id));
+    assert.equal(wrote.rev, 4);
+    assert.deepEqual(wrote.roster.map(p => p.name), ["Fin Smith"]);
+    const month = Object.values(wrote.months)[0];
+    assert.equal(month.stats["fin smith"].internetUnits, 5);
+    assert.equal(month.stats["fin smith"].unitsDelivered, 5);
+    assert.equal(month.stats["rejected person"], undefined);
+    assert.equal(month.names["wrong-channel-report"], undefined);
+    assert.equal(Object.values(month.imports)[0]["wrong-channel-report"], undefined);
+    assert.deepEqual(wrote.importLog.map(l => l.type), ["delivery-internet"]);
+    assert.ok(![...db.keys()].some(k => k.includes(bad.filename)), "rejected attachment is not archived as an accepted report");
+  });
+}
+
+test("valid delivery-only email retains successful response and values", async () => {
+  const { out, db } = await run(seeded(), addressed([delivery]));
+  assert.equal(out.code, 200);
+  assert.equal(out.body.ok, true);
+  assert.deepEqual(out.body.skippedFiles, []);
+  const month = Object.values(db.get(storeKey(STORE.id)).months)[0];
+  assert.equal(month.stats["fin smith"].internetUnits, 5);
+  assert.equal(month.stats["fin smith"].sold, 7);
+  assert.equal(Object.values(month.imports)[0]["delivery-internet"], true);
 });
