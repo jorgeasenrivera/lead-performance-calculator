@@ -21,8 +21,8 @@ export const HARNESS_CORRECTION = Object.freeze({
   path:'scripts/hero-bars.mjs',
   original:Object.freeze({mode:'100644', blob:'5efcd1b1e4bef3f833dc38ce465cde16bf3a9e68', bytes:6911,
     sha256:'1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972'}),
-  corrected:Object.freeze({mode:'100644', blob:'100cb0c24865d9c668cea68960d9c4eb506609fc', bytes:10586,
-    sha256:'2000a45c32cc7aaac7da0c6617f840ba5086db580bd048455f7d8c3c5dd47041'}),
+  corrected:Object.freeze({mode:'100644', blob:'cde3684fcdde9dfe5fe92af42fdaef19209efe52', bytes:11448,
+    sha256:'bad198f7ddc2c612e445664644a7c0e272cd64b422a95e6729a62777d08e7908'}),
 });
 const roots = new Set(['.claude', 'api', 'download', 'fixtures', 'infra', 'native',
   'public', 'scripts', 'src', 'supabase', 'test', 'workers']);

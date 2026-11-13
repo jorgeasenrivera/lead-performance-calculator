@@ -388,6 +388,57 @@ function fixtureSettlementTests(){
     await settlement.wait();assert.equal(settlement.evidence().requests,0);settlement.dispose();
     for(const name of ['request','requestfinished','requestfailed'])assert.equal(context.listenerCount(name),0);
   });
+
+  const flush=async()=>{for(let n=0;n<8;n++)await Promise.resolve();};
+  test('a fresh quiet interval is required at every transition even after earlier settlement',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});const {EventEmitter}=await import('node:events');const context=new EventEmitter(),settlement=create(context,async()=>{});t.after(()=>settlement.dispose());
+    for(let n=0;n<2;n++){
+      let passed=false;const wait=settlement.wait().then(()=>{passed=true;});await flush();
+      t.mock.timers.tick(499);await flush();assert.equal(passed,false);
+      t.mock.timers.tick(1);await wait;assert.equal(passed,true);
+    }
+    assert.equal(settlement.evidence().quietMs,500);assert.equal(settlement.evidence().quietWindows,2);
+  });
+  test('work starting after the earlier browser turn resets quiet and blocks navigation until both leases settle',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});const {EventEmitter}=await import('node:events');const context=new EventEmitter(),gate=deferred(),req=request();let turns=0,work;
+    const settlement=create(context,async()=>{if(++turns===1)setTimeout(()=>{context.emit('request',req);work=settlement.track(async()=>gate.promise)({request:()=>req});},23);});t.after(()=>settlement.dispose());
+    let navigated=false;const wait=settlement.wait().then(()=>{navigated=true;});await flush();
+    t.mock.timers.tick(23);await flush();assert.equal(navigated,false);
+    t.mock.timers.tick(477);await flush();assert.equal(navigated,false,'the original quiet deadline cannot pass late active work');
+    context.emit('requestfinished',req);await flush();assert.equal(navigated,false,'route completion is independently required');
+    gate.resolve();await work;await flush();
+    t.mock.timers.tick(499);await flush();assert.equal(navigated,false);t.mock.timers.tick(1);await wait;
+    assert.equal(navigated,true);assert.ok(settlement.evidence().quietResets>=1);assert.ok(turns>=2);
+  });
+  test('short request and route activity restarts quiet even when the sets return to empty immediately',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});const {EventEmitter}=await import('node:events');
+    for(const kind of ['request','route']){
+      const context=new EventEmitter(),settlement=create(context,async()=>{});t.after(()=>settlement.dispose());let passed=false;
+      const wait=settlement.wait().then(()=>{passed=true;});await flush();t.mock.timers.tick(499);
+      if(kind==='request'){const req=request();context.emit('request',req);context.emit('requestfinished',req);}
+      else await settlement.track(async()=>{} )({request:()=>request()});
+      await flush();t.mock.timers.tick(1);await flush();assert.equal(passed,false);
+      t.mock.timers.tick(499);await wait;assert.equal(passed,true);assert.ok(settlement.evidence().quietResets>=1);
+    }
+  });
+  test('an unmatched browser request never gains fabricated completion from quiet or a finished callback',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});const {EventEmitter}=await import('node:events');const context=new EventEmitter(),req=request(),settlement=create(context,async()=>{});t.after(()=>settlement.dispose());
+    context.emit('request',req);await settlement.track(async()=>{} )({request:()=>req});
+    context.emit('requestfinished',request());
+    let passed=false;const wait=settlement.wait().then(()=>{passed=true;});const rejected=assert.rejects(wait,/deadline/);
+    t.mock.timers.tick(20000);await rejected;assert.equal(passed,false);assert.equal(settlement.evidence().pendingRequests,1);assert.equal(settlement.evidence().pendingRoutes,0);assert.equal(settlement.evidence().failed,true);
+  });
+  test('continuous late activity retains the original overall deadline and first request failure',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});const {EventEmitter}=await import('node:events');const context=new EventEmitter(),settlement=create(context,async()=>{});t.after(()=>settlement.dispose());
+    const wait=settlement.wait(),rejected=assert.rejects(wait,/deadline/);await flush();
+    for(let n=0;n<40;n++){t.mock.timers.tick(499);const req=request();context.emit('request',req);context.emit('requestfinished',req);await flush();}
+    t.mock.timers.tick(40);await rejected;assert.equal(settlement.evidence().failed,true);
+    const secondContext=new EventEmitter(),second=create(secondContext,async()=>{}),gate=deferred(),req=request();t.after(()=>second.dispose());secondContext.emit('request',req);
+    const work=second.track(async()=>gate.promise)({request:()=>req});secondContext.emit('requestfailed',req);
+    let original;const stopped=second.wait().catch(error=>{original=error;});t.mock.timers.tick(20000);await stopped;assert.match(original.message,/Fixture request failed/);
+    gate.resolve();await work;await assert.rejects(()=>second.wait(),error=>error===original);
+  });
+
   test('the actual final scenario drains before the unchanged page-error assertion, including late errors',async t=>{
     const {EventEmitter}=await import('node:events');const context=new EventEmitter(),gate=deferred(),errors=[];
     const settlement=create(context,async()=>{errors.push('synthetic late page error');});t.after(()=>settlement.dispose());

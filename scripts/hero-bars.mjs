@@ -5,7 +5,7 @@ function createFixtureSettlement(context, turn, timeout = 20000) {
   // A browser abort does not finish an intercepted fetch/fulfill callback.
   // Keep both kinds of work ahead of shared fixture changes and navigation.
   const requests = new Set(), routes = new Set(), waiters = new Set();
-  const totals = {requests:0, finished:0, failedRequests:0, routes:0, settledRoutes:0, waits:0, turns:0};
+  const totals = {requests:0, finished:0, failedRequests:0, routes:0, settledRoutes:0, waits:0, turns:0, quietWindows:0, quietResets:0};
   let changes = 0, failure, failed = false, waiting = false;
   const remember = error => { if (!failed) { failed = true; failure = error; } };
   const relevant = request => {
@@ -32,9 +32,18 @@ function createFixtureSettlement(context, turn, timeout = 20000) {
     },
     async wait() {
       assert.equal(waiting, false, 'one fixture transition at a time'); waiting = true; totals.waits++;
-      let timer, stopped = false;
+      let timer, quietTimer, stopped = false;
       const expired = new Error('Fixture requests and routes did not settle before the deadline');
-      const deadline = new Promise((_, reject) => { timer = setTimeout(() => { remember(expired); reject(expired); }, timeout); });
+      const deadline = new Promise((_, reject) => { timer = setTimeout(() => { remember(expired); reject(failure); }, timeout); });
+      const quiet = () => new Promise(resolve => {
+        const observed = changes;
+        const settle = value => { clearTimeout(quietTimer); quietTimer = undefined; waiters.delete(activity); resolve(value); };
+        const activity = () => { if (changes !== observed) totals.quietResets++; settle(false); };
+        waiters.add(activity); totals.quietWindows++;
+        // Each transition needs a fresh interval after the browser turn.
+        // Relevant activity cancels it; elapsed time never releases a lease.
+        quietTimer = setTimeout(() => settle(true), 500);
+      });
       const drain = async () => {
         while (!stopped) {
           while (requests.size || routes.size) {
@@ -47,15 +56,19 @@ function createFixtureSettlement(context, turn, timeout = 20000) {
           if (stopped) throw expired;
           if (requests.size || routes.size || changes !== observed) continue;
           if (failed) throw failure;
+          if (!await quiet()) continue;
+          if (stopped) throw expired;
+          if (requests.size || routes.size || changes !== observed) continue;
+          if (failed) throw failure;
           assert.equal(requests.size, 0, 'fixture requests complete');
           assert.equal(routes.size, 0, 'fixture route callbacks complete');
           return;
         }
       };
       try { await Promise.race([drain(), deadline]); }
-      finally { stopped = true; clearTimeout(timer); wake(); waiting = false; }
+      finally { stopped = true; clearTimeout(timer); clearTimeout(quietTimer); wake(); waiting = false; }
     },
-    evidence: () => ({...totals, pendingRequests:requests.size, pendingRoutes:routes.size, failed}),
+    evidence: () => ({...totals, quietMs:500, pendingRequests:requests.size, pendingRoutes:routes.size, failed}),
     dispose() { context.off('request', start); context.off('requestfinished', finish); context.off('requestfailed', fail); },
   };
 }
