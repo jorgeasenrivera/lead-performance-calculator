@@ -1,0 +1,106 @@
+{
+  "sources": {
+    "repository": {
+      "url": "https://dl.google.com/android/repository/repository2-3.xml",
+      "root": "{http://schemas.android.com/sdk/android/repo/repository2/03}sdk-repository"
+    },
+    "images": {
+      "url": "https://dl.google.com/android/repository/sys-img/google_apis/sys-img2-3.xml",
+      "root": "{http://schemas.android.com/sdk/android/repo/sys-img2/03}sdk-sys-img"
+    }
+  },
+  "licenses": {
+    "android-sdk-license": "1f8729233617b193fd619213792ae16a41b95d2bbbf525dfe66998252ba68b16"
+  },
+  "license_values": {
+    "android-sdk-license": "aaf80cd0aee7e569ffa8a4be1b61189c0fefccf23068e38dfafe336289b8c723"
+  },
+  "packages": {
+    "platforms;android-36": {
+      "source": "repository",
+      "revision": [
+        2,
+        0,
+        0
+      ],
+      "dependencies": {},
+      "metadata_sha256": "c19ef83a255a3925a3222f28b018afb05574f0e8a7c03df4c06528a2bb10f03d"
+    },
+    "ndk;27.1.12297006": {
+      "source": "repository",
+      "revision": [
+        27,
+        1,
+        12297006
+      ],
+      "dependencies": {},
+      "metadata_sha256": "6635e2a3c5659c1f55bfbd94f04fc4fbc98cb86e4dc72235dd6213c726dbc63e"
+    },
+    "build-tools;36.0.0": {
+      "source": "repository",
+      "revision": [
+        36,
+        0,
+        0
+      ],
+      "dependencies": {},
+      "metadata_sha256": "cea4719cb0f15a9ef7ac5a9ea4f78f0d692c918a308926dcf2890165d8e5243d"
+    },
+    "cmake;3.30.5": {
+      "source": "repository",
+      "revision": [
+        3,
+        30,
+        5
+      ],
+      "dependencies": {},
+      "metadata_sha256": "22ae8aab8ae96ad60627c9d27b1e46d2e0d8ef79df774d7638c82686d9c60b0d"
+    },
+    "cmake;3.22.1": {
+      "source": "repository",
+      "revision": [
+        3,
+        22,
+        1
+      ],
+      "dependencies": {},
+      "metadata_sha256": "7e33e219e198404f0f3f16b9d6dbd3fab0f194bfced06bd2a5b7112a481a355c"
+    },
+    "platform-tools": {
+      "source": "repository",
+      "revision": [
+        37,
+        0,
+        1
+      ],
+      "dependencies": {},
+      "metadata_sha256": "37ec38f3bf5e35a5e4f6a1359545b05d315b7095a2b0769d5841001c3cf3ee19"
+    },
+    "emulator": {
+      "source": "repository",
+      "revision": [
+        37,
+        2,
+        12
+      ],
+      "dependencies": {},
+      "metadata_sha256": "9d39590bfef2dde735a4273d11dd5fb1918eec0cb0fb257d7639c6967d20a51c"
+    },
+    "system-images;android-36;google_apis;x86_64": {
+      "source": "images",
+      "revision": [
+        7,
+        0,
+        0
+      ],
+      "dependencies": {
+        "emulator": [
+          35,
+          4,
+          9
+        ]
+      },
+      "metadata_sha256": "e3d322790e32424e4aca9a2aa3e8ec3f852162e81ff75fe20bc163a864e88efc"
+    }
+  }
+}
