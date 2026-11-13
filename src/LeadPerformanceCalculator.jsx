@@ -5804,15 +5804,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
             fields are on screen. */}
         {mode === "signup" && (
           <div className="lf-mode" key="signup">
-            <p className="lf-note">
-              {canRegister
-                ? "Create your account. What happens next depends on which of these you are."
-                : "Create your account. Heads up: the very first account created becomes the group admin."}
-            </p>
-            {/* Asked first, because the answer changes what the rest of this
-                screen is promising. */}
-            <label className="lf-label">What do you do here</label>
-            <div className="lf-kinds">
+            <div className="lf-kinds" role="group" aria-label="Account type">
               {Object.entries(ACCOUNT_KINDS).map(([k, v]) => (
                 <button key={k} type="button" className={"lf-kind" + (kind === k ? " on" : "")}
                   onClick={() => { setKind(k); setErr(""); }} aria-pressed={kind === k}>
@@ -5820,11 +5812,6 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
                 </button>
               ))}
             </div>
-            <p className="lf-kindnote">
-              {kind === "manager"
-                ? "Your group admin grants you the stores you look after. You will see the dashboard once they do."
-                : "You do not need the dashboard. Say which store and which name is yours; your manager joins the two with one tap, and then the line, your standards and your day show up on your phone."}
-            </p>
             {kind === "associate" && (
               <ClaimPicker config={config} value={claim} onChange={(c) => { setClaim(c); setErr(""); }}
                 onName={(nm) => { if (!name.trim()) setName(nm); }} />
