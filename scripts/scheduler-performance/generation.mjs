@@ -54,9 +54,9 @@ function cleanRecord(record,regenerate){
 // input always gives the same answer. Role names compare by code unit, never by locale.
 // Limits, stated plainly: this only re-chooses roles among people already on the day; it does
 // not choose who works, so a role gap left after it is a limit of the greedy add step, not proof
-// the day is infeasible. `maxNodes` applies to one call only (generateProposal may make up to
-// three per day, each with a fresh budget), a capped call can report maxNodes + 1 nodes, and the
-// search does not poll maxMs or count against maxChecks. It is not a global budget.
+// the day is infeasible. `maxNodes` applies to one call only, and a capped call can report
+// maxNodes + 1 nodes. The post-fill rematches each have a fresh budget; candidate exchanges
+// share a separate per-day budget. Neither search polls maxMs or counts against maxChecks.
 export function matchRoles(shifts,required,open,close,maxNodes=20000){
  const roles=Object.entries(required||{}).filter(([,n])=>n>0).sort(([x],[y])=>x<y?-1:x>y?1:0),index=new Map(roles.map(([role],i)=>[role,i]));
  const current=shifts.map(s=>s.role),mutable=shifts.map((s,i)=>s.choices?.length>1?i:-1).filter(i=>i>=0).sort((x,y)=>{const a=shifts[x],b=shifts[y];return a.key<b.key?-1:a.key>b.key?1:a.a-b.a||x-y;});
@@ -103,7 +103,7 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
  const priority=day=>(demand.get(day).estimate?.high||0)+(market?.busyWeekdays?.includes(weekday(day))?1:0);
  const ordered=[...dates].sort((a,b)=>priority(b)-priority(a)||a.localeCompare(b));
  for(const day of ordered){
-  const row=base.get(day),r=records[day],rr=row.rule,generated=new Set(),notes=[],lockedConflicts=[],made=new Set();let roleCapped=false;
+  const row=base.get(day),r=records[day],rr=row.rule,generated=new Set(),notes=[],lockedConflicts=[],made=new Set();let roleCapped=false,candidateRoleNodes=0;
   const retainedOwnership=policy.regenerate?[]:(input.records[day]?.generation?.unlocked||[]).filter(id=>!r.generationLocks?.includes(id)&&signature(r,id)===input.records[day].generation.signatures?.[id]);
   const members=new Map(store.people.map(p=>[p.id,p]));
   const retainedIds=unique([...r.on,...r.shifts.map(s=>s.personId)]);
@@ -128,20 +128,36 @@ export function generateProposal(input,{maxChecks=50000,now=()=>performance.now(
    if(policy.mode!=='team')units.push(...store.people.map(p=>[p.id]));
    const fill=()=>{let deficits=gaps();
    while(deficits.length&&!limited){
-    let best=null;
+    let best=null,exchangeBaseline=null;
     candidates: for(const ids of units)for(const template of policy.shifts){
      if(checks>=maxChecks||now()-began>maxMs){limited=true;break candidates;}
      checks++;
      const a=template.fullDay?rr.open*60:template.startMinute,b=template.fullDay?rr.close*60:template.endMinute;
      if(!Number.isInteger(a)||!Number.isInteger(b)||b>=1440||!ids.every(id=>available(id,a,b)))continue;
      const additions=ids.map(id=>{const roles=policy.people[id].roles;const role=[...roles].sort((x,y)=>deficits.filter(d=>d.role===y&&d.start<b&&d.end>a).reduce((n,d)=>n+(Math.min(b,d.end)-Math.max(a,d.start))*d.missing,0)-deficits.filter(d=>d.role===x&&d.start<b&&d.end>a).reduce((n,d)=>n+(Math.min(b,d.end)-Math.max(a,d.start))*d.missing,0)||x.localeCompare(y))[0];return {id,role};});
-     const gain=deficits.reduce((n,d)=>n+Math.max(0,Math.min(b,d.end)-Math.max(a,d.start))*Math.min(d.missing,additions.filter(x=>!d.role||x.role===d.role).length),0);
+     let gain=deficits.reduce((n,d)=>n+Math.max(0,Math.min(b,d.end)-Math.max(a,d.start))*Math.min(d.missing,additions.filter(x=>!d.role||x.role===d.role).length),0),reassign=null;
+     // A new sales-only person can free an already generated multi-role person for lead.
+     // Consider that exchange only when the direct candidate has no gain, with one shared
+     // per-day search budget. Retained, manual and imported shifts remain fixed.
+     if(!gain&&deficits.some(d=>d.role)&&candidateRoleNodes<maxRoleNodes){
+      const existing=entries(),existingItems=existing.map(e=>({key:e.id,a:e.a,b:e.b,role:e.role,choices:e.shift&&made.has(e.shift)?[...new Set(policy.people[e.id]?.roles||[])].sort():null}));
+      if(!exchangeBaseline){const result=matchRoles(existingItems,policy.requiredRoles,rr.open*60,rr.close*60,maxRoleNodes-candidateRoleNodes);candidateRoleNodes+=result.nodes;exchangeBaseline=result;if(result.capped)roleCapped=true;}
+      if(exchangeBaseline.capped||candidateRoleNodes>=maxRoleNodes){roleCapped=true;continue;}
+      const items=[...existingItems,...additions.map(x=>({key:x.id,a,b,role:x.role,choices:[...new Set(policy.people[x.id].roles)].sort()}))];
+      const result=matchRoles(items,policy.requiredRoles,rr.open*60,rr.close*60,maxRoleNodes-candidateRoleNodes);candidateRoleNodes+=result.nodes;
+      if(result.capped)roleCapped=true;
+      const points=unique([rr.open*60,rr.close*60,...items.flatMap(s=>[Math.max(rr.open*60,s.a),Math.min(rr.close*60,s.b)])]).filter(v=>v>=rr.open*60&&v<=rr.close*60).sort((x,y)=>x-y);
+      const missing=(shifts,roles)=>points.slice(0,-1).reduce((n,start,i)=>{const end=points[i+1];return n+(end-start)*Object.entries(policy.requiredRoles).reduce((sum,[role,need])=>sum+Math.max(0,need-shifts.filter((s,j)=>s.a<=start&&s.b>=end&&roles[j]===role).length),0);},0);
+      const before=missing(existing,exchangeBaseline.roles),after=missing(items,result.roles);
+      if(after<before){gain=before-after;reassign={existing,roles:result.roles};}
+     }else if(!gain&&deficits.some(d=>d.role)&&candidateRoleNodes>=maxRoleNodes)roleCapped=true;
      if(!gain)continue;
      const balance=ids.reduce((n,id)=>n+(used.get(id)||0)/Math.max(1,opportunity.get(id)||0)+(bands.get(id)||0)/1000,0)/ids.length;
-     const candidate={ids,a,b,additions,gain,score:gain/(ids.length*(b-a)),balance,key:ids.join('|')+':'+template.id};
+     const candidate={ids,a,b,additions,gain,reassign,score:gain/(ids.length*(b-a)),balance,key:ids.join('|')+':'+template.id};
      if(!best||candidate.score>best.score||candidate.score===best.score&&(balance<best.balance||balance===best.balance&&candidate.key<best.key))best=candidate;
     }
     if(limited||!best)break;
+    if(best.reassign){best.reassign.existing.forEach((e,i)=>{if(e.shift&&made.has(e.shift))e.shift.role=best.reassign.roles[i];});best.additions.forEach((x,i)=>{x.role=best.reassign.roles[best.reassign.existing.length+i];});}
     for(const {id,role} of best.additions){const key=week(day)+':'+id,p=members.get(id);r.on=unique([...r.on,id]);const shift={storeId,personId:id,date:day,endDate:day,startMinute:best.a,endMinute:best.b,timezone:storeTimezone(store),role,source:{kind:'generated preview',file:'Generated local proposal'}};r.shifts.push(shift);made.add(shift);generated.add(id);weekly.set(key,(weekly.get(key)||0)+best.b-best.a);caps.set(key,Math.min(caps.get(key)??Infinity,p.maxHours*60));used.set(id,(used.get(id)||0)+best.b-best.a);bands.set(id,(bands.get(id)||0)+Number(best.a===rr.open*60)+Number(best.b===rr.close*60));}
     deficits=gaps();
    }};

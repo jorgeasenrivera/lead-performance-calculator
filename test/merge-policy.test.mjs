@@ -28,6 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FIELD_POLICY, STRATEGIES, DEAD_FIELDS } from "../api/_store-merge.mjs";
+import { mergeAgainstServer } from "../api/_store-merge.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const MERGE = fs.readFileSync(path.join(ROOT, "api/_store-merge.mjs"), "utf8");
@@ -156,5 +157,90 @@ test("every stamped field has the stamps it is settled by", () => {
     if (v.how !== "stampedMap" || f.endsWith("At")) continue;
     assert.ok(FIELD_POLICY[f + "At"], `${f} is settled by stamps but ${f}At has no rule`);
     assert.ok(ASSIGNED.has(f + "At"), `${f}At is never written by the merge`);
+  }
+});
+
+test("Summary observation preservation is declared and found by the existing assignment guard", () => {
+  assert.ok(ASSIGNED.has("deliverySummaryObservations"));
+  assert.equal(FIELD_POLICY.deliverySummaryObservations?.how, "serverCopyOnly");
+  assert.ok(STRATEGIES.serverCopyOnly);
+});
+
+test("ordinary stale saves keep the current complete Summary observations", () => {
+  const current = { "2026-11": { fictionalA: { count: 12, sentAt: null }, fictionalB: { count: 11, sentAt: null } } };
+  const old = { "2026-11": { fictionalA: { count: 9, sentAt: null } } };
+  const server = { __storeId: "fictional", months: {}, deliverySummaryObservations: current };
+  for (const baselineAware of [false, true]) {
+    for (const change of ["omitted", "replaced", "deleted"]) {
+      const baseline = { __storeId: "fictional", months: {} };
+      const client = { __storeId: "fictional", months: {} };
+      if (change !== "omitted") baseline.deliverySummaryObservations = structuredClone(old);
+      if (change === "replaced") client.deliverySummaryObservations = { "2026-11": { invented: { count: 99 } } };
+      const result = mergeAgainstServer(client, server, baselineAware ? { baseline } : undefined);
+      assert.deepEqual(result.deliverySummaryObservations, current, `${change}, baseline ${baselineAware}`);
+      assert.notStrictEqual(result.deliverySummaryObservations, current);
+      result.deliverySummaryObservations["2026-11"].fictionalA.count = 100;
+      assert.equal(current["2026-11"].fictionalA.count, 12, "the result must not mutate the read server observation");
+    }
+  }
+});
+
+test("current server absence and explicit null cannot be replaced by client observations", () => {
+  for (const baselineAware of [false, true]) {
+    const baseline = { __storeId: "fictional", months: {} };
+    const client = { __storeId: "fictional", months: {}, deliverySummaryObservations: { invented: true } };
+    const server = { __storeId: "fictional", months: {} };
+    const intent = baselineAware ? { baseline } : undefined;
+    const absent = mergeAgainstServer(structuredClone(client), server, intent);
+    assert.equal(Object.hasOwn(absent, "deliverySummaryObservations"), false);
+    const explicitNull = mergeAgainstServer(structuredClone(client), { ...server, deliverySummaryObservations: null }, intent);
+    assert.equal(Object.hasOwn(explicitNull, "deliverySummaryObservations"), true);
+    assert.equal(explicitNull.deliverySummaryObservations, null);
+    const inherited = Object.assign(Object.create({ deliverySummaryObservations: { inherited: true } }), server);
+    assert.equal(Object.hasOwn(mergeAgainstServer(structuredClone(client), inherited, intent), "deliverySummaryObservations"), false);
+  }
+});
+
+test("first creation strips client observations before the absent-server return", () => {
+  for (const server of [undefined, null]) {
+    for (const intent of [undefined, { baseline: null, rowAbsentAtLoad: true }]) {
+      const client = { __storeId: "fictional", months: {}, deliverySummaryObservations: { invented: true } };
+      const result = mergeAgainstServer(client, server, intent);
+      assert.equal(Object.hasOwn(result, "deliverySummaryObservations"), false);
+      assert.deepEqual(result.months, {});
+    }
+  }
+});
+
+test("explicit cross-store mismatch copies neither server nor client observations", () => {
+  const server = { __storeId: "other", deliverySummaryObservations: { privateToOtherStore: true } };
+  const result = mergeAgainstServer({ __storeId: "fictional", deliverySummaryObservations: { invented: true } }, server);
+  assert.equal(result.__storeId, "fictional");
+  assert.equal(Object.hasOwn(result, "deliverySummaryObservations"), false);
+  assert.deepEqual(server.deliverySummaryObservations, { privateToOtherStore: true });
+});
+
+test("each retry preserves the newly read observations or their disappearance", () => {
+  const baseline = { __storeId: "fictional", months: {} };
+  const client = { ...structuredClone(baseline), deliverySummaryObservations: { invented: true } };
+  const earlier = { "2026-11": { fictionalA: { count: 12 } } };
+  const newer = { "2026-11": { fictionalB: { count: 10 } } };
+  const first = mergeAgainstServer(client, { ...baseline, deliverySummaryObservations: earlier }, { baseline });
+  assert.deepEqual(first.deliverySummaryObservations, earlier);
+  const retry = mergeAgainstServer(first, { ...baseline, deliverySummaryObservations: newer }, { baseline });
+  assert.deepEqual(retry.deliverySummaryObservations, newer, "copy the whole newly read value without union or count-based selection");
+  const gone = mergeAgainstServer(retry, { ...baseline }, { baseline });
+  assert.equal(Object.hasOwn(gone, "deliverySummaryObservations"), false);
+});
+
+test("a missing store identifier still relies on the caller reading the same store", () => {
+  const observations = { "2026-11": { fictionalA: { count: 12 } } };
+  for (const [client, server] of [
+    [{ __storeId: "fictional" }, {}],
+    [{}, { __storeId: "fictional" }],
+    [{}, {}],
+  ]) {
+    const result = mergeAgainstServer(client, { ...server, deliverySummaryObservations: observations });
+    assert.deepEqual(result.deliverySummaryObservations, observations);
   }
 });

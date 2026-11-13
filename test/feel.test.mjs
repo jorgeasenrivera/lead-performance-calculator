@@ -193,7 +193,7 @@ test("one object across rooms: the mark flies, the rooms travel, and less motion
    and it cost a day: two changes were reported as not working when they were
    live on the server and correct in the bundle. */
 test("a new build is taken at the next open, not the one after", () => {
-  const main = fs.readFileSync(new URL("../src/main.jsx", import.meta.url), "utf8");
+  const main = fs.readFileSync(new URL("../src/app-entry.jsx", import.meta.url), "utf8");
   const sw = fs.readFileSync(new URL("../src/sw.js", import.meta.url), "utf8");
   /* Adopting a build means reloading, because the running page IS the old
      build. The only question is when that is paid, and mid-session is the one

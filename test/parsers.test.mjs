@@ -174,6 +174,7 @@ test("the Delivery Summary keeps the store's own totals", () => {
   const got = P.mapDeliverySummaryGrid(dsDoc(
     "Holler Honda",
     ["Internet 400 0 0 0 200 50%", "Phone 100 0 0 0 40 40%",
+     "Total 800 20 5 2 255 31.875%",
      "Showroom 300 20 5 2 15 5%", "Campaign 0 0 0 0 0 0%"],
     [["Alex Demo", ["Internet 40 0 0 0 20.5 51%", "Phone 10 0 0 0 4 40%",
                     "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]],
@@ -296,6 +297,7 @@ test("the store's own new and used rows reach the app, as whole cars", () => {
     line("Showroom 74 63 41 29 26 35.1%"),
     line("New 0 0 0 0 0 0%"),
     line("Used 520 63 41 29 81 15.5%"),
+    line("Total 594 63 41 29 81 13.6%"),
     ...person("Chase Cabney", 40, 6),
     ...person("Luke Pancake", 50, 9),
     ...person("Mike Ganus", 60, 11),

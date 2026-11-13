@@ -196,6 +196,7 @@ export function mergeFillTwoLevel(mine, theirs) {
 
 /** The rules a field is allowed to have. Adding one means teaching the guard. */
 export const STRATEGIES = {
+  serverCopyOnly: "Private report observations come only from the current server copy. An ordinary client save cannot supply, replace or remove them.",
   newestImportWins: "The import log settles it. A browser holding an hours-old month must not overwrite the imports since, so if the server has an import this copy has never seen, the server's is kept whole.",
   tombstones: "A stamped decision, { key: when }, newest wins, pruned at ninety days. The only form of removal this system has ever been able to keep.",
   stampedUnion: "A union, so a stale tab cannot delete somebody by not knowing about them, minus whatever the stamps say has since been undone.",
@@ -212,6 +213,7 @@ export const STRATEGIES = {
 };
 
 export const FIELD_POLICY = {
+  deliverySummaryObservations: { how: "serverCopyOnly", why: "Intake writes report observations; ordinary saves must preserve the current server value without accepting client evidence." },
   // ---- the figures ----
   months:        { how: "newestImportWins", why: "Reports arrive hourly and a stale tab must not undo them." },
   activity:      { how: "newestImportWins", why: "Travels with months; the same import writes both." },
@@ -404,6 +406,8 @@ function mergeBoardDisplay(next, baseline, serverCopy) {
 }
 
 export function mergeAgainstServer(next, serverCopy, intent) {
+  // Strip client evidence even when there is no server row or the stores differ.
+  delete next.deliverySummaryObservations;
   const hasBaseline = intent && Object.hasOwn(intent, "baseline");
   const board = hasBaseline && intent.baseline && typeof intent.baseline === "object";
   if (board) refuseUnknownBoardChanges(next, intent.baseline);   // before any early return, so a first save cannot skip it
@@ -415,6 +419,10 @@ export function mergeAgainstServer(next, serverCopy, intent) {
   if (next.__storeId && serverCopy.__storeId && next.__storeId !== serverCopy.__storeId) {
     console.error("refused cross-store merge", next.__storeId, serverCopy.__storeId);
     return next;
+  }
+  // With no identifiers, this relies on the caller having read the same store.
+  if (Object.hasOwn(serverCopy, "deliverySummaryObservations")) {
+    next.deliverySummaryObservations = globalThis.structuredClone(serverCopy.deliverySummaryObservations);
   }
         const mergeField = (field) => {
           const out = { ...(next[field] || {}) };

@@ -1,7 +1,24 @@
+function boardText(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+}
+
 export function LEADERBOARD_HTML(p, PIX) {
+  let policy = "", scriptTag = "<script>";
+  let payload = JSON.stringify(p);
+  if (p.readOnly) {
+    if (!/^[a-f0-9]{32}$/.test(p.readOnlyNonce || "")) throw new Error("A read-only board needs a script nonce.");
+    const origin = new URL(p.db.url).origin;
+    if (!/^https?:\/\//.test(origin)) throw new Error("Invalid board database origin.");
+    policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${p.readOnlyNonce}'; style-src 'unsafe-inline' https:; font-src https: http: data:; img-src https: http: data:; connect-src ${origin}; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'"/>`;
+    scriptTag = `<script nonce="${p.readOnlyNonce}">`;
+    payload = payload.replace(/</g, "\\u003c");
+  }
   return `<!doctype html><html><head><meta charset="utf-8"/>
+${policy}
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>${p.storeName} · Leaderboard</title>
+<title>${p.readOnly ? boardText(p.storeName) : p.storeName} · Leaderboard</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
   @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -556,8 +573,10 @@ export function LEADERBOARD_HTML(p, PIX) {
   </div>
   <div class="tuner-msg" id="tmsg"></div>
 </div>
-<script>
-  var CFG = ${JSON.stringify(p)};
+${scriptTag}
+  var CFG = ${payload};
+  var escapeBoardText = ${boardText.toString()};
+  function text(value){ return CFG.readOnly ? escapeBoardText(value) : value; }
   // The same one grid as the rest of the tool, sent whole rather than as two
   // tables the board then has to choose between. Drawn at 1em so every mark
   // scales with the row text instead of being pinned to a pixel size.
@@ -587,7 +606,7 @@ export function LEADERBOARD_HTML(p, PIX) {
   // reach an external CDN at all, and an import that never resolves left it stuck on
   // "Loading" forever. Plain fetch against the REST API, with the token refreshed by
   // hand so the screen can sit there unattended for days.
-  var TOK = CFG.tokens ? {
+  var TOK = !CFG.readOnly && CFG.tokens ? {
     access: CFG.tokens.access_token,
     refresh: CFG.tokens.refresh_token
   } : null;
@@ -604,7 +623,7 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 
   async function refreshToken(){
-    if (!TOK || !TOK.refresh) return false;
+    if (CFG.readOnly || !TOK || !TOK.refresh) return false;
     try {
       var r = await withTimeout(fetch(CFG.tokens.url + '/auth/v1/token?grant_type=refresh_token', {
         method: 'POST',
@@ -612,7 +631,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         body: JSON.stringify({ refresh_token: TOK.refresh })
       }), 12000);
       if (!r.ok) return false;
-      var d = await r.json();
+      var d = await withTimeout(r.json(), 12000);
       if (!d.access_token) return false;
       TOK.access = d.access_token;
       if (d.refresh_token) TOK.refresh = d.refresh_token;
@@ -622,20 +641,24 @@ export function LEADERBOARD_HTML(p, PIX) {
 
   function getStore(){ return getStoreByKey(CFG.storeKey); }
   async function getStoreByKey(storeKey){
+    if (CFG.readOnly && (typeof storeKey !== 'string' || !/^lpc:board:[a-zA-Z0-9_-]+:v1$/.test(storeKey))) {
+      return { __err: 'This board cannot read that data.' };
+    }
     if (!DB) return { __err: 'This board has no database details. Open it again from the tool.' };
     var url = DB.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(storeKey) + '&select=value';
     function headers(){
       return { apikey: DB.anonKey, Authorization: 'Bearer ' + (TOK ? TOK.access : DB.anonKey) };
     }
     try {
-      var res = await withTimeout(fetch(url, { headers: headers() }), 12000);
+      var res = await withTimeout(fetch(url, CFG.readOnly ? { method: 'GET', credentials: 'omit', cache: 'no-store', headers: headers() } : { headers: headers() }), 12000);
       if (res.status === 401 || res.status === 403) {
+        if (CFG.readOnly) return { __err: 'This screen cannot read the published board.' };
         var ok = await refreshToken();
         if (!ok) return { __err: 'This screen cannot read the board row. Check the database read rule for lpc:board keys.' };
         res = await withTimeout(fetch(url, { headers: headers() }), 12000);
       }
       if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
-      var rows = await res.json();
+      var rows = await withTimeout(res.json(), 12000);
       return (rows && rows[0]) ? rows[0].value : null;
     } catch (e) {
       return { __err: 'No connection to the database. Retrying...' };
@@ -643,7 +666,7 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 
   // keep the session alive well before it lapses, so an all-day board never drops out
-  setInterval(function(){ refreshToken(); }, 40 * 60 * 1000);
+  if (!CFG.readOnly) setInterval(function(){ refreshToken(); }, 40 * 60 * 1000);
   // each channel is judged on its own scale: a 25% showroom close and a 25% internet
   // close are nowhere near the same achievement
   // A row of little cars: one filled car per whole unit, a half-filled car for a
@@ -715,16 +738,23 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
+  function easternMonth(){
+    var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' }).formatToParts(new Date());
+    var year = parts.find(function(p){ return p.type === 'year'; }).value;
+    var month = parts.find(function(p){ return p.type === 'month'; }).value;
+    return year + '-' + month;
+  }
   function render(store){
     CAR_ROW = 0;
     var root = document.getElementById('root');
     // an error is not the same as an empty store: say which, never just hang
     if (store && store.__err){
-      root.innerHTML = '<div class="empty">' + store.__err + '</div>';
+      root.innerHTML = '<div class="empty">' + text(store.__err) + '</div>';
       return;
     }
     if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
-    var M = (store.months||{})[CFG.ym] || {stats:{}};
+    var M = (store.months||{})[easternMonth()];
+    if (!M || !M.stats) { root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
 
     // CFG.roles already excludes any role turned off for The Board (BDC by default),
     // so only the people who actually deliver units show up here.
@@ -782,7 +812,16 @@ export function LEADERBOARD_HTML(p, PIX) {
     })();
 
     var totalSold = people.reduce(function(n,x){ return n + x.sold; }, 0);
-    var grandFlag = Math.abs(totalSold - Math.round(totalSold)) > 0.01;
+    // This public projection is provisional report evidence, not report freshness.
+    var reported = M.reportedTotal;
+    var reportedShape = reported && typeof reported === 'object' && !Array.isArray(reported)
+      && Object.keys(reported).length === 4
+      && Object.keys(reported).every(function(k){ return ['count','status','month','asOf'].indexOf(k) >= 0; })
+      && reported.month === easternMonth() && reported.asOf === null;
+    var reportedKnown = reportedShape && reported.status === 'provisional'
+      && Number.isSafeInteger(reported.count) && reported.count >= 0;
+    var reportedStatus = reportedKnown ? 'Provisional &middot; Report time unknown'
+      : (reportedShape && reported.status === 'conflict' && reported.count === null ? 'Unknown &middot; Reports disagree' : 'Unknown &middot; Report time unknown');
 
     // Everyone has to fit on one screen with no scrolling, so the rows scale to the
     // size of the team rather than being a fixed height.
@@ -829,8 +868,8 @@ export function LEADERBOARD_HTML(p, PIX) {
       var barw = Math.round((x.sold / maxSold) * 100);
       return '<tr class="row' + (i === 0 ? ' leader' : '') + (i < 3 ? ' pin' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
-        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
-        '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
+        '<td class="nm">' + text(x.disp) + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + text(x.sold) + '">0</span>' +
           soldMove(x.sold, x.prevSold) +
         '</td>' +
         cell(x.internetPct, x.prev.internet, 'internet') +
@@ -863,11 +902,11 @@ export function LEADERBOARD_HTML(p, PIX) {
       var barw = Math.max(2, Math.round(ratio * 100));
       return '<tr class="row' + (i === 0 ? ' leader' : '') + (i < 3 ? ' pin' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
-        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="nm">' + text(x.disp) + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         cell2(x.internetPct, 'internet', x.prev.internet) +
         cell2(x.phonePct, 'phone', x.prev.phone) +
         cell2(x.showroomPct, 'showroom', x.prev.showroom) +
-        '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span>' + soldMove(x.sold, x.prevSold) + '</td>' +
+        '<td class="sold2"><span class="soldnum" data-to="' + text(x.sold) + '">0</span>' + soldMove(x.sold, x.prevSold) + '</td>' +
         '<td class="carcell"><div class="cars ' + t2 + '">' + cars(x.sold, maxSold) + '</div></td>' +
       '</tr>';
     });
@@ -881,24 +920,27 @@ export function LEADERBOARD_HTML(p, PIX) {
 
     // ticker items: leader + best of each channel, plus the streaks passed from the tool
     var tickerItems = [];
-    if (people.length && people[0].sold > 0) tickerItems.push('&#128081; ' + people[0].name + ' leads with ' + people[0].sold + ' units');
+    if (people.length && people[0].sold > 0) tickerItems.push('&#128081; ' + text(people[0].name) + ' leads with ' + people[0].sold + ' units');
     ['internetPct','phonePct','showroomPct'].forEach(function(k){
       var best = null;
       people.forEach(function(x){ if (x[k] != null && (!best || x[k] > best[k])) best = x; });
       if (best && best[k] > 0) {
         var lbl = k === 'internetPct' ? 'Top Internet' : k === 'phonePct' ? 'Top Phone' : 'Top Showroom';
-        tickerItems.push('<span class="tk-cap">' + lbl + ':</span>' + best.name + ' ' + fmtPct(best[k]));
+        tickerItems.push('<span class="tk-cap">' + lbl + ':</span>' + text(best.name) + ' ' + fmtPct(best[k]));
       }
     });
-    (CFG.ticker || []).forEach(function(t){ tickerItems.push(t); });
+    (CFG.ticker || []).forEach(function(t){ tickerItems.push(text(t)); });
     var tickerHtml = tickerItems.map(function(t){ return '<span class="ticker-item">' + t + '</span>'; }).join('');
     var tickDur = Math.max(25, tickerItems.length * 7);
 
     root.innerHTML =
-      '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
-      '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
+      '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+text(CFG.icon)+'"/>':'')+'</div>'+
+      '<div><div class="head-title">'+text(CFG.storeName)+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
       '<div class="head-r">'+
-        '<div class="total"><div class="total-num"><span class="totnum" data-to="'+totalSold+'">0</span>'+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
+        '<div class="total"><div class="total-num">'+(reportedKnown ? reported.count : '-')+'</div>'+
+        '<div class="total-cap">Reported Total Delivered</div>'+
+        '<div class="total-cap" role="status">'+reportedStatus+'</div>'+
+        '<div class="total-cap">Displayed associate credits: '+text(totalSold)+'</div></div>'+
         '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
       '</div></div>'+
       '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
@@ -939,9 +981,9 @@ export function LEADERBOARD_HTML(p, PIX) {
       (bars
         ? '<div class="ticker"><div class="ticker-track" style="--tickdur:'+tickDur+'s">'+tickerHtml+'</div></div>'
         : '<div class="foot">' +
-            'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
-            'Phone ' + CFG.thresholds.phone.green + '%+ &middot; ' +
-            'Showroom ' + CFG.thresholds.showroom.green + '%+' +
+            'Green at: Internet ' + text(CFG.thresholds.internet.green) + '%+ &middot; ' +
+            'Phone ' + text(CFG.thresholds.phone.green) + '%+ &middot; ' +
+            'Showroom ' + text(CFG.thresholds.showroom.green) + '%+' +
             ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
           '</div>');
     tick();
@@ -1157,7 +1199,7 @@ export function LEADERBOARD_HTML(p, PIX) {
       return '<div class="cg-card" style="--d:'+(i*1.5)+'s">'
         + '<div class="cg-burst"></div>'
         + '<div class="cg-ico">&#127881;</div>'
-        + '<div class="cg-txt"><b>'+w.name+'</b><span>just delivered '+u+(w.gained==1?' unit':' units')+'</span></div>'
+        + '<div class="cg-txt"><b>'+text(w.name)+'</b><span>just delivered '+u+(w.gained==1?' unit':' units')+'</span></div>'
         + '</div>';
     }).join('');
     document.body.appendChild(host);
@@ -1281,7 +1323,7 @@ export function LEADERBOARD_HTML(p, PIX) {
         + 's; --dur:' + l[3] + 's; --fade:' + l[4] + '">' + pix('car', '', 1) + '</span>';
     }).join('');
     lane.innerHTML = '<div class="ho-veil"></div><div class="ho-road"></div>' + cars
-      + '<div class="ho-name"><span class="ho-to">Now showing</span>' + label + '</div>';
+      + '<div class="ho-name"><span class="ho-to">Now showing</span>' + text(label) + '</div>';
     document.body.appendChild(lane);
 
     var root = document.getElementById('root');
@@ -1380,9 +1422,9 @@ export function LEADERBOARD_HTML(p, PIX) {
       return sibs.some(function(x){ return x.id === id; }); });
     rl.innerHTML = sibs.map(function(x){
       var on = (DISP.rotate || []).indexOf(x.id) >= 0;
-      return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
+      return '<button data-rot="' + text(x.id) + '" class="' + (on ? 'on' : '') + '">'
         + '<span class="tick">' + (on ? '&#10003;' : '') + '</span>'
-        + '<span>' + x.name + '</span></button>';
+        + '<span>' + text(x.name) + '</span></button>';
     }).join('');
     rl.querySelectorAll('[data-rot]').forEach(function(b){
       b.onclick = function(){
@@ -1483,6 +1525,11 @@ export function LEADERBOARD_HTML(p, PIX) {
         // reload or a new build cannot undo what someone set by hand.
         var kept = false;
         try { localStorage.setItem(DKEY, JSON.stringify(DISP)); tsizeKeep(CFG.storeId, DISP.tscale); kept = true; } catch (e) {}
+        if (CFG.readOnly) {
+          msg.textContent = kept ? 'Saved on this screen.' : 'Could not save.';
+          setTimeout(function(){ msg.textContent = ''; }, 4000);
+          return;
+        }
         var op = window.opener || (window.parent !== window ? window.parent : null);
         if (op && op.__lpcSaveBoardDisplay) {
           /* The look of the board belongs to the board this screen was opened
@@ -1510,6 +1557,17 @@ export function LEADERBOARD_HTML(p, PIX) {
   }
 
   var LAST = null;   // last store payload, so a text-size change can re-render
+  var renderedMonth = easternMonth();
+  function clockTick(){
+    tick();
+    var month = easternMonth();
+    // Do not render while the convoy is switching the visible store. The next
+    // existing clock tick will retry once the handover is complete.
+    if (month !== renderedMonth && !HANDING) {
+      renderedMonth = month;
+      if (LAST) render(LAST);
+    }
+  }
 
   // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
   // was pointless: the reports only change when a manager uploads one.
@@ -1517,6 +1575,6 @@ export function LEADERBOARD_HTML(p, PIX) {
   // always right regardless of when the data last refreshed.
   loop();
   setInterval(loop, 15 * 60 * 1000);
-  setInterval(tick, 10000);
+  setInterval(clockTick, 10000);
 </script></body></html>`;
 }

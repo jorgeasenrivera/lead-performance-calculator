@@ -6,7 +6,7 @@
 
 import PostalMime from "postal-mime";
 import Papa from "papaparse";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
+import * as pdfjsNamespace from "pdfjs-dist/legacy/build/pdf.js";
 /* The reader for the scheduled reports. Shared verbatim with the app, which
    reads the same PDFs when a manager drops one in by hand — see the note at the
    top of that file for what living as two copies cost. */
@@ -30,8 +30,12 @@ import { phoneExtras, withRocked } from "./_phone-rows.mjs";
 import { admitsEveryone, holdPerson } from "./_people-status.mjs";
 import { supabaseUrl } from "./_env.mjs";
 import { serverFault } from "./_report.mjs";
+import { sourceHash } from "./_report-version.mjs";
+import { selectReportedTotal } from "./_board-provenance.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
+// Native Node and bundled CommonJS expose the same reader through different exports.
+const pdfjs = typeof pdfjsNamespace.getDocument === "function" ? pdfjsNamespace : pdfjsNamespace.default;
 try {
   pdfjs.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
 } catch (e) { /* bundled include covers it */ }
@@ -267,7 +271,7 @@ async function refreshBoardRow(storeId, sdata) {
     goals: extras.goals,
     off: extras.off,
     boardDisplay: (sdata && sdata.boardDisplay) || prev.boardDisplay || null,
-    months: { [month]: { stats } },
+    months: { [month]: { stats, reportedTotal: selectReportedTotal(sdata?.deliverySummaryObservations, storeId, month) } },
     updatedAt: new Date().toISOString(),
   });
   return { published: true, people: roster.length };
@@ -324,6 +328,32 @@ function applyToStore(data, entries, sourceLabel) {
   if (next.snapshots) delete next.snapshots;
 
   const nowISO = new Date().toISOString();
+  for (const { summaryObservation } of entries) {
+    if (!summaryObservation) continue;
+    const month = summaryObservation.reportMonth, hash = summaryObservation.source.sha256;
+    const observations = next.deliverySummaryObservations || {};
+    const monthObservations = observations[month] || {};
+    if (typeof observations !== "object" || Array.isArray(observations) || typeof monthObservations !== "object" || Array.isArray(monthObservations)) {
+      console.error("ingest: Summary observation not retained: invalid existing observation map");
+      continue;
+    }
+    const previous = monthObservations[hash];
+    if (previous) {
+      if (previous.schemaVersion !== 1 || previous.storeId !== summaryObservation.storeId || previous.reportMonth !== month
+        || previous.count !== summaryObservation.count || previous.metric !== summaryObservation.metric
+        || previous.source?.sha256 !== hash || !Array.isArray(previous.sourceAssertions)) {
+        console.error("ingest: Summary observation not retained: conflicting existing content identity");
+        continue;
+      }
+      const assertion = summaryObservation.sourceAssertions[0];
+      if (!previous.sourceAssertions.some((value) => JSON.stringify(value) === JSON.stringify(assertion))) {
+        monthObservations[hash] = { ...previous, sourceAssertions: [...previous.sourceAssertions, assertion] };
+      }
+    } else {
+      monthObservations[hash] = globalThis.structuredClone(summaryObservation);
+    }
+    next.deliverySummaryObservations = { ...observations, [month]: monthObservations };
+  }
   for (const { rows, type, fileName, actDay: fileDay, rollup, stated } of entries) {
     const actDay = (fileDay && fileDay <= day) ? fileDay : day;
     /* ---- The store's own line, which is not a person and never becomes one ----
@@ -671,7 +701,29 @@ export default async function handler(req, res) {
             failures.push({ file: a.filename, why: note });
             continue;
           }
+          let summaryObservation = null;
+          if (kind === "delivery-summary" && mapped.reportMonth && hit.quality === "exact") {
+            const exactStores = (cfg?.stores || []).filter((store) => store
+              && [store.name, store.id].some((name) => typeof name === "string" && squashT(name) === squashT(mapped.storeName)));
+            if (exactStores.length === 1 && exactStores[0] === hit.store && typeof hit.store.id === "string" && /^[a-zA-Z0-9_-]+$/.test(hit.store.id)) {
+              const bytes = Buffer.from(a.content), sha256 = sourceHash(bytes);
+              const count = Number.isSafeInteger(mapped.stated?.total) && mapped.stated.total >= 0 ? mapped.stated.total : null;
+              const headers = Array.isArray(mail.headers) ? mail.headers : [];
+              summaryObservation = {
+                schemaVersion: 1, metric: "printed_store_total_delivered", storeId: hit.store.id,
+                printedStoreName: mapped.storeName, reportMonth: mapped.reportMonth, printedRange: mapped.printedRange,
+                count, status: count === null ? "unknown" : "provisional", sentAt: null, asOf: null,
+                source: { sha256, byteLength: bytes.byteLength, parserVersion: "delivery-summary-printed-total-month:v1", archiveState: "unverified" },
+                sourceAssertions: [{
+                  date: headers.filter((header) => header && typeof header.key === "string" && header.key.toLowerCase() === "date" && typeof header.value === "string").map((header) => header.value),
+                  messageId: headers.filter((header) => header && typeof header.key === "string" && header.key.toLowerCase() === "message-id" && typeof header.value === "string").map((header) => header.value),
+                }],
+                processingAt: new Date().toISOString(), publicationEligible: false,
+              };
+            }
+          }
           entries.push({ store: hit.store, rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
+            ...(summaryObservation ? { summaryObservation } : {}),
             actDay: kind === "activity"
               ? (activityDateFrom(a.filename) || activityDateFrom(subject))
               : null,

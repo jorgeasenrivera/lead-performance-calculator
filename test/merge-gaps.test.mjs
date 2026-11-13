@@ -14,10 +14,11 @@
  * Each check below is that ordinary case. One manager changes one person while
  * another changes a different person, and both changes have to survive.
  */
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mergeAgainstServer } from "../api/_store-merge.mjs";
 
+mock.method(Date, "now", () => Date.UTC(2026, 8, 7));
 const T = (d) => new Date(Date.UTC(2026, 7, d)).toISOString();
 const merge = (mine, server) => mergeAgainstServer(JSON.parse(JSON.stringify(mine)), server);
 

@@ -1,6 +1,6 @@
 # Sage product area contracts
 
-Product contract record, 4 November 2026. The Online presence follow-up is a sanitized draft for non-production review; publication is approved, but merge and deployment are not. Decision summaries are paraphrased and dated; inspected repository sources, interpretations and open questions remain distinct. This document grants no application change, ownership transfer or release approval. Product requirements and implementation evidence remain separate; this record does not authorize integration activation or an application release.
+Product contract record, 4 November 2026. This local-only reconciliation preserves the Online requirements from draft #507. Publication, merge, deployment and application changes are outside this task. Decision summaries are paraphrased and dated; inspected repository sources, interpretations and open questions remain distinct. This document grants no application change, ownership transfer or release approval. Product requirements and implementation evidence remain separate; this record does not authorize integration activation or an application release.
 
 Read this before proposing a fix. Preserve existing workflows unless an explicit decision below changes them. An implementation gap, a proposed improvement and an unresolved product decision are different things.
 
