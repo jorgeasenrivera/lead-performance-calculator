@@ -157,7 +157,6 @@ jobs:
           import {createRequire} from 'node:module';
           import {pathToFileURL} from 'node:url';
           import path from 'node:path';
-          assert.ok(!process.env.NODE_OPTIONS, 'trace requires unchanged empty Node options');
           const require = createRequire(path.join(process.cwd(), 'package.json'));
           assert.equal(require('playwright/package.json').version, '1.63.0');
           const esm = await import(pathToFileURL(path.join(path.dirname(require.resolve('playwright/package.json')), 'index.mjs')).href);
@@ -171,7 +170,7 @@ jobs:
           const ORIGINS = ['http://127.0.0.1:5178','http://127.0.0.1:5181','http://127.0.0.1:5433','http://127.0.0.1:5180','http://127.0.0.1:5185'];
           const NAMES = new Set(['accept','accept-profile','apikey','authorization','content-type','content-profile','prefer','origin','referer','x-client-info','x-supabase-api-version','access-control-request-method','access-control-request-headers','access-control-allow-origin','access-control-allow-methods','access-control-allow-headers','access-control-allow-credentials','vary']);
           const METHODS = new Set(['GET','POST','PATCH','PUT','DELETE','OPTIONS','HEAD','*']);
-          const KINDS = new Set(['request','response','request-failed','request-finished','route-fetch-start','route-fetch-response','route-fetch-error','route-fulfill-start','route-fulfill-done','route-fulfill-error','navigation-start','navigation-commit','page-error','mock-request','mock-response','observer-summary','observer-incomplete']);
+          const KINDS = new Set(['request','response','request-failed','request-finished','route-fetch-start','route-fetch-response','route-fetch-error','route-fulfill-start','route-fulfill-done','route-fulfill-error','navigation-start','navigation-commit','page-error','mock-request','mock-response','observer-start','observer-summary','observer-incomplete']);
           function location(value) {
             if(value==='null')return {origin:'opaque-null',phase:'unknown'};
             try { const u = new URL(value); if (u.username || u.password || !ORIGINS.includes(u.origin)) return {origin:'other',phase:'unknown'};
@@ -298,7 +297,7 @@ jobs:
               };
               return ()=>{engine.launch=launch;};
             }
-            return {installMock,installBrowser};
+            return {start:source=>emit('observer-start',{source}),installMock,installBrowser};
           }
           module.exports={safe,headers,cors,location,appData,createObserver};
           if(process.env.SAGE_CORS_TRACE==='1'){
@@ -308,8 +307,8 @@ jobs:
               assert.equal(crypto.createHash('sha256').update(fs.readFileSync(entry)).digest('hex'),expected.get(entry),'frozen diagnostic entry');
               const destination=path.join(cwd,'manager-runtime-qualification/cors-trace.ndjson');assert.equal(process.env.SAGE_CORS_TRACE_PATH,destination,'fixed diagnostic metadata destination');
               const observer=createObserver(record=>{console.log('CORS_TRACE '+JSON.stringify(record));fs.appendFileSync(destination,JSON.stringify(record)+'\n');},()=>console.error('CORS_TRACE {"kind":"observer-incomplete"}'));
-              if(entry.endsWith('/mock-supabase.mjs'))observer.installMock(require('node:http'));
-              else {const localRequire=createRequire(path.join(cwd,'package.json'));assert.equal(localRequire('playwright/package.json').version,'1.63.0');observer.installBrowser(localRequire('playwright').webkit);}
+              if(entry.endsWith('/mock-supabase.mjs')){observer.installMock(require('node:http'));observer.start('mock');}
+              else {const localRequire=createRequire(path.join(cwd,'package.json'));assert.equal(localRequire('playwright/package.json').version,'1.63.0');observer.installBrowser(localRequire('playwright').webkit);observer.start('browser');}
             }
           }
           `;
@@ -321,7 +320,7 @@ jobs:
           writeFileSync(file, observerSource);
           writeFileSync(destination, '');
           writeFileSync('manager-runtime-qualification/cors-observer.json', JSON.stringify({version:'manager-cors-metadata/1',diagnosticOnly:true,sha256:createHash('sha256').update(observerSource).digest('hex')},null,2)+'\n');
-          appendFileSync(process.env.GITHUB_ENV, 'NODE_OPTIONS=--require='+file+'\nSAGE_CORS_TRACE=1\nSAGE_CORS_TRACE_PATH='+destination+'\n');
+          appendFileSync(process.env.GITHUB_ENV, 'SAGE_CORS_TRACE=1\nSAGE_CORS_TRACE_PATH='+destination+'\n');
           CORSPREP
       - name: Measure before and after
         id: measurement
@@ -331,7 +330,11 @@ jobs:
           SEARCH_RUNTIME_SHA: ${{ steps.runtime.outputs.runtime_sha }}
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
-          SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          if [ "$FEEL_BROWSER" = "webkit" ] && [ "${SAGE_CORS_TRACE:-0}" = "1" ]; then
+            SALESPERSON=1 node --require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/mock-supabase.mjs > mock.log 2>&1 &
+          else
+            SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
+          fi
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5178/ > /dev/null && break; sleep 0.2; done
           npx vite preview --outDir .color-baseline/dist --port 5180 --host 127.0.0.1 > color-baseline.log 2>&1 &
@@ -342,7 +345,11 @@ jobs:
           for i in $(seq 1 100); do curl -sf http://127.0.0.1:5185/ > /dev/null && break; sleep 0.2; done
           SEARCH_RUNTIME_SHA=e6d087c203bb88685159efbc272e04ce868e4c89 FEEL_URL=http://127.0.0.1:5185/ FRESH_OUT=hero-freshness-before node scripts/hero-freshness.mjs
           FRESH_ASSERT=1 FRESH_BASELINE_FILE=hero-freshness-before/evidence.json node scripts/hero-freshness.mjs
-          node scripts/hero-bars.mjs
+          if [ "$FEEL_BROWSER" = "webkit" ] && [ "${SAGE_CORS_TRACE:-0}" = "1" ]; then
+            node --require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs
+          else
+            node scripts/hero-bars.mjs
+          fi
           node scripts/manager-viewports.mjs
           node scripts/room-hero-colors.mjs
           node scripts/color-phone.mjs
@@ -378,10 +385,11 @@ jobs:
           try {
             const sanitize=createRequire(import.meta.url)(path.join(process.env.RUNNER_TEMP,'manager-cors-observer.cjs')).safe;
             records=readFileSync('manager-runtime-qualification/cors-trace.ndjson','utf8').trim().split('\n').filter(Boolean).map(line=>sanitize(JSON.parse(line)));
-            collection=records.some(row=>row.incomplete||row.kind==='observer-incomplete')?'partial':'observed-snapshot';
+            const active=['mock','browser'].every(source=>records.some(row=>row.kind==='observer-start'&&row.source===source));
+            collection=!active?'not-activated':records.some(row=>row.incomplete||row.kind==='observer-incomplete')?'partial':records.some(row=>!['observer-start','observer-summary'].includes(row.kind))?'observed-snapshot':'no-observations';
             for(const record of records)console.log('CORS_TRACE '+JSON.stringify(record));
           } catch { collection='missing-or-invalid'; }
-          const report={diagnosticOnly:true,collection,records:records.length,browserCloseSummary:records.some(row=>row.kind==='observer-summary'&&row.source==='browser'),mockCompleteness:'unknown-background-source',measurementOutcome:['success','failure','cancelled','skipped'].includes(process.env.MEASUREMENT_OUTCOME)?process.env.MEASUREMENT_OUTCOME:'unknown'};
+          const report={diagnosticOnly:true,collection,records:records.length,activation:{mock:records.some(row=>row.kind==='observer-start'&&row.source==='mock'),browser:records.some(row=>row.kind==='observer-start'&&row.source==='browser')},browserCloseSummary:records.some(row=>row.kind==='observer-summary'&&row.source==='browser'),mockCompleteness:'unknown-background-source',measurementOutcome:['success','failure','cancelled','skipped'].includes(process.env.MEASUREMENT_OUTCOME)?process.env.MEASUREMENT_OUTCOME:'unknown'};
           console.log('CORS_TRACE_REPORT '+JSON.stringify(report));
           try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Trace-only WebKit diagnostic. Collection is not a fix or replacement acceptance run. Original measurement outcome is preserved. Mock metadata is an open-ended snapshot.\n'); } catch { console.log('CORS_TRACE_REPORT {"summaryWrite":"unavailable","diagnosticOnly":true}'); }
           CORSSUMMARY

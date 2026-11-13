@@ -117,9 +117,22 @@ test('a synthetic merge with correct parents but changed consumed base inputs is
 test('historical baselines remain exact and missing baseline checkouts refuse',()=>{
   assert.equal(Object.keys(BASELINES).length,8);assert.throws(()=>verifyBaselines(root));
 });
+function untracedMeasurementCommands(workflow){
+  let commands=workflow.slice(workflow.indexOf('        run: |',workflow.indexOf('      - name: Measure before and after')),workflow.indexOf('      - uses: actions/upload-artifact@v4'));
+  const guard='if [ "$FEEL_BROWSER" = "webkit" ] && [ "${SAGE_CORS_TRACE:-0}" = "1" ]; then';
+  for(const [plain,traced] of [
+    ['SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &','SALESPERSON=1 node --require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/mock-supabase.mjs > mock.log 2>&1 &'],
+    ['node scripts/hero-bars.mjs','node --require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs'],
+  ]){
+    const exact='          '+guard+'\n            '+traced+'\n          else\n            '+plain+'\n          fi';
+    assert.equal(commands.split(exact).length-1,1,'one exact explicit diagnostic command with unchanged program arguments');
+    commands=commands.replace(exact,'          '+plain);
+  }
+  return commands;
+}
 test('workflow preserves historical verification, measurement commands, image and driver',()=>{
   const current=readFileSync(resolve(sourceRoot,QUALIFICATION[0]),'utf8');
-  const commands=current.slice(current.indexOf('        run: |',current.indexOf('      - name: Measure before and after')),current.indexOf('      - uses: actions/upload-artifact@v4'));
+  const commands=untracedMeasurementCommands(current);
   const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
   assert.equal(sha(commands),'23ad82ad007736b02f029fdabf5efe125ba16f0e5d478066f1a1c0ac9ab47338');
   for(const text of ['sha256sum --check scripts/search-runtime.sha256','mcr.microsoft.com/playwright:v1.63.0-noble','npm i --no-save playwright@1.63.0','engine: [chromium, webkit]'])assert.ok(current.includes(text));
@@ -245,34 +258,59 @@ function actionTraceTests(){
     for(let n=0;n<10010;n++){const res=new EventEmitter();res.statusCode=201;res.getHeaders=()=>({});server.emit('request',req,res);}
     assert.equal(handled,10010);assert.ok(rows.some(row=>row.kind==='observer-incomplete'));assert.ok(rows.length<=20001);
   });
-  test('preparation emits a hash-bound observer only with an explicit empty-options context',()=>{
+  test('preparation emits a hash-bound observer without writing or altering ambient Node options',()=>{
     const dir=resolve(root,'trace-tool/prep');mkdirSync(dir,{recursive:true});
     const pkg=resolve(root,'node_modules/playwright');mkdirSync(pkg,{recursive:true});
     writeFileSync(resolve(pkg,'package.json'),JSON.stringify({name:'synthetic-playwright-fixture',version:'1.63.0',exports:{'.':{require:'./index.cjs',import:'./index.mjs'},'./package.json':'./package.json'}}));
     writeFileSync(resolve(pkg,'index.cjs'),'module.exports={webkit:{synthetic:true}};\n');
     writeFileSync(resolve(pkg,'index.mjs'),"import driver from './index.cjs';export const webkit=driver.webkit;\n");
     const envFile=resolve(dir,'env.out');writeFileSync(envFile,'');const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');
-    execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:prep,env:{...clean,RUNNER_TEMP:dir,GITHUB_ENV:envFile}});
+    execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:prep,env:{...clean,NODE_OPTIONS:'--no-warnings',RUNNER_TEMP:dir,GITHUB_ENV:envFile}});
     const generated=readFileSync(resolve(dir,'manager-cors-observer.cjs'),'utf8');assert.equal(generated,observerText);
     const record=JSON.parse(readFileSync(resolve(root,'manager-runtime-qualification/cors-observer.json')));assert.equal(record.diagnosticOnly,true);assert.equal(record.sha256,createHash('sha256').update(observerText).digest('hex'));
-    const envText=readFileSync(envFile,'utf8');assert.ok(envText.includes('SAGE_CORS_TRACE=1\n'));assert.ok(envText.includes('NODE_OPTIONS=--require='+resolve(dir,'manager-cors-observer.cjs')+'\n'));
+    const envText=readFileSync(envFile,'utf8');assert.ok(envText.includes('SAGE_CORS_TRACE=1\n'));assert.ok(!envText.includes('NODE_OPTIONS'));assert.equal(process.env.NODE_OPTIONS,clean.NODE_OPTIONS);
     assert.throws(()=>execFileSync(process.execPath,['--require',resolve(dir,'manager-cors-observer.cjs'),resolve(root,'scripts/mock-supabase.mjs')],{cwd:root,env:{...clean,SAGE_CORS_TRACE:'1',SAGE_CORS_TRACE_PATH:resolve(root,'manager-runtime-qualification/cors-trace.ndjson')},stdio:['pipe','pipe','pipe']}),/frozen diagnostic entry/,'a different entry never gains an observer');
+  });
+  test('documented per-command require activates both observers and preserves ambient options and script arguments',()=>{
+    const clean={...process.env},dir=resolve(root,'trace-tool/prep'),trace=resolve(root,'manager-runtime-qualification/cors-trace.ndjson');
+    // Unit-only entry hashes substitute tiny nonnetwork programs. Production
+    // constants remain fixed and the separate wrong-entry refusal stays intact.
+    const entryText="import assert from 'node:assert/strict';assert.equal(process.env.NODE_OPTIONS,'--no-warnings');assert.deepEqual(process.argv.slice(2),['synthetic-argument']);console.log('SYNTHETIC_ENTRY_OK');\n";
+    const entryHash=createHash('sha256').update(entryText).digest('hex');
+    const fixture=observerText.replace('1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972',entryHash).replace('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3',entryHash);
+    const preload=resolve(dir,'unit-entry-observer.cjs');writeFileSync(preload,fixture);writeFileSync(trace,'');
+    for(const entry of ['mock-supabase.mjs','hero-bars.mjs']){
+      const file=resolve(root,'scripts',entry);writeFileSync(file,entryText);
+      const output=execFileSync(process.execPath,['--require',preload,file,'synthetic-argument'],{cwd:root,env:{...clean,NODE_OPTIONS:'--no-warnings',SAGE_CORS_TRACE:'1',SAGE_CORS_TRACE_PATH:trace},encoding:'utf8'});
+      assert.ok(output.includes('SYNTHETIC_ENTRY_OK'));
+    }
+    const markers=readFileSync(trace,'utf8').trim().split('\n').map(line=>JSON.parse(line));
+    assert.deepEqual(markers.map(row=>[row.kind,row.source]),[['observer-start','mock'],['observer-start','browser']]);
+    assert.ok(markers.every(row=>row.incomplete===false));
+    writeFileSync(trace,'');
+    const output=execFileSync(process.execPath,[resolve(root,'scripts/hero-bars.mjs'),'synthetic-argument'],{cwd:root,env:{...clean,NODE_OPTIONS:'--no-warnings',SAGE_CORS_TRACE:'1',SAGE_CORS_TRACE_PATH:trace},encoding:'utf8'});
+    assert.ok(output.includes('SYNTHETIC_ENTRY_OK'));assert.equal(readFileSync(trace,'utf8'),'','without --require the entry runs but no activation sentinel exists');
   });
   test('diagnostic summary reports partial/unknown metadata and never replaces the real measurement outcome',()=>{
     const summary=workflow.match(/node --input-type=module <<'CORSSUMMARY'\n([\s\S]*?)\n          CORSSUMMARY/)[1].split('\n').map(line=>line.slice(10)).join('\n');
     const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');const dir=resolve(root,'trace-tool/prep'),trace=resolve(root,'manager-runtime-qualification/cors-trace.ndjson');
-    writeFileSync(trace,JSON.stringify({kind:'mock-response',source:'mock',incomplete:true,authorization:'DO_NOT_EMIT_summary_secret'})+'\n');
+    writeFileSync(trace,[{kind:'observer-start',source:'mock'},{kind:'observer-start',source:'browser'},{kind:'mock-response',source:'mock',incomplete:true,authorization:'DO_NOT_EMIT_summary_secret'}].map(row=>JSON.stringify(row)).join('\n')+'\n');
     const run=()=>execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:summary,env:{...clean,RUNNER_TEMP:dir,GITHUB_STEP_SUMMARY:resolve(dir,'summary.out'),MEASUREMENT_OUTCOME:'failure'},encoding:'utf8'});
     const output=run();assert.ok(!output.includes('DO_NOT_EMIT'));const report=JSON.parse(output.split('\n').find(line=>line.startsWith('CORS_TRACE_REPORT ')).slice('CORS_TRACE_REPORT '.length));
     assert.equal(report.collection,'partial');assert.equal(report.mockCompleteness,'unknown-background-source');assert.equal(report.measurementOutcome,'failure');assert.equal(report.diagnosticOnly,true);
+    writeFileSync(trace,'');let empty=run();assert.ok(empty.includes('"collection":"not-activated"'));assert.ok(empty.includes('"mock":false,"browser":false'));assert.ok(!empty.includes('"collection":"observed-snapshot"'));
+    writeFileSync(trace,JSON.stringify({kind:'observer-start',source:'browser'})+'\n');empty=run();assert.ok(empty.includes('"collection":"not-activated"'),'one missing observer cannot qualify collection');
+    writeFileSync(trace,[{kind:'observer-start',source:'mock'},{kind:'observer-start',source:'browser'}].map(row=>JSON.stringify(row)).join('\n')+'\n');empty=run();assert.ok(empty.includes('"collection":"no-observations"'),'activation alone is not event collection');
     writeFileSync(trace,'not JSON');const missing=run();assert.ok(missing.includes('missing-or-invalid'));assert.ok(missing.includes('"measurementOutcome":"failure"'));
   });
-  test('diagnostic preparation requires unchanged Node options and binds exact frozen inputs and real driver identity',()=>{
+  test('diagnostic uses only explicit Node preloads and binds frozen inputs and real driver identity',()=>{
     assert.match(workflow,/if: matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93'/);
     assert.ok(observerText.includes('1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972'));assert.ok(observerText.includes('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3'));
-    assert.match(prep,/assert\.ok\(!process\.env\.NODE_OPTIONS/);assert.match(prep,/assert\.equal\(esm\.webkit, require\('playwright'\)\.webkit/);
+    assert.doesNotMatch(prep,/NODE_OPTIONS/);assert.match(prep,/assert\.equal\(esm\.webkit, require\('playwright'\)\.webkit/);
     const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');
-    assert.throws(()=>execFileSync(process.execPath,['--input-type=module'],{cwd:root,input:prep,env:{...clean,NODE_OPTIONS:'--no-warnings'},stdio:['pipe','pipe','pipe']}),/trace requires unchanged empty Node options/);
+    assert.doesNotMatch(workflow,/NODE_OPTIONS=/);
+    assert.throws(()=>untracedMeasurementCommands(workflow.replace('scripts/hero-bars.mjs\n          else','scripts/other.mjs\n          else')),/one exact explicit diagnostic command/);
+    assert.throws(()=>untracedMeasurementCommands(workflow.replace('--require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs','--import "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs')),/one exact explicit diagnostic command/);
     assert.doesNotMatch(observerText,/postData\(|\.body\(|response\.json\(|req\.on\(['"]data|disable-web-security|setExtraHTTPHeaders|route\.abort|unroute/);
   });
 }
