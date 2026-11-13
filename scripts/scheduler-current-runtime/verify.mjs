@@ -142,6 +142,7 @@ function reviewedHarness(root, source, head, records, correction) {
 // always uses verifySource, whose policy is fixed here and has no CLI override.
 export function verifyCandidate({root, event, env}, policy) {
   const {sourceCommit: source, sourceTree, baseCommit: base, baseTree, harnessCorrection,
+    eventBaseCommit = base, eventBaseTree = baseTree,
     qualification = QUALIFICATION, preservedManifests = {}} = policy;
   assert.equal(env.GITHUB_EVENT_NAME, 'pull_request', 'pull-request event only');
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY, 'repository identity');
@@ -152,16 +153,18 @@ export function verifyCandidate({root, event, env}, policy) {
   assert.equal(pr?.base?.repo?.full_name, REPOSITORY, 'same-repository base');
   assert.equal(pr?.head?.ref, BRANCH, 'guarded head branch');
   assert.equal(pr?.base?.ref, 'main', 'main target only');
-  assert.equal(pr?.base?.sha, base, 'nominated immutable base');
+  assert.equal(pr?.base?.sha, eventBaseCommit, 'nominated immutable base event');
   assert.match(pr?.head?.sha || '', /^[a-f0-9]{40}$/, 'full head identity');
   assert.equal(revision(root, source + '^{tree}'), sourceTree, 'immutable source tree');
   assert.equal(revision(root, base + '^{tree}'), baseTree, 'immutable base tree');
+  assert.equal(revision(root, eventBaseCommit + '^{tree}'), eventBaseTree, 'immutable event base tree');
   git(root, 'merge-base', '--is-ancestor', source, pr.head.sha);
   const delta = git(root, 'diff', '--name-only', source, pr.head.sha).toString().trim().split('\n').filter(Boolean).sort();
   assert.deepEqual(delta, [...qualification, ...(harnessCorrection ? [harnessCorrection.path] : [])].sort(), 'qualification-only head delta');
   const checkout = revision(root, 'HEAD');
   assert.equal(env.GITHUB_SHA, checkout, 'actual checkout matches Actions SHA');
   const parents = git(root, 'show', '-s', '--format=%P', checkout).toString().trim().split(' ');
+  if (eventBaseCommit !== base) assert.notEqual(checkout, pr.head.sha, 'historical event base requires an exact current-base synthetic merge');
   if (checkout === pr.head.sha) {
     assert.ok([ 'refs/pull/512/head', 'refs/pull/512/merge', 'refs/heads/' + BRANCH ].includes(env.GITHUB_REF), 'head checkout ref');
   } else {
@@ -181,19 +184,31 @@ export function verifyCandidate({root, event, env}, policy) {
   for (const [path, expected] of Object.entries(preservedManifests)) assert.equal(digest(regular(root, path)), expected, 'preserved historical manifest: ' + path);
   return {version: 'scheduler-current-runtime-evidence/1', repository: REPOSITORY, pullRequest: 512,
     sourceCommit: source, sourceTree: sourceTree, baseCommit: base, baseTree: baseTree,
+    eventBaseCommit, eventBaseTree,
     headCommit: pr.head.sha, headTree: revision(root, pr.head.sha + '^{tree}'),
     checkoutCommit: checkout, checkoutTree: revision(root, 'HEAD^{tree}'), checkoutParents: parents,
     githubRef: env.GITHUB_REF, consumedFiles: records.length, harnessCorrections:harness.evidence, preservedManifests:{...preservedManifests}, flags: Object.fromEntries(flags.map(name => [name, '0'])),
     historicalManifestSha256: digest(regular(root, 'scripts/search-runtime.sha256'))};
 }
 export function verifySource(input) {
-  if (input.event?.pull_request?.base?.sha === CURRENT_BASE) return verifyCurrentSource(input);
+  if (input.event?.pull_request?.base?.sha === CURRENT_BASE || hasCurrentMergeWithOriginalEventBase(input)) return verifyCurrentSource(input);
   return {...verifyCandidate(input, {sourceCommit: SOURCE, sourceTree: SOURCE_TREE, baseCommit: BASE, baseTree: BASE_TREE,
     harnessCorrection:HARNESS_CORRECTION}), caseName:'current-95ad3f93'};
 }
+function hasCurrentMergeWithOriginalEventBase({root, event}) {
+  if (event?.pull_request?.base?.sha !== BASE) return false;
+  const checkout = revision(root, 'HEAD');
+  const parents = git(root, 'show', '-s', '--format=%P', checkout).toString().trim().split(' ');
+  return checkout !== event.pull_request.head?.sha && parents.length === 2 &&
+    parents[0] === CURRENT_BASE && parents[1] === event.pull_request.head?.sha;
+}
 export function verifyCurrentSource(input) {
+  // GitHub retains this PR's original base in its event snapshot. Accept that
+  // exact snapshot only when the real checkout proves the reviewed new base.
+  const originalEventBase = input.event?.pull_request?.base?.sha === BASE;
   return {...verifyCandidate(input, {sourceCommit:CURRENT_SOURCE, sourceTree:CURRENT_SOURCE_TREE,
     baseCommit:CURRENT_BASE, baseTree:CURRENT_BASE_TREE, qualification:CURRENT_QUALIFICATION,
+    eventBaseCommit:originalEventBase ? BASE : CURRENT_BASE, eventBaseTree:originalEventBase ? BASE_TREE : CURRENT_BASE_TREE,
     preservedManifests:PRESERVED_MANIFESTS}), caseName:'current-main-579727d'};
 }
 

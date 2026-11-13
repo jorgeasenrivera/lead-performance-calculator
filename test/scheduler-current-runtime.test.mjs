@@ -207,6 +207,31 @@ function currentMainQualificationTests() {
     assert.ok(sourceRecords(dir,source).some(row=>row.path==='test/signup-copy.test.mjs'),'landed signup regression is consumed');
     git(dir,'update-ref','HEAD',candidate);try{assert.equal(check(input,{...variables,GITHUB_SHA:candidate,GITHUB_REF:'refs/pull/512/head'}).checkoutCommit,candidate);}finally{git(dir,'update-ref','HEAD',synthetic);}
   });
+  test('an exact historical event snapshot is recorded separately without replacing the consumed merge base',()=>{
+    const e=structuredClone(input);e.pull_request.base.sha=priorBase;
+    const snapshotPolicy={...fixed,eventBaseCommit:priorBase,eventBaseTree:git(dir,'rev-parse',priorBase+'^{tree}').toString().trim()};
+    const unchanged=JSON.stringify(e),result=verifyCandidate({root:dir,event:e,env:variables},snapshotPolicy);
+    assert.equal(JSON.stringify(e),unchanged,'the event remains unchanged');assert.equal(result.eventBaseCommit,priorBase);assert.equal(result.eventBaseTree,snapshotPolicy.eventBaseTree);
+    assert.equal(result.baseCommit,base);assert.equal(result.baseTree,fixed.baseTree);assert.deepEqual(result.checkoutParents,[base,candidate]);
+    assert.throws(()=>verifyCandidate({root:dir,event:e,env:variables},{...snapshotPolicy,eventBaseTree:'0'.repeat(40)}),/immutable event base tree/);
+    git(dir,'update-ref','HEAD',candidate);
+    try{assert.throws(()=>verifyCandidate({root:dir,event:e,env:{...variables,GITHUB_SHA:candidate,GITHUB_REF:'refs/pull/512/head'}},snapshotPolicy),/historical event base requires/);}finally{git(dir,'update-ref','HEAD',synthetic);}
+  });
+  test('historical event snapshots require exact current-base merge parents, ref, Actions SHA and consumed inputs',()=>{
+    const e=structuredClone(input);e.pull_request.base.sha=priorBase;
+    const snapshotPolicy={...fixed,eventBaseCommit:priorBase,eventBaseTree:git(dir,'rev-parse',priorBase+'^{tree}').toString().trim()};
+    const snapshot=(event=e,env=variables)=>verifyCandidate({root:dir,event,env},snapshotPolicy);
+    for(const parents of [[priorBase,candidate],[candidate,base]]){
+      const wrong=makeCommit(git(dir,'rev-parse',candidate+'^{tree}').toString().trim(),parents);git(dir,'update-ref','HEAD',wrong);
+      try{assert.throws(()=>snapshot(e,{...variables,GITHUB_SHA:wrong}),/exact base and head/);}finally{git(dir,'update-ref','HEAD',synthetic);}
+    }
+    for(const env of [{...variables,GITHUB_SHA:candidate},{...variables,GITHUB_REF:'refs/pull/512/head'}])assert.throws(()=>snapshot(e,env));
+    const unknown=structuredClone(e);unknown.pull_request.base.sha=source;assert.throws(()=>snapshot(unknown),/nominated immutable base event/);
+    change('src/LeadPerformanceCalculator.jsx',(file,bytes)=>{writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')]));git(dir,'add','--','src/LeadPerformanceCalculator.jsx');},()=>{
+      const wrong=makeCommit(git(dir,'write-tree').toString().trim(),[base,candidate]);git(dir,'update-ref','HEAD',wrong);
+      assert.throws(()=>snapshot(e,{...variables,GITHUB_SHA:wrong}),/runtime (size|hash)/);
+    });
+  });
   test('new-main qualification refuses old or wrong bases, events, forks, branches and checkout identities',()=>{
     for(const mutate of [e=>e.pull_request.base.sha=priorBase,e=>e.pull_request.base.sha=source,e=>e.pull_request.head.repo.full_name='fork/repo',e=>e.pull_request.head.ref='codex/unguarded',e=>e.pull_request.base.ref='release',e=>e.number=513]){const e=structuredClone(input);mutate(e);assert.throws(()=>check(e));}
     for(const env of [{...variables,GITHUB_EVENT_NAME:'push'},{...variables,GITHUB_SHA:candidate},{...variables,GITHUB_REF:'refs/heads/main'}])assert.throws(()=>check(input,env));
