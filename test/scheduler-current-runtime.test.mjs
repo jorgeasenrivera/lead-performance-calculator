@@ -6,7 +6,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SOURCE as FIXED_SOURCE, SOURCE_TREE as FIXED_TREE, BASE as FIXED_BASE, REPOSITORY, BRANCH, QUALIFICATION, BASELINES, git, sourceRecords, verifyCandidate, verifySource, verifyBaselines } from '../scripts/scheduler-current-runtime/verify.mjs';
+import { SOURCE as FIXED_SOURCE, SOURCE_TREE as FIXED_TREE, BASE as FIXED_BASE, REPOSITORY, BRANCH, QUALIFICATION, HARNESS_CORRECTION, BASELINES, git, sourceRecords, verifyCandidate, verifySource, verifyBaselines } from '../scripts/scheduler-current-runtime/verify.mjs';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let root, head, merge, event, env, SOURCE, SOURCE_TREE, BASE, policy;
@@ -143,6 +143,10 @@ test('production wrapper binds the exact reviewed source and has no fixture or C
   const manifest=JSON.parse(readFileSync(resolve(sourceRoot,QUALIFICATION[1])));
   assert.equal(manifest.sourceCommit,FIXED_SOURCE);assert.equal(manifest.sourceTree,FIXED_TREE);assert.equal(manifest.baseCommit,FIXED_BASE);
   assert.equal(manifest.files.length,2089);
+  const original=manifest.files.find(row=>row.path===HARNESS_CORRECTION.path);
+  assert.deepEqual({mode:original.mode,blob:original.blob,bytes:original.bytes,sha256:original.sha256},HARNESS_CORRECTION.original);
+  const corrected=readFileSync(resolve(sourceRoot,HARNESS_CORRECTION.path));
+  assert.equal(corrected.length,HARNESS_CORRECTION.corrected.bytes);assert.equal(createHash('sha256').update(corrected).digest('hex'),HARNESS_CORRECTION.corrected.sha256);
   assert.throws(()=>verifySource({root,event,env}),/nominated immutable base/);
   const source=readFileSync(resolve(sourceRoot,QUALIFICATION[2]),'utf8');
   assert.match(source,/const evidence = verifySource\(/);assert.doesNotMatch(source,/process\.env\.(?:SOURCE|BASE|POLICY|SKIP)/);
@@ -277,7 +281,7 @@ function actionTraceTests(){
     // constants remain fixed and the separate wrong-entry refusal stays intact.
     const entryText="import assert from 'node:assert/strict';assert.equal(process.env.NODE_OPTIONS,'--no-warnings');assert.deepEqual(process.argv.slice(2),['synthetic-argument']);console.log('SYNTHETIC_ENTRY_OK');\n";
     const entryHash=createHash('sha256').update(entryText).digest('hex');
-    const fixture=observerText.replace('1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972',entryHash).replace('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3',entryHash);
+    const fixture=observerText.replace(HARNESS_CORRECTION.corrected.sha256,entryHash).replace('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3',entryHash);
     const preload=resolve(dir,'unit-entry-observer.cjs');writeFileSync(preload,fixture);writeFileSync(trace,'');
     for(const entry of ['mock-supabase.mjs','hero-bars.mjs']){
       const file=resolve(root,'scripts',entry);writeFileSync(file,entryText);
@@ -305,12 +309,147 @@ function actionTraceTests(){
   });
   test('diagnostic uses only explicit Node preloads and binds frozen inputs and real driver identity',()=>{
     assert.match(workflow,/if: matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93'/);
-    assert.ok(observerText.includes('1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972'));assert.ok(observerText.includes('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3'));
+    assert.ok(observerText.includes(HARNESS_CORRECTION.corrected.sha256));assert.ok(observerText.includes('5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3'));
     assert.doesNotMatch(prep,/NODE_OPTIONS/);assert.match(prep,/assert\.equal\(esm\.webkit, require\('playwright'\)\.webkit/);
     const clean={...process.env};assert.ok(!clean.NODE_OPTIONS,'fixture requires unchanged empty Node options');
     assert.doesNotMatch(workflow,/NODE_OPTIONS=/);
     assert.throws(()=>untracedMeasurementCommands(workflow.replace('scripts/hero-bars.mjs\n          else','scripts/other.mjs\n          else')),/one exact explicit diagnostic command/);
     assert.throws(()=>untracedMeasurementCommands(workflow.replace('--require "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs','--import "$RUNNER_TEMP/manager-cors-observer.cjs" scripts/hero-bars.mjs')),/one exact explicit diagnostic command/);
     assert.doesNotMatch(observerText,/postData\(|\.body\(|response\.json\(|req\.on\(['"]data|disable-web-security|setExtraHTTPHeaders|route\.abort|unroute/);
+  });
+}
+
+
+fixtureSettlementTests();
+function fixtureSettlementTests(){
+  const hero=readFileSync(resolve(sourceRoot,'scripts/hero-bars.mjs'),'utf8');
+  const helper=hero.slice(hero.indexOf('function createFixtureSettlement('),hero.indexOf('\nconst engine ='));
+  const create=Function('assert',helper+'\nreturn createFixtureSettlement;')(assert);
+  const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
+  const tick=()=>new Promise(resolve=>setImmediate(resolve));
+  const request=(suffix='app_data?on_conflict=key')=>({url:()=> 'http://127.0.0.1:5433/rest/v1/'+suffix});
+  test('fixture settlement waits for delayed real fetch and fulfill and forwards each unchanged call once',async t=>{
+    const {EventEmitter}=await import('node:events');const context=new EventEmitter(),fetch=deferred(),fulfill=deferred(),calls=[];
+    const settlement=create(context,async()=>{});t.after(()=>settlement.dispose());
+    const req=request(),response={json:async()=>({synthetic:true})},fetchOptions={url:'synthetic-original'},fulfillOptions={response,json:{synthetic:true}};
+    const route={request:()=>req,fetch:async options=>{calls.push(['fetch',options]);return fetch.promise;},fulfill:async options=>{calls.push(['fulfill',options]);return fulfill.promise;}};
+    const receiver={synthetic:true},extra={argument:true};
+    const handler=settlement.track(async function(actual,arg){assert.equal(this,receiver);assert.equal(actual,route);assert.equal(arg,extra);const value=await actual.fetch(fetchOptions);assert.equal(value,response);await value.json();return actual.fulfill(fulfillOptions);});
+    context.emit('request',req);const work=handler.call(receiver,route,extra);let transitioned=false;
+    const wait=settlement.wait().then(()=>{transitioned=true;});await tick();assert.equal(transitioned,false);
+    fetch.resolve(response);await tick();assert.equal(transitioned,false);assert.deepEqual(calls,[['fetch',fetchOptions],['fulfill',fulfillOptions]]);
+    context.emit('requestfinished',req);await tick();assert.equal(transitioned,false,'browser completion does not release an active route callback');
+    fulfill.resolve('original-result');assert.equal(await work,'original-result');await wait;assert.equal(transitioned,true);
+    assert.equal(settlement.evidence().pendingRequests,0);assert.equal(settlement.evidence().pendingRoutes,0);assert.equal(settlement.evidence().failed,false);
+  });
+  test('an aborted browser request retains its active callback and sticky failure',async t=>{
+    const {EventEmitter}=await import('node:events');const context=new EventEmitter(),gate=deferred(),settlement=create(context,async()=>{});t.after(()=>settlement.dispose());
+    const req=request();context.emit('request',req);const work=settlement.track(async()=>gate.promise)({request:()=>req});
+    context.emit('requestfailed',req);let outcome='pending';const wait=settlement.wait().then(()=>{outcome='passed';},error=>{outcome='failed';throw error;});const rejected=assert.rejects(wait,/Fixture request failed/);
+    await tick();assert.equal(outcome,'pending');assert.equal(settlement.evidence().pendingRoutes,1);
+    gate.resolve();await work;await rejected;assert.equal(outcome,'failed');assert.equal(settlement.evidence().failedRequests,1);
+    await assert.rejects(()=>settlement.wait(),/Fixture request failed/,'a later wait never clears the earlier failure');
+  });
+  test('settlement rechecks a new relevant request across the browser/event turn',async t=>{
+    const {EventEmitter}=await import('node:events');const context=new EventEmitter(),req=request('profiles?select=*');let turns=0,transitioned=false;
+    const settlement=create(context,async()=>{if(++turns===1)context.emit('request',req);});t.after(()=>settlement.dispose());
+    const wait=settlement.wait().then(()=>{transitioned=true;});await tick();assert.equal(transitioned,false);
+    context.emit('requestfinished',req);await wait;assert.ok(turns>=2);assert.equal(transitioned,true);
+  });
+  test('a late route callback starting another request cannot release the transition',async t=>{
+    const {EventEmitter}=await import('node:events');const context=new EventEmitter(),gate=deferred(),first=request(),second=request('profiles?select=*');
+    const settlement=create(context,async()=>{});t.after(()=>settlement.dispose());context.emit('request',first);
+    const work=settlement.track(async()=>{await gate.promise;context.emit('requestfinished',first);context.emit('request',second);})({request:()=>first});
+    let transitioned=false;const wait=settlement.wait().then(()=>{transitioned=true;});gate.resolve();await work;await tick();assert.equal(transitioned,false);
+    context.emit('requestfinished',second);await wait;assert.equal(transitioned,true);
+  });
+  test('route rejections preserve their exact identity and remain failed, including falsy values',async t=>{
+    const {EventEmitter}=await import('node:events');
+    for(const error of [new Error('synthetic route rejection'),null]){
+      const context=new EventEmitter(),settlement=create(context,async()=>{});t.after(()=>settlement.dispose());
+      await assert.rejects(()=>settlement.track(async()=>{throw error;})({request:()=>request()}),actual=>actual===error);
+      await assert.rejects(()=>settlement.wait(),actual=>actual===error);assert.equal(settlement.evidence().failed,true);
+    }
+  });
+  test('unfinished callback and browser-turn waits fail their bounded deadline without navigation',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});const {EventEmitter}=await import('node:events');
+    for(const holdRoute of [true,false]){
+      const context=new EventEmitter(),gate=deferred(),settlement=create(context,holdRoute?async()=>{}:()=>gate.promise);t.after(()=>settlement.dispose());
+      const work=holdRoute?settlement.track(async()=>gate.promise)({request:()=>request()}):null;
+      let navigated=false;const wait=settlement.wait().then(()=>{navigated=true;});const rejected=assert.rejects(wait,/deadline/);
+      t.mock.timers.tick(20000);await rejected;assert.equal(navigated,false);assert.equal(settlement.evidence().failed,true);
+      gate.resolve();if(work)await work;await tick();
+      await assert.rejects(()=>settlement.wait(),/deadline/,'timeout remains a failure after work eventually finishes');
+    }
+  });
+  test('only the two real localhost fixture endpoints participate, and disposal removes listeners',async()=>{
+    const {EventEmitter}=await import('node:events');const context=new EventEmitter(),settlement=create(context,async()=>{});
+    for(const url of ['https://external.invalid/rest/v1/app_data','http://127.0.0.1:5433/auth/v1/token','http://127.0.0.1:54330/rest/v1/profiles'])context.emit('request',{url:()=>url});
+    await settlement.wait();assert.equal(settlement.evidence().requests,0);settlement.dispose();
+    for(const name of ['request','requestfinished','requestfailed'])assert.equal(context.listenerCount(name),0);
+  });
+  test('the actual final scenario drains before the unchanged page-error assertion, including late errors',async t=>{
+    const {EventEmitter}=await import('node:events');const context=new EventEmitter(),gate=deferred(),errors=[];
+    const settlement=create(context,async()=>{errors.push('synthetic late page error');});t.after(()=>settlement.dispose());
+    const req=request();context.emit('request',req);const work=settlement.track(async()=>gate.promise)({request:()=>req});
+    const fragment=hero.slice(hero.lastIndexOf(' await settlement.wait();\n assert.deepEqual(errors,[]);'),hero.indexOf('\n}finally'));
+    assert.equal(fragment,' await settlement.wait();\n assert.deepEqual(errors,[]);');
+    const finish=Object.getPrototypeOf(async function(){}).constructor('settlement','assert','errors',fragment);
+    const completed=finish(settlement,assert,errors);const rejected=assert.rejects(completed,/deep-equal/);await tick();assert.deepEqual(errors,[]);
+    context.emit('requestfinished',req);gate.resolve();await work;await rejected;assert.deepEqual(errors,['synthetic late page error']);
+  });
+}
+
+
+harnessQualificationTests();
+function harnessQualificationTests(){
+  test('only the independently pinned original and corrected harness may differ in the complete inventory',t=>{
+    const dir=mkdtempSync(resolve(tmpdir(),'sage-harness-qualification-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));git(dir,'init','-q');
+    const write=(path,bytes)=>{mkdirSync(dirname(resolve(dir,path)),{recursive:true});writeFileSync(resolve(dir,path),bytes);};
+    const makeCommit=(tree,parents)=>execFileSync('git',['-C',dir,'commit-tree',tree,...parents.flatMap(p=>['-p',p])],{input:'Synthetic exact harness control\n',env:{...process.env,...identity}}).toString().trim();
+    const tree=()=>git(dir,'write-tree').toString().trim();
+    const path='scripts/hero-bars.mjs',original='// synthetic immutable original harness\n',corrected='// synthetic independently reviewed settlement harness\n';
+    for(const [p,bytes] of Object.entries({'src/main.jsx':'// synthetic base\n',[path]:original,'scripts/search-runtime.sha256':'synthetic untouched historical manifest\n','vercel.json':JSON.stringify({git:{deploymentEnabled:{[BRANCH]:false}}})+'\n'}))write(p,bytes);
+    git(dir,'add','.');const base=makeCommit(tree(),[]);write('src/main.jsx','// synthetic reviewed app\n');git(dir,'add','.');const sourceTree=tree(),source=makeCommit(sourceTree,[base]);
+    const rules={sourceCommit:source,sourceTree,baseCommit:base,baseTree:git(dir,'rev-parse',base+'^{tree}').toString().trim()};
+    const records=sourceRecords(dir,source),record=records.find(row=>row.path===path),pick=({mode,blob,bytes,sha256})=>({mode,blob,bytes,sha256});
+    for(const p of QUALIFICATION)write(p,readFileSync(resolve(sourceRoot,p)));
+    write(QUALIFICATION[1],JSON.stringify({version:'scheduler-current-runtime/1',...rules,files:records},null,2)+'\n');write(path,corrected);git(dir,'add','.');const candidate=makeCommit(tree(),[source]);
+    rules.harnessCorrection={path,original:pick(record),corrected:{mode:'100644',blob:git(dir,'rev-parse',candidate+':'+path).toString().trim(),bytes:Buffer.byteLength(corrected),sha256:createHash('sha256').update(corrected).digest('hex')}};
+    const merged=makeCommit(tree(),[base,candidate]);git(dir,'update-ref','HEAD',merged);
+    const e={number:512,repository:{full_name:REPOSITORY},pull_request:{head:{sha:candidate,ref:BRANCH,repo:{full_name:REPOSITORY}},base:{sha:base,ref:'main',repo:{full_name:REPOSITORY}}}},v={GITHUB_EVENT_NAME:'pull_request',GITHUB_REPOSITORY:REPOSITORY,GITHUB_SHA:merged,GITHUB_REF:'refs/pull/512/merge'};
+    const check=(policy=rules,event=e,variables=v)=>verifyCandidate({root:dir,event,env:variables},policy);
+    const result=check();assert.equal(result.consumedFiles,records.length);assert.ok(records.some(row=>row.path===path));assert.ok(!QUALIFICATION.includes(path),'head delta admission must not exclude the harness from inventory');
+    assert.deepEqual(result.harnessCorrections,[{path,sourceCommit:source,original:rules.harnessCorrection.original,corrected:rules.harnessCorrection.corrected}]);
+    assert.equal(readFileSync(resolve(dir,QUALIFICATION[1]),'utf8'),JSON.stringify({version:'scheduler-current-runtime/1',sourceCommit:source,sourceTree,baseCommit:base,baseTree:rules.baseTree,files:records},null,2)+'\n');
+    for(const side of ['original','corrected'])for(const [field,value] of [['bytes',0],['sha256','0'.repeat(64)],['blob','0'.repeat(40)]]){
+      const altered=structuredClone(rules);altered.harnessCorrection[side][field]=value;
+      assert.throws(()=>check(altered),new RegExp('independent .*'+side+' harness identity'));
+    }
+    const wrongPath=structuredClone(rules);wrongPath.harnessCorrection.path='src/main.jsx';assert.throws(()=>check(wrongPath),/qualification-only head delta/);
+    write(path,corrected+'\n');assert.throws(()=>check(),/checkout harness matches exact PR head/);write(path,corrected);
+    write('src/main.jsx','// unreviewed application\n');assert.throws(()=>check(),/runtime (size|hash)/);write('src/main.jsx','// synthetic reviewed app\n');
+    write('scripts/extra-harness.mjs','// extra\n');assert.throws(()=>check(),/inventory/);rmSync(resolve(dir,'scripts/extra-harness.mjs'));
+    rmSync(resolve(dir,path));assert.throws(()=>check());write(path,corrected);
+    // Even a committed changed harness cannot bless itself through checkout/head equality.
+    write(path,corrected+'// unreviewed\n');git(dir,'add',path);const changed=makeCommit(tree(),[candidate]);git(dir,'update-ref','HEAD',changed);
+    const altered=structuredClone(e);altered.pull_request.head.sha=changed;
+    assert.throws(()=>check(rules,altered,{...v,GITHUB_SHA:changed,GITHUB_REF:'refs/pull/512/head'}),/independent reviewed corrected harness identity/);
+    git(dir,'update-ref','HEAD',merged);git(dir,'read-tree',candidate);write(path,corrected);
+    assert.equal(check().consumedFiles,records.length);
+    const sourceText=readFileSync(resolve(sourceRoot,QUALIFICATION[2]),'utf8'),baseline=sourceText.slice(sourceText.indexOf('export function verifyBaselines'),sourceText.indexOf('function installedDependencies'));
+    assert.ok(baseline.includes('verifyFiles(dir, sourceRecords(dir, commit))'));assert.doesNotMatch(baseline,/harnessCorrection|reviewedHarness/,'historical baselines never inherit the candidate correction');
+  });
+  test('the settlement plumbing removes to exactly the original hero source with every original assertion',()=>{
+    let source=readFileSync(resolve(sourceRoot,'scripts/hero-bars.mjs'),'utf8');
+    const begin=source.indexOf('function createFixtureSettlement('),end=source.indexOf('const engine =');source=source.slice(0,begin)+source.slice(end);
+    source=source.replace(/const settlement = createFixtureSettlement\(context, async \(\) => \{\n  await page.evaluate\(\(\) => undefined\);\n  await new Promise\(resolve => setImmediate\(resolve\)\);\n\}\);\n/,'');
+    assert.equal((source.match(/settlement.track\(async route => \{/g)||[]).length,2);
+    source=source.replaceAll('settlement.track(async route => {','async route => {').replaceAll('}));\n','});\n');
+    for(const line of ['  await settlement.wait();\n','   await settlement.wait();\n',' await settlement.wait();\n']){assert.ok(source.includes(line));source=source.replace(line,'');}
+    source=source.replace('JSON.stringify({engine,results,errors,settlement:settlement.evidence()},null,2));settlement.dispose();','JSON.stringify({engine,results,errors},null,2));');
+    const expected='1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972';
+    assert.equal(createHash('sha256').update(source).digest('hex'),expected);
+    assert.notEqual(createHash('sha256').update(source.replace('assert.deepEqual(errors,[]);','assert.ok(true);')).digest('hex'),expected,'the no-error assertion cannot disappear in normalization');
   });
 }

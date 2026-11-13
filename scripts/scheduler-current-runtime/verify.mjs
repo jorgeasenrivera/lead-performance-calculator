@@ -17,6 +17,13 @@ export const QUALIFICATION = Object.freeze([
   'scripts/scheduler-current-runtime/verify.mjs',
   'test/scheduler-current-runtime.test.mjs',
 ]);
+export const HARNESS_CORRECTION = Object.freeze({
+  path:'scripts/hero-bars.mjs',
+  original:Object.freeze({mode:'100644', blob:'5efcd1b1e4bef3f833dc38ce465cde16bf3a9e68', bytes:6911,
+    sha256:'1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972'}),
+  corrected:Object.freeze({mode:'100644', blob:'100cb0c24865d9c668cea68960d9c4eb506609fc', bytes:10586,
+    sha256:'2000a45c32cc7aaac7da0c6617f840ba5086db580bd048455f7d8c3c5dd47041'}),
+});
 const roots = new Set(['.claude', 'api', 'download', 'fixtures', 'infra', 'native',
   'public', 'scripts', 'src', 'supabase', 'test', 'workers']);
 export const BASELINES = Object.freeze({
@@ -97,10 +104,29 @@ function verifyFiles(root, records) {
     assert.equal(digest(bytes), row.sha256, 'runtime hash: ' + row.path);
   }
 }
+function reviewedHarness(root, source, head, records, correction) {
+  if (!correction) return {records, evidence:[]};
+  assert.equal(correction.path, 'scripts/hero-bars.mjs', 'only the reviewed hero harness correction');
+  const original = records.find(row => row.path === correction.path);
+  assert.ok(original, 'harness remains in the complete immutable inventory');
+  const identity = ({mode, blob, bytes, sha256}) => ({mode, blob, bytes, sha256});
+  assert.deepEqual(identity(original), correction.original, 'independent immutable original harness identity');
+  const entry = git(root, 'ls-tree', head, '--', correction.path).toString().trim().split('\t');
+  assert.equal(entry[1], correction.path, 'exact head harness path');
+  const [mode, type, blob] = entry[0].split(' ');
+  assert.equal(type, 'blob', 'head harness is a regular blob');
+  assert.equal(mode, original.mode, 'head harness mode unchanged');
+  const bytes = git(root, 'show', head + ':' + correction.path);
+  const corrected = {mode, blob, bytes:bytes.length, sha256:digest(bytes)};
+  assert.deepEqual(corrected, correction.corrected, 'independent reviewed corrected harness identity');
+  assert.ok(regular(root, correction.path).equals(bytes), 'checkout harness matches exact PR head');
+  return {records:records.map(row => row.path === correction.path ? {...row,...corrected} : row),
+    evidence:[{path:correction.path, sourceCommit:source, original:identity(original), corrected}]};
+}
 // Unit fixtures supply their own immutable Git history. The executable below
 // always uses verifySource, whose policy is fixed here and has no CLI override.
 export function verifyCandidate({root, event, env}, policy) {
-  const {sourceCommit: source, sourceTree, baseCommit: base, baseTree} = policy;
+  const {sourceCommit: source, sourceTree, baseCommit: base, baseTree, harnessCorrection} = policy;
   assert.equal(env.GITHUB_EVENT_NAME, 'pull_request', 'pull-request event only');
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY, 'repository identity');
   assert.equal(event.repository?.full_name, REPOSITORY, 'event repository identity');
@@ -116,7 +142,7 @@ export function verifyCandidate({root, event, env}, policy) {
   assert.equal(revision(root, base + '^{tree}'), baseTree, 'immutable base tree');
   git(root, 'merge-base', '--is-ancestor', source, pr.head.sha);
   const delta = git(root, 'diff', '--name-only', source, pr.head.sha).toString().trim().split('\n').filter(Boolean).sort();
-  assert.deepEqual(delta, [...QUALIFICATION].sort(), 'qualification-only head delta');
+  assert.deepEqual(delta, [...QUALIFICATION, ...(harnessCorrection ? [harnessCorrection.path] : [])].sort(), 'qualification-only head delta');
   const checkout = revision(root, 'HEAD');
   assert.equal(env.GITHUB_SHA, checkout, 'actual checkout matches Actions SHA');
   const parents = git(root, 'show', '-s', '--format=%P', checkout).toString().trim().split(' ');
@@ -134,16 +160,18 @@ export function verifyCandidate({root, event, env}, policy) {
     {version: 'scheduler-current-runtime/1', sourceCommit: source, sourceTree: sourceTree, baseCommit: base, baseTree: baseTree}, 'fixed qualification identities');
   const records = sourceRecords(root, source);
   assert.deepEqual(manifest.files, records, 'manifest derives from immutable source, never current bytes');
-  verifyFiles(root, records);
+  const harness = reviewedHarness(root, source, pr.head.sha, records, harnessCorrection);
+  verifyFiles(root, harness.records);
   return {version: 'scheduler-current-runtime-evidence/1', repository: REPOSITORY, pullRequest: 512,
     sourceCommit: source, sourceTree: sourceTree, baseCommit: base, baseTree: baseTree,
     headCommit: pr.head.sha, headTree: revision(root, pr.head.sha + '^{tree}'),
     checkoutCommit: checkout, checkoutTree: revision(root, 'HEAD^{tree}'), checkoutParents: parents,
-    githubRef: env.GITHUB_REF, consumedFiles: records.length, flags: Object.fromEntries(flags.map(name => [name, '0'])),
+    githubRef: env.GITHUB_REF, consumedFiles: records.length, harnessCorrections:harness.evidence, flags: Object.fromEntries(flags.map(name => [name, '0'])),
     historicalManifestSha256: digest(regular(root, 'scripts/search-runtime.sha256'))};
 }
 export function verifySource(input) {
-  return verifyCandidate(input, {sourceCommit: SOURCE, sourceTree: SOURCE_TREE, baseCommit: BASE, baseTree: BASE_TREE});
+  return verifyCandidate(input, {sourceCommit: SOURCE, sourceTree: SOURCE_TREE, baseCommit: BASE, baseTree: BASE_TREE,
+    harnessCorrection:HARNESS_CORRECTION});
 }
 
 export function verifyBaselines(root) {

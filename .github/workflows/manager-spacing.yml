@@ -302,7 +302,7 @@ jobs:
           module.exports={safe,headers,cors,location,appData,createObserver};
           if(process.env.SAGE_CORS_TRACE==='1'){
             const entry=path.resolve(process.argv[1]||''), cwd=process.cwd();
-            const expected=new Map([[path.join(cwd,'scripts/hero-bars.mjs'),'1d6a3dfae95dd348eb98dc09b2e7fe2371f2297b9bf40c92e739f49a7ddb0972'],[path.join(cwd,'scripts/mock-supabase.mjs'),'5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3']]);
+            const expected=new Map([[path.join(cwd,'scripts/hero-bars.mjs'),'2000a45c32cc7aaac7da0c6617f840ba5086db580bd048455f7d8c3c5dd47041'],[path.join(cwd,'scripts/mock-supabase.mjs'),'5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3']]);
             if(expected.has(entry)){
               assert.equal(crypto.createHash('sha256').update(fs.readFileSync(entry)).digest('hex'),expected.get(entry),'frozen diagnostic entry');
               const destination=path.join(cwd,'manager-runtime-qualification/cors-trace.ndjson');assert.equal(process.env.SAGE_CORS_TRACE_PATH,destination,'fixed diagnostic metadata destination');
