@@ -136,7 +136,7 @@ jobs:
           fi
       - name: Build fictional app
         run: |
-          if [ '${{ steps.runtime.outputs.case_name }}' != 'current-95ad3f93' ]; then
+          if [ '${{ steps.runtime.outputs.case_name }}' != 'current-95ad3f93' ] && [ '${{ steps.runtime.outputs.case_name }}' != 'current-main-579727d' ]; then
             printf 'VITE_SUPABASE_URL=http://127.0.0.1:5433\nVITE_SUPABASE_ANON_KEY=mock-anon-key\n' > .env.local
           fi
           npm run build
@@ -148,7 +148,7 @@ jobs:
           cd .color-baseline
           VITE_SUPABASE_URL=http://127.0.0.1:5433 VITE_SUPABASE_ANON_KEY=mock-anon-key npm run build
       - name: Prepare observer-only WebKit diagnostic
-        if: matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93'
+        if: matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93' || matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-main-579727d'
         run: |
           node --input-type=module <<'CORSPREP'
           import assert from 'node:assert/strict';
@@ -373,7 +373,7 @@ jobs:
             spacing-runtime/hero-freshness-before/
           retention-days: 14
       - name: Preserve diagnostic metadata without changing measurement outcome
-        if: always() && matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-95ad3f93'
+        if: always() && matrix.engine == 'webkit' && (steps.runtime.outputs.case_name == 'current-95ad3f93' || steps.runtime.outputs.case_name == 'current-main-579727d')
         env:
           MEASUREMENT_OUTCOME: ${{ steps.measurement.outcome }}
         run: |

@@ -6,7 +6,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SOURCE as FIXED_SOURCE, SOURCE_TREE as FIXED_TREE, BASE as FIXED_BASE, REPOSITORY, BRANCH, QUALIFICATION, HARNESS_CORRECTION, BASELINES, git, sourceRecords, verifyCandidate, verifySource, verifyBaselines } from '../scripts/scheduler-current-runtime/verify.mjs';
+import { SOURCE as FIXED_SOURCE, SOURCE_TREE as FIXED_TREE, BASE as FIXED_BASE, CURRENT_SOURCE, CURRENT_SOURCE_TREE, CURRENT_BASE, CURRENT_BASE_TREE, CURRENT_QUALIFICATION, PRESERVED_MANIFESTS, REPOSITORY, BRANCH, QUALIFICATION, HARNESS_CORRECTION, BASELINES, git, sourceRecords, verifyCandidate, verifySource, verifyBaselines } from '../scripts/scheduler-current-runtime/verify.mjs';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let root, head, merge, event, env, SOURCE, SOURCE_TREE, BASE, policy;
@@ -151,6 +151,120 @@ test('production wrapper binds the exact reviewed source and has no fixture or C
   const source=readFileSync(resolve(sourceRoot,QUALIFICATION[2]),'utf8');
   assert.match(source,/const evidence = verifySource\(/);assert.doesNotMatch(source,/process\.env\.(?:SOURCE|BASE|POLICY|SKIP)/);
 });
+
+currentMainQualificationTests();
+function currentMainQualificationTests() {
+  let dir, source, base, priorBase, candidate, synthetic, input, variables, fixed;
+  const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+  const makeCommit = (tree, parents) => execFileSync('git', ['-C', dir, 'commit-tree', tree, ...parents.flatMap(parent=>['-p',parent])], {input:'Synthetic new-main qualification control\n',env:{...process.env,...identity}}).toString().trim();
+  const stage = () => {git(dir,'add','.');return git(dir,'write-tree').toString().trim();};
+  const check = (e=input,v=variables) => verifyCandidate({root:dir,event:e,env:v},fixed);
+  const change = (path, mutate, checkFailure) => {
+    const file=resolve(dir,path), original=readFileSync(file);
+    try {mutate(file,original);checkFailure();}
+    finally {rmSync(file,{force:true});writeFileSync(file,original);git(dir,'read-tree',candidate);git(dir,'update-ref','HEAD',synthetic);}
+  };
+  before(()=>{
+    dir=mkdtempSync(resolve(tmpdir(),'sage-new-main-runtime-'));git(dir,'init','-q');
+    const files={
+      '.gitignore':'node_modules/\ndist/\n.env*\n',
+      'src/LeadPerformanceCalculator.jsx':'// synthetic original core\n',
+      'src/Manager.jsx':'// synthetic manager\n',
+      'scripts/scheduler-performance/build.mjs':'// synthetic original boundary\n',
+      'scripts/hero-bars.mjs':'// synthetic reviewed settled harness\n',
+      'scripts/mock-supabase.mjs':'// synthetic mock\n',
+      'api/scheduler.mjs':'// synthetic default-OFF endpoint\n',
+      'package.json':'{"dependencies":{},"devDependencies":{}}\n',
+      'package-lock.json':'{"packages":{}}\n',
+      'index.html':'<p>synthetic</p>\n',
+      'vercel.json':JSON.stringify({git:{deploymentEnabled:{[BRANCH]:false}}})+'\n',
+      [QUALIFICATION[1]]:'synthetic preserved old current manifest\n',
+      'scripts/search-runtime.sha256':'synthetic preserved historical manifest\n',
+      [CURRENT_QUALIFICATION[0]]:'name: synthetic prior workflow\n',
+      [CURRENT_QUALIFICATION[2]]:'// synthetic prior verifier\n',
+      [CURRENT_QUALIFICATION[3]]:'// synthetic prior tests\n',
+    };
+    for(const [path,bytes] of Object.entries(files)){mkdirSync(dirname(resolve(dir,path)),{recursive:true});writeFileSync(resolve(dir,path),bytes);}
+    priorBase=makeCommit(stage(),[]);
+    writeFileSync(resolve(dir,'src/LeadPerformanceCalculator.jsx'),'// synthetic landed signup core\n');
+    writeFileSync(resolve(dir,'test/signup-copy.test.mjs'),'// synthetic landed signup test\n');
+    base=makeCommit(stage(),[priorBase]);
+    writeFileSync(resolve(dir,'src/LeadPerformanceCalculator.jsx'),'// synthetic combined signup and scheduler core\n');
+    writeFileSync(resolve(dir,'scripts/scheduler-performance/build.mjs'),'// synthetic exact combined source boundary\n');
+    const tree=stage();source=makeCommit(tree,[base]);
+    fixed={sourceCommit:source,sourceTree:tree,baseCommit:base,baseTree:git(dir,'rev-parse',base+'^{tree}').toString().trim(),qualification:CURRENT_QUALIFICATION,
+      preservedManifests:Object.fromEntries(Object.keys(PRESERVED_MANIFESTS).map(path=>[path,sha(readFileSync(resolve(dir,path)))]))};
+    for(const path of CURRENT_QUALIFICATION){mkdirSync(dirname(resolve(dir,path)),{recursive:true});copyFileSync(resolve(sourceRoot,path),resolve(dir,path));}
+    writeFileSync(resolve(dir,CURRENT_QUALIFICATION[1]),JSON.stringify({version:'scheduler-current-runtime/1',sourceCommit:source,sourceTree:tree,baseCommit:base,baseTree:fixed.baseTree,files:sourceRecords(dir,source)},null,2)+'\n');
+    candidate=makeCommit(stage(),[source]);synthetic=makeCommit(git(dir,'write-tree').toString().trim(),[base,candidate]);git(dir,'update-ref','HEAD',synthetic);
+    input={number:512,repository:{full_name:REPOSITORY},pull_request:{head:{sha:candidate,ref:BRANCH,repo:{full_name:REPOSITORY}},base:{sha:base,ref:'main',repo:{full_name:REPOSITORY}}}};
+    variables={GITHUB_EVENT_NAME:'pull_request',GITHUB_REPOSITORY:REPOSITORY,GITHUB_SHA:synthetic,GITHUB_REF:'refs/pull/512/merge'};
+  });
+  after(()=>{if(dir)rmSync(dir,{recursive:true,force:true});});
+  test('new-main qualification freezes the combined source and records actual head, merge and preserved manifests',()=>{
+    const result=check();assert.equal(result.sourceCommit,source);assert.equal(result.baseCommit,base);assert.equal(result.headCommit,candidate);assert.equal(result.checkoutCommit,synthetic);
+    assert.deepEqual(result.checkoutParents,[base,candidate]);assert.deepEqual(result.preservedManifests,fixed.preservedManifests);assert.deepEqual(result.harnessCorrections,[]);
+    assert.ok(sourceRecords(dir,source).some(row=>row.path==='test/signup-copy.test.mjs'),'landed signup regression is consumed');
+    git(dir,'update-ref','HEAD',candidate);try{assert.equal(check(input,{...variables,GITHUB_SHA:candidate,GITHUB_REF:'refs/pull/512/head'}).checkoutCommit,candidate);}finally{git(dir,'update-ref','HEAD',synthetic);}
+  });
+  test('new-main qualification refuses old or wrong bases, events, forks, branches and checkout identities',()=>{
+    for(const mutate of [e=>e.pull_request.base.sha=priorBase,e=>e.pull_request.base.sha=source,e=>e.pull_request.head.repo.full_name='fork/repo',e=>e.pull_request.head.ref='codex/unguarded',e=>e.pull_request.base.ref='release',e=>e.number=513]){const e=structuredClone(input);mutate(e);assert.throws(()=>check(e));}
+    for(const env of [{...variables,GITHUB_EVENT_NAME:'push'},{...variables,GITHUB_SHA:candidate},{...variables,GITHUB_REF:'refs/heads/main'}])assert.throws(()=>check(input,env));
+    const wrong=makeCommit(git(dir,'rev-parse',candidate+'^{tree}').toString().trim(),[priorBase,candidate]);git(dir,'update-ref','HEAD',wrong);
+    try{assert.throws(()=>check(input,{...variables,GITHUB_SHA:wrong}),/exact base and head/);}finally{git(dir,'update-ref','HEAD',synthetic);}
+    for(const key of ['sourceTree','baseTree'])assert.throws(()=>verifyCandidate({root:dir,event:input,env:variables},{...fixed,[key]:'0'.repeat(40)}),/immutable (source|base) tree/);
+  });
+  test('new-main qualification refuses changed signup, combined pins, API, package, mock and settled harness inputs',()=>{
+    for(const path of ['src/LeadPerformanceCalculator.jsx','src/Manager.jsx','test/signup-copy.test.mjs','scripts/scheduler-performance/build.mjs','api/scheduler.mjs','package.json','package-lock.json','scripts/mock-supabase.mjs','scripts/hero-bars.mjs'])change(path,(file,bytes)=>writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')])),()=>assert.throws(()=>check(),/runtime (size|hash)/));
+  });
+  test('new-main qualification refuses missing, extra, ignored, symlinked and build configuration inputs',()=>{
+    change('test/signup-copy.test.mjs',file=>rmSync(file),()=>assert.throws(()=>check(),/inventory/));
+    change('src/Manager.jsx',file=>{rmSync(file);symlinkSync('LeadPerformanceCalculator.jsx',file);},()=>assert.throws(()=>check(),/symlink/));
+    for(const path of ['src/extra.js','scripts/unreviewed.mjs','.env.production','.npmrc']){writeFileSync(resolve(dir,path),'synthetic unexpected input\n');try{assert.throws(()=>check(),/inventory/);}finally{rmSync(resolve(dir,path));}}
+  });
+  test('new-main qualification refuses manifest self-blessing even when committed to the PR head',()=>{
+    change(CURRENT_QUALIFICATION[1],(file,bytes)=>{const data=JSON.parse(bytes);data.files[0].sha256='0'.repeat(64);writeFileSync(file,JSON.stringify(data));git(dir,'add','--',CURRENT_QUALIFICATION[1]);},()=>{
+      const wrong=makeCommit(git(dir,'write-tree').toString().trim(),[source]);git(dir,'update-ref','HEAD',wrong);
+      const e=structuredClone(input);e.pull_request.head.sha=wrong;
+      assert.throws(()=>check(e,{...variables,GITHUB_SHA:wrong,GITHUB_REF:'refs/pull/512/head'}),/manifest derives/);
+    });
+  });
+  test('new-main qualification refuses changed consumed merge inputs and application changes in qualification heads',()=>{
+    change('test/signup-copy.test.mjs',(file,bytes)=>{writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')]));git(dir,'add','--','test/signup-copy.test.mjs');},()=>{
+      const tree=git(dir,'write-tree').toString().trim(),wrongMerge=makeCommit(tree,[base,candidate]);git(dir,'update-ref','HEAD',wrongMerge);
+      assert.throws(()=>check(input,{...variables,GITHUB_SHA:wrongMerge}),/runtime (size|hash)/);
+      const wrongHead=makeCommit(tree,[source]),e=structuredClone(input);e.pull_request.head.sha=wrongHead;
+      assert.throws(()=>check(e),/qualification-only head delta/);
+    });
+  });
+  test('new-main qualification preserves both historical manifests and refuses enabled deployment or scheduler flags',()=>{
+    change(QUALIFICATION[1],(file,bytes)=>writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')])),()=>assert.throws(()=>check(),/preserved historical manifest/));
+    change(QUALIFICATION[1],(file,bytes)=>{writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')]));git(dir,'add','--',QUALIFICATION[1]);},()=>{
+      const wrongMerge=makeCommit(git(dir,'write-tree').toString().trim(),[base,candidate]);git(dir,'update-ref','HEAD',wrongMerge);
+      assert.throws(()=>check(input,{...variables,GITHUB_SHA:wrongMerge}),/preserved historical manifest/,'correct merge parents cannot bless changed historical qualification bytes');
+    });
+    change('scripts/search-runtime.sha256',(file,bytes)=>writeFileSync(file,Buffer.concat([bytes,Buffer.from('\n')])),()=>assert.throws(()=>check(),/runtime (size|hash)/));
+    change('vercel.json',(file,bytes)=>{const data=JSON.parse(bytes);data.git.deploymentEnabled[BRANCH]=true;writeFileSync(file,JSON.stringify(data));},()=>assert.throws(()=>check(),/deployment disabled/));
+    for(const flag of ['VITE_SCHEDULER_CALENDAR','VITE_SCHEDULER_DRAFT_LOCAL','VITE_SCHEDULER_DRAFT_PILOT','SCHEDULER_DRAFT_PILOT_ENABLED'])assert.throws(()=>check(input,{...variables,[flag]:'1'}),/remains OFF/);
+  });
+  test('current production case pins all 2090 reviewed inputs without requiring deep history in ordinary unit checkouts',()=>{
+    const manifestBytes=readFileSync(resolve(sourceRoot,CURRENT_QUALIFICATION[1])),manifest=JSON.parse(manifestBytes);
+    assert.deepEqual([manifest.sourceCommit,manifest.sourceTree,manifest.baseCommit,manifest.baseTree],[CURRENT_SOURCE,CURRENT_SOURCE_TREE,CURRENT_BASE,CURRENT_BASE_TREE]);
+    // The production CLI derives every record from its immutable Git source.
+    // Ordinary npm-test checkouts are shallow; synthetic histories above prove
+    // the derivation and refusal behavior without requiring extra fetched refs.
+    assert.equal(sha(manifestBytes),'1d3310fa0c341cd06be6fc8fc4cb406f1af9bba37fa0185c09573134ed0b8dc4');assert.equal(manifest.files.length,2090);
+    assert.equal(manifest.files.find(row=>row.path==='src/LeadPerformanceCalculator.jsx').sha256,'85a62b1206adc4d41ee9557581214c600b1efb793a2c4d6a78a22c0e36e358af');
+    assert.equal(manifest.files.find(row=>row.path==='scripts/scheduler-performance/build.mjs').sha256,'6e0712d6dac71bfa1f40e3ae903f85e987b827bb1b486a65785c9c7fd93558a5');
+    assert.ok(manifest.files.some(row=>row.path==='test/signup-copy.test.mjs'));
+    for(const [path,expected] of Object.entries(PRESERVED_MANIFESTS))assert.equal(sha(readFileSync(resolve(sourceRoot,path))),expected);
+    const workflow=readFileSync(resolve(sourceRoot,CURRENT_QUALIFICATION[0]),'utf8');
+    assert.ok(workflow.includes("if [ '${{ steps.runtime.outputs.case_name }}' != 'current-95ad3f93' ] && [ '${{ steps.runtime.outputs.case_name }}' != 'current-main-579727d' ]; then"));
+    assert.match(workflow,/matrix.engine == 'webkit' && steps.runtime.outputs.case_name == 'current-main-579727d'/);
+    assert.ok(workflow.includes("if: always() && matrix.engine == 'webkit' && (steps.runtime.outputs.case_name == 'current-95ad3f93' || steps.runtime.outputs.case_name == 'current-main-579727d')"));
+    assert.throws(()=>verifySource({root:dir,event:input,env:variables}),/nominated immutable base/,'synthetic fixture cannot override production identities');
+  });
+}
 
 test('CI checks out into an owned child without any Git trust exception',()=>{
   const workflow=readFileSync(resolve(sourceRoot,QUALIFICATION[0]),'utf8');

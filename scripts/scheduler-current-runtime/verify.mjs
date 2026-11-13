@@ -24,6 +24,21 @@ export const HARNESS_CORRECTION = Object.freeze({
   corrected:Object.freeze({mode:'100644', blob:'cde3684fcdde9dfe5fe92af42fdaef19209efe52', bytes:11448,
     sha256:'bad198f7ddc2c612e445664644a7c0e272cd64b422a95e6729a62777d08e7908'}),
 });
+export const CURRENT_SOURCE = '433d13ab8f750419dae77ae302f78e67b657bbfa';
+export const CURRENT_SOURCE_TREE = 'e98069e2e17ddccf7a34ffa9b437bbcda82c9465';
+export const CURRENT_BASE = '579727d23b16ec9eb7d5bf53c5bdac6abc003432';
+export const CURRENT_BASE_TREE = '9f2ad2a78b1e2304f80f91cbfb80d950455fcf3d';
+export const CURRENT_QUALIFICATION = Object.freeze([
+  QUALIFICATION[0],
+  'scripts/scheduler-current-runtime/main-579727d.manifest.json',
+  QUALIFICATION[2],
+  QUALIFICATION[3],
+]);
+export const PRESERVED_MANIFESTS = Object.freeze({
+  'scripts/search-runtime.sha256':'5cc466b968535b7544c0885c91ca68fcdc718c50bd31df87d58478082e35c78c',
+  'scripts/scheduler-current-runtime/manifest.json':'f7c638ef186bf7f0a60118798ada5781679c88987555c78ce0d1b02d11bde2cf',
+});
+const qualificationInputs = new Set([...QUALIFICATION, ...CURRENT_QUALIFICATION]);
 const roots = new Set(['.claude', 'api', 'download', 'fixtures', 'infra', 'native',
   'public', 'scripts', 'src', 'supabase', 'test', 'workers']);
 export const BASELINES = Object.freeze({
@@ -44,7 +59,7 @@ export function git(root, ...args) {
 }
 const revision = (root, name) => git(root, 'rev-parse', name).toString().trim();
 function relevant(path) {
-  return !QUALIFICATION.includes(path) && (roots.has(path.split('/')[0]) ||
+  return !qualificationInputs.has(path) && (roots.has(path.split('/')[0]) ||
     (!path.includes('/') && !path.toLowerCase().endsWith('.md')));
 }
 const recordCache = new Map();
@@ -126,7 +141,8 @@ function reviewedHarness(root, source, head, records, correction) {
 // Unit fixtures supply their own immutable Git history. The executable below
 // always uses verifySource, whose policy is fixed here and has no CLI override.
 export function verifyCandidate({root, event, env}, policy) {
-  const {sourceCommit: source, sourceTree, baseCommit: base, baseTree, harnessCorrection} = policy;
+  const {sourceCommit: source, sourceTree, baseCommit: base, baseTree, harnessCorrection,
+    qualification = QUALIFICATION, preservedManifests = {}} = policy;
   assert.equal(env.GITHUB_EVENT_NAME, 'pull_request', 'pull-request event only');
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY, 'repository identity');
   assert.equal(event.repository?.full_name, REPOSITORY, 'event repository identity');
@@ -142,7 +158,7 @@ export function verifyCandidate({root, event, env}, policy) {
   assert.equal(revision(root, base + '^{tree}'), baseTree, 'immutable base tree');
   git(root, 'merge-base', '--is-ancestor', source, pr.head.sha);
   const delta = git(root, 'diff', '--name-only', source, pr.head.sha).toString().trim().split('\n').filter(Boolean).sort();
-  assert.deepEqual(delta, [...QUALIFICATION, ...(harnessCorrection ? [harnessCorrection.path] : [])].sort(), 'qualification-only head delta');
+  assert.deepEqual(delta, [...qualification, ...(harnessCorrection ? [harnessCorrection.path] : [])].sort(), 'qualification-only head delta');
   const checkout = revision(root, 'HEAD');
   assert.equal(env.GITHUB_SHA, checkout, 'actual checkout matches Actions SHA');
   const parents = git(root, 'show', '-s', '--format=%P', checkout).toString().trim().split(' ');
@@ -154,24 +170,31 @@ export function verifyCandidate({root, event, env}, policy) {
   }
   for (const name of flags) assert.ok(env[name] === undefined || env[name] === '' || env[name] === '0', 'scheduler remains OFF: ' + name);
   assert.equal(JSON.parse(regular(root, 'vercel.json')).git?.deploymentEnabled?.[BRANCH], false, 'guarded branch deployment disabled');
-  for (const path of QUALIFICATION) assert.ok(regular(root, path).equals(git(root, 'show', pr.head.sha + ':' + path)), 'checkout qualification matches PR head: ' + path);
-  const manifest = JSON.parse(regular(root, QUALIFICATION[1]));
+  for (const path of qualification) assert.ok(regular(root, path).equals(git(root, 'show', pr.head.sha + ':' + path)), 'checkout qualification matches PR head: ' + path);
+  const manifest = JSON.parse(regular(root, qualification[1]));
   assert.deepEqual({version: manifest.version, sourceCommit: manifest.sourceCommit, sourceTree: manifest.sourceTree, baseCommit: manifest.baseCommit, baseTree: manifest.baseTree},
     {version: 'scheduler-current-runtime/1', sourceCommit: source, sourceTree: sourceTree, baseCommit: base, baseTree: baseTree}, 'fixed qualification identities');
   const records = sourceRecords(root, source);
   assert.deepEqual(manifest.files, records, 'manifest derives from immutable source, never current bytes');
   const harness = reviewedHarness(root, source, pr.head.sha, records, harnessCorrection);
   verifyFiles(root, harness.records);
+  for (const [path, expected] of Object.entries(preservedManifests)) assert.equal(digest(regular(root, path)), expected, 'preserved historical manifest: ' + path);
   return {version: 'scheduler-current-runtime-evidence/1', repository: REPOSITORY, pullRequest: 512,
     sourceCommit: source, sourceTree: sourceTree, baseCommit: base, baseTree: baseTree,
     headCommit: pr.head.sha, headTree: revision(root, pr.head.sha + '^{tree}'),
     checkoutCommit: checkout, checkoutTree: revision(root, 'HEAD^{tree}'), checkoutParents: parents,
-    githubRef: env.GITHUB_REF, consumedFiles: records.length, harnessCorrections:harness.evidence, flags: Object.fromEntries(flags.map(name => [name, '0'])),
+    githubRef: env.GITHUB_REF, consumedFiles: records.length, harnessCorrections:harness.evidence, preservedManifests:{...preservedManifests}, flags: Object.fromEntries(flags.map(name => [name, '0'])),
     historicalManifestSha256: digest(regular(root, 'scripts/search-runtime.sha256'))};
 }
 export function verifySource(input) {
-  return verifyCandidate(input, {sourceCommit: SOURCE, sourceTree: SOURCE_TREE, baseCommit: BASE, baseTree: BASE_TREE,
-    harnessCorrection:HARNESS_CORRECTION});
+  if (input.event?.pull_request?.base?.sha === CURRENT_BASE) return verifyCurrentSource(input);
+  return {...verifyCandidate(input, {sourceCommit: SOURCE, sourceTree: SOURCE_TREE, baseCommit: BASE, baseTree: BASE_TREE,
+    harnessCorrection:HARNESS_CORRECTION}), caseName:'current-95ad3f93'};
+}
+export function verifyCurrentSource(input) {
+  return {...verifyCandidate(input, {sourceCommit:CURRENT_SOURCE, sourceTree:CURRENT_SOURCE_TREE,
+    baseCommit:CURRENT_BASE, baseTree:CURRENT_BASE_TREE, qualification:CURRENT_QUALIFICATION,
+    preservedManifests:PRESERVED_MANIFESTS}), caseName:'current-main-579727d'};
 }
 
 export function verifyBaselines(root) {
@@ -206,6 +229,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (stage === 'after-install') evidence.dependencies = installedDependencies(root);
   mkdirSync('manager-runtime-qualification', {recursive: true});
   writeFileSync('manager-runtime-qualification/' + stage + '.json', JSON.stringify(evidence, null, 2) + '\n');
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'runtime_sha=' + evidence.checkoutCommit + '\ncase_name=current-95ad3f93\n');
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'runtime_sha=' + evidence.checkoutCommit + '\ncase_name=' + evidence.caseName + '\n');
   console.log(JSON.stringify(evidence));
 }
