@@ -89,6 +89,20 @@ try{
     await view().selectOption('week');assert.equal(await frame.locator('#week-schedule').isVisible(),true);
     await view().selectOption('month');assert.equal(await view().evaluate(el=>el===document.activeElement),true,'Month selector retains keyboard focus');
     await view().selectOption('week');assert.equal(await view().evaluate(el=>el===document.activeElement),true,'Week selector retains keyboard focus');
+    for(const width of [320,390,1280]){
+      await page.setViewportSize({width,height:900});await frame.locator('#workspace').click();
+      await view().selectOption('month');const beforeScroll=await frame.locator('.scheduler-scroll').evaluate(el=>{el.scrollTop=el.scrollHeight;return el.scrollTop;});
+      assert.ok(beforeScroll>0,'Month scroll precondition is nonzero');await view().selectOption('week');
+      const navigation=await frame.locator('.month-navigation').boundingBox(),control=await view().boundingBox();
+      assert.ok(navigation&&control&&control.y>=navigation.y+navigation.height,'Week switch is not hidden behind the sticky month header');
+      const heading=await frame.locator('.week-heading').evaluate(el=>({bottom:el.getBoundingClientRect().bottom}));
+      const secondary=await frame.locator('.month-review,details.review,details.footer').evaluateAll(nodes=>nodes.filter(el=>el.getClientRects().length).map(el=>el.getBoundingClientRect().top));
+      assert.ok(heading&&secondary.length===3&&secondary.every(top=>heading.bottom<=top),'Week controls precede all secondary draft details at '+width);
+      assert.equal(await frame.locator('.calendar-pane').evaluate(el=>el.getBoundingClientRect().height),0,'hidden Month reserves no height');
+      await frame.locator('#workspace').click();
+    }
+    await page.setViewportSize({width:1280,height:900});
+
   });
   const planner=()=>page.frameLocator('iframe[title="Schedule editor"]');
   await check('actual roster and unknown hours stay honest',async()=>{
