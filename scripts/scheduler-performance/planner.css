@@ -1882,6 +1882,9 @@ html[data-scheduler-standalone] :is(#workspace-dock,[data-scheduler-dock]) #work
 /* Month dates use the same Sage Scheduler Geist UI face as Sage controls and schedule labels. */
 :is(#app[data-scheduler-standalone],#app.scheduler-mounted,.scheduler-mounted) .month-day .day-date { font-family:Sage Scheduler Geist,system-ui,sans-serif; }
 
+/* Week controls follow navigation and editing tools, before secondary draft details. */
+:is(#app[data-scheduler-standalone],#app.scheduler-mounted,.scheduler-mounted) .scheduler-scroll:has(> #week-schedule:not([hidden])) > * { order:0; }
+
 /* Keep each mounted scheduler action visible without reaching into its host. */
 :where(.scheduler-mounted,main[data-scheduler-standalone]) .scheduler-mounted.scheduler-mounted,:where(.scheduler-mounted,main[data-scheduler-standalone]).scheduler-mounted.scheduler-mounted { display:flex; flex-direction:column; height:100dvh; max-height:100%; overflow:hidden; padding:0; }
 :where(.scheduler-mounted,main[data-scheduler-standalone]) .scheduler-mounted > .scheduler-scroll,:where(.scheduler-mounted,main[data-scheduler-standalone]).scheduler-mounted > .scheduler-scroll { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 24px; }
