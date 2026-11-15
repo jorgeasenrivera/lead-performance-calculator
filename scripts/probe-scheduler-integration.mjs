@@ -82,6 +82,13 @@ try{
     assert.match(await page.locator('.sc-dialog-bar').innerText(),/Not saved/);
     assert.equal(await page.locator('.sc-close').evaluate(e=>document.activeElement===e),true);
     assert.equal(await page.locator('#root').getAttribute('inert')!==null,true);
+    const frame=page.frameLocator('iframe[title="Schedule editor"]'),view=()=>frame.locator('[data-view-switch]:visible');
+    assert.equal(await view().inputValue(),'month','fresh dashboard entry starts in Month');
+    assert.equal(await frame.locator('.calendar-pane').isVisible(),true);
+    assert.equal(await frame.locator('#week-schedule').isVisible(),false);
+    await view().selectOption('week');assert.equal(await frame.locator('#week-schedule').isVisible(),true);
+    await view().selectOption('month');assert.equal(await view().evaluate(el=>el===document.activeElement),true,'Month selector retains keyboard focus');
+    await view().selectOption('week');assert.equal(await view().evaluate(el=>el===document.activeElement),true,'Week selector retains keyboard focus');
   });
   const planner=()=>page.frameLocator('iframe[title="Schedule editor"]');
   await check('actual roster and unknown hours stay honest',async()=>{

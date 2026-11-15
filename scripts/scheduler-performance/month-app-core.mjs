@@ -231,7 +231,7 @@ function updateSelection() {
     button.removeAttribute("aria-controls");
   }
 }
-let editing = false, mode = "mixed", selectedDay = null, monthExpanded = false;
+let editing = false, mode = "mixed", selectedDay = null, monthExpanded = true;
 let timelineScroll={top:null,left:null,week:null};
 let closeAgendaDrag=()=>{},closeShiftTransfer=()=>{},closeDirectShift=()=>{},directDirty=false,activeResize=null;
 const CSS=hostWindow.CSS, matchMedia=hostWindow.matchMedia.bind(hostWindow), confirm=window.confirm;
@@ -590,7 +590,7 @@ function wireDirectGrid(){
  });}
 }
 function wireWeek(){
- for(const select of app.querySelectorAll('[data-view-switch]'))select.onchange=()=>{monthExpanded=select.value==='month';render();app.querySelector('[data-view-switch]')?.focus({preventScroll:true});};
+ for(const select of app.querySelectorAll('[data-view-switch]'))select.onchange=()=>{monthExpanded=select.value==='month';render();app.querySelector(monthExpanded?'.calendar-pane [data-view-switch]':'#week-schedule [data-view-switch]')?.focus({preventScroll:true});};
  for(const button of app.querySelectorAll('[data-week-day]'))button.onclick=()=>{const day=button.dataset.weekDay;if(!validMonth(day.slice(0,7)))return;selectedDay=day;month=day.slice(0,7);timelineScroll.left=null;render();app.querySelector(`[data-week-day="${hostWindow.CSS.escape(day)}"]`)?.focus({preventScroll:true});};
  for(const button of app.querySelectorAll('[data-agenda-shift]'))button.onclick=()=>{if(editing&&button.dataset.start!==undefined)openDirectShift(button.dataset.agendaDay,undefined,{personId:button.dataset.agendaShift,startMinute:Number(button.dataset.start),endMinute:Number(button.dataset.end)});else startShiftTransfer(button.dataset.agendaDay,button.dataset.agendaShift,null,button);};
  if(editing)wireDirectGrid();
