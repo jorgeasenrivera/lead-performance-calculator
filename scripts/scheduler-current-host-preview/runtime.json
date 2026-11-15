@@ -1,0 +1,627 @@
+{
+  "version": "current-host-fixture/1",
+  "subject": "6812fa3567cfdd9b6aa6664b2d48b6b0648c15bb",
+  "tree": "b3ef18086f4617d086a07fa0b4ed4349a7f38be9",
+  "manager": "4d6b8199b2e2030c7ffc0ee3b0c54e72e558887216d1dc1a6bd8fb17a42a0b00",
+  "fixtureDate": "2026-11-15T16:00:00Z",
+  "historicalGuardSha256": "29503dece524a14f6f1ebca2ecad0e9363dffc45a80279cc3d3e820572b6b654",
+  "files": [
+    {
+      "path": "api/_board-provenance.mjs",
+      "bytes": 3561,
+      "sha256": "f9c2d6f8f23edaba638ca2afeb78dcabec63023952f9a859a0feaf8faafe69e9"
+    },
+    {
+      "path": "api/_device.mjs",
+      "bytes": 1062,
+      "sha256": "18176b415f7f5ef53b3fad706497cf2e2553fd31f64d20c5b669157ab3067870"
+    },
+    {
+      "path": "api/_digest-integrity.mjs",
+      "bytes": 4869,
+      "sha256": "a45a6974f6a1e3a3218253f652472006cdd3b1cd894ed89bbefdff2390cd4ea4"
+    },
+    {
+      "path": "api/_floor-presence.mjs",
+      "bytes": 8944,
+      "sha256": "f6b60914a64df1666d7f12f41bc5145550ae82910948b533c07e5ed47cf7b7f5"
+    },
+    {
+      "path": "api/_geofence.mjs",
+      "bytes": 8934,
+      "sha256": "b33a4ba584a4e260935a012c7eb3f8c5acd67e1f4ddcd0b10774a381bd063b4c"
+    },
+    {
+      "path": "api/_goal-standing.mjs",
+      "bytes": 13510,
+      "sha256": "8ae661985a66d7dce8ff710fdd908d1b6de482dd5f5c8caf145612a039188cda"
+    },
+    {
+      "path": "api/_hours.mjs",
+      "bytes": 6942,
+      "sha256": "cdae6c4e4c279566e362e5df645194790189debce026f9591cb225b11c828acf"
+    },
+    {
+      "path": "api/_live-standing.mjs",
+      "bytes": 8901,
+      "sha256": "1a9cfa62412bbe3eb556352e03b9c4fc5b6019412079b461172a942c1534d0c8"
+    },
+    {
+      "path": "api/_month-intent.mjs",
+      "bytes": 4121,
+      "sha256": "e3061f8ec92d23101fde9ad31fa3a5c179837fe9bebb12919d8b403a5553dc3f"
+    },
+    {
+      "path": "api/_people-link.mjs",
+      "bytes": 4470,
+      "sha256": "6eff9ac6d2272144488e7a288a5bcd3be278606a669701b0e1850e7945d527d4"
+    },
+    {
+      "path": "api/_people-status.mjs",
+      "bytes": 37962,
+      "sha256": "9605ce606574c6b10936c3def24bf3b1d19c67b0a185720f60d1cac895632b56"
+    },
+    {
+      "path": "api/_phone-rows.mjs",
+      "bytes": 6250,
+      "sha256": "c8868653fc5d2aec73fd51646d33c0e3fdd05073d4559e115233084ee0f70203"
+    },
+    {
+      "path": "api/_queue-notify.mjs",
+      "bytes": 9968,
+      "sha256": "6b7aa6755676eab2f9cf8d12884b1635527473e0439a5c9b6db4278a2a11eb04"
+    },
+    {
+      "path": "api/_report-parsers.mjs",
+      "bytes": 32511,
+      "sha256": "88eef867bce34eda8e46b7d278a8d9c7a4cde6179211372dd0c92e927e2a5ab0"
+    },
+    {
+      "path": "api/_rooms.mjs",
+      "bytes": 5275,
+      "sha256": "28b0a5d53deaa0d6032b97b766db5c37ee21c639b806ba5f4a7afbd53348a325"
+    },
+    {
+      "path": "api/_station-day.mjs",
+      "bytes": 7355,
+      "sha256": "cb61e08445fbf4352601d101ec98350edc509767d5a9c72c54274afa092c4fc1"
+    },
+    {
+      "path": "api/_station-gate.mjs",
+      "bytes": 4676,
+      "sha256": "231db5c212cae4c4214819ea4a6acf257db27a943717c57b6139113e204ce449"
+    },
+    {
+      "path": "api/_stations.mjs",
+      "bytes": 29093,
+      "sha256": "8a6ee08da0cb07ddf515791400af26b287535c5da2a4c069ec32ca43df318537"
+    },
+    {
+      "path": "api/_store-keys.mjs",
+      "bytes": 7356,
+      "sha256": "0cb1fee7ea33d400426d73861ad6f9e93149578beedd95eb7e5fa9c7cedca30a"
+    },
+    {
+      "path": "api/_store-merge.mjs",
+      "bytes": 46251,
+      "sha256": "5f70578be3993528657c3d4ad59e378d816310068a0ab5f01e638064ec31e22a"
+    },
+    {
+      "path": "api/_store-month.mjs",
+      "bytes": 4216,
+      "sha256": "f602b678704de8b182f025f88bac86103d23414689eb49b525beb9e48b8ddd11"
+    },
+    {
+      "path": "api/_value-equality.mjs",
+      "bytes": 522,
+      "sha256": "56cf47ca4dd4b2ec688483dc491ca99ff6aedf5561e57ff14c0b12bba22aebba"
+    },
+    {
+      "path": "index.html",
+      "bytes": 6765,
+      "sha256": "ed172e04ef81c3f0ed00c86d92561717b27cbd5568128b67886dfc816e8633d4"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 96643,
+      "sha256": "bce2d23ccc659da97ae6a0d9c1935f44c8d055ec5c6f3824764bfd31fdf6efa4"
+    },
+    {
+      "path": "package.json",
+      "bytes": 748,
+      "sha256": "120e7a2e275c716ae21cc01dc7c10a3aa71c31592da67877a27f8b05a618d957"
+    },
+    {
+      "path": "public/app-icon-dark.svg",
+      "bytes": 1661,
+      "sha256": "4a0ab6fd136bb95cf5aca918d925006aec5544d354c0482107e564981ac465fa"
+    },
+    {
+      "path": "public/app-icon-light.svg",
+      "bytes": 1661,
+      "sha256": "7f74c09dfe19b28ec51b42cc6b547d33184ad389f9ccb496945c705049e7df46"
+    },
+    {
+      "path": "public/apple-touch-icon.png",
+      "bytes": 6794,
+      "sha256": "de2c640fec4c16423fa3644899d3db8842943148aec2342b5ed36e1af8c317d5"
+    },
+    {
+      "path": "public/favicon-16.png",
+      "bytes": 520,
+      "sha256": "d56ed01a7fe1eda01d379517417c2144aa5c30b7117d489a1f1249331cc719a4"
+    },
+    {
+      "path": "public/favicon-32.png",
+      "bytes": 1131,
+      "sha256": "f50d768534c928e91e2dd62214bf64d7022e6599ba3e8e8da6cd89182cae03af"
+    },
+    {
+      "path": "public/favicon.svg",
+      "bytes": 1598,
+      "sha256": "525522b44ea83579767a8b7ff66826a4f299f2b9289cac31c7ef7df5c505b54d"
+    },
+    {
+      "path": "public/fonts/README.md",
+      "bytes": 920,
+      "sha256": "a5cb09527a0059a69532ef839400b9dcfe75cdaffeb7368db0165ed3c8491306"
+    },
+    {
+      "path": "public/fonts/geist-latin-ext.woff2",
+      "bytes": 16540,
+      "sha256": "58a6b173d5ca1dec92166ea3c6cb1a84a4144556d10928ac14e8e6b40e4787bd"
+    },
+    {
+      "path": "public/fonts/geist-latin.woff2",
+      "bytes": 29288,
+      "sha256": "9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608"
+    },
+    {
+      "path": "public/fonts/geist-mono-latin-ext.woff2",
+      "bytes": 14712,
+      "sha256": "745994b5cd950ec201b66526375f057d540847cccfc70f4f24f5f571d26d3923"
+    },
+    {
+      "path": "public/fonts/geist-mono-latin.woff2",
+      "bytes": 23108,
+      "sha256": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b"
+    },
+    {
+      "path": "public/fonts/space-grotesk-latin-ext.woff2",
+      "bytes": 18924,
+      "sha256": "054c266fbb441ee059365dba0885d206f67ca05b375de869b88e02ebfccc9b9d"
+    },
+    {
+      "path": "public/fonts/space-grotesk-latin.woff2",
+      "bytes": 22320,
+      "sha256": "a0d054c4af557de20afd6ca59f47ab353bcaec49c63ff04b6c9d39d0f8910557"
+    },
+    {
+      "path": "public/icon-512.png",
+      "bytes": 21112,
+      "sha256": "667b5014876d94c541a02bcd5538628d70018ecd599c266ce451cff475dbd9bf"
+    },
+    {
+      "path": "public/privacy.html",
+      "bytes": 10901,
+      "sha256": "c58d5d49db48446d4fa4abb4ffdfc2e9fca24c438aa483f1a360c7e72d92a603"
+    },
+    {
+      "path": "public/sage-lockup-on-ink.svg",
+      "bytes": 5468,
+      "sha256": "4ad377bfcc0566b6641371415eae2ad05c71dcef8f74f5335bf2838d797db235"
+    },
+    {
+      "path": "public/sage-lockup-print.svg",
+      "bytes": 5434,
+      "sha256": "3bd06b1719aba193c60ef276609a4d6fcbc6a6a76d85972780ea6345dd7a6b61"
+    },
+    {
+      "path": "public/sage-lockup.svg",
+      "bytes": 5434,
+      "sha256": "9c46e95a855af6347dd0f01d597ffb0beab5e9418b60a87b6e5f3ed719cec0d9"
+    },
+    {
+      "path": "public/sage-mark.svg",
+      "bytes": 1598,
+      "sha256": "525522b44ea83579767a8b7ff66826a4f299f2b9289cac31c7ef7df5c505b54d"
+    },
+    {
+      "path": "public/support.html",
+      "bytes": 5669,
+      "sha256": "635ec5d0b7d270d25fed0f952312afa48e5d67459464f47b84e69342f7ac234d"
+    },
+    {
+      "path": "scripts/demo-seed.mjs",
+      "bytes": 32194,
+      "sha256": "0b9795b96f360373e17cdca5abe19624134d47f0ea2ca87d4dfc351fd65ff962"
+    },
+    {
+      "path": "scripts/scheduler-performance/assignment-view.mjs",
+      "bytes": 3329,
+      "sha256": "94e559fe66b87aed0ff2e440535109662917cf48f322810a8bf44774d8d5e087"
+    },
+    {
+      "path": "scripts/scheduler-performance/calendar-key.mjs",
+      "bytes": 1218,
+      "sha256": "7d5da667766abf620cc88ed45808003fa7e5fb093e2a86a8f25499207e0764ed"
+    },
+    {
+      "path": "scripts/scheduler-performance/date-display.mjs",
+      "bytes": 676,
+      "sha256": "0322ae0ba42a6b5a5b688abca1bab15f948d9ce52a6ceabe48d701b342ee2eba"
+    },
+    {
+      "path": "scripts/scheduler-performance/day-edit-state.mjs",
+      "bytes": 1532,
+      "sha256": "332265103f7a5f73bc5036fbb5b37ea1272fca5c49c18503bd0976f1d5dd4419"
+    },
+    {
+      "path": "scripts/scheduler-performance/day-motion.mjs",
+      "bytes": 5856,
+      "sha256": "374953316c81a0b2dced8314df6ef9bf9bca14d3ae90c5c6339821771b1784ff"
+    },
+    {
+      "path": "scripts/scheduler-performance/demand-context.mjs",
+      "bytes": 3198,
+      "sha256": "920ab66b99ef0835eb07b5eb179c4eccdaf6d6b22299b445427493c8e6bcb804"
+    },
+    {
+      "path": "scripts/scheduler-performance/generation-ui.mjs",
+      "bytes": 13255,
+      "sha256": "b3305a8ec79840bb616ebe00bcbe6d5f93272c723bc1ae75102a2e26e8b0c4ed"
+    },
+    {
+      "path": "scripts/scheduler-performance/generation-worker.mjs",
+      "bytes": 191,
+      "sha256": "ea37750ea77aa4fa9124f737f050a62417c0a7c3cb1b02bb6e0591f7ce589825"
+    },
+    {
+      "path": "scripts/scheduler-performance/generation.mjs",
+      "bytes": 24161,
+      "sha256": "be63492a438a8be42dbc0c14431907bd197cda6863afe6ecbd8bd9af55122706"
+    },
+    {
+      "path": "scripts/scheduler-performance/haptics.mjs",
+      "bytes": 6440,
+      "sha256": "6e8e97002c623ca2746077851fa011d7678cf742a3ce0f8968dba4b74de3897c"
+    },
+    {
+      "path": "scripts/scheduler-performance/html-finalize.mjs",
+      "bytes": 1954,
+      "sha256": "b49915fde7e30e0a1cce66d90cf0bb03822d85ef249e54296837872a744d98bc"
+    },
+    {
+      "path": "scripts/scheduler-performance/import-ui.mjs",
+      "bytes": 7687,
+      "sha256": "9ae2b09c4090cd1693a9e82963ce2bf17dc3fb25ccd1a4569ff4e2269d2d6a3e"
+    },
+    {
+      "path": "scripts/scheduler-performance/mobile-roster.mjs",
+      "bytes": 3331,
+      "sha256": "d98687d2c8690d5d6b786377b2dd4110c7d1305813445fd46fb55cfd9460a34c"
+    },
+    {
+      "path": "scripts/scheduler-performance/month-app-core.mjs",
+      "bytes": 128059,
+      "sha256": "5eca899a22938cac60e88e0e54fef133a013e2a4bd785e99b8f5ab1d0c2bac04"
+    },
+    {
+      "path": "scripts/scheduler-performance/month-model.mjs",
+      "bytes": 49223,
+      "sha256": "9aefdb6f1f302afcfac45dbfb6c38c92d0ff4b3267dab4c8955de8230a0d29af"
+    },
+    {
+      "path": "scripts/scheduler-performance/name-key.mjs",
+      "bytes": 305,
+      "sha256": "3919ec1154836daabf2149660cb6a21a307db5e4afbd69def5ae91da338fcb92"
+    },
+    {
+      "path": "scripts/scheduler-performance/off-day-command.mjs",
+      "bytes": 3554,
+      "sha256": "e66e9d965cd4ba1055a36e69eaa7431002dad4259362bd758a9f6562086484b6"
+    },
+    {
+      "path": "scripts/scheduler-performance/off-day-ui.mjs",
+      "bytes": 7497,
+      "sha256": "51b69055d42f11738922b151195392e33450a0b6b94a43061f62d83b8f4ab130"
+    },
+    {
+      "path": "scripts/scheduler-performance/persistence/identity.mjs",
+      "bytes": 5062,
+      "sha256": "2c5839019f28c8675d8f8e23e8d8eca5f0d72fcf41c40fa5e6a49a56b0accd1e"
+    },
+    {
+      "path": "scripts/scheduler-performance/persistence/validate.mjs",
+      "bytes": 26293,
+      "sha256": "94cc702963f67565264337b45dfea8e49a4fd2072b0a137caa2927d56a97ef54"
+    },
+    {
+      "path": "scripts/scheduler-performance/planner.css",
+      "bytes": 264740,
+      "sha256": "c1e67873822872c17fd6c4b62094c48d187c65869cea08badd08306c8b8d04ee"
+    },
+    {
+      "path": "scripts/scheduler-performance/roster-hours.mjs",
+      "bytes": 745,
+      "sha256": "6a148c6808bf87b6fb12382777a0773e36b4c8675c770554ba0b72c27686a06b"
+    },
+    {
+      "path": "scripts/scheduler-performance/sage-icons.mjs",
+      "bytes": 1951,
+      "sha256": "87decee596b424898bb47f821d32e9879449e684f2c1904245ced01cbab8f641"
+    },
+    {
+      "path": "scripts/scheduler-performance/schedule-import.mjs",
+      "bytes": 13779,
+      "sha256": "9bac4e7b56c6d367961780069f8c7538defe4172c1bbc9f7990398d2771a4c51"
+    },
+    {
+      "path": "scripts/scheduler-performance/shared-system.css",
+      "bytes": 18698,
+      "sha256": "a4ab0e99a0b0f4ba8b081552a8df75567da2330d88299648be916591be3314b9"
+    },
+    {
+      "path": "scripts/scheduler-performance/shift-agenda-drag.mjs",
+      "bytes": 14741,
+      "sha256": "6fe38cc6388fb6435fc8fcb7a46cc39536a4b87d5e0313a7bfca8f276662e2ef"
+    },
+    {
+      "path": "scripts/scheduler-performance/shift-agenda.mjs",
+      "bytes": 935,
+      "sha256": "c02ac19664018832d94ebcc9e4481c9b44e15676522aaf9c40c0d201f8f8805e"
+    },
+    {
+      "path": "scripts/scheduler-performance/shift-intervals.mjs",
+      "bytes": 4668,
+      "sha256": "ecbc6e5f67d8f88c3bc8a1fb3624780002f84b128fc95773878372d559caf41f"
+    },
+    {
+      "path": "scripts/scheduler-performance/shift-transfer-ui.mjs",
+      "bytes": 16449,
+      "sha256": "61bac29bfbfbeec0961558260947a2c7fee36775db0c8837514000b62e6e032e"
+    },
+    {
+      "path": "scripts/scheduler-performance/shift-transfer.mjs",
+      "bytes": 6170,
+      "sha256": "bc226a0a27bd4afcb9c9426330477a0ff7eccc1619256c84b690a7baafd73751"
+    },
+    {
+      "path": "scripts/scheduler-performance/store-editor.mjs",
+      "bytes": 2291,
+      "sha256": "6eca994824794f37e5b0bec7a37d430c8393630f9a1b9ef573f6aaadeb05788d"
+    },
+    {
+      "path": "scripts/scheduler-performance/team-balance.mjs",
+      "bytes": 9600,
+      "sha256": "1653c2da44889b2c32bcdc3989cf6221ab121a5f33d77a5b78a360a1afff9a6c"
+    },
+    {
+      "path": "scripts/scheduler-performance/team-model.mjs",
+      "bytes": 3119,
+      "sha256": "7c25f9bc67b18f6b033f35657cf0abedc5999bea5a763378246d928a61c10ea5"
+    },
+    {
+      "path": "scripts/scheduler-performance/team-ui.mjs",
+      "bytes": 13307,
+      "sha256": "cd12e704ad5d194d7b69d4d4ee3f5aede5063a5b403f200674ca5ce71fe55f4f"
+    },
+    {
+      "path": "scripts/scheduler-performance/week-rows.mjs",
+      "bytes": 556,
+      "sha256": "ee7e7d5c846cef622905528632411eb4647d568944d014fbd4e26c3bf945ce4c"
+    },
+    {
+      "path": "scripts/scheduler-performance/week-timeline.mjs",
+      "bytes": 3107,
+      "sha256": "95ef8aea796a146c1fed31b07d0f7bff8686f82108221e2a245985c1a9470546"
+    },
+    {
+      "path": "scripts/scheduler-performance/weekly-hours.mjs",
+      "bytes": 3792,
+      "sha256": "aaec49d63416aa567381a563b7a738a497f0a18e56456678f6eba8848d9f9bcd"
+    },
+    {
+      "path": "scripts/scheduler-proposal/model.mjs",
+      "bytes": 5180,
+      "sha256": "4da9871871ffc052c5732b90b63e138e81bdda0a025a3d691ba84d41740be0a1"
+    },
+    {
+      "path": "src/FenceEditor.jsx",
+      "bytes": 12041,
+      "sha256": "09242cafb72daf0e19bd51fa092e82e133a9b69b1a348d442c4201c394d5e191"
+    },
+    {
+      "path": "src/LeadPerformanceCalculator.jsx",
+      "bytes": 1138496,
+      "sha256": "85a62b1206adc4d41ee9557581214c600b1efb793a2c4d6a78a22c0e36e358af"
+    },
+    {
+      "path": "src/Manager.jsx",
+      "bytes": 1666054,
+      "sha256": "4d6b8199b2e2030c7ffc0ee3b0c54e72e558887216d1dc1a6bd8fb17a42a0b00"
+    },
+    {
+      "path": "src/SageMark.jsx",
+      "bytes": 9634,
+      "sha256": "d9e8c70c8ed77222d84ce22e75d41cb42259dc2ba5903c066f80745242dfbe34"
+    },
+    {
+      "path": "src/app-entry.jsx",
+      "bytes": 7872,
+      "sha256": "3ad65c837403e8006f0433dcfa0f00255bb5293f266225b3d40c28bd8654482f"
+    },
+    {
+      "path": "src/arrival-engine.mjs",
+      "bytes": 8650,
+      "sha256": "9a8c1afdeb26e608dce1d66c09876bd6dc7e053d99216d6c49f17d880adfc564"
+    },
+    {
+      "path": "src/arrival-scheduler.mjs",
+      "bytes": 934,
+      "sha256": "ae26af80fe496d446b56fba68f9b597883c86ca5e3e76b202cbd919a45e7cfaa"
+    },
+    {
+      "path": "src/arrival-style.mjs",
+      "bytes": 6636,
+      "sha256": "1d643541cee8f6f265540b989d984c852efb3824902b24e7085aa1a1bf7cbfa4"
+    },
+    {
+      "path": "src/arrival-surface.mjs",
+      "bytes": 7249,
+      "sha256": "e2e766b264712294444f5ba399787541773890df4cdea88a2b2b9f620091ef96"
+    },
+    {
+      "path": "src/board-glyphs.mjs",
+      "bytes": 1274,
+      "sha256": "4573d8c6288c3294690a1e4498248363781f2c57894f8efef4b034b8d8c6fb77"
+    },
+    {
+      "path": "src/board-loader.mjs",
+      "bytes": 622,
+      "sha256": "89bc9ca924e2f663cb93162166bb869a5ec7ca74efdb3d2133abc168c1c2af41"
+    },
+    {
+      "path": "src/leaderboard-template.mjs",
+      "bytes": 90604,
+      "sha256": "f129f87af6d9d435addf7bd292b11fdb7654c72523f6fff0596575cd32de419d"
+    },
+    {
+      "path": "src/main.jsx",
+      "bytes": 1234,
+      "sha256": "7e1366eff3fa6b23796057ec59ca33a358c14c7659b07e0f5810dbba304955ca"
+    },
+    {
+      "path": "src/manager-signal.css",
+      "bytes": 84981,
+      "sha256": "93fd31a911167c1313e63ae3c630f5d2173549935a730b5eeda307befe5d105d"
+    },
+    {
+      "path": "src/manager-signal.mjs",
+      "bytes": 1477,
+      "sha256": "55f35a47aa90337c5de831d92e1322d396a25bb8162fa051ae5e8070bc17e5ab"
+    },
+    {
+      "path": "src/old-links.mjs",
+      "bytes": 900,
+      "sha256": "519cda3f1c7deb5bd8a6b107cb207bfa32f544d426e66014836cf14f247d78a3"
+    },
+    {
+      "path": "src/read-only-board.mjs",
+      "bytes": 8664,
+      "sha256": "1d10ac8b78b4183fe0b59bac121e349bf12696b5e5f9881ddf204b0c7aae9199"
+    },
+    {
+      "path": "src/report.js",
+      "bytes": 7864,
+      "sha256": "dd5ff4b0e99b7b951489cc02301cb9082ba36316829aca83a0f252530390e792"
+    },
+    {
+      "path": "src/reported-auth.mjs",
+      "bytes": 6691,
+      "sha256": "7b4b76ec9c4789e5a36515abcc0148a056bea66011075da6d3fad7aadf949ad2"
+    },
+    {
+      "path": "src/reported-month.mjs",
+      "bytes": 8286,
+      "sha256": "a42e33edb3e0b385e56a20da49c4dedbe4392bb395fef182ea03db26b33b7902"
+    },
+    {
+      "path": "src/row-access.mjs",
+      "bytes": 2630,
+      "sha256": "a8dac331b4a0191624e8313b56105dff8726a33f8c14b3d12e918c5486bad7d1"
+    },
+    {
+      "path": "src/scheduler-calendar-model.mjs",
+      "bytes": 17779,
+      "sha256": "e79017937d268a6f230720978298270386f6f8959aa44dea471d9a00860de922"
+    },
+    {
+      "path": "src/scheduler-calendar.css",
+      "bytes": 4102,
+      "sha256": "e2414e6b827dc0d7c3127f3f19e525f54eb8bac4a1674a04632b65e8bdf91175"
+    },
+    {
+      "path": "src/scheduler-calendar.jsx",
+      "bytes": 18855,
+      "sha256": "d56ece08bd20773ae3fc532b1ae89b548749ce868a1265d2ebd86d0aed716d7e"
+    },
+    {
+      "path": "src/scheduler-draft-binding.mjs",
+      "bytes": 11031,
+      "sha256": "69792cac705273af6b3cf11708e7d9172de07e54b4a2e743ad85c2e9a4f78945"
+    },
+    {
+      "path": "src/scheduler-draft-codec.mjs",
+      "bytes": 960,
+      "sha256": "cfa32c0b9996cfb186bc5b5be5a49285bef477a650e2530e930375c41956f1a3"
+    },
+    {
+      "path": "src/scheduler-draft-state.mjs",
+      "bytes": 6806,
+      "sha256": "02dd96de6782977af369120e969e11128b0f0ddd1ffb42c7a41938e9d0952475"
+    },
+    {
+      "path": "src/scheduler-draft-transport.mjs",
+      "bytes": 8019,
+      "sha256": "8a1d614d531e3fb0cb5f650e8833444a74fe4b9fecc1ed3c8bcafb38b81bcb1c"
+    },
+    {
+      "path": "src/scheduler-editor-adapter.mjs",
+      "bytes": 12608,
+      "sha256": "cbb65b14a1c6407703e85dd6c70bad1d7e5b381b40446fb17ede082ceff52980"
+    },
+    {
+      "path": "src/scheduler-editor.jsx",
+      "bytes": 8722,
+      "sha256": "128673d5d3b69270ed4d30d0dc21f4bf1c15e63ad9ccaa56a5d747e61cf50fae"
+    },
+    {
+      "path": "src/scheduler-load-context.mjs",
+      "bytes": 8818,
+      "sha256": "6414ff089ad96772761cebc5ce15c44566be477b36ce3a7cfc65bc7c4073541a"
+    },
+    {
+      "path": "src/scheduler-manual-setup.mjs",
+      "bytes": 5372,
+      "sha256": "eb5d966697af01682a3740682fa0b9b00cc33b57ad6b2702fe98631e2b7099ec"
+    },
+    {
+      "path": "src/use-reported-month.mjs",
+      "bytes": 4275,
+      "sha256": "3add9da76be7b3dfbf0ff445c36838b9de9e7675318948e0fa12961ee6ef1406"
+    }
+  ],
+  "definition": [
+    {
+      "path": "scripts/scheduler-performance/build.mjs",
+      "bytes": 14418,
+      "sha256": "cc83e727ad3290931a0746f87042f4b6b2fcf0998a6fc660d1e6d7afdbd41b06"
+    },
+    {
+      "path": "scripts/scheduler-performance/isolation.test.mjs",
+      "bytes": 2945,
+      "sha256": "777001cf383623ae806899862a49a3cdd31ad28567e423d537fb10eced86924b"
+    },
+    {
+      "path": "scripts/scheduler-performance/historical-manager-fixture.mjs",
+      "bytes": 3486,
+      "sha256": "f263e8b7507437059862b0c3eaf791c1015ec944f5efe0e0215032a80c42879b"
+    },
+    {
+      "path": "scripts/scheduler-current-host-preview/build.mjs",
+      "bytes": 8462,
+      "sha256": "902ffe2430efc5e6f4183970c26df0d027e64fec32a4e9bc48a84d0d552990ae"
+    },
+    {
+      "path": "scripts/scheduler-current-host-preview/entry.jsx",
+      "bytes": 2996,
+      "sha256": "77c1aedd312949e5b5550baf2483bd9d845d8f67da4af4496d6e5fe5efdab2ba"
+    },
+    {
+      "path": "test/scheduler-current-host-preview.test.mjs",
+      "bytes": 5422,
+      "sha256": "65d2e297b1a11e07141edc6618fc143dd1c054e93d61471c90def4e9cafb1969"
+    }
+  ]
+}

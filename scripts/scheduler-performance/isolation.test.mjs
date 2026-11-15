@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { patchManager, patchPhoneLayout } from "./build.mjs";
 import postcss from "postcss";
+import {historicalManagerFixture} from "./historical-manager-fixture.mjs";
 
 test("scheduler styles require a scheduler root or an explicit standalone/ghost marker", async () => {
  for (const name of ["planner.css", "calendar-tokens.css"]) {
@@ -14,10 +15,14 @@ test("scheduler styles require a scheduler root or an explicit standalone/ghost 
  }
 });
 test("preview refuses to patch a changed Manager ownership boundary", async () => {
-  const source = await readFile(
+  const current = await readFile(
     new URL("../../src/Manager.jsx", import.meta.url),
     "utf8",
   );
+  // Historical approval is still tested against its exact bytes. Current source
+  // has a separate, untransformed host fixture and is refused by this transform.
+  const source = historicalManagerFixture(current);
+  assert.throws(() => patchManager(current), /Re-review entry points/);
   assert.throws(() => patchManager(source + "\n"), /Re-review entry points/);
   const patched = patchManager(source);
   // The calendar and the monthly-context handoff share the same scheduler.
@@ -34,7 +39,7 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   }
   assert.equal(
     await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8"),
-    source,
+    current,
   );
 });
 

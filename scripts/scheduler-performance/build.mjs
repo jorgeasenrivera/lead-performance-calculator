@@ -8,6 +8,8 @@ import { finalizeHtml, MAIN_POLICY, PLANNER_POLICY } from "./html-finalize.mjs";
 import { fixtures } from "../scheduler-proposal/model.mjs";
 import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
+import {CURRENT_MANAGER_SHA,historicalManagerFixture} from "./historical-manager-fixture.mjs";
+import {buildCurrentHostPreview} from "../scheduler-current-host-preview/build.mjs";
 export const MANAGER_SHA =
   "42ef88b561e855eea1064d98874ac3898339d5ad3031c41f37754cb47c3f7e9a";
 export function patchPhoneLayout(source) {
@@ -93,6 +95,14 @@ export function patchManager(source) {
   );
 }
 export async function buildPreview() {
+  const source=await readFile("src/Manager.jsx","utf8");
+  if(createHash("sha256").update(source).digest("hex")===CURRENT_MANAGER_SHA)
+    return buildCurrentHostPreview();
+  return buildHistoricalPreview();
+}
+export async function buildHistoricalPreview() {
+  const current=await readFile("src/Manager.jsx","utf8");
+  const historical=createHash("sha256").update(current).digest("hex")===MANAGER_SHA?current:historicalManagerFixture(current);
   const seed = buildDemo(new Date("2026-10-14T16:00:00Z"));
   // One synthetic daily-sales source drives the hero roll-up and calendar.
   const total = monthSales(fixtures()[0], "2026-10", "2026-10-14").total;
@@ -118,7 +128,7 @@ export async function buildPreview() {
           if (id.endsWith("/src/main.jsx"))
             return 'import "/scripts/scheduler-performance/entry.jsx";';
           if (id.split('?')[0].endsWith('/src/manager-signal.css')) {if(createHash('sha256').update(source).digest('hex')!=='93fd31a911167c1313e63ae3c630f5d2173549935a730b5eeda307befe5d105d')throw Error('Manager CSS boundary changed. Re-review shared preview.');return relativeTypography(source.replace('.manager-signal .page button:active { transform:translateY(1px); }','').replaceAll('transform:translateY(1px)','transform:none').replaceAll('transform:translateY(-1px)','transform:none'));}
-          if (id.endsWith("/src/Manager.jsx")) return sharedManager(patchManager(source));
+          if (id.endsWith("/src/Manager.jsx")) return sharedManager(patchManager(historical));
           if (id.endsWith("/src/LeadPerformanceCalculator.jsx")) return sharedCore(patchPhoneLayout(source));
         },
       },
@@ -174,4 +184,4 @@ export async function buildPreview() {
     "Isolated Performance preview built; no production source edited.",
   );
 }
-if (process.argv[1]?.endsWith("/build.mjs")) await buildPreview();
+if (process.argv[1]?.endsWith("/scheduler-performance/build.mjs")) await (process.argv.includes("--historical")?buildHistoricalPreview():buildPreview());
