@@ -18125,6 +18125,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
             )}
           </div>
         </div>
+        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>}
         </div>
         {/* ---- the card's own right-hand column ----
         The controls used to ride along the top of the head, which is the one
@@ -26838,7 +26839,7 @@ function SignalSchedule({onCount, offCount, children, store, data, schedulerPrin
   const [hover, setHover] = React.useState(false);
   const [pinned, setPinned] = React.useState(false);
   const panelId = React.useId();
-  if (SCHEDULER_CALENDAR) return <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>;
+  if (SCHEDULER_CALENDAR) return null;
   const parts = React.Children.toArray(children).filter(React.isValidElement);
   if (!signal) return children;
   const roster = React.Children.toArray(parts[0].props.children)[1];
