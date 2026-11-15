@@ -32,5 +32,5 @@
       ]
     }
   ],
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs' ':(exclude)*.md' ':(exclude)scripts' ':(exclude)test' ':(exclude).github' ':(exclude)native' ':(exclude)supabase' && git diff --quiet HEAD^ HEAD -- scripts/scheduler-performance/month-app-core.mjs scripts/scheduler-performance/planner.css"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!docs' ':!*.md' ':!scripts' ':!test' ':!.github' ':!native' ':!supabase' && git diff --quiet HEAD^ HEAD -- scripts/scheduler-performance/month-app-core.mjs scripts/scheduler-performance/planner.css"
 }
