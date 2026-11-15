@@ -9,8 +9,11 @@ import {useReportedMonth} from './use-reported-month.mjs';
 import {createLocalManualDraftConnection,createPilotDraftConnection,manualDraftView} from './scheduler-manual-setup.mjs';
 import {validMonth} from '../scripts/scheduler-performance/month-model.mjs';
 import {timeLabel} from '../scripts/scheduler-performance/shift-intervals.mjs';
+import {glyphs} from '../scripts/scheduler-performance/sage-icons.mjs';
 
 const Editor=lazy(()=>import('./scheduler-editor.jsx'));
+// A scoped presentation preference only; no draft, data or authority is cached.
+let heroExpansion={key:null,expanded:false};
 const EMPTY=Object.freeze({principalEpoch:null,sessionReady:false,disposed:true});
 const NO_AUTH={subscribe:()=>()=>{},getSnapshot:()=>EMPTY,getAccessToken:()=>Promise.resolve(null)};
 const listeners=new Set(),entries=new Map(),guard={current:null};
@@ -210,35 +213,51 @@ function ScheduleDialog({hidden,closeRef,onClose,storeName,children,draft,onDraf
 export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenStore,layout='panel'}){
   const auth=currentReportedAuth()||NO_AUTH;
   const identity=useSyncExternalStore(auth.subscribe,auth.getSnapshot,auth.getSnapshot);
-  const button=useRef(null),id=useId();
+  const button=useRef(null),opener=useRef(null),id=useId();
   const [entryError,setEntryError]=useState(false);
+  const scopeKey=JSON.stringify([store?.id,identity.principalEpoch]);
+  const [expansion,setExpansion]=useState(()=>({...heroExpansion}));
   const timezone=store?.timezone||STORE_TIME_ZONE;
   const today=zonedToday(timezone,new Date()),month=today?.slice(0,7);
   const trusted=Boolean(store && identity.sessionReady===true && principalEpoch===identity.principalEpoch
     && canOpenStore?.(store.id)===true && trustedFor(data,store.id,auth).ok);
+  const expanded=trusted&&expansion.key===scopeKey&&expansion.expanded;
+  useLayoutEffect(()=>{
+    if(!trusted){heroExpansion={key:null,expanded:false};setExpansion({key:scopeKey,expanded:false});return;}
+    const next={key:scopeKey,expanded:heroExpansion.key===scopeKey&&heroExpansion.expanded};heroExpansion=next;setExpansion(next);
+  },[scopeKey,trusted]);
   const reported=useReportedMonth({auth,storeId:store?.id||null,loadedStoreId:trusted?store.id:null,month:month||null,active:trusted});
   useLayoutEffect(()=>{
-    attach(id,{storeId:store?.id,focus:()=>button.current?.focus()});
+    attach(id,{storeId:store?.id,focus:()=>{const target=opener.current?.isConnected?opener.current:button.current;target?.focus();}});
     return()=>detach(id);
   },[id,store?.id]);
   useLayoutEffect(()=>{if(!trusted && state.open && state.props?.store.id===store?.id)closePlan();},[trusted,store?.id]);
-  const open=()=>{
-    if(!trusted || !today)return;
+  const open=(day=null,target=button.current)=>{
+    if(!trusted || !today || day!==null&&!calendarCells(month).includes(day))return;
+    opener.current=target;
     try{
       const copied=structuredClone(data),scoped=editorStore(store,copied,timezone);
       const resolver=createLegacyScheduleResolver({stores:[scoped],snapshots:[{storeId:store.id,revision:Number.isSafeInteger(data.rev)?data.rev:'unversioned',data:copied}],startDate:'2014-01-01',endDate:'2100-12-31'});
       setEntryError(false);
       openPlan({store,data,timezone,now:()=>new Date(),principalEpoch,canOpenStore,dataEpoch:identity.principalEpoch,entryId:id,
-        explicitAssignmentForDay:resolver.explicitAssignmentForDay,key:JSON.stringify([store.id,identity.principalEpoch,Date.now()])});
+        ...(day?{day}:{}),explicitAssignmentForDay:resolver.explicitAssignmentForDay,key:JSON.stringify([store.id,identity.principalEpoch,Date.now()])});
     }catch{setEntryError(true);}
   };
-  return <div className="sc-entry" data-layout={layout} data-delivery-status={reported.status}>
+  const cells=month?calendarCells(month):[],weeks=Array.from({length:cells.length/7},(_,i)=>cells.slice(i*7,i*7+7));
+  const dateLabel=day=>new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'});
+  const dates=interactive=>weeks.map((week,index)=><span className="sc-hero-week" key={index}>{week.map((day,cell)=>!day?<i key={'blank'+cell} className="sc-hero-blank" aria-hidden="true"/>:interactive?<button key={day} type="button" className="sc-hero-day" data-calendar-day={day} aria-label={dateLabel(day)+', open schedule'} aria-current={day===today?'date':undefined} aria-haspopup="dialog" disabled={!trusted} onClick={event=>open(day,event.currentTarget)}>{Number(day.slice(-2))}</button>:<i key={day} className={day===today?'sc-hero-today':undefined}>{Number(day.slice(-2))}</i>)}</span>);
+  const toggle=()=>{if(!trusted)return;const next={key:scopeKey,expanded:!expanded};heroExpansion=next;setExpansion(next);};
+  return <div className="sc-entry" data-layout={layout} data-delivery-status={reported.status} data-calendar-weeks={weeks.length}>
     <style>{css}</style>
-    <button type="button" ref={button} className="sc-toggle" aria-haspopup="dialog" disabled={!trusted || !today} onClick={open}
-      title={trusted?'Open schedule':'This sign-in’s store data is not ready.'}>
-      <span>{month?monthText(month):'Calendar'}</span><span className="sc-entry-map" aria-hidden="true">{month?calendarCells(month).map((day,i)=><i key={day||i} className={!day?'blank':day===today?'today':''}>{day?Number(day.slice(-2)):''}</i>):null}</span>
-      <span>Calendar</span>
-    </button>
+    {layout==='compact'?<>
+      <button type="button" ref={button} className="sc-toggle" aria-label={(month?monthText(month):'Month')+', calendar'} aria-expanded={expanded} aria-controls={id+'-dates'} disabled={!trusted||!today} onClick={toggle}>
+        <svg className="sc-calendar-icon" viewBox="0 0 7 7" aria-hidden="true" focusable="false" fill="currentColor">{glyphs.calendar.flatMap((row,y)=>[...row].flatMap((value,x)=>value==='1'?[<circle key={x+':'+y} cx={x+.5} cy={y+.5} r=".48"/>]:[]))}</svg>
+        <strong>{month?monthText(month):'Month'}</strong>
+      </button>
+      <div id={id+'-dates'} className="sc-hero-dates" hidden={!expanded} role="group" aria-label={month?monthText(month):'Calendar dates'}>{dates(true)}</div>
+    </>:<button type="button" ref={button} className="sc-toggle sc-calendar-open" aria-haspopup="dialog" disabled={!trusted||!today} onClick={()=>open()} title={trusted?'Open schedule':'This sign-in’s store data is not ready.'}>
+      <strong>{month?monthText(month):'Month'}</strong><span className="sc-hero-dates" aria-hidden="true">{dates(false)}</span>
+    </button>}
     {entryError&&trusted?<p role="status">The schedule inputs need review.</p>:null}
   </div>;
 }

@@ -17408,12 +17408,12 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
             );
           })}
         </div>
+        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="compact" /></React.Suspense>}
       </div>
 
       {canSetGoal && !goalMonth.set && (
         <GoalAskCard store={store} month={ym()} onSave={(d) => saveGoal(d)} />
       )}
-      {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="compact" /></React.Suspense>}
 
       <div className="bp-stand">
         <div className="bp-filt">
