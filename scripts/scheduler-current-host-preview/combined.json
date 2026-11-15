@@ -1,0 +1,37 @@
+{
+  "version": "current-host-combined/1",
+  "subject": "08668548a9fea8a05962c3d79849bc36ec1e2460",
+  "tree": "3ea0b557a0a674ac7c3c3fb3d6cd601b4b688ee2",
+  "base": {
+    "commit": "3824820e9e4b3dacfc8c912b577e0cb206b19f36",
+    "tree": "065f9d1bad91063cee212fedccf94a197e1ae79a"
+  },
+  "acceptedHeroSource": {
+    "commit": "6812fa3567cfdd9b6aa6664b2d48b6b0648c15bb",
+    "tree": "b3ef18086f4617d086a07fa0b4ed4349a7f38be9"
+  },
+  "week": {
+    "commit": "f1b53bf9b07a0a7dbc72b7022ff5ade148151000",
+    "tree": "82789729c1741d0c9ef6421e677c5e9bb7748178"
+  },
+  "files": [
+    {
+      "path": "scripts/probe-scheduler-integration.mjs",
+      "bytes": 14992,
+      "sha256": "9011eb2aaf2f969a907e1e27ba150d4ea88f20e10aaf9db822414c63ef65711e",
+      "previousSha256": "cbe6f63bc760fa3df70a9d45266c50bfdece3ab596d27aa8fab28e0f91377f12"
+    },
+    {
+      "path": "scripts/scheduler-performance/month-app-core.mjs",
+      "bytes": 128097,
+      "sha256": "2ccd49e808b205575aa3c2815fd82fe4f71560921cd57b27835a142db58cde54",
+      "previousSha256": "5eca899a22938cac60e88e0e54fef133a013e2a4bd785e99b8f5ab1d0c2bac04"
+    },
+    {
+      "path": "scripts/scheduler-performance/planner.css",
+      "bytes": 264980,
+      "sha256": "298eba4aa32f0e300035a897353f7122f73ab7d3817dd6a83d6c674a43f6b6f1",
+      "previousSha256": "c1e67873822872c17fd6c4b62094c48d187c65869cea08badd08306c8b8d04ee"
+    }
+  ]
+}

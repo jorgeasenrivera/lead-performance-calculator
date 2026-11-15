@@ -610,8 +610,8 @@
     },
     {
       "path": "scripts/scheduler-current-host-preview/build.mjs",
-      "bytes": 8462,
-      "sha256": "902ffe2430efc5e6f4183970c26df0d027e64fec32a4e9bc48a84d0d552990ae"
+      "bytes": 9870,
+      "sha256": "9085d36433169bc5a916879fc67a29f6a58ef71fe9500242eea26e7743479f5f"
     },
     {
       "path": "scripts/scheduler-current-host-preview/entry.jsx",
@@ -620,8 +620,13 @@
     },
     {
       "path": "test/scheduler-current-host-preview.test.mjs",
-      "bytes": 5422,
-      "sha256": "65d2e297b1a11e07141edc6618fc143dd1c054e93d61471c90def4e9cafb1969"
+      "bytes": 6358,
+      "sha256": "e2d166c6d919b3abf6838b6c03453200575c14d296d5fb9fd83b25be8ce02f96"
+    },
+    {
+      "path": "scripts/scheduler-current-host-preview/combined.json",
+      "bytes": 1389,
+      "sha256": "ec45b96af0acd74744372745453b2a5811fe91c07d7c76a9b1bd963e74ad0d3b"
     }
   ]
 }

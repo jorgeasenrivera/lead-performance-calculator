@@ -6,7 +6,8 @@ import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import contract from '../scripts/scheduler-current-host-preview/runtime.json' with {type:'json'};
-import {verifyCurrentHost,verifyFixtureBytes,verifyLoadedInput,assertFixtureSelection,assertFixtureContract} from '../scripts/scheduler-current-host-preview/build.mjs';
+import combined from '../scripts/scheduler-current-host-preview/combined.json' with {type:'json'};
+import {verifyCurrentHost,verifyFixtureBytes,verifyLoadedInput,assertFixtureSelection,assertFixtureContract,assertCombinedContract} from '../scripts/scheduler-current-host-preview/build.mjs';
 import {historicalManagerFixture,HISTORICAL_MANAGER_SHA,CURRENT_MANAGER_SHA} from '../scripts/scheduler-performance/historical-manager-fixture.mjs';
 import {patchManager,MANAGER_SHA} from '../scripts/scheduler-performance/build.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -29,6 +30,13 @@ test('current host qualifies immutable accepted runtime and separate definition 
  assert.ok(contract.files.some(row=>row.path==='scripts/scheduler-performance/generation-worker.mjs'));
 });
 
+test('combined qualification admits only the exact Week delta and retains the original hero refusal',async()=>{
+ assertCombinedContract(combined);assert.equal(combined.subject,'08668548a9fea8a05962c3d79849bc36ec1e2460');
+ await assert.rejects(verifyCurrentHost(root,'hero'),/input (size|hash) changed/);
+ assert.throws(()=>verifyFixtureBytes('src/Manager.jsx',Buffer.from('x'),'unreviewed'),/Unknown current-host case/);
+ for(const mutate of [value=>value.files.pop(),value=>value.files.push(value.files[0]),value=>value.files[0].sha256='f'.repeat(64),value=>value.week.commit='f'.repeat(40),value=>value.subject='f'.repeat(40)]){const changed=structuredClone(combined);mutate(changed);assert.throws(()=>assertCombinedContract(changed),/exactly the reviewed|source or provenance changed/);}
+});
+
 test('changing or rehashing manifest rows cannot rebind the accepted runtime',()=>{
  for(const mutate of [value=>value.files[0].sha256='f'.repeat(64),value=>value.files.pop(),value=>value.files.push({...value.files[0],path:'src/extra.jsx'}),value=>value.definition.find(row=>row.path.endsWith('/entry.jsx')).sha256='f'.repeat(64)]){const changed=structuredClone(contract);mutate(changed);assert.throws(()=>assertFixtureContract(changed),/inventory changed|definition changed/);}
  const duplicate=structuredClone(contract);duplicate.files.push(duplicate.files[0]);assert.throws(()=>assertFixtureContract(duplicate),/duplicate fixture path/);
@@ -48,7 +56,7 @@ test('current host refuses changed and extra loaded source instead of historical
 test('missing source and extra public payload cannot qualify a current-host fixture',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sage-current-host-'));
  try{
-  for(const row of [...contract.files,...contract.definition]){const to=path.join(dir,row.path);await fs.mkdir(path.dirname(to),{recursive:true});await fs.copyFile(path.join(root,row.path),to);}
+  for(const row of [...contract.files,...combined.files,...contract.definition]){const to=path.join(dir,row.path);await fs.mkdir(path.dirname(to),{recursive:true});await fs.copyFile(path.join(root,row.path),to);}
   await verifyCurrentHost(dir);
   await fs.unlink(path.join(dir,'src/Manager.jsx'));await assert.rejects(verifyCurrentHost(dir),/ENOENT/);
   await fs.copyFile(path.join(root,'src/Manager.jsx'),path.join(dir,'src/Manager.jsx'));
