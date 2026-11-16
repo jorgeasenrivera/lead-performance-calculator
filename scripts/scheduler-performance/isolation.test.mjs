@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { patchManager, patchPhoneLayout } from "./build.mjs";
 import postcss from "postcss";
+import {historicalManagerFixture,CURRENT_MANAGER_SHA,HISTORICAL_MANAGER_SHA} from "./historical-manager-fixture.mjs";
+import {createHash} from "node:crypto";
 
 test("scheduler styles require a scheduler root or an explicit standalone/ghost marker", async () => {
  for (const name of ["planner.css", "calendar-tokens.css"]) {
@@ -14,10 +16,14 @@ test("scheduler styles require a scheduler root or an explicit standalone/ghost 
  }
 });
 test("preview refuses to patch a changed Manager ownership boundary", async () => {
-  const source = await readFile(
+  const current = await readFile(
     new URL("../../src/Manager.jsx", import.meta.url),
     "utf8",
   );
+  // Historical approval is still tested against its exact bytes. The current
+  // app is checked separately and remains refused by this transform.
+  const source = historicalManagerFixture(current);
+  assert.throws(() => patchManager(current), /Re-review entry points/);
   assert.throws(() => patchManager(source + "\n"), /Re-review entry points/);
   const patched = patchManager(source);
   // The calendar and the monthly-context handoff share the same scheduler.
@@ -34,7 +40,7 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   }
   assert.equal(
     await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8"),
-    source,
+    current,
   );
 });
 
@@ -43,4 +49,15 @@ test("preview input-aware layout transform refuses changed core source", async()
  assert.throws(()=>patchPhoneLayout(source+"\n"),/Core layout boundary changed/);
  assert.ok(patchPhoneLayout(source).includes('(max-width: 700px) and (hover: none) and (pointer: coarse)'));
  assert.equal(await readFile(new URL("../../src/LeadPerformanceCalculator.jsx",import.meta.url),"utf8"),source);
+});
+
+test("historical Manager fixture preserves exact source approval and rejects drift",async()=>{
+ const sha=value=>createHash("sha256").update(value).digest("hex");
+ const current=await readFile(new URL("../../src/Manager.jsx",import.meta.url),"utf8");
+ assert.equal(sha(current),CURRENT_MANAGER_SHA);
+ assert.equal(sha(historicalManagerFixture(current)),HISTORICAL_MANAGER_SHA);
+ assert.throws(()=>historicalManagerFixture(current+"\n"),/fixture input changed/);
+ assert.throws(()=>historicalManagerFixture(current.replace('layout="panel"','layout="compact"')),/fixture input changed/);
+ const builder=await readFile(new URL("build.mjs",import.meta.url),"utf8"),start=builder.indexOf("export function patchManager("),end=builder.indexOf("export async function buildPreview()",start);
+ assert.equal(sha(builder.slice(start,end)),"29503dece524a14f6f1ebca2ecad0e9363dffc45a80279cc3d3e820572b6b654","historical transform and source guard remain byte-identical");
 });
