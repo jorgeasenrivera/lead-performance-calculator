@@ -8,7 +8,7 @@ import {createHash} from 'node:crypto';
 import {POLICY,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
 
 const sha=b=>createHash('sha256').update(b).digest('hex');
-function fixture(extra=false){
+function fixture(extra=false,withSnapshot=false){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'spacing-route-')),definition=path.join(dir,'definition');fs.mkdirSync(definition);
  const git=(...args)=>execFileSync('git',['-C',definition,...args],{encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();
  const write=(name,value)=>{const f=path.join(definition,name);fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,value);};
@@ -16,14 +16,16 @@ function fixture(extra=false){
  write('.gitignore','node_modules\ndist\n.env.local\n');write('package.json','{"dependencies":{},"devDependencies":{}}');write('package-lock.json','{"packages":{}}');write('src/Manager.jsx','historical');
  for(const name of ['scripts/scheduler-current-runtime/verify.mjs','scripts/scheduler-current-runtime/manifest.json','scripts/scheduler-current-runtime/main-579727d.manifest.json','test/scheduler-current-runtime.test.mjs'])write(name,'frozen '+name);
  const manifest=sha('historical')+'  src/Manager.jsx\n';write(POLICY.manifest.path,manifest);git('add','.');git('commit','-qm','base');
+ const priorBase={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};
+ if(withSnapshot){write('vercel.json','{"syntheticBase":"current"}\n');git('add','.');git('commit','-qm','current base');}
  const base={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};
  write('src/Manager.jsx','current');write('src/hero.css','hero');git('add','.');git('commit','-qm','source');
  const current={commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}')};
  for(const file of POLICY.qualification)write(file,'reviewed '+file);if(extra)write('src/unreviewed.jsx','unreviewed');git('add','.');git('commit','-qm','definition');const head=git('rev-parse','HEAD');
  const merge=git('commit-tree',git('rev-parse','HEAD^{tree}'),'-p',base.commit,'-p',head,'-m','synthetic event');
  const currentRoot=path.join(dir,'current'),historicalRoot=path.join(dir,'historical'),eventRoot=path.join(dir,'event');
- for(const [root,commit]of [[currentRoot,current.commit],[historicalRoot,base.commit],[eventRoot,merge]])git('worktree','add','--quiet','--detach',root,commit);
- const policy={...POLICY,base,current,historical:base,manifest:{path:POLICY.manifest.path,sha256:sha(manifest)}};
+ for(const [root,commit]of [[currentRoot,current.commit],[historicalRoot,priorBase.commit],[eventRoot,merge]])git('worktree','add','--quiet','--detach',root,commit);
+ const policy={...POLICY,base,current,historical:priorBase,eventBaseSnapshot:withSnapshot?priorBase:undefined,manifest:{path:POLICY.manifest.path,sha256:sha(manifest)}};
  const event={repository:{full_name:POLICY.repository},number:521,pull_request:{head:{repo:{full_name:POLICY.repository},ref:POLICY.branch,sha:head},base:{repo:{full_name:POLICY.repository},ref:'main',sha:base.commit}}};
  const env={GITHUB_EVENT_NAME:'pull_request',GITHUB_REPOSITORY:POLICY.repository,GITHUB_REF:'refs/pull/521/merge',GITHUB_SHA:merge,VITE_SUPABASE_URL:'http://127.0.0.1:5433',VITE_SUPABASE_ANON_KEY:'mock-anon-key',VITE_SCHEDULER_CALENDAR:'0',VITE_SCHEDULER_DRAFT_LOCAL:'0',VITE_SCHEDULER_DRAFT_PILOT:'0',SCHEDULER_DRAFT_PILOT_ENABLED:'0'};
  return{dir,git,definition,currentRoot,historicalRoot,eventRoot,policy,event,env,head,run(name='current',changes={}){return verifyRouted({runtimeRoot:name==='current'?currentRoot:historicalRoot,definitionRoot:definition,eventRoot,event,env,caseName:name,...changes},policy);},close(){fs.rmSync(dir,{recursive:true,force:true});}};
@@ -99,4 +101,59 @@ test('the unchanged provider is authenticated before any of its code executes',(
   const marker=path.join(root,'executed');fs.writeFileSync(path.join(root,'scheduler-current-runtime/verify.mjs'),"import fs from 'node:fs';fs.writeFileSync("+JSON.stringify(marker)+",'bad');");
   assert.throws(()=>execFileSync(process.execPath,[path.join(root,'helper.mjs')],{stdio:'pipe'}),/frozen verifier provider before import/);assert.equal(fs.existsSync(marker),false);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('the exact observed PR snapshot is recorded separately from the consumed current base',()=>{
+ const f=fixture(false,true);try{
+  const event=structuredClone(f.event);event.pull_request.base.sha=f.policy.eventBaseSnapshot.commit;const original=JSON.stringify(event);
+  for(const name of ['historical','current']){
+   const result=f.run(name,{event});assert.equal(result.baseCommit,f.policy.base.commit);assert.equal(result.baseTree,f.policy.base.tree);
+   assert.equal(result.baseRef,'main');assert.equal(result.eventBaseCommit,f.policy.eventBaseSnapshot.commit);assert.equal(result.eventBaseTree,f.policy.eventBaseSnapshot.tree);assert.equal(result.eventBaseKind,'pinned-pr-snapshot');
+  }
+  assert.equal(JSON.stringify(event),original,'qualification never rewrites the event');
+  assert.equal(f.run().eventBaseKind,'current-base','a fresh current-base event remains supported');
+ }finally{f.close();}
+});
+test('a pinned snapshot requires the current-base synthetic merge and cannot qualify a head-only checkout',()=>{
+ const f=fixture(false,true);try{
+  const event=structuredClone(f.event);event.pull_request.base.sha=f.policy.eventBaseSnapshot.commit;
+  assert.throws(()=>f.run('current',{event,eventRoot:f.definition,env:{...f.env,GITHUB_SHA:f.head,GITHUB_REF:'refs/pull/521/head'}}),/stale event snapshot requires an exact current-base merge checkout/);
+  assert.equal(f.run('current',{eventRoot:f.definition,env:{...f.env,GITHUB_SHA:f.head,GITHUB_REF:'refs/pull/521/head'}}).eventBaseKind,'current-base');
+ }finally{f.close();}
+});
+test('unknown event bases, snapshot trees, branch refs, heads and checkout identities refuse',()=>{
+ const f=fixture(false,true);try{
+  const event=structuredClone(f.event);event.pull_request.base.sha=f.policy.eventBaseSnapshot.commit;
+  for(const [label,mutate]of [
+   ['unknown base',e=>e.pull_request.base.sha='f'.repeat(40)],['unreviewed source as base',e=>e.pull_request.base.sha=f.policy.current.commit],
+   ['wrong base ref',e=>e.pull_request.base.ref='other'],['wrong head ref',e=>e.pull_request.head.ref='other'],['wrong head',e=>e.pull_request.head.sha=f.policy.current.commit],
+  ]){const changed=structuredClone(event);mutate(changed);assert.throws(()=>f.run('current',{event:changed}),label);}
+  for(const ref of ['refs/pull/521/head','refs/pull/522/merge','refs/heads/main'])assert.throws(()=>f.run('current',{event,env:{...f.env,GITHUB_REF:ref}}),/merge event ref/);
+  assert.throws(()=>f.run('current',{event,env:{...f.env,GITHUB_SHA:f.head}}),/actual event checkout/);
+  const policy={...f.policy,eventBaseSnapshot:{...f.policy.eventBaseSnapshot,tree:'f'.repeat(40)}};
+  assert.throws(()=>verifyRouted({runtimeRoot:f.currentRoot,definitionRoot:f.definition,eventRoot:f.eventRoot,event,env:f.env,caseName:'current'},policy),/immutable PR event snapshot tree/);
+ }finally{f.close();}
+});
+test('a matching old snapshot cannot replace, reorder or extend the exact current-base merge parents',()=>{
+ const f=fixture(false,true);try{
+  const event=structuredClone(f.event);event.pull_request.base.sha=f.policy.eventBaseSnapshot.commit;
+  const tree=f.git('rev-parse','HEAD^{tree}'),original=execFileSync('git',['-C',f.eventRoot,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  for(const parents of [[f.policy.eventBaseSnapshot.commit,f.head],[f.head,f.policy.base.commit],[f.policy.current.commit,f.head],[f.policy.base.commit,f.head,f.policy.eventBaseSnapshot.commit]]){
+   const wrong=f.git('commit-tree',tree,...parents.flatMap(p=>['-p',p]),'-m','wrong synthetic merge');execFileSync('git',['-C',f.eventRoot,'update-ref','HEAD',wrong]);
+   assert.throws(()=>f.run('current',{event,env:{...f.env,GITHUB_SHA:wrong}}),/exact merge parents/);
+  }
+  execFileSync('git',['-C',f.eventRoot,'update-ref','HEAD',original]);
+  const policy={...f.policy,eventBaseSnapshot:f.policy.current},other=structuredClone(event);other.pull_request.base.sha=f.policy.current.commit;
+  assert.throws(()=>verifyRouted({runtimeRoot:f.currentRoot,definitionRoot:f.definition,eventRoot:f.eventRoot,event:other,env:f.env,caseName:'current'},policy),/pinned snapshot is the exact parent of the current base/);
+ }finally{f.close();}
+});
+test('the snapshot exception cannot admit a changed merge tree or changed served source',()=>{
+ const f=fixture(false,true);try{
+  const event=structuredClone(f.event);event.pull_request.base.sha=f.policy.eventBaseSnapshot.commit;
+  const input=path.join(f.definition,'src/Manager.jsx'),bytes=fs.readFileSync(input);fs.writeFileSync(input,'changed merge input');f.git('add','src/Manager.jsx');
+  const wrong=f.git('commit-tree',f.git('write-tree'),'-p',f.policy.base.commit,'-p',f.head,'-m','changed merge tree');fs.writeFileSync(input,bytes);f.git('read-tree',f.head);
+  execFileSync('git',['-C',f.eventRoot,'update-ref','HEAD',wrong]);assert.throws(()=>f.run('current',{event,env:{...f.env,GITHUB_SHA:wrong}}),/event introduces no source drift/);
+  const actual=f.git('commit-tree',f.git('rev-parse','HEAD^{tree}'),'-p',f.policy.base.commit,'-p',f.head,'-m','current merge');execFileSync('git',['-C',f.eventRoot,'update-ref','HEAD',actual]);
+  fs.writeFileSync(path.join(f.currentRoot,'src/Manager.jsx'),'changed served source');assert.throws(()=>f.run('current',{event,env:{...f.env,GITHUB_SHA:actual}}),/input (size|hash)/);
+ }finally{f.close();}
 });

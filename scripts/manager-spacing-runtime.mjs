@@ -13,6 +13,7 @@ const {sourceRecords,verifyBaselines,QUALIFICATION,CURRENT_QUALIFICATION}=await 
 export const POLICY=Object.freeze({
  repository:'jorgeasenrivera/lead-performance-calculator',pullRequest:521,branch:'codex/scheduler-combined-webkit-proof',
  base:{commit:'720e28ed0a2e108bcfb71e440004cc971c38ca6e',tree:'083e5a7fe8e6c0968441ba011c638866ed018995'},
+ eventBaseSnapshot:{commit:'4540534c1fe51a4fde6fb7a4cc6c48f68379ad67',tree:'82789729c1741d0c9ef6421e677c5e9bb7748178'},
  current:{commit:'2a26e49ba54f96bf6db7f65a926f114b44cc0cfb',tree:'adcf4b228621bf446c4593d40103d0205dce705f'},
  historical:{commit:'710cc8d78d0363856df2f9000162923859434b73',tree:'cb676324c5c3b1fd7cbbc90e6d93745bdc52855e'},
  qualification:['.github/workflows/manager-spacing.yml','.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs'],
@@ -28,7 +29,8 @@ export function validateEvent(event,env,policy=POLICY){
  assert.equal(env.GITHUB_EVENT_NAME,'pull_request','pull request only');assert.equal(env.GITHUB_REPOSITORY,policy.repository,'repository');
  assert.equal(event.repository?.full_name,policy.repository,'event repository');assert.equal(event.number,policy.pullRequest,'qualified pull request');
  const pr=event.pull_request;assert.equal(pr?.head?.repo?.full_name,policy.repository,'same repository head');assert.equal(pr?.base?.repo?.full_name,policy.repository,'same repository base');
- assert.equal(pr?.head?.ref,policy.branch,'qualified branch');assert.equal(pr?.base?.ref,'main','main target');assert.equal(pr?.base?.sha,policy.base.commit,'exact reviewed base');
+ assert.equal(pr?.head?.ref,policy.branch,'qualified branch');assert.equal(pr?.base?.ref,'main','main target');
+ assert.ok(pr?.base?.sha===policy.base.commit||Boolean(policy.eventBaseSnapshot&&pr?.base?.sha===policy.eventBaseSnapshot.commit),'exact reviewed base or pinned PR event snapshot');
  assert.match(pr?.head?.sha||'',/^[0-9a-f]{40}$/,'full head identity');
  for(const name of flags)assert.equal(env[name],'0','scheduler remains OFF: '+name);
  assert.equal(env.VITE_SUPABASE_URL,'http://127.0.0.1:5433','synthetic SDK endpoint');assert.equal(env.VITE_SUPABASE_ANON_KEY,'mock-anon-key','synthetic SDK key');return pr;
@@ -50,6 +52,10 @@ function verifyDefinition(root,pr,policy){
  assert.equal(git(root,'rev-parse','HEAD'),pr.head.sha,'definition checkout');
  assert.equal(git(root,'rev-parse',policy.current.commit+'^{tree}'),policy.current.tree,'immutable hero source tree');
  assert.equal(git(root,'rev-parse',policy.base.commit+'^{tree}'),policy.base.tree,'immutable base tree');
+ if(pr.base.sha!==policy.base.commit){
+  assert.equal(git(root,'rev-parse',pr.base.sha+'^{tree}'),policy.eventBaseSnapshot.tree,'immutable PR event snapshot tree');
+  assert.deepEqual(git(root,'show','-s','--format=%P',policy.base.commit).split(' '),[pr.base.sha],'pinned snapshot is the exact parent of the current base');
+ }
  git(root,'merge-base','--is-ancestor',policy.base.commit,policy.current.commit);git(root,'merge-base','--is-ancestor',policy.current.commit,pr.head.sha);
  const changed=git(root,'diff','--name-only',policy.current.commit,pr.head.sha).split('\n').filter(Boolean).sort();
  assert.deepEqual(changed,[...policy.qualification].sort(),'qualification changes only');
@@ -75,7 +81,7 @@ export function verifyInputFiles(root,records,policy=POLICY){
 export function verifyRouted({runtimeRoot,definitionRoot,eventRoot,event,env,caseName},policy=POLICY){
  const pr=validateEvent(event,env,policy),runtime=runtimeFor(caseName,policy);verifyDefinition(definitionRoot,pr,policy);
  const eventCommit=git(eventRoot,'rev-parse','HEAD');assert.equal(eventCommit,env.GITHUB_SHA,'actual event checkout');
- if(eventCommit===pr.head.sha){assert.ok(['refs/pull/'+policy.pullRequest+'/head','refs/heads/'+policy.branch].includes(env.GITHUB_REF),'head event ref');}
+ if(eventCommit===pr.head.sha){assert.equal(pr.base.sha,policy.base.commit,'stale event snapshot requires an exact current-base merge checkout');assert.ok(['refs/pull/'+policy.pullRequest+'/head','refs/heads/'+policy.branch].includes(env.GITHUB_REF),'head event ref');}
  else{assert.equal(env.GITHUB_REF,'refs/pull/'+policy.pullRequest+'/merge','merge event ref');assert.deepEqual(git(eventRoot,'show','-s','--format=%P','HEAD').split(' '),[policy.base.commit,pr.head.sha],'exact merge parents');}
  assert.equal(git(eventRoot,'rev-parse','HEAD^{tree}'),git(definitionRoot,'rev-parse','HEAD^{tree}'),'event introduces no source drift');
  assert.equal(git(runtimeRoot,'rev-parse','HEAD'),runtime.commit,'served runtime commit');assert.equal(git(runtimeRoot,'rev-parse','HEAD^{tree}'),runtime.tree,'served runtime tree');
@@ -83,7 +89,7 @@ export function verifyRouted({runtimeRoot,definitionRoot,eventRoot,event,env,cas
  verifyPreservedQualification(runtimeRoot,runtime.commit,policy);verifyPreservedQualification(definitionRoot,policy.current.commit,policy);
  verifyInputFiles(runtimeRoot,records,policy);verifyInputFiles(definitionRoot,definitionRecords,policy);
  if(caseName==='historical')execFileSync('sha256sum',['--check',resolve(definitionRoot,policy.manifest.path)],{cwd:runtimeRoot});
- return{caseName:caseName==='historical'?'historical-search':'current-hero',runtimeCommit:runtime.commit,runtimeTree:runtime.tree,definitionCommit:pr.head.sha,definitionTree:git(definitionRoot,'rev-parse','HEAD^{tree}'),heroSource:policy.current.commit,heroSourceTree:policy.current.tree,baseCommit:policy.base.commit,baseTree:policy.base.tree,eventCommit,eventTree:git(eventRoot,'rev-parse','HEAD^{tree}'),consumedFiles:records.length,flags:Object.fromEntries(flags.map(k=>[k,'0'])),historicalManifestSha256:policy.manifest.sha256};
+ return{caseName:caseName==='historical'?'historical-search':'current-hero',runtimeCommit:runtime.commit,runtimeTree:runtime.tree,definitionCommit:pr.head.sha,definitionTree:git(definitionRoot,'rev-parse','HEAD^{tree}'),heroSource:policy.current.commit,heroSourceTree:policy.current.tree,baseRef:pr.base.ref,baseCommit:policy.base.commit,baseTree:policy.base.tree,eventBaseCommit:pr.base.sha,eventBaseTree:pr.base.sha===policy.base.commit?policy.base.tree:policy.eventBaseSnapshot.tree,eventBaseKind:pr.base.sha===policy.base.commit?'current-base':'pinned-pr-snapshot',eventCommit,eventTree:git(eventRoot,'rev-parse','HEAD^{tree}'),consumedFiles:records.length,flags:Object.fromEntries(flags.map(k=>[k,'0'])),historicalManifestSha256:policy.manifest.sha256};
 }
 function dependencies(root){const p=JSON.parse(file(root,'package.json')),lock=JSON.parse(file(root,'package-lock.json')),result={};for(const name of [...Object.keys(p.dependencies||{}),...Object.keys(p.devDependencies||{})]){const actual=JSON.parse(readFileSync(resolve(root,'node_modules',name,'package.json'))).version;assert.equal(actual,lock.packages['node_modules/'+name].version,'locked installed dependency: '+name);result[name]=actual;}assert.equal(JSON.parse(readFileSync(resolve(root,'node_modules/playwright/package.json'))).version,'1.63.0','exact browser driver');return result;}
 function buildFiles(root){
