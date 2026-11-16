@@ -295,6 +295,7 @@ jobs:
           CORSPREP
       - name: Measure before and after
         id: measurement
+        shell: bash
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha }}
