@@ -16,10 +16,19 @@ on:
       - scripts/color-phone.mjs
       - scripts/search-keyboard.mjs
       - .github/workflows/manager-spacing.yml
+      - .github/workflows/manager-hero-spacing.yml
+      - scripts/manager-spacing-runtime.mjs
+      - test/manager-spacing-runtime.test.mjs
       - scripts/scheduler-current-runtime/**
       - test/scheduler-current-runtime.test.mjs
 jobs:
+  hero-runtime:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 521 && github.head_ref == 'codex/scheduler-combined-webkit-proof' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+    uses: ./.github/workflows/manager-hero-spacing.yml
   spacing:
+    if: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.number == 521 && github.head_ref == 'codex/scheduler-combined-webkit-proof' && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     defaults:
       run:
