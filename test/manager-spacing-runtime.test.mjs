@@ -157,3 +157,46 @@ test('the snapshot exception cannot admit a changed merge tree or changed served
   fs.writeFileSync(path.join(f.currentRoot,'src/Manager.jsx'),'changed served source');assert.throws(()=>f.run('current',{event,env:{...f.env,GITHUB_SHA:actual}}),/input (size|hash)/);
  }finally{f.close();}
 });
+
+test('the diagnostic qualifies the two exact mock identities and refuses case or content substitution',()=>{
+ const workflow=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
+ const observer=workflow.match(/const observerSource = String.raw`([\s\S]*?)`;/)[1].split('\n').map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
+ const legacy=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8').match(/const observerSource = String.raw`([\s\S]*?)`;/)[1].split('\n').map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
+ assert.equal(observer.split("if(process.env.SAGE_CORS_TRACE==='1')")[0],legacy.split("if(process.env.SAGE_CORS_TRACE==='1')")[0],'all metadata filters and pass-through instrumentation remain unchanged');
+ const entries={historical:"console.log('HISTORICAL_SYNTHETIC_ENTRY');\n",current:"console.log('CURRENT_SYNTHETIC_ENTRY');\n"};
+ const hashes={historical:'4eb28e662bcaf0b1d3f206f4066f3dab6d59007f960071f376d9fe638fb0c1ba',current:'5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3'};
+ for(const [name,hash]of Object.entries(hashes))assert.ok(observer.includes("['"+name+"','"+hash+"']"),'independent frozen '+name+' identity');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'spacing-mock-trace-'));try{
+  fs.mkdirSync(path.join(dir,'scripts'));fs.mkdirSync(path.join(dir,'manager-runtime-qualification'));
+  const preload=path.join(dir,'observer.cjs'),entry=path.join(dir,'scripts/mock-supabase.mjs'),trace=path.join(dir,'manager-runtime-qualification/cors-trace.ndjson');
+  // Only this nonnetwork unit fixture substitutes tiny entry hashes. The
+  // production workflow keeps both independently verified mock hashes.
+  fs.writeFileSync(preload,observer.replace(hashes.historical,sha(entries.historical)).replace(hashes.current,sha(entries.current)));
+  const run=(name)=>execFileSync(process.execPath,['--require',preload,entry],{cwd:dir,env:{...process.env,ROUTED_HERO:'true',SAGE_CORS_TRACE:'1',SAGE_CORS_TRACE_PATH:trace,SPACING_RUNTIME_CASE:name},encoding:'utf8',stdio:'pipe'});
+  for(const name of ['historical','current']){
+   fs.writeFileSync(entry,entries[name]);fs.writeFileSync(trace,'');const output=run(name);assert.ok(output.includes(name.toUpperCase()+'_SYNTHETIC_ENTRY'));
+   const marker=JSON.parse(fs.readFileSync(trace,'utf8').trim());assert.equal(marker.kind,'observer-start');assert.equal(marker.source,'mock');
+  }
+  fs.writeFileSync(entry,entries.current);assert.throws(()=>run('historical'),/frozen diagnostic entry/);
+  fs.writeFileSync(entry,entries.historical);assert.throws(()=>run('current'),/frozen diagnostic entry/);
+  assert.throws(()=>run('unknown'),/qualified diagnostic mock case/);
+  fs.writeFileSync(entry,entries.historical+'\n');assert.throws(()=>run('historical'),/frozen diagnostic entry/);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('the Calendar runner selects the installed Chromium and preserves WebKit and missing-binary refusal',()=>{
+ const workflow=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
+ const script=workflow.match(/      - name: Exercise the current Calendar entry with saving disabled[\s\S]*?        run: \|\n([\s\S]*?)      - name: Recheck both source/)[1].split('\n').map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
+ assert.match(script,/chromium\.executablePath\(\)/);assert.match(script,/fs\.accessSync\(binary,fs\.constants\.X_OK\)/);
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'spacing-browser-runner-'));try{
+  fs.mkdirSync(path.join(dir,'scripts'));fs.mkdirSync(path.join(dir,'node_modules/playwright'),{recursive:true});
+  const binary=path.join(dir,'bundled chromium'),marker=path.join(dir,'entry.json');fs.writeFileSync(binary,'synthetic executable fixture\n',{mode:0o755});
+  fs.writeFileSync(path.join(dir,'node_modules/playwright/index.js'),'exports.chromium={executablePath(){return process.env.FIXTURE_BROWSER_PATH;}};\n');
+  fs.writeFileSync(path.join(dir,'scripts/probe-scheduler-integration.mjs'),"import fs from 'node:fs';fs.writeFileSync(process.env.ENTRY_MARKER,JSON.stringify({engine:process.env.FEEL_BROWSER,binary:process.env.FEEL_CHROME||null}));\n");
+  const env={...process.env,ENTRY_MARKER:marker,FIXTURE_BROWSER_PATH:binary};delete env.FEEL_CHROME;
+  const run=engine=>execFileSync('sh',['-e','-c',script],{cwd:dir,env:{...env,FEEL_BROWSER:engine},stdio:'pipe'});
+  run('chromium');assert.deepEqual(JSON.parse(fs.readFileSync(marker)),{engine:'chromium',binary});fs.unlinkSync(marker);
+  run('webkit');assert.deepEqual(JSON.parse(fs.readFileSync(marker)),{engine:'webkit',binary:null});fs.unlinkSync(marker);
+  env.FIXTURE_BROWSER_PATH=path.join(dir,'missing');assert.throws(()=>run('chromium'));assert.equal(fs.existsSync(marker),false,'the entry never runs after a missing binary');
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});

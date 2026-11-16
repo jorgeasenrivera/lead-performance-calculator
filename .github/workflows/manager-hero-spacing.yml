@@ -273,7 +273,9 @@ jobs:
           if(process.env.SAGE_CORS_TRACE==='1'){
             const entry=path.resolve(process.argv[1]||''), cwd=process.cwd();
             const driverRoot=process.env.ROUTED_HERO==='true'?path.resolve(cwd,'../spacing-definition'):cwd;
-            const expected=new Map([[path.join(driverRoot,'scripts/hero-bars.mjs'),'bad198f7ddc2c612e445664644a7c0e272cd64b422a95e6729a62777d08e7908'],[path.join(cwd,'scripts/mock-supabase.mjs'),'5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3']]);
+            const mockHashes=new Map([['historical','4eb28e662bcaf0b1d3f206f4066f3dab6d59007f960071f376d9fe638fb0c1ba'],['current','5eb2b29d000f8882acfde50930b3893def42f3a0c89ce303ec2368b00bf4f2a3']]);
+            const mockSha=mockHashes.get(process.env.SPACING_RUNTIME_CASE);assert.ok(mockSha,'qualified diagnostic mock case');
+            const expected=new Map([[path.join(driverRoot,'scripts/hero-bars.mjs'),'bad198f7ddc2c612e445664644a7c0e272cd64b422a95e6729a62777d08e7908'],[path.join(cwd,'scripts/mock-supabase.mjs'),mockSha]]);
             if(expected.has(entry)){
               assert.equal(crypto.createHash('sha256').update(fs.readFileSync(entry)).digest('hex'),expected.get(entry),'frozen diagnostic entry');
               const destination=path.join(cwd,'manager-runtime-qualification/cors-trace.ndjson');assert.equal(process.env.SAGE_CORS_TRACE_PATH,destination,'fixed diagnostic metadata destination');
@@ -354,7 +356,12 @@ jobs:
           FEEL_PLAYWRIGHT: ${{ github.workspace }}/spacing-runtime/node_modules/playwright/index.mjs
           PROBE_EVIDENCE_DIR: ${{ github.workspace }}/spacing-runtime/manager-runtime-qualification/hero-integration
           PROBE_SCHEDULER_FLAG: '1'
-        run: node scripts/probe-scheduler-integration.mjs
+        run: |
+          if [ "$FEEL_BROWSER" = "chromium" ]; then
+            FEEL_CHROME="$(node -e "const {chromium}=require('playwright');const fs=require('node:fs');const binary=chromium.executablePath();fs.accessSync(binary,fs.constants.X_OK);process.stdout.write(binary);")"
+            export FEEL_CHROME
+          fi
+          node scripts/probe-scheduler-integration.mjs
       - name: Recheck both source and definition after measurement
         if: always()
         run: node ../spacing-definition/scripts/manager-spacing-runtime.mjs post-measure
