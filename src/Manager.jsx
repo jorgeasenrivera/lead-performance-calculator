@@ -39,6 +39,7 @@ import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT } from "../
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
+import { deliveredUnits } from "../api/_delivered-units.mjs";
 import { doorCheck, readingVerdict, settle, watchCircle } from "../api/_geofence.mjs";
 import { assistWhere } from "../api/_queue-notify.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
@@ -266,9 +267,9 @@ function langCode(raw) {
 // Plate tags are compared with punctuation and case stripped, so "DLR-1042" and
 // "dlr1042" are understood to be the same plate. Defined here because both the
 // plate tracker and the repair tool need it, and the repair tool is declared first.
-// Every unit a person delivered this month, across all four channels.
-const unitsOf = (s) =>
-  (s?.internetUnits ?? 0) + (s?.phoneUnits ?? 0) + (s?.showroomUnits ?? 0) + (s?.campaignUnits ?? 0);
+// Every unit a person delivered this month, across all five sources, Service
+// included, so the app and the TV board count the same cars.
+const unitsOf = (s) => deliveredUnits(s);
 
 /* The store's own delivered count, as DriveCentric filed it (the store roll-up
    or the Delivery Summary's own totals row). This is the ONLY figure that counts
@@ -477,7 +478,7 @@ function monthRoster(data, M, roster) {
 const personUnits = (M, name) => {
   const st = M && M.stats && M.stats[norm(name)];
   if (!st) return 0;
-  return (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+  return deliveredUnits(st);
 };
 
 /* ---- Why the total ends in a half ----
@@ -11788,7 +11789,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
     for (const a of roster) {
       const st = M?.stats?.[norm(a.name)];
       if (!st) continue;
-      units += (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+      units += deliveredUnits(st);
     }
     const goal = storeGoalFor(s, mk)?.units ?? 0;
     const chan = channelRates(M, roster);
@@ -14290,7 +14291,7 @@ function oyoBaseline(data, nameKey, aId) {
 
   const observedUnits = Object.keys(data.months || {}).reduce((n, mk) => {
     const st = data.months[mk]?.stats?.[nameKey] || {};
-    return n + (st.showroomUnits ?? 0) + (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.campaignUnits ?? 0);
+    return n + deliveredUnits(st);
   }, 0);
 
   const observed = {
@@ -14450,7 +14451,7 @@ function CoachingPhone({ config, store, data, onChange, userName, scored, withDa
     .sort((x, y) => x.ratio - y.ratio);
   const under = withData.map((r) => ({ r, behind: gapsOf(r).filter((g) => g.ratio < 0.85) })).filter((x) => x.behind.length > 0);
   const lm = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); })();
-  const lastUnits = (a) => { const s = data.months?.[lm]?.stats?.[norm(a.name)]; return s ? (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0) + (s.campaignUnits ?? 0) : null; };
+  const lastUnits = (a) => { const s = data.months?.[lm]?.stats?.[norm(a.name)]; return s ? deliveredUnits(s) : null; };
   const goalOf = (a) => data.goals?.[a.id]?.monthly ?? 0;
   const monthFrac = (a) => { const w = personWorkingDaysInMonth(data, a); const e = Math.min(w, Math.max(1, daysWorkedThisMonth(data, a))); return w > 0 ? e / w : 0; };
   const streakMark = (a) => { const s = currentStreak(data, a, std); return s.dir && s.len >= 3 ? <span className={"co-stk" + (s.dir === "down" ? " dn" : "")}><PixIcon glyph={s.dir === "up" ? "triup" : "tridown"} size={8} />{s.len}</span> : null; };
@@ -14774,7 +14775,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
   // benchmark. What separates them is the whole point of this view.
   const scored = roster.map((a) => {
     const s = M?.stats?.[norm(a.name)] || {};
-    const units = (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0) + (s.campaignUnits ?? 0);
+    const units = deliveredUnits(s);
     // the same verdict the Lead Board reaches, so the one-pager can explain a pause
     // in exactly the terms the person already sees.
     const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
@@ -15000,7 +15001,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   const bUnits = (base && base.units) || 0;
   const bDays = (base && base.daysWorked) || 0;
   const limitedHistory = !base || (base.daysWorked || 0) < 55;
-  const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
+  const lastUnits = deliveredUnits(stats);
   // Appointments set live in last month's daily activity, not the seeded baseline, so pull
   // that one from the month itself (mtd) when it's on file; everything else stays on the
   // 90-day history so it agrees with the coaching page.
@@ -17041,7 +17042,8 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
   const closingRoster = monthRoster(data, M, boardRoster);
   const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
-  const rosterUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  const serviceUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.serviceUnits ?? 0), 0);
+  const rosterUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits + serviceUnits;
   const statedM = statedOf(M);
   const totalUnits = statedM ? statedM.deliveries : rosterUnits;
   const pace = (() => {
@@ -17620,9 +17622,10 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
   const closingRoster = monthRoster(data, M, boardRoster);
   const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
+  const serviceUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.serviceUnits ?? 0), 0);
   const halves = halfStory(data, M, closingRoster);
 
-  const rosterUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  const rosterUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits + serviceUnits;
   /* The headline is DriveCentric's own count whenever one is on file. A manager
      who sees this number disagree with the screen inside DriveCentric stops
      believing everything else on the page, and the roster sum ALWAYS disagrees:
@@ -19560,7 +19563,7 @@ function GMSummary({ config, data, stores }) {
     const st = statedOf(M);
     if (st) return tot + st.deliveries;
     return tot + rows.filter((r) => r.store === s.name)
-      .reduce((n, r) => n + (r.stats?.unitsDelivered || 0), 0);
+      .reduce((n, r) => n + deliveredUnits(r.stats), 0);
   }, 0);
   const measureFor = (mKey) => {
     let any = false; const t = { units: 0, opps: 0, appts: 0, shows: 0, videos: 0, calls: 0 };
@@ -19569,7 +19572,7 @@ function GMSummary({ config, data, stores }) {
       const M = d.months?.[mKey];
       if (M) for (const a of d.roster || []) {
         const st = M.stats?.[norm(a.name)]; if (!st) continue;
-        any = true; t.units += st.unitsDelivered || 0; t.opps += st.opps || 0;
+        any = true; t.units += deliveredUnits(st); t.opps += st.opps || 0;
       }
       for (const [dy, rec] of Object.entries(d.activity || {})) {
         if (!dy.startsWith(mKey)) continue;

@@ -30,9 +30,18 @@ export const PARITY_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Current application bytes are the reviewed Service-total PR, not the historical fixture.
+export const SERVICE_TOTALS_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:527,branch:'claude/project-thread-i2fcpc',
+ base:{commit:'7221c4fc7110e327c916624a9b1f7fe284f37791',tree:'f971d61e51a8e3d8ce9cf7701c186a277681634f'},
+ current:{commit:'c6b6d4164b3eda7f4d1a25400e74151f06b545be',tree:'3fb6726cd47554607ed68c709b484ca4360b7fba'},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
+ if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  throw new Error('unqualified pull request');
 }
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
