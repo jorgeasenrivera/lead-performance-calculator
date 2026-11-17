@@ -18125,7 +18125,6 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
             )}
           </div>
         </div>
-        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>}
         </div>
         {/* ---- the card's own right-hand column ----
         The controls used to ride along the top of the head, which is the one
@@ -18157,6 +18156,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
               <PixIcon glyph="arrow" size={11} />
             </button>
           </div>
+          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>}
           <div className="s2-chip-state">
 <SignalSchedule onCount={onCount} offCount={offToday.length} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
             <div className="s2-rota bloop-host" tabIndex={0}>

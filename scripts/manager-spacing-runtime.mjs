@@ -19,6 +19,22 @@ export const POLICY=Object.freeze({
  qualification:['.github/workflows/manager-spacing.yml','.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs'],
  manifest:{path:'scripts/search-runtime.sha256',sha256:'5cc466b968535b7544c0885c91ca68fcdc718c50bd31df87d58478082e35c78c'},
 });
+// The two-parent source anchor keeps the reviewed Sage application and
+// current shared-main changes intact. Only these two CI files may follow it.
+export const PARITY_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:524,branch:'codex/scheduler-hero-calendar-parity-20261117',
+ base:{commit:'08211512bde8ef541ecad2d5a603cd37e83dc8da',tree:'feef1f5c29f3d839afdb3528074b74159a7c6b85'},
+ current:{commit:'f404e7c998f32cbd063bfd6bbf6b54ddb3b26cec',tree:'8df21db3c305d9551b11dc88a6cbf7f569d76842',
+  parents:['5d508b86be1e35f7f25b144b85fe7800d1105bda','08211512bde8ef541ecad2d5a603cd37e83dc8da'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
+export function policyForPullRequest(number){
+ if(number===POLICY.pullRequest)return POLICY;
+ if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
+ throw new Error('unqualified pull request');
+}
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
 const flags=['VITE_SCHEDULER_CALENDAR','VITE_SCHEDULER_DRAFT_LOCAL','VITE_SCHEDULER_DRAFT_PILOT','SCHEDULER_DRAFT_PILOT_ENABLED'];
 const sha=b=>createHash('sha256').update(b).digest('hex');
@@ -52,13 +68,14 @@ function verifyDefinition(root,pr,policy){
  assert.equal(git(root,'rev-parse','HEAD'),pr.head.sha,'definition checkout');
  assert.equal(git(root,'rev-parse',policy.current.commit+'^{tree}'),policy.current.tree,'immutable hero source tree');
  assert.equal(git(root,'rev-parse',policy.base.commit+'^{tree}'),policy.base.tree,'immutable base tree');
+ if(policy.current.parents)assert.deepEqual(git(root,'show','-s','--format=%P',policy.current.commit).split(' '),policy.current.parents,'exact source anchor parents');
  if(pr.base.sha!==policy.base.commit){
   assert.equal(git(root,'rev-parse',pr.base.sha+'^{tree}'),policy.eventBaseSnapshot.tree,'immutable PR event snapshot tree');
   assert.deepEqual(git(root,'show','-s','--format=%P',policy.base.commit).split(' '),[pr.base.sha],'pinned snapshot is the exact parent of the current base');
  }
  git(root,'merge-base','--is-ancestor',policy.base.commit,policy.current.commit);git(root,'merge-base','--is-ancestor',policy.current.commit,pr.head.sha);
  const changed=git(root,'diff','--name-only',policy.current.commit,pr.head.sha).split('\n').filter(Boolean).sort();
- assert.deepEqual(changed,[...policy.qualification].sort(),'qualification changes only');
+ assert.deepEqual(changed,[...(policy.current.definitionChanges??policy.qualification)].sort(),'qualification changes only');
  const source=entries(root,policy.current.commit),head=entries(root,pr.head.sha),q=new Set(policy.qualification);
  assert.deepEqual(head.filter(r=>!q.has(r.path)),source.filter(r=>!q.has(r.path)),'all non-qualification paths, modes and blobs remain frozen');
  for(const name of policy.qualification){const row=head.find(r=>r.path===name);assert.ok(row&&/^100644 blob [0-9a-f]{40}$/.test(row.entry),'regular qualification file: '+name);assert.ok(file(root,name).equals(execFileSync('git',['-C',root,'show',pr.head.sha+':'+name])),'checkout qualification bytes: '+name);}
@@ -81,7 +98,7 @@ export function verifyInputFiles(root,records,policy=POLICY){
 export function verifyRouted({runtimeRoot,definitionRoot,eventRoot,event,env,caseName},policy=POLICY){
  const pr=validateEvent(event,env,policy),runtime=runtimeFor(caseName,policy);verifyDefinition(definitionRoot,pr,policy);
  const eventCommit=git(eventRoot,'rev-parse','HEAD');assert.equal(eventCommit,env.GITHUB_SHA,'actual event checkout');
- if(eventCommit===pr.head.sha){assert.equal(pr.base.sha,policy.base.commit,'stale event snapshot requires an exact current-base merge checkout');assert.ok(['refs/pull/'+policy.pullRequest+'/head','refs/heads/'+policy.branch].includes(env.GITHUB_REF),'head event ref');}
+ if(eventCommit===pr.head.sha){assert.ok(!policy.requireMerge,'this route requires an exact merge checkout');assert.equal(pr.base.sha,policy.base.commit,'stale event snapshot requires an exact current-base merge checkout');assert.ok(['refs/pull/'+policy.pullRequest+'/head','refs/heads/'+policy.branch].includes(env.GITHUB_REF),'head event ref');}
  else{assert.equal(env.GITHUB_REF,'refs/pull/'+policy.pullRequest+'/merge','merge event ref');assert.deepEqual(git(eventRoot,'show','-s','--format=%P','HEAD').split(' '),[policy.base.commit,pr.head.sha],'exact merge parents');}
  assert.equal(git(eventRoot,'rev-parse','HEAD^{tree}'),git(definitionRoot,'rev-parse','HEAD^{tree}'),'event introduces no source drift');
  assert.equal(git(runtimeRoot,'rev-parse','HEAD'),runtime.commit,'served runtime commit');assert.equal(git(runtimeRoot,'rev-parse','HEAD^{tree}'),runtime.tree,'served runtime tree');
@@ -107,7 +124,8 @@ export async function verifyServedBuild(sealed,request=fetch){
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const stage=process.argv[2];assert.ok(['before-install','after-install','after-build','before-measure','post-measure'].includes(stage),'explicit verification stage');
  const runtimeRoot=process.cwd(),definitionRoot=resolve(runtimeRoot,'../spacing-definition'),eventRoot=resolve(runtimeRoot,'../spacing-event');
- const evidence=verifyRouted({runtimeRoot,definitionRoot,eventRoot,event:JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH)),env:process.env,caseName:process.env.SPACING_RUNTIME_CASE});
+ const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH));
+ const evidence=verifyRouted({runtimeRoot,definitionRoot,eventRoot,event,env:process.env,caseName:process.env.SPACING_RUNTIME_CASE},policyForPullRequest(event.number));
  evidence.stage=stage;evidence.baselines=verifyBaselines(runtimeRoot);if(stage!=='before-install')evidence.dependencies=dependencies(runtimeRoot);
  const buildFile=resolve(runtimeRoot,'manager-runtime-qualification/build-inputs.json');
  if(stage==='after-build'){mkdirSync('manager-runtime-qualification',{recursive:true});writeFileSync(buildFile,JSON.stringify(sealBuild(runtimeRoot,evidence),null,2)+'\n');}

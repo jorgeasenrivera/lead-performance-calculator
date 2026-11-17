@@ -2,7 +2,7 @@ import {Component,lazy,Suspense,useId,useLayoutEffect,useMemo,useRef,useState,us
 import {createPortal} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 import css from './scheduler-calendar.css?inline';
-import {calendarCells,monthText,STORE_TIME_ZONE} from './scheduler-calendar-model.mjs';
+import {calendarCells,deliveriesMonth,monthText,STORE_TIME_ZONE} from './scheduler-calendar-model.mjs';
 import {createLegacyScheduleResolver,editorStore,zonedToday} from './scheduler-editor-adapter.mjs';
 import {currentReportedAuth,registerLeaveGuard,trustedFor} from './scheduler-load-context.mjs';
 import {useReportedMonth} from './use-reported-month.mjs';
@@ -245,7 +245,20 @@ export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenSt
   };
   const cells=month?calendarCells(month):[],weeks=Array.from({length:cells.length/7},(_,i)=>cells.slice(i*7,i*7+7));
   const dateLabel=day=>new Date(day+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric',timeZone:'UTC'});
-  const dates=interactive=>weeks.map((week,index)=><span className="sc-hero-week" key={index}>{week.map((day,cell)=>!day?<i key={'blank'+cell} className="sc-hero-blank" aria-hidden="true"/>:interactive?<button key={day} type="button" className="sc-hero-day" data-calendar-day={day} aria-label={dateLabel(day)+', open schedule'} aria-current={day===today?'date':undefined} aria-haspopup="dialog" disabled={!trusted} onClick={event=>open(day,event.currentTarget)}>{Number(day.slice(-2))}</button>:<i key={day} className={day===today?'sc-hero-today':undefined}>{Number(day.slice(-2))}</i>)}</span>);
+  // The hook has already rejected rows from another store, month or sign-in.
+  const delivery=deliveriesMonth({...reported,storeId:store?.id,month,principalEpoch:identity.principalEpoch},
+    {storeId:store?.id,month,today,principalEpoch:identity.principalEpoch});
+  const byDay=new Map(delivery.days.map(day=>[day.date,day]));
+  const dayClass=day=>{
+    const row=byDay.get(day);
+    return (day===today?'sc-hero-today ':'')+(day>today?'sc-sales-future':row?.state==='reported'?'sc-sales-reported sc-heat-'+row.level+(row.best?' sc-sales-best':''):'sc-sales-unknown');
+  };
+  const deliveryLabel=day=>{
+    const row=byDay.get(day);
+    return day>today?'Delivery report pending':row?.state==='reported'?row.units+' delivered'+(row.best?', '+row.bestLabel:''):'Deliveries unknown';
+  };
+  const dates=interactive=>weeks.map((week,index)=><span className="sc-hero-week" key={index}>{week.map((day,cell)=>!day?<i key={'blank'+cell} className="sc-hero-blank" aria-hidden="true"/>:interactive?<button key={day} type="button" className="sc-hero-day" data-calendar-day={day} aria-label={dateLabel(day)+', open schedule'} aria-current={day===today?'date':undefined} aria-haspopup="dialog" disabled={!trusted} onClick={event=>open(day,event.currentTarget)}>{Number(day.slice(-2))}</button>:<i key={day} className={dayClass(day)} title={dateLabel(day)+': '+deliveryLabel(day)}>{Number(day.slice(-2))}</i>)}</span>);
+
   const toggle=()=>{if(!trusted)return;const next={key:scopeKey,expanded:!expanded};heroExpansion=next;setExpansion(next);};
   return <div className="sc-entry" data-layout={layout} data-delivery-status={reported.status} data-calendar-weeks={weeks.length}>
     <style>{css}</style>
@@ -256,7 +269,8 @@ export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenSt
       </button>
       <div id={id+'-dates'} className="sc-hero-dates" hidden={!expanded} role="group" aria-label={month?monthText(month):'Calendar dates'}>{dates(true)}</div>
     </>:<button type="button" ref={button} className="sc-toggle sc-calendar-open" aria-haspopup="dialog" disabled={!trusted||!today} onClick={()=>open()} title={trusted?'Open schedule':'This sign-in’s store data is not ready.'}>
-      <strong>{month?monthText(month):'Month'}</strong><span className="sc-hero-dates" aria-hidden="true">{dates(false)}</span>
+      <strong className="sc-panel-month">{month?monthText(month):'Month'}</strong><span className="sc-hero-dates" aria-hidden="true">{dates(false)}</span>
+      <span className="sc-delivery-footer">{delivery.total===null?'Delivered this month · unknown':delivery.total+' delivered on '+delivery.reportedDays+' recorded '+(delivery.reportedDays===1?'day':'days')}</span>
     </button>}
     {entryError&&trusted?<p role="status">The schedule inputs need review.</p>:null}
   </div>;

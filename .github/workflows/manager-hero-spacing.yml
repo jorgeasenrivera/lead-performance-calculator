@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: >-
-            ${{ matrix.runtime == 'historical' && '710cc8d78d0363856df2f9000162923859434b73' || matrix.runtime == 'current' && '2a26e49ba54f96bf6db7f65a926f114b44cc0cfb' }}
+            ${{ matrix.runtime == 'historical' && '710cc8d78d0363856df2f9000162923859434b73' || (matrix.runtime == 'current' && (github.event.pull_request.number == 524 && 'f404e7c998f32cbd063bfd6bbf6b54ddb3b26cec' || '2a26e49ba54f96bf6db7f65a926f114b44cc0cfb')) }}
           fetch-depth: 50
           path: spacing-runtime
           set-safe-directory: false
