@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {POLICY,PARITY_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
+import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
 
 const sha=b=>createHash('sha256').update(b).digest('hex');
 function fixture(extra=false,withSnapshot=false){
@@ -232,5 +232,34 @@ test('the parity route requires the reviewed repository, branch, base and merge 
    e=>e.pull_request.head.ref=POLICY.branch,
    e=>e.pull_request.base.sha=f.policy.current.commit,
   ]){const bad=structuredClone(event);mutate(bad);assert.throws(()=>check({event:bad}));}
+ }finally{f.close();}
+});
+
+
+test('the service totals route selects only #527 and pins separate historical and reviewed current inputs',()=>{
+ const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
+ const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
+ const policy=SERVICE_TOTALS_POLICY;
+ assert.equal(policyForPullRequest(527),policy);assert.throws(()=>policyForPullRequest('527'),/unqualified pull request/);
+ assert.equal(runtimeFor('historical',policy),POLICY.historical);
+ assert.notEqual(runtimeFor('current',policy).commit,PARITY_POLICY.current.commit);
+ assert.match(policy.current.tree,/^[0-9a-f]{40}$/);assert.match(policy.base.tree,/^[0-9a-f]{40}$/);
+ assert.match(caller,/number == 527 && github.head_ref == 'claude\/project-thread-i2fcpc' && github.base_ref == 'main'/);
+ assert.ok(runner.includes("number == 527 && '"+policy.current.commit+"'"));
+ const f=fixture();try{
+  const local={...policy,base:f.policy.base,current:f.policy.current,historical:f.policy.historical,manifest:f.policy.manifest};
+  const event=structuredClone(f.event);event.number=527;event.pull_request.head.ref=local.branch;
+  const env={...f.env,GITHUB_REF:'refs/pull/527/merge'};
+  const assertRoute=(overrides={})=>verifyRouted({runtimeRoot:f.currentRoot,definitionRoot:f.definition,eventRoot:f.eventRoot,event,env,caseName:'current',...overrides},local);
+  assert.equal(assertRoute().runtimeCommit,f.policy.current.commit);
+  assert.throws(()=>assertRoute({eventRoot:f.definition,env:{...env,GITHUB_SHA:f.head,GITHUB_REF:'refs/pull/527/head'}}),/requires an exact merge checkout/);
+  assert.throws(()=>assertRoute({event:{...event,number:524}}),/qualified pull request/);
+  assert.throws(()=>assertRoute({runtimeRoot:f.historicalRoot}),/served runtime commit/);
+  for(const mutate of [
+   e=>e.pull_request.head.repo.full_name='other/repo',
+   e=>e.pull_request.base.repo.full_name='other/repo',
+   e=>e.pull_request.head.ref='codex/review-copy',
+   e=>e.pull_request.base.sha=f.policy.current.commit,
+  ]){const wrong=structuredClone(event);mutate(wrong);assert.throws(()=>assertRoute({event:wrong}));}
  }finally{f.close();}
 });
