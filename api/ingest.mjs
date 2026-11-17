@@ -277,6 +277,47 @@ async function refreshBoardRow(storeId, sdata) {
   return { published: true, people: roster.length };
 }
 
+/* ---------- somebody a newer month-to-date summary no longer lists ----------
+   The merge below only touches the people a report names, so a person who drops
+   off the Delivery Summary kept their older number on the board for the rest of
+   the month. The summary is month to date and lists everyone it credits, so not
+   being on the newest one means DriveCentric credits them nothing this month.
+
+   Cleared only from a report that is plainly the newest whole month so far: its
+   printed dates start on the 1st of this month and end no earlier than any
+   summary already applied. A report that leaves out more people than it lists
+   reads as a bad parse or the wrong file, and clears nothing. The numbers it
+   cleared are kept beside the zeros, so nothing goes without a record, and they
+   are dropped the moment the person is back on a report.
+
+   People who left are not cleared. Their cars stay in the month they sold them,
+   and a report may stop listing somebody once their DriveCentric user is closed. */
+const SUMMARY_COUNTS = ["opps", "unitsDelivered", "internetUnits", "internetLeads", "phoneUnits", "phoneLeads",
+  "showroomUnits", "showroomLeads", "campaignUnits", "showroomUps", "showroomUnsold", "showroomBeBacks",
+  "newUnits", "usedUnits", "otherUnits", "serviceUnits"];
+const SUMMARY_RATES = ["deliveredPct", "internetPct", "phonePct", "showroomPct"];
+
+function clearAbsentFromSummary(M, parsed, range, month, day, keep = () => false) {
+  if (!range || range.startDay !== month + "-01" || typeof range.endDay !== "string"
+    || range.endDay.slice(0, 7) !== month) return [];
+  if (M.deliverySummaryThrough && range.endDay < M.deliverySummaryThrough) return [];
+  M.deliverySummaryThrough = range.endDay;
+  for (const k of Object.keys(parsed)) if (M.stats[k]) delete M.stats[k].deliverySummaryAbsent;
+  const absent = Object.keys(M.stats).filter((k) => !Object.hasOwn(parsed, k) && !keep(k)
+    && M.stats[k] && M.stats[k]["delivery-summaryUpdated"]);
+  if (!absent.length || absent.length > Object.keys(parsed).length) return [];
+  for (const k of absent) {
+    const s = M.stats[k];
+    if (s.deliverySummaryAbsent) { s.deliverySummaryAbsent.through = range.endDay; continue; }
+    const had = {};
+    for (const f of [...SUMMARY_COUNTS, ...SUMMARY_RATES]) if (s[f] != null) had[f] = s[f];
+    for (const f of SUMMARY_COUNTS) if (s[f] != null) s[f] = 0;
+    for (const f of SUMMARY_RATES) if (s[f] != null) s[f] = null;
+    s.deliverySummaryAbsent = { through: range.endDay, day, had };
+  }
+  return absent;
+}
+
 /* ---------- the merge: a faithful port of the app's applyEntries ---------- */
 function applyToStore(data, entries, sourceLabel) {
   const month = ymET(); const day = todayET();
@@ -289,12 +330,13 @@ function applyToStore(data, entries, sourceLabel) {
   M.imports[day] = M.imports[day] || {};
   const aliases = next.aliases || {};
   const canon = (k) => aliases[k] || k;
-  // Roll-up rows that are not people, plus anyone who has left the store. Both
-  // have to be kept out or the import quietly puts them back on the roster.
-  const excludedSet = new Set([
-    ...(next.excluded || []).map(norm),
-    ...((next.departed || []).map((x) => norm(x.name))),
-  ]);
+  /* Roll-up rows that are not people, and names a manager marked as not this
+     store's. Their figures go. Somebody who LEFT is different: the store did sell
+     their cars, and the month-to-date report keeps crediting them after they go,
+     so skipping them froze their month at whatever the last report before they
+     left happened to say. They are kept off the roster further down instead. */
+  const excludedSet = new Set((next.excluded || []).map(norm));
+  const departedSet = new Set((next.departed || []).map((x) => norm(x && x.name)));
   const results = [];
 
   const snapCopy = JSON.parse(JSON.stringify({
@@ -354,7 +396,7 @@ function applyToStore(data, entries, sourceLabel) {
     }
     next.deliverySummaryObservations = { ...observations, [month]: monthObservations };
   }
-  for (const { rows, type, fileName, actDay: fileDay, rollup, stated } of entries) {
+  for (const { rows, type, fileName, actDay: fileDay, rollup, stated, printedRange } of entries) {
     const actDay = (fileDay && fileDay <= day) ? fileDay : day;
     /* ---- The store's own line, which is not a person and never becomes one ----
        Filed beside the month's people rather than among them, because it answers
@@ -528,6 +570,10 @@ function applyToStore(data, entries, sourceLabel) {
       M.stats[key] = { ...prevStat, ...rec, prevPct: trend, pctDay, pctHistory: hist, [`${type}Updated`]: day };
       if (type !== "activity") count++;
     }
+    if (type === "delivery-summary") {
+      clearAbsentFromSummary(M, parsed, printedRange, month, day,
+        (k) => excludedSet.has(k) || departedSet.has(k) || (aliases[k] != null && aliases[k] !== k));
+    }
 
     M.imports[day][type] = true;
     if (type === "delivery-internet") M.imports[day]["delivery"] = true;
@@ -549,7 +595,7 @@ function applyToStore(data, entries, sourceLabel) {
     if (openDoor) {
       const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
       for (const [key, rec] of Object.entries(parsed)) {
-        if (excludedSet.has(key) || rosterKeys.has(key)) continue;
+        if (excludedSet.has(key) || departedSet.has(key) || rosterKeys.has(key)) continue;
         next.roster.push({ id: uid(), name: rec.displayName, roleId: null, order: next.roster.length });
         rosterKeys.add(key);
       }
@@ -731,6 +777,9 @@ export default async function handler(req, res) {
                to be read and thrown away; they are the one figure that counts a
                delivery once, so they are filed alongside the people now. */
             stated: kind === "delivery-summary" ? mapped.stated : null,
+            /* The dates the summary covers, so intake can tell the newest month to
+               date from an older one arriving late. */
+            printedRange: kind === "delivery-summary" ? mapped.printedRange || null : null,
             fileB64: Buffer.from(a.content).toString("base64"), fileMime: "application/pdf" });
           const read = { file: a.filename, kind, store: mapped.storeName,
             matchedStore: hit.store.id, matchQuality: hit.quality,

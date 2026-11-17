@@ -68,7 +68,9 @@ export const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", 
   "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits",
   "internetLeads", "phoneLeads", "showroomLeads",
   /* The new and used split, so a phone's pace bar can show both halves. */
-  "newUnits", "usedUnits"];
+  "newUnits", "usedUnits",
+  /* Service-to-sales credits, which the delivered number leaves out without it. */
+  "serviceUnits"];
 
 /* ---- the month's closing, stamped on the day ----
    A salesperson wants to know whether their closing is actually down or whether
