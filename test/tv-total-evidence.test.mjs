@@ -1,4 +1,4 @@
-/* TV Board Total Delivered: evidence for review. Every store, person, count and
+/* TV Board Total Delivered: evidence for review, and the credit-drop note. Every store, person, count and
    report line below is fictional. These tests exercise real production modules
    in a sandbox (parser, selector, browser publisher, embedded TV renderer). They
    do not prove a live report source, a physical TV, or any store's real total. */
@@ -91,7 +91,7 @@ async function openBoard(first) {
   return {
     html: () => root().innerHTML,
     headline: () => (/class="total-num">([^<]*)<\/div>/.exec(root().innerHTML) || [])[1],
-    staleNote: () => elements.get("stale-note")?.classList.contains("on") === true,
+    creditNote: () => elements.get("credit-note")?.classList.contains("on") === true,
     timers: () => intervals.map((t) => t.ms),
     congrats: () => created.filter((e) => e.className === "congrats").map((e) => e.innerHTML).join(" "),
     async refresh(next) { serve = next; intervals.find((t) => t.ms === 15 * 60 * 1000).fn(); await settle(); },
@@ -153,21 +153,21 @@ test("every reported total is provisional with report time unknown; nothing is m
   assert.equal(selectReportedTotal({ [MONTH]: { [H[0]]: verified } }, STORE.id, MONTH).status, "unknown");
 });
 
-test("FINDING: the credit-drop failsafe never engages for current publisher rows, so a lower total shows at once", async () => {
-  // tooDifferent() in the renderer requires prev.store and next.store. Current
-  // publishers send storeId and storeName, never store, so it always returns false.
+test("a genuine lower printed total shows at once, with its lower credits, and no note", async () => {
   const first = await payload({ count: 12, status: "provisional", month: MONTH, asOf: null }, [5, 1, 0]);
-  assert.equal("store" in first, false);
   const board = await openBoard(first);
   await board.refresh(await payload({ count: 8, status: "provisional", month: MONTH, asOf: null }, [0, 0, 0]));
-  assert.equal(board.headline(), "8"); assert.equal(board.staleNote(), false);
+  assert.equal(board.headline(), "8"); assert.equal(board.creditNote(), false);
 });
 
-test("FINDING: if a row did carry a store field, a credit drop over half would hold the old total, including a genuine correction", async () => {
+test("the old credit-drop hold is gone: a row carrying a store field no longer keeps the old total", async () => {
+  // Before this patch, tooDifferent() held the old board when a row had `store`
+  // and credits fell by more than half, even for a genuine correction.
   const withStore = async (total, credits) => ({ ...(await payload(total, credits)), store: STORE.id });
   const board = await openBoard(await withStore({ count: 12, status: "provisional", month: MONTH, asOf: null }, [5, 1, 0]));
   await board.refresh(await withStore({ count: 8, status: "provisional", month: MONTH, asOf: null }, [0, 0, 0]));
-  assert.equal(board.headline(), "12"); assert.equal(board.staleNote(), true);
+  assert.equal(board.headline(), "8"); assert.equal(board.creditNote(), false);
+  assert.doesNotMatch(LEADERBOARD_HTML({ storeKey: "x", db: { url: "http://127.0.0.1:5433", anonKey: "x" } }, {}), /tooDifferent|Holding the last board/);
 });
 
 test("a failed read does not blank or invent a total", async () => {
@@ -177,19 +177,53 @@ test("a failed read does not blank or invent a total", async () => {
   assert.doesNotMatch(board.html(), /class="total-num">(?!12<)\d/);
 });
 
-test("SEPARATE CASE: split credits collapse while the printed total holds, then a recovery reads as new sales", async () => {
-  // Fictional: the printed store total stays 12 throughout. Only the salesperson
-  // credits drop to zero (an import fault in split credit, not a correction) and
-  // then come back. The printed total stays authoritative, which is right, but
-  // nothing on the board says the credits looked wrong, and the bounce back is
-  // celebrated as fresh deliveries.
-  const total = { count: 12, status: "provisional", month: MONTH, asOf: null };
-  const board = await openBoard(await payload(total, [5, 1, 0]));
-  await board.refresh(await payload(total, [0, 0, 0]));
-  assert.equal(board.headline(), "12"); assert.equal(board.staleNote(), false);
+const T12 = { count: 12, status: "provisional", month: MONTH, asOf: null };
+
+test("credits drop while the printed total holds: a note shows, the total still renders as reported", async () => {
+  const board = await openBoard(await payload(T12, [5, 1, 0]));
+  assert.equal(board.creditNote(), false);
+  await board.refresh(await payload(T12, [0, 0, 0]));
+  assert.equal(board.headline(), "12"); assert.equal(board.creditNote(), true);
+  assert.match(board.html(), /Displayed associate credits: 1\.5</);   // the board under the note is the new one
   assert.equal(board.congrats(), "");
-  await board.refresh(await payload(total, [5, 1, 0]));
-  assert.equal(board.headline(), "12");
-  assert.match(board.congrats(), /Alex Example<\/b><span>just delivered 5 units/);
-  assert.match(board.congrats(), /Bailey Example<\/b><span>just delivered 1 unit</);
+});
+
+test("credits coming back after the drop are not celebrated as new sales, and the note clears", async () => {
+  const board = await openBoard(await payload(T12, [5, 1, 0]));
+  await board.refresh(await payload(T12, [0, 0, 0]));
+  await board.refresh(await payload(T12, [5, 1, 0]));
+  assert.equal(board.headline(), "12"); assert.equal(board.creditNote(), false);
+  assert.equal(board.congrats(), "");
+});
+
+test("a partial return keeps the note up; only units beyond what was lost are celebrated", async () => {
+  const board = await openBoard(await payload(T12, [5, 1, 0]));
+  await board.refresh(await payload(T12, [0, 0, 0]));
+  await board.refresh(await payload(T12, [3, 0, 0]));
+  assert.equal(board.creditNote(), true); assert.equal(board.congrats(), "");
+  await board.refresh(await payload({ count: 13, status: "provisional", month: MONTH, asOf: null }, [6, 1, 0]));
+  assert.equal(board.headline(), "13"); assert.equal(board.creditNote(), false);
+  assert.match(board.congrats(), /Alex Example<\/b><span>just delivered 1 unit</);
+  assert.doesNotMatch(board.congrats(), /Bailey Example/);
+});
+
+test("no note when the printed total is unknown or in conflict, or when credits rise", async () => {
+  const unknown = { count: null, status: "unknown", month: MONTH, asOf: null };
+  const conflict = { count: null, status: "conflict", month: MONTH, asOf: null };
+  for (const t of [unknown, conflict]) {
+    const board = await openBoard(await payload(t, [5, 1, 0]));
+    await board.refresh(await payload(t, [0, 0, 0]));
+    assert.equal(board.creditNote(), false, t.status);
+  }
+  const board = await openBoard(await payload(T12, [1, 1, 0]));
+  await board.refresh(await payload(T12, [2, 1, 0]));
+  assert.equal(board.creditNote(), false);
+  assert.match(board.congrats(), /Alex Example<\/b><span>just delivered 1 unit</);
+});
+
+test("a real new sale with no earlier drop is still celebrated", async () => {
+  const board = await openBoard(await payload(T12, [5, 1, 0]));
+  await board.refresh(await payload({ count: 13, status: "provisional", month: MONTH, asOf: null }, [6, 1, 0]));
+  assert.equal(board.headline(), "13"); assert.equal(board.creditNote(), false);
+  assert.match(board.congrats(), /Alex Example<\/b><span>just delivered 1 unit</);
 });
