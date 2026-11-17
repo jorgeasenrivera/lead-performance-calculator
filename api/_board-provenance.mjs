@@ -27,13 +27,14 @@ export function selectReportedTotal(observations, storeId, month) {
   const bucket = observations[month];
   if (!record(bucket) || Object.keys(bucket).length === 0) return result;
 
-  const counts = new Set();
+  const valid = [];
   for (const [hash, observation] of Object.entries(bucket)) {
     if (!digest(hash) || !record(observation) || observation.schemaVersion !== 1
       || observation.metric !== "printed_store_total_delivered" || observation.storeId !== storeId
       || observation.reportMonth !== month || typeof observation.printedStoreName !== "string"
       || observation.printedStoreName.trim() === "" || !printedRange(observation.printedRange, month)
-      || !Number.isSafeInteger(observation.count) || observation.count < 0 || observation.status !== "provisional"
+      || !(observation.count === null || (Number.isSafeInteger(observation.count) && observation.count >= 0))
+      || observation.status !== (observation.count === null ? "unknown" : "provisional")
       || observation.sentAt !== null || observation.asOf !== null || observation.publicationEligible !== false
       || !processingInstant(observation.processingAt) || !Array.isArray(observation.sourceAssertions)
       || observation.sourceAssertions.length === 0 || !observation.sourceAssertions.every((assertion) => record(assertion)
@@ -43,11 +44,26 @@ export function selectReportedTotal(observations, storeId, month) {
       || !Number.isSafeInteger(observation.source.byteLength) || observation.source.byteLength <= 0
       || observation.source.parserVersion !== "delivery-summary-printed-total-month:v1"
       || observation.source.archiveState !== "unverified") return result;
+    valid.push(observation);
+  }
+
+  /* The reports are month-to-date, so each day's prints a bigger total than the
+     day before. Comparing all of them made every month "disagree" from its second
+     report on. The printed end day is the report's own content, not an arrival,
+     processing or header time, so it can say which reports describe the same
+     stretch of the month: only those ending on the latest printed day count. An
+     older report that could not be read is superseded, not a blocker. */
+  const latest = valid.reduce((day, observation) => observation.printedRange.endDay > day ? observation.printedRange.endDay : day, "");
+  const counts = new Set();
+  for (const observation of valid) {
+    if (observation.printedRange.endDay !== latest) continue;
+    if (observation.count === null) return result;
     counts.add(observation.count === 0 ? 0 : observation.count);
   }
 
-  // Distinct sources have no established ordering. Even a downward correction
-  // stays unresolved; processing/arrival/header times cannot pick the winner.
+  // Distinct sources ending on the same day have no established ordering. Even a
+  // downward correction stays unresolved; processing/arrival/header times cannot
+  // pick the winner.
   if (counts.size > 1) return { ...result, status: "conflict" };
   return { ...result, count: counts.values().next().value, status: "provisional" };
 }
