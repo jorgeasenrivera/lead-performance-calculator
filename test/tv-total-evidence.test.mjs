@@ -65,23 +65,29 @@ async function payload(reportedTotal, credits = [1.5, 1, 0]) {
 }
 
 /* The real embedded board in a sandbox. `serve` is what the next database read
-   returns; refresh() fires the board's own 15 minute data timer, no reload. */
-async function openBoard(first) {
+   returns (or, for a rotating screen, a function of the store key read);
+   refresh() fires the board's own 15 minute data timer, no reload; rollover()
+   moves the clock and fires the board's own 10 second clock; runTimers(ms) runs
+   the board's own pending timeouts of that length (the hand-over uses them). */
+async function openBoard(first, serveFirst = first) {
   const elements = new Map(), intervals = [], created = [];
-  const element = () => { const cls = new Set(); return { innerHTML: "", textContent: "", style: { setProperty() {} },
+  let timeouts = [];
+  const element = () => { const cls = new Set(); return { innerHTML: "", textContent: "", scrollHeight: 0, clientHeight: 0, style: { setProperty() {} },
     classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c) },
     querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, removeEventListener() {}, getAttribute: () => null,
     setAttribute() {}, appendChild(c) { return c; }, removeChild() {}, remove() {}, getBoundingClientRect: () => ({ top: 0, left: 0, width: 0, height: 0 }) }; };
-  let serve = first;
-  class Clock extends Date { constructor(...a) { super(...(a.length ? a : [OPEN_AT])); } static now() { return new Date(OPEN_AT).getTime(); } }
+  let serve = serveFirst, instant = OPEN_AT;
+  class Clock extends Date { constructor(...a) { super(...(a.length ? a : [instant])); } static now() { return new Date(instant).getTime(); } }
   const window = { innerHeight: 1080, innerWidth: 1920, addEventListener() {}, matchMedia: () => ({ matches: true }) };
   window.parent = window;
   const ctx = vm.createContext({ window, Date: Clock, Intl, Number, console, URL, Math,
     document: { getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
       body: element(), createElement: () => { const e = element(); created.push(e); return e; }, querySelector: () => null, querySelectorAll: () => [], addEventListener() {} },
     localStorage: { getItem: () => null, setItem() {} }, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-    setTimeout: () => 1, clearTimeout() {}, setInterval(fn, ms) { intervals.push({ fn, ms }); return 1; }, clearInterval() {},
-    fetch: async () => (serve instanceof Error ? Promise.reject(serve) : { ok: true, status: 200, json: async () => [{ value: serve }] }),
+    setTimeout(fn, ms) { timeouts.push({ fn, ms }); return timeouts.length; }, clearTimeout() {},
+    setInterval(fn, ms) { intervals.push({ fn, ms }); return 1; }, clearInterval() {},
+    fetch: async (url) => { const v = typeof serve === "function" ? serve(decodeURIComponent(String(url))) : serve;
+      return v instanceof Error ? Promise.reject(v) : { ok: true, status: 200, json: async () => [{ value: v }] }; },
   });
   const html = LEADERBOARD_HTML({ ...first, storeKey: "fictional-board", db: { url: "http://127.0.0.1:5433", anonKey: "fictional" } }, (await app).PIX);
   vm.runInContext([...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1], ctx);
@@ -95,6 +101,10 @@ async function openBoard(first) {
     timers: () => intervals.map((t) => t.ms),
     congrats: () => created.filter((e) => e.className === "congrats").map((e) => e.innerHTML).join(" "),
     async refresh(next) { serve = next; intervals.find((t) => t.ms === 15 * 60 * 1000).fn(); await settle(); },
+    serve(next) { serve = next; },
+    rollover(next) { instant = next; intervals.find((t) => t.ms === 10000).fn(); },
+    async runTimers(ms) { const due = timeouts.filter((t) => t.ms === ms); timeouts = timeouts.filter((t) => t.ms !== ms);
+      for (const t of due) t.fn(); await settle(); },
   };
 }
 
@@ -226,4 +236,54 @@ test("a real new sale with no earlier drop is still celebrated", async () => {
   await board.refresh(await payload({ count: 13, status: "provisional", month: MONTH, asOf: null }, [6, 1, 0]));
   assert.equal(board.headline(), "13"); assert.equal(board.creditNote(), false);
   assert.match(board.congrats(), /Alex Example<\/b><span>just delivered 1 unit</);
+});
+
+/* Two fictional stores on one rotating screen. Store A's row asks the screen to
+   rotate to store B; the hand-over is the board's own (dwell timer, convoy,
+   swap), driven here by running its pending timeouts. */
+const B_ID = "fictional-second";
+async function storeRow(id, name, reportedTotal, credits, extra = {}) {
+  return { ...(await payload(reportedTotal, credits)), storeId: id, storeName: name, ...extra };
+}
+const SETTLE = 400, DWELL = 45000, SWAP = 1250, LANE_DONE = 3600;
+async function handOver(board) {
+  await board.runTimers(SETTLE);     // layout settles; everyone fits, so the dwell timer starts
+  await board.runTimers(DWELL);      // the short-list dwell ends: the next store is read
+  await board.runTimers(SWAP);       // the convoy covers the screen and the board swaps
+  await board.runTimers(LANE_DONE);  // the convoy leaves; the hand-over is finished
+}
+
+test("a real store switch clears the note and its tracking: A to B to A with no refresh on B does not bring it back", async () => {
+  const rotate = { boardDisplay: { rotate: [B_ID] } };
+  const aFull = await storeRow(STORE.id, STORE.name, T12, [5, 1, 0], rotate);
+  const aDipped = await storeRow(STORE.id, STORE.name, T12, [0, 0, 0], rotate);
+  const b = await storeRow(B_ID, "Fictional Second Motors", { count: 7, status: "provisional", month: MONTH, asOf: null }, [2, 1, 0]);
+  const board = await openBoard(aFull);
+  await board.refresh(aDipped);
+  assert.equal(board.creditNote(), true); assert.equal(board.headline(), "12");
+  board.serve((url) => (url.includes(`lpc:board:${B_ID}:v1`) ? b : aDipped));
+  await handOver(board);
+  assert.equal(board.headline(), "7"); assert.equal(board.creditNote(), false);   // B is on the wall
+  await handOver(board);                                                           // back to A, no refresh on B
+  assert.equal(board.headline(), "12"); assert.equal(board.creditNote(), false);   // A's printed total, no old note
+  assert.equal(board.congrats(), "");
+  // A later refresh of A with no further drop does not raise the note again.
+  await board.refresh(aDipped);
+  assert.equal(board.headline(), "12"); assert.equal(board.creditNote(), false);
+});
+
+test("Eastern month rollover clears the note and its tracking with no new report; the printed total is untouched", async () => {
+  const board = await openBoard(await payload(T12, [5, 1, 0]));
+  await board.refresh(await payload(T12, [0, 0, 0]));
+  assert.equal(board.creditNote(), true); assert.equal(board.headline(), "12");
+  // Control: the same board with no drop, rolled over the same way.
+  const control = await openBoard(await payload(T12, [0, 0, 0]));
+  const NEXT = "2026-10-01T04:00:05Z";   // just after midnight Eastern, October 1
+  board.rollover(NEXT); control.rollover(NEXT);
+  assert.equal(board.creditNote(), false);
+  assert.equal(board.headline(), control.headline());   // what prints is what any board prints after rollover
+  // The next refresh of the same September row does not bring the note back.
+  await board.refresh(await payload(T12, [0, 0, 0]));
+  assert.equal(board.creditNote(), false);
+  assert.equal(board.headline(), control.headline());
 });

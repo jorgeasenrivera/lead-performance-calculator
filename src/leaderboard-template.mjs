@@ -1153,7 +1153,7 @@ ${scriptTag}
      arrives, printed total included; this only puts up a small note, and
      remembers what each person lost so the credits coming back later are not
      celebrated as new deliveries. It never holds back or changes a total. */
-  var CREDIT_DIP = null;   // { key, owed: { person: units } } for one store and month
+  var CREDIT_DIP = null;   // { key, month, owed: { person: units } } for one store and one Eastern month
   function unitsIn(st, ym, name){
     var v = (st && st.months && st.months[ym] && st.months[ym].stats) || {};
     var o = v[norm(name)]; if (!o) return 0;
@@ -1171,7 +1171,7 @@ ${scriptTag}
   }
   function watchCredits(prev, next){
     try {
-      if (CREDIT_DIP && CREDIT_DIP.key !== dipKey(next)) CREDIT_DIP = null;
+      if (CREDIT_DIP && (CREDIT_DIP.key !== dipKey(next) || CREDIT_DIP.month !== easternMonth())) CREDIT_DIP = null;
       if (!prev || !next || dipKey(prev) !== dipKey(next)) return;
       var ym = next.ym || easternMonth();
       var a = printedCount(prev, ym), b = printedCount(next, ym);
@@ -1179,7 +1179,7 @@ ${scriptTag}
       var roster = prev.roster || [], before = 0, after = 0, i;
       for (i = 0; i < roster.length; i++){ before += unitsIn(prev, ym, roster[i].name); after += unitsIn(next, ym, roster[i].name); }
       if (after > before - 1e-6) return;
-      if (!CREDIT_DIP) CREDIT_DIP = { key: dipKey(next), owed: {} };
+      if (!CREDIT_DIP) CREDIT_DIP = { key: dipKey(next), month: easternMonth(), owed: {} };
       for (i = 0; i < roster.length; i++){
         var k = norm(roster[i].name), lost = unitsIn(prev, ym, roster[i].name) - unitsIn(next, ym, roster[i].name);
         if (lost > 1e-6) CREDIT_DIP.owed[k] = (CREDIT_DIP.owed[k] || 0) + lost;
@@ -1200,7 +1200,7 @@ ${scriptTag}
   function syncCreditNote(s){
     var note = document.getElementById('credit-note');
     if (!note) return;
-    if (CREDIT_DIP && s && !s.__err && CREDIT_DIP.key === dipKey(s) && owedLeft() > 1e-6) note.classList.add('on');
+    if (CREDIT_DIP && s && !s.__err && CREDIT_DIP.key === dipKey(s) && CREDIT_DIP.month === easternMonth() && owedLeft() > 1e-6) note.classList.add('on');
     else note.classList.remove('on');
   }
 
@@ -1410,6 +1410,9 @@ ${scriptTag}
       if (s.brand) CFG.brand = s.brand;
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
+    /* A real hand-over to another store ends the credit watch: the note and what
+       it was owed are dropped, so coming back to this store later starts clean. */
+    if (switched) CREDIT_DIP = null;
     if (s && !s.__err) LAST = s;
     applyDisp();
     render(s);
@@ -1598,7 +1601,11 @@ ${scriptTag}
     // existing clock tick will retry once the handover is complete.
     if (month !== renderedMonth && !HANDING) {
       renderedMonth = month;
+      /* A new Eastern month ends the credit watch even with no new report. The
+         note is cleared after the redraw and can never stop it. */
+      CREDIT_DIP = null;
       if (LAST) render(LAST);
+      try { syncCreditNote(LAST); } catch (e) {}
     }
   }
 
