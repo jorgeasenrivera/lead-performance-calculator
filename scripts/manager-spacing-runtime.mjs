@@ -19,6 +19,20 @@ export const POLICY=Object.freeze({
  qualification:['.github/workflows/manager-spacing.yml','.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs'],
  manifest:{path:'scripts/search-runtime.sha256',sha256:'5cc466b968535b7544c0885c91ca68fcdc718c50bd31df87d58478082e35c78c'},
 });
+// This release lane admits only the reviewed #524 application tree. Its
+// follow-up job definition may change only the four qualification files.
+export const PARITY_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:524,branch:'codex/scheduler-hero-calendar-parity-20261117',
+ base:{commit:'709fdb7828de96c1ddc0b242bffc49495dde2c47',tree:'9c37c9e37e7f8309ff24395dda382c07dd94bbad'},
+ current:{commit:'85dc80eaf29279c8c5c141b283882c8149f457ee',tree:'06c5a53b1071c406284a543eb97e8d7b62c16c2d'},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
+export function policyForPullRequest(number){
+ if(number===POLICY.pullRequest)return POLICY;
+ if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
+ throw new Error('unqualified pull request');
+}
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
 const flags=['VITE_SCHEDULER_CALENDAR','VITE_SCHEDULER_DRAFT_LOCAL','VITE_SCHEDULER_DRAFT_PILOT','SCHEDULER_DRAFT_PILOT_ENABLED'];
 const sha=b=>createHash('sha256').update(b).digest('hex');
@@ -81,7 +95,7 @@ export function verifyInputFiles(root,records,policy=POLICY){
 export function verifyRouted({runtimeRoot,definitionRoot,eventRoot,event,env,caseName},policy=POLICY){
  const pr=validateEvent(event,env,policy),runtime=runtimeFor(caseName,policy);verifyDefinition(definitionRoot,pr,policy);
  const eventCommit=git(eventRoot,'rev-parse','HEAD');assert.equal(eventCommit,env.GITHUB_SHA,'actual event checkout');
- if(eventCommit===pr.head.sha){assert.equal(pr.base.sha,policy.base.commit,'stale event snapshot requires an exact current-base merge checkout');assert.ok(['refs/pull/'+policy.pullRequest+'/head','refs/heads/'+policy.branch].includes(env.GITHUB_REF),'head event ref');}
+ if(eventCommit===pr.head.sha){assert.ok(!policy.requireMerge,'this route requires an exact merge checkout');assert.equal(pr.base.sha,policy.base.commit,'stale event snapshot requires an exact current-base merge checkout');assert.ok(['refs/pull/'+policy.pullRequest+'/head','refs/heads/'+policy.branch].includes(env.GITHUB_REF),'head event ref');}
  else{assert.equal(env.GITHUB_REF,'refs/pull/'+policy.pullRequest+'/merge','merge event ref');assert.deepEqual(git(eventRoot,'show','-s','--format=%P','HEAD').split(' '),[policy.base.commit,pr.head.sha],'exact merge parents');}
  assert.equal(git(eventRoot,'rev-parse','HEAD^{tree}'),git(definitionRoot,'rev-parse','HEAD^{tree}'),'event introduces no source drift');
  assert.equal(git(runtimeRoot,'rev-parse','HEAD'),runtime.commit,'served runtime commit');assert.equal(git(runtimeRoot,'rev-parse','HEAD^{tree}'),runtime.tree,'served runtime tree');
@@ -107,7 +121,8 @@ export async function verifyServedBuild(sealed,request=fetch){
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const stage=process.argv[2];assert.ok(['before-install','after-install','after-build','before-measure','post-measure'].includes(stage),'explicit verification stage');
  const runtimeRoot=process.cwd(),definitionRoot=resolve(runtimeRoot,'../spacing-definition'),eventRoot=resolve(runtimeRoot,'../spacing-event');
- const evidence=verifyRouted({runtimeRoot,definitionRoot,eventRoot,event:JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH)),env:process.env,caseName:process.env.SPACING_RUNTIME_CASE});
+ const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH));
+ const evidence=verifyRouted({runtimeRoot,definitionRoot,eventRoot,event,env:process.env,caseName:process.env.SPACING_RUNTIME_CASE},policyForPullRequest(event.number));
  evidence.stage=stage;evidence.baselines=verifyBaselines(runtimeRoot);if(stage!=='before-install')evidence.dependencies=dependencies(runtimeRoot);
  const buildFile=resolve(runtimeRoot,'manager-runtime-qualification/build-inputs.json');
  if(stage==='after-build'){mkdirSync('manager-runtime-qualification',{recursive:true});writeFileSync(buildFile,JSON.stringify(sealBuild(runtimeRoot,evidence),null,2)+'\n');}
