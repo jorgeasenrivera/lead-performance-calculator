@@ -66,10 +66,20 @@ test("distinct sources agreeing on one count stay provisional in every arrival o
   for (const order of permutations(values)) assert.deepEqual(select(map(...order)), provisional(4));
 });
 
-test("conflicting counts including downward corrections never select by arrival, processing or header time", () => {
+test("same-day reports that disagree take the newest arrival, never the sender's header time", () => {
+  // Jorge's call: the send Sage processed last sets the total, a correction down included.
   const values = [observation(4), observation(3, hashes[1]), observation(4, hashes[2])];
   values[1].processingAt = "2099-01-01T00:00:00.000Z";
-  values[1].sourceAssertions = [{ date: ["later sender assertion"], messageId: ["later"] }];
+  for (const order of permutations(values)) assert.deepEqual(select(map(...order)), provisional(3));
+  // A sender's Date header is its own claim and orders nothing.
+  values[1].processingAt = "2026-11-12T13:00:00.000Z";
+  values[1].sourceAssertions = [{ date: ["Thu, 31 Dec 2099 23:59:59 +0000"], messageId: ["later"] }];
+  values[2].processingAt = "2026-11-12T15:00:00.000Z";
+  for (const order of permutations(values)) assert.deepEqual(select(map(...order)), provisional(4));
+});
+
+test("same-day reports that disagree with no order between them stay a conflict", () => {
+  const values = [observation(4), observation(3, hashes[1])];
   for (const order of permutations(values)) {
     assert.deepEqual(select(map(...order)), { ...unknown(), status: "conflict" });
   }
