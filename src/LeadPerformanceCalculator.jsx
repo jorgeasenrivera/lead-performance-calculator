@@ -37,6 +37,7 @@ import {
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { stampHours } from "../api/_hours.mjs";
 import { selectReportedTotal } from "../api/_board-provenance.mjs";
+import { deliveredUnits } from "../api/_delivered-units.mjs";
 import { stationPlanOf, claimStation, releaseStation,
   releasePerson, stationOf, sitsFor,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
@@ -3744,7 +3745,7 @@ export default function LeadPerformanceCalculator() {
     const out = [];
     const st = M.stats || {};
     const sum = (f) => Object.values(st).reduce((n, r) => n + (r?.[f] ?? 0), 0);
-    const units = sum("internetUnits") + sum("phoneUnits") + sum("showroomUnits") + sum("campaignUnits");
+    const units = Object.values(st).reduce((n, r) => n + deliveredUnits(r), 0);
     out.push({ label: `Units delivered, ${ym()}`, value: fmtNum(units) });
     for (const c of CHANNEL_LIST) {
       out.push({ label: `${c.label} units, ${ym()}`, value: fmtNum(sum(c.id + "Units")) });
@@ -4384,7 +4385,7 @@ function QueueBoard({ storeId, kind }) {
     const stats = ((board && board.months) || {})[board && board.ym] || null;
     if (!stats || !stats.stats) return {};
     const rows = Object.entries(stats.stats).map(([k, s]) => ({
-      k, units: (s.internetUnits || 0) + (s.phoneUnits || 0) + (s.showroomUnits || 0) + (s.campaignUnits || 0),
+      k, units: deliveredUnits(s),
     })).filter((r) => r.units > 0).sort((a, b) => b.units - a.units);
     const out = {};
     rows.slice(0, 3).forEach((r, i) => { out[r.k] = i + 1; });
@@ -10802,7 +10803,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   // The month, from the row the wall already publishes for this store.
   const ms = (monthStats && (monthStats[norm(meFull)] || monthStats[norm(meLabel)])) || null;
   const units = ms
-    ? (ms.internetUnits || 0) + (ms.phoneUnits || 0) + (ms.showroomUnits || 0) + (ms.campaignUnits || 0)
+    ? deliveredUnits(ms)
     : null;
   const dayN = parseInt(date.slice(8, 10)), y = parseInt(date.slice(0, 4)), mo = parseInt(date.slice(5, 7));
   const daysInMonth = new Date(y, mo, 0).getDate();
@@ -11010,7 +11011,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const board = (() => {
     if (!monthStats) return null;
     const all = Object.entries(monthStats).map(([k, s2]) => ({
-      k, units: (s2.internetUnits || 0) + (s2.phoneUnits || 0) + (s2.showroomUnits || 0) + (s2.campaignUnits || 0),
+      k, units: deliveredUnits(s2),
     })).filter((r) => r.units > 0 || r.k === norm(meFull) || r.k === norm(meLabel));
     all.sort((x2, y2) => y2.units - x2.units || x2.k.localeCompare(y2.k));
     /* Ties share a place: two on 8 are both third and the next is fifth, the
@@ -11671,7 +11672,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   // A milestone is every fifth unit and the goal itself, seen once. The last
   // one celebrated is remembered per month so a reload never replays it.
   const myMonth = (monthStats && (monthStats[norm(meFull)] || monthStats[norm(meLabel)])) || null;
-  const myUnits = myMonth ? (myMonth.internetUnits || 0) + (myMonth.phoneUnits || 0) + (myMonth.showroomUnits || 0) + (myMonth.campaignUnits || 0) : null;
+  const myUnits = myMonth ? deliveredUnits(myMonth) : null;
   const myGoal = (boardExtra.goals[norm(meFull)] ?? boardExtra.goals[norm(meLabel)]) ?? null;
   useEffect(() => {
     if (myUnits == null || !meId) return;
