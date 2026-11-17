@@ -769,18 +769,21 @@ ${scriptTag}
         var s = M.stats[norm(a.name)] || {};
         var iU=num(s.internetUnits), pU=num(s.phoneUnits), rU=num(s.showroomUnits);
         var cU=num(s.campaignUnits);   // service-to-sales and finance apps: units count, close rate is not graded
+        var sU=num(s.serviceUnits);    // Service-sourced deals: counted, never graded
         var haveAll = (s.internetUnits!=null) && (s.phoneUnits!=null) && (s.showroomUnits!=null);
         return {
           name:a.name,
           internetPct:s.internetPct, phonePct:s.phonePct, showroomPct:s.showroomPct,
           prev:(s.prevPct||{}),
           camp: cU,
-          sold: iU+pU+rU+cU,
+          sold: iU+pU+rU+cU+sU,
           prevSold: (function(pu){
             if(!pu) return null;
             var any = ['internet','phone','showroom','campaign'].some(function(c){ return pu[c]!=null; });
             if(!any) return null;
-            return num(pu.internet)+num(pu.phone)+num(pu.showroom)+num(pu.campaign);
+            // prevUnits has no Service channel, so Service is carried as unchanged
+            // rather than showing every Service credit as a move since yesterday.
+            return num(pu.internet)+num(pu.phone)+num(pu.showroom)+num(pu.campaign)+sU;
           })(s.prevUnits),
           haveAll:haveAll
         };
@@ -1158,7 +1161,7 @@ ${scriptTag}
         for (var i=0;i<r.length;i++){
           var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
           var k = norm(r[i].name), o = v[k]; if (!o) continue;
-          t += (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0);
+          t += (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0)+(+o.serviceUnits||0);
         }
         return t;
       }
@@ -1174,15 +1177,23 @@ ${scriptTag}
     var out = [];
     try {
       if (!prev || !next) return out;
-      function unitsOf(st, name){
+      function rowOf(st, name){
         var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
-        var o = v[norm(name)]; if (!o) return 0;
-        return (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0);
+        return v[norm(name)] || null;
+      }
+      // Service only counts once both sides carry it. The first refresh after
+      // Service is read would otherwise celebrate the whole month's Service deals.
+      function unitsOf(o, withService){
+        if (!o) return 0;
+        return (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0)
+          + (withService ? (+o.serviceUnits||0) : 0);
       }
       var roster = (next.roster||[]);
       for (var i=0;i<roster.length;i++){
         var nm = roster[i].name;
-        var before = unitsOf(prev, nm), after = unitsOf(next, nm);
+        var b = rowOf(prev, nm), n = rowOf(next, nm);
+        var both = !!(b && n && b.serviceUnits != null && n.serviceUnits != null);
+        var before = unitsOf(b, both), after = unitsOf(n, both);
         if (after > before + 1e-6) out.push({ name: nm, gained: after - before });
       }
     } catch(e){}

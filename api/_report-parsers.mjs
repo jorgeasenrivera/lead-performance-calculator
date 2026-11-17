@@ -373,7 +373,10 @@ const DS_VOCAB = new Set(["total","leads","totalleads","ups","totalups","showroo
   "unsold","in","unsoldin","unsoldinshowroom","be","backs","bebacks","delivered",
   "f","i","fi","f&i","delivered/f&i","totaldelivered","closing","closing%","%"]);
 
-const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
+/* Service is a lead source of its own in DriveCentric (service-to-sales deals).
+   Listed so that, if the grid ever prints a Service row, it is read as credits.
+   Left off, the row's word was read as a name and its credits went nowhere. */
+const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign", "Service"];
 const DS_VEHICLE = ["New", "Used", "Other", "Total"];
 
 function summaryPrintedPeriod(lines) {
@@ -508,7 +511,7 @@ function mapDeliverySummaryGrid(lines) {
     "showroomUnits","showroomPct","campaignUnits",
     "internetLeads","phoneLeads","showroomLeads",
     "showroomUps","showroomUnsold","showroomBeBacks",
-    "newUnits","usedUnits","otherUnits"];
+    "newUnits","usedUnits","otherUnits","serviceUnits"];
   const rows = [["Delivery Summary"], header];
 
   for (const k of order) {
@@ -523,6 +526,18 @@ function mapDeliverySummaryGrid(lines) {
     const pctOf = (src) => pick(src, 5);
     const internetLeads = pick("internet", 0);
     const internetDel   = pick("internet", 4);
+    /* Service-to-sales credits. The board added up the four source rows only, so
+       a person's Service deals were never counted: on one store's month every
+       missing credit was a Service deal. A printed Service row is read as it is.
+       Without one, the person's own Total row still counts every delivery, so
+       whatever it holds beyond the four sources is the Service share. Null when
+       the report shows neither, so an older import is "not known", never zero. */
+    const fourSources = ["internet", "phone", "showroom", "campaign"]
+      .reduce((t, src) => t + (pick(src, 4) || 0), 0);
+    const personTotal = pickV("total");
+    const serviceUnits = s.service ? pick("service", 4)
+      : personTotal == null ? null
+      : Math.max(0, Math.round((personTotal - fourSources) * 2) / 2);
     rows.push([
       p.displayName,
       internetLeads,                   // Opportunities (drives lead standards)
@@ -539,6 +554,7 @@ function mapDeliverySummaryGrid(lines) {
       pick("showroom", 2),             // Unsold In Showroom (showroom-only)
       pick("showroom", 3),             // Be Backs           (showroom-only)
       pickV("new"), pickV("used"), pickV("other"),   // the vehicle split
+      serviceUnits,
     ]);
     pairings.push({
       name: p.displayName,
@@ -605,6 +621,8 @@ function parseDeliverySummaryRows(rows) {
       newUnits: row[idx("newUnits")],
       usedUnits: row[idx("usedUnits")],
       otherUnits: row[idx("otherUnits")],
+      // Absent on rows mapped before Service was read; undefined, not zero.
+      serviceUnits: idx("serviceUnits") < 0 ? undefined : row[idx("serviceUnits")],
     };
   }
   return out;
