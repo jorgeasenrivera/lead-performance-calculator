@@ -67,7 +67,7 @@ async function payload(reportedTotal, credits = [1.5, 1, 0]) {
 /* The real embedded board in a sandbox. `serve` is what the next database read
    returns; refresh() fires the board's own 15 minute data timer, no reload. */
 async function openBoard(first) {
-  const elements = new Map(), intervals = [];
+  const elements = new Map(), intervals = [], created = [];
   const element = () => { const cls = new Set(); return { innerHTML: "", textContent: "", style: { setProperty() {} },
     classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c) },
     querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, removeEventListener() {}, getAttribute: () => null,
@@ -78,7 +78,7 @@ async function openBoard(first) {
   window.parent = window;
   const ctx = vm.createContext({ window, Date: Clock, Intl, Number, console, URL, Math,
     document: { getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
-      body: element(), createElement: () => element(), querySelector: () => null, querySelectorAll: () => [], addEventListener() {} },
+      body: element(), createElement: () => { const e = element(); created.push(e); return e; }, querySelector: () => null, querySelectorAll: () => [], addEventListener() {} },
     localStorage: { getItem: () => null, setItem() {} }, requestAnimationFrame: () => 1, cancelAnimationFrame() {},
     setTimeout: () => 1, clearTimeout() {}, setInterval(fn, ms) { intervals.push({ fn, ms }); return 1; }, clearInterval() {},
     fetch: async () => (serve instanceof Error ? Promise.reject(serve) : { ok: true, status: 200, json: async () => [{ value: serve }] }),
@@ -93,6 +93,7 @@ async function openBoard(first) {
     headline: () => (/class="total-num">([^<]*)<\/div>/.exec(root().innerHTML) || [])[1],
     staleNote: () => elements.get("stale-note")?.classList.contains("on") === true,
     timers: () => intervals.map((t) => t.ms),
+    congrats: () => created.filter((e) => e.className === "congrats").map((e) => e.innerHTML).join(" "),
     async refresh(next) { serve = next; intervals.find((t) => t.ms === 15 * 60 * 1000).fn(); await settle(); },
   };
 }
@@ -174,4 +175,21 @@ test("a failed read does not blank or invent a total", async () => {
   await board.refresh(new Error("fictional network failure"));
   assert.ok(["12", undefined].includes(board.headline()), `headline after failed read: ${board.headline()}`);
   assert.doesNotMatch(board.html(), /class="total-num">(?!12<)\d/);
+});
+
+test("SEPARATE CASE: split credits collapse while the printed total holds, then a recovery reads as new sales", async () => {
+  // Fictional: the printed store total stays 12 throughout. Only the salesperson
+  // credits drop to zero (an import fault in split credit, not a correction) and
+  // then come back. The printed total stays authoritative, which is right, but
+  // nothing on the board says the credits looked wrong, and the bounce back is
+  // celebrated as fresh deliveries.
+  const total = { count: 12, status: "provisional", month: MONTH, asOf: null };
+  const board = await openBoard(await payload(total, [5, 1, 0]));
+  await board.refresh(await payload(total, [0, 0, 0]));
+  assert.equal(board.headline(), "12"); assert.equal(board.staleNote(), false);
+  assert.equal(board.congrats(), "");
+  await board.refresh(await payload(total, [5, 1, 0]));
+  assert.equal(board.headline(), "12");
+  assert.match(board.congrats(), /Alex Example<\/b><span>just delivered 5 units/);
+  assert.match(board.congrats(), /Bailey Example<\/b><span>just delivered 1 unit</);
 });
