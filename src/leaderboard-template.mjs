@@ -1171,9 +1171,12 @@ ${scriptTag}
   }
   function watchCredits(prev, next){
     try {
+      /* Only the current Eastern month is watched. A late report for any other
+         month neither starts, extends nor ends a watch. */
+      var ym = easternMonth();
+      if (!prev || !next || (next.ym && next.ym !== ym) || (prev.ym && prev.ym !== ym)) return;
       if (CREDIT_DIP && (CREDIT_DIP.key !== dipKey(next) || CREDIT_DIP.month !== easternMonth())) CREDIT_DIP = null;
-      if (!prev || !next || dipKey(prev) !== dipKey(next)) return;
-      var ym = next.ym || easternMonth();
+      if (dipKey(prev) !== dipKey(next)) return;
       var a = printedCount(prev, ym), b = printedCount(next, ym);
       if (a === null || a !== b) return;              // only when the printed total is known and unchanged
       var roster = prev.roster || [], before = 0, after = 0, i;
@@ -1188,8 +1191,8 @@ ${scriptTag}
   }
   /* Credits coming back after a dip pay down what was owed first; only units
      beyond that count as a new delivery. */
-  function payBack(name, gained){
-    if (!CREDIT_DIP) return gained;
+  function payBack(name, gained, st){
+    if (!CREDIT_DIP || CREDIT_DIP.key !== dipKey(st) || CREDIT_DIP.month !== easternMonth()) return gained;
     var k = norm(name), owed = CREDIT_DIP.owed[k] || 0;
     if (owed <= 1e-6) return gained;
     var used = Math.min(owed, gained);
@@ -1219,7 +1222,7 @@ ${scriptTag}
         var nm = roster[i].name;
         var before = unitsOf(prev, nm), after = unitsOf(next, nm);
         if (after > before + 1e-6) {
-          var fresh = payBack(nm, after - before);
+          var fresh = payBack(nm, after - before, next);
           if (fresh > 1e-6) out.push({ name: nm, gained: fresh });
         }
       }

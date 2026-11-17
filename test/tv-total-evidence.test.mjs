@@ -287,3 +287,19 @@ test("Eastern month rollover clears the note and its tracking with no new report
   assert.equal(board.creditNote(), false);
   assert.equal(board.headline(), control.headline());
 });
+
+test("a late prior-month report after Eastern rollover does not start the note; only the current month is watched", async () => {
+  const board = await openBoard(await payload(T12, [5, 1, 0]));       // a September row, opened in September
+  const control = await openBoard(await payload(T12, [5, 1, 0]));
+  const NEXT = "2026-10-01T04:00:05Z";   // just after midnight Eastern, October 1
+  board.rollover(NEXT); control.rollover(NEXT);
+  assert.equal(board.creditNote(), false);
+  // A late September report arrives in October: September's printed total is unchanged, its credits fell.
+  await board.refresh(await payload(T12, [0, 0, 0]));
+  assert.equal(board.creditNote(), false);
+  assert.equal(board.headline(), control.headline());   // the printed total is shown as it would be anyway
+  // A second late September report with the credits back does not raise it either.
+  await board.refresh(await payload(T12, [5, 1, 0]));
+  assert.equal(board.creditNote(), false);
+  assert.equal(board.headline(), control.headline());
+});
