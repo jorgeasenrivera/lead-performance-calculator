@@ -10,6 +10,7 @@ import { monthSales } from "./month-model.mjs";
 import { buildDemo } from "../demo-seed.mjs";
 import {historicalManagerFixture} from "./historical-manager-fixture.mjs";
 import { peoplePreviewInput } from "./people-preview-input.mjs";
+import { roomHintPreviewInput } from "./room-hint-preview-input.mjs";
 export const MANAGER_SHA =
   "1d8adb9c7d7f24d73fb518853efa13b4def7d6ba4f2614ede34963341c72af09";
 export function patchPhoneLayout(source) {
@@ -96,7 +97,7 @@ export function patchManager(source) {
 }
 export async function buildPreview() {
   const currentManager=await readFile("src/Manager.jsx","utf8");
-  const previewManager=createHash("sha256").update(currentManager).digest("hex")===MANAGER_SHA?currentManager:historicalManagerFixture(peoplePreviewInput(currentManager));
+  const previewManager=createHash("sha256").update(currentManager).digest("hex")===MANAGER_SHA?currentManager:historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(currentManager)));
   const seed = buildDemo(new Date("2026-10-14T16:00:00Z"));
   // One synthetic daily-sales source drives the hero roll-up and calendar.
   const total = monthSales(fixtures()[0], "2026-10", "2026-10-14").total;
