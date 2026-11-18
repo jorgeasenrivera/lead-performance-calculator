@@ -12347,7 +12347,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
                 <i style={{ height: h.toFixed(1) + "%" }} />{!signal && gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")} aria-hidden="true" style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}<s />
               </span>
-              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
+              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")}</span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
                 <div className="bw-title">{def.label}</div>
                 <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -12378,7 +12378,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               })()}
               <text x="22" y="18.4" textAnchor="middle" style={{ font: "700 8.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
             </svg>
-            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i></span>
+            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")}</span>
             <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
               <div className="bw-title">{def.label}</div>
               <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -12672,7 +12672,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
   const [showRestrict, setShowRestrict] = useState(false);
   const [days, setDays] = useState(3);
   const pct = ev.cap ? Math.min(100, (ev.opps / ev.cap) * 100) : 0;
-  const softFail = ev.status === "fail" && grace;
 
   const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
   const daysLeft = restriction?.until ? Math.ceil((new Date(restriction.until) - new Date()) / 86400000) : null;
@@ -12702,9 +12701,9 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
     : incomplete ? "waiting on a report"
     : ev.status === "no-data" ? "no figures this month"
     : ev.status === "no-standards" ? "no standards set"
-    : ev.status === "pass" ? (() => { const q = qualityOf(ev); return `${q.met}/${q.total} standards above bar`; })()
-    : ev.status === "fail" && ev.failures?.length ? `${ev.failures.length} standard${ev.failures.length === 1 ? "" : "s"} below bar`
     : "";
+  /* The standards count used to ride here too ("3 standards below bar"). The
+     dials beside the name already say it, so Jorge took it off on 18 November. */
 
   const confirmRestrict = () => {
     const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
@@ -12741,11 +12740,13 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             <input type="checkbox" className="assoc-pick" checked={!!picked} readOnly
               aria-label={`Select ${a.name}`} />
           )}
-          {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
+          {/* the podium's own medal, pixel numeral and all, so first place on the
+              row reads as the same first place as the one above it */}
+          {rank && <span className={"s2-medal assoc-medal m" + rank} aria-label={`Place ${rank}`}><DotNum value={String(rank)} dot={2.6} color="#fff" /></span>}
           {/* name over its own quiet line, the way every row in the drafts reads */}
           <span className="assoc-nameblock">
             <span className="assoc-name">{a.name}</span>
-            <span className="assoc-sub">{capSub}</span>
+            {capSub && <span className="assoc-sub">{capSub}</span>}
           </span>
         {/* ---- the people carrying the floor ----
             Forty per cent over every requirement they have, which is not a good
@@ -12790,20 +12791,27 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             different place on every row. The number ends where every other number
             ends and the cap starts where every other cap starts. */}
         <SignalOriginalLeadCount cap={ev.cap}><span className="assoc-leads"><b>{ev.opps ?? 0}</b><span className="of-cap">/ {ev.cap ?? "-"}</span></span></SignalOriginalLeadCount>
-        {/* One pill, one width: the verdict never resizes the row. The long
-            wording rides on desks, the short one on phones. */}
+        {/* What they sold, in its own section after the standards. It replaced
+            the verdict pill ("Below standard, room left") on 18 November: the
+            dials already carry the verdict, and the count is the thing a manager
+            asks about first. The new and used split rides on hover, the same
+            glance every instrument on the row has. */}
         {(() => {
-          const V = restrictedNow ? ["off", `Off leads${daysLeft != null ? ` · ${daysLeft}d left` : ""}`, "Off leads", "close"]
-            : ev.status === "pass" ? ["std", "Cleared to Grab Leads", "Cleared", "check"]
-            : softFail ? ["grace", "Early month", "Early", "clock"]
-            : ev.status === "fail" && !grace ? (ev.atCap ? ["stop", "Restrict leads", "Restrict", "warn"]
-              : (ev.capUse ?? 0) >= 0.8 ? ["limit", "Nearing the limit", "Limit", "warn"]
-              : ["room", "Below standard, room left", "Room left", "triup"])
-            : ev.status === "no-standards" ? ["dim", "No standards", "No std", "question"]
-            : ["dim", "No figures yet", "No figures", "question"];
+          const sold = unitsOf(stats) || 0;
+          const nw = stats?.newUnits, us = stats?.usedUnits, ot = stats?.otherUnits;
+          const split = nw != null || us != null;
           return (
-            <span className={"vpill " + V[0]} title={V[1]}>
-              <PixIcon glyph={V[3]} size={10} /> <span className="vp-l">{V[1]}</span><span className="vp-s">{V[2]}</span>
+            <span className="assoc-sold bloop-host" tabIndex={0} aria-label={`${fmtNum(sold)} sold`}>
+              <b className="assoc-sold-n">{fmtNum(sold)}</b>
+              <span className="s2g4-l">Sold</span>
+              <div className="bloopwin r">
+                <div className="bw-title">Sold this month</div>
+                <div className="bw-big">{split
+                  ? <>{fmtNum(nw ?? 0)} <small>new</small> · {fmtNum(us ?? 0)} <small>used</small></>
+                  : <>{fmtNum(sold)} <small>sold</small></>}</div>
+                {split && ot > 0 && <div className="bw-desc">Plus {fmtNum(ot)} other.</div>}
+                {!split && <div className="bw-desc">The new and used split isn't in this month's report yet.</div>}
+              </div>
             </span>
           );
         })()}
@@ -16901,7 +16909,7 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
             return <React.Fragment key={id}> · {CHANNELS[id]} {v == null ? "–" : Math.round(v * 10) / 10 + "%"}</React.Fragment>;
           })}</>
         : daily ? "Day by day, last 30 days · faint ticks are Mondays · click a day to see it"
-        : "Month over month · click a month to see it"}
+        : "Click to see the month"}
     </div>
   </>);
 }
@@ -18121,7 +18129,11 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
                 <div className="s2-marks">
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
-                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} /><SignalQualifier />
+                      {/* Ring grown from 54px and the "of target" line under it dropped on
+                         18 November at Jorge's word: the percentage in the ring
+                         says it. Three 84px rings still fit side by side at
+                         phone width. */}
+                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={84} />
                       <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
                       <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
@@ -18233,20 +18245,13 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
             so the card's colour alone says how far off the store is. Red now
             means somebody needs you, which is what red is for. */}
         {weakest && (
-          <div className={"s2-ansq bloop-host an-" + (weakest.mean >= 1 ? 5 : weakest.mean >= 0.9 ? 4 : weakest.mean >= 0.75 ? 3 : weakest.mean >= 0.5 ? 2 : 1)} tabIndex={0}>
+          <div className={"s2-ansq an-" + (weakest.mean >= 1 ? 5 : weakest.mean >= 0.9 ? 4 : weakest.mean >= 0.75 ? 3 : weakest.mean >= 0.5 ? 2 : 1)}>
             <div className="s2-an-cap"><Verdict ratio={weakest.mean} size={13} className="on-dark" /> {weakest.below === 0 ? "Standards" : "Weakest standard"}</div>
             <div className="s2-an-name">{weakest.below === 0 ? "Everyone is on target" : METRICS[weakest.metric].label}</div>
-            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
-            <div className="s2-an-sub">{weakest.below} of {weakest.total} below<SignalCopy full=" · mouse over for the play" short={null} /></div>
-            <SignalCoachAction metric={weakest.metric} below={weakest.below} />
-            <div className="bloopwin dn s2-answin">
-              <div className="bw-title">The play</div>
-              <div className="bw-sub" style={{ marginTop: 4 }}>{(METRIC_FIX[weakest.metric] && METRIC_FIX[weakest.metric].play) || METRICS[weakest.metric].label}</div>
-              <div className="bw-desc">{METRIC_DESC[weakest.metric] || "Measured month to date."}</div>
-              {urgent.length > 0 && (
-                <div className="bw-desc">Start with {urgent.slice(0, 2).map((u) => u.name).join(" and ")}, then work down the list.</div>
-              )}
-            </div>
+            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={8} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
+            {/* The "2 of 3 below" line, the play under a rule and the hover card
+                that repeated it came off on 18 November, on Jorge's word: the
+                card says which standard and how far, and stops there. */}
           </div>
         )}
         <SignalSpot className="s2-spot"
@@ -18257,11 +18262,11 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
             if (!signalSignal && Math.abs(dx) > 40) { setSpotOn((i) => (i + (dx < 0 ? 1 : SPOT_N - 1)) % SPOT_N); armSpot(); }
           }}>
           <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
-            <div className="s2-scap cap-sent"><PixIcon glyph="chart" size={12} /> Sold against goal, by channel</div>
+            <div className="s2-scap cap-sent"><PixIcon glyph="chart" size={12} /> Closing percentages over time</div>
             <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={signalSignal ? 0 : spotOn} onHold={setSpotHeld} />
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
-            <div className="s2-scap cap-sent"><PixIcon glyph="sparkle" size={12} /> Talk to these first</div>
+            <div className="s2-scap cap-sent"><PixIcon glyph="sparkle" size={12} /> At Risk Associates</div>
             {urgent.length === 0 && <div className="s2-none">Nobody below standard right now.</div>}
             {urgent.slice(0, 3).map((u) => (
               <button key={u.name} className="s2-person" onClick={() => onFocus && onFocus(u.name)}>
@@ -26750,6 +26755,70 @@ button.da-lbrow { cursor:pointer; }
   .board-page{ padding-bottom:104px; }
   .onsoon{ padding-bottom:104px; }
 }
+/* ---- the Sales Associate rows, 18 November ----
+   Jorge's pass on the roster. Every selector carries .board on top of the
+   material's own, because the material's stylesheet is mounted after this one
+   and would otherwise win the tie.
+   The colour wash that ran in from each row's left edge is gone: it was what
+   made the cards look see-through against the page. The card is solid paper
+   now, edge to edge. */
+html.manager-signal .board .s2-rolecard .assoc-row > .da-stripe{ display:none; }
+html.manager-signal .board .s2-rolecard .assoc-row .assoc-name{ font-size:17px; font-weight:650; letter-spacing:-.015em; }
+/* the podium's medal, at row size */
+html.manager-signal .board .s2-rolecard .assoc-medal{ width:24px; height:28px; flex:0 0 24px; border-radius:6px; }
+/* Sold, in a section of its own behind the same hairline that parts the
+   channels from the standards. The count is in the app's own face, not the
+   mono, and the label under it is set like every instrument label. */
+html.manager-signal .board .s2-rolecard .assoc-sold{ grid-column:3; grid-row:1; justify-self:center; position:relative;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  min-height:56px; padding:0 6px 0 19px; cursor:default; }
+html.manager-signal .board .s2-rolecard .assoc-sold::before{ content:""; position:absolute; left:0; top:4px; bottom:4px;
+  width:1px; background:var(--line); }
+.assoc-sold-n{ font:700 26px/1 var(--font-ui); font-variant-numeric:tabular-nums; letter-spacing:-.02em; color:var(--ink); }
+@media (min-width:1081px){
+  html.manager-signal .board .s2-rolecard .assoc-sold{ grid-column:4; grid-row:1; }
+}
+@media (max-width:700px){
+  html.manager-signal .board .s2-rolecard .assoc-sold{ grid-column:1; grid-row:2; justify-self:start;
+    flex-direction:row; align-items:baseline; gap:6px; min-height:0; padding:0; }
+  html.manager-signal .board .s2-rolecard .assoc-sold::before{ display:none; }
+  .assoc-sold-n{ font-size:20px; }
+}
+/* The podium's counts in the same face as the rest of the app. */
+html.manager-signal .board .s2-pod .s2-podval{ font-family:var(--font-ui); font-variant-numeric:tabular-nums; }
+/* The bigger month count pushes the pace line and the new and used bar down
+   on its own; these add a little air under it so the three read as a number,
+   then its pace, then its mix, rather than one block. */
+html.manager-signal .s2-hero .s2-big{ margin-top:8px; }
+html.manager-signal .s2-hero .s2-pacewrap{ margin-top:22px; }
+html.manager-signal .s2-hero .s2-splitwrap{ margin-top:18px; }
+/* The weakest standard card, grown into its space on 18 November at Jorge's
+   word, the percentage most of all: with the count and the play gone, the
+   figure is what the card is for. Eight-pixel dots, taken down from ten at
+   his word the same evening so the figure reads under the hero's sold count
+   rather than level with it. "100%" is then about 195px, which fits the card
+   at phone width. */
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-cap{ font-size:13px; }
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-name{ font-size:24px; margin-top:4px; max-width:none; }
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big{ flex-wrap:wrap; align-items:flex-end; gap:6px 14px; margin-top:18px; }
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big small{ font-size:13px; padding-bottom:6px; }
+/* With the "of target" line gone the video label sat on the ring; this gives
+   it the breath the line used to. */
+html.manager-signal .s2-hero .s2-mark > svg + .s2-mklbl{ margin-top:8px; }
+/* The channel bars, as tall as the video rings under them (84px), at Jorge's
+   word on 18 November: the two rows read as one set of instruments. The 98px
+   the bars had held the figure and the label too, so the column itself was
+   about 50px; 132px gives the column the ring's height. */
+html.manager-signal .s2-hero .s2-hbars{ height:132px; }
+/* The paper cards on the coaching view, made to stand off the page on 18
+   November at Jorge's word. The page behind them runs from near white on the
+   left to teal on the right, so a cream card with a pale hairline vanished
+   into it on the left side however solid the card itself was. A firmer edge
+   and a soft lift hold the card's shape against both ends of the page. */
+html.manager-signal .board .s2-rolecard,
+html.manager-signal .s2-podium.s2-podium,
+html.manager-signal .s2-focusgrid .s2-spot{ border-color:#aebba6;
+  box-shadow:0 1px 2px #1631211a, 0 10px 24px -16px #16312152; }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
@@ -26783,12 +26852,12 @@ function SignalHeading({title, meta, children}) {
 }
 function SignalSold({value}) {
   const signal = useSignal();
-  const dot = value.length <= 2 ? 10 : value.length === 3 ? 8.5 : value.length === 4 ? 6.8 : 5;
+  /* A third larger than it was on 18 November, on Jorge's word: the month's
+     count is the one figure the hero exists to say. Three digits at 11 still
+     leave room for the goal beside it on a phone (189px of numeral, the
+     goal's own 15px type unchanged); four digits wrap the goal under it. */
+  const dot = value.length <= 2 ? 13 : value.length === 3 ? 11 : value.length === 4 ? 8.6 : 6.4;
   return <DotNum value={value} dot={signal ? dot : 6} color="#fff" />;
-}
-function SignalCoachAction({metric, below}) {
-  const signal = useSignal();
-  return signal && below > 0 ? <div className="sg-coach-action">{METRIC_FIX[metric]?.play || METRICS[metric].label}</div> : null;
 }
 function SignalRoomHeader({title, storeName, date, count, noun, full = null}) {
   return useSignal() ? <div className="sd-head sg-room-head">

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY,DUET_STORE_CARD_POLICY,ROOMS_HINT_POLICY,DUET_COPY_POLICY,PEOPLE_SCHEDULER_COPY_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
+import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY,DUET_STORE_CARD_POLICY,ROOMS_HINT_POLICY,DUET_COPY_POLICY,PEOPLE_SCHEDULER_COPY_POLICY,STORE_HERO_LAYOUT_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
 
 const sha=b=>createHash('sha256').update(b).digest('hex');
 function fixture(extra=false,withSnapshot=false){
@@ -425,6 +425,41 @@ test('the People/Scheduler copy checks use the exact current app, keeping indepe
   assert.throws(()=>verify({runtimeRoot:f.historicalRoot}),/served runtime commit/);
   assert.throws(()=>verify({},{...local,current:{...local.current,parents:[f.policy.current.commit]}}),/exact source anchor parents/);
   for(const change of [e=>e.number=529,e=>e.pull_request.head.ref='other/branch',e=>e.pull_request.head.repo.full_name='other/repo',
+      e=>e.pull_request.base.repo.full_name='other/repo',e=>e.pull_request.base.sha=f.policy.current.commit]){
+   const wrong=structuredClone(event);change(wrong);assert.throws(()=>verify({event:wrong}));
+  }
+ }finally{f.close();}
+});
+
+
+test('Sage #538 layout checks verify exact current source while retaining all historical lanes',()=>{
+ const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
+ const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
+ const p=STORE_HERO_LAYOUT_POLICY,n=p.pullRequest;
+ assert.equal(policyForPullRequest(n),p);
+ assert.notEqual(p.branch,SERVICE_TOTALS_POLICY.branch);
+ assert.notEqual(p.pullRequest,SERVICE_TOTALS_POLICY.pullRequest);
+ assert.ok(p.current.parents.length >= 1 && p.current.parents.length <= 2);
+ assert.ok(caller.includes("number == "+n+" && github.head_ref == '"+p.branch+"' && github.base_ref == 'main'"));
+ assert.ok(runner.includes("number == "+n+" && '"+p.current.commit+"'"));
+ assert.match(runner,/engine: \[chromium, webkit\]/);
+ assert.match(runner,/runtime: \[historical, current\]/);
+ assert.match(runner,/node "\$DRIVERS\/manager-spacing\.mjs"/);
+ for(const old of [POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY]){
+  assert.equal(policyForPullRequest(old.pullRequest),old);
+  assert.equal(runtimeFor('historical',p),old.historical);
+  assert.notEqual(runtimeFor('current',p).commit,old.current.commit);
+ }
+ const f=fixture();try{
+  const local={...p,base:f.policy.base,current:{...f.policy.current,parents:[f.policy.base.commit]},historical:f.policy.historical,manifest:f.policy.manifest};
+  const event=structuredClone(f.event);event.number=n;event.pull_request.head.ref=local.branch;
+  const env={...f.env,GITHUB_REF:'refs/pull/'+n+'/merge'};
+  const verify=(overrides={},policy=local)=>verifyRouted({runtimeRoot:f.currentRoot,definitionRoot:f.definition,eventRoot:f.eventRoot,event,env,caseName:'current',...overrides},policy);
+  assert.equal(verify().runtimeCommit,f.policy.current.commit);
+  assert.throws(()=>verify({eventRoot:f.definition,env:{...env,GITHUB_SHA:f.head,GITHUB_REF:'refs/pull/'+n+'/head'}}),/requires an exact merge checkout/);
+  assert.throws(()=>verify({runtimeRoot:f.historicalRoot}),/served runtime commit/);
+  assert.throws(()=>verify({},{...local,current:{...local.current,parents:[f.policy.current.commit]}}),/exact source anchor parents/);
+  for(const change of [e=>e.number=527,e=>e.pull_request.head.ref='other/branch',e=>e.pull_request.head.repo.full_name='other/repo',
       e=>e.pull_request.base.repo.full_name='other/repo',e=>e.pull_request.base.sha=f.policy.current.commit]){
    const wrong=structuredClone(event);change(wrong);assert.throws(()=>verify({event:wrong}));
   }
