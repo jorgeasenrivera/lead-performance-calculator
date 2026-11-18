@@ -566,7 +566,7 @@ ${policy}
 
   <label class="tuner-row"><span>Also show</span></label>
   <div class="tuner-rota" id="rot-list"></div>
-  <p class="tuner-hint">Tick a store and this screen will show its board too, handing over each time the list has scrolled all the way down.</p>
+  <p class="tuner-hint">Tick a store and this screen shows its board too, switching each time the list scrolls to the bottom.</p>
 
   <div class="tuner-foot">
     <button class="tuner-btn" id="treset">Reset</button>
