@@ -38,10 +38,20 @@ export const SERVICE_TOTALS_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Qualify the actual reviewed People application tree with no source substitution.
+export const PEOPLE_SERVICE_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:529,branch:'codex/people-service-credits',
+ base:{commit:'c828b34320b5c93e412e6aa475a0ef089b9daaa5',tree:'0d3e6fa77cf01778d347519160686f8a887024e0'},
+ current:{commit:'661bc17d58a1a68fe52d1f3a3a4c9b4fec7ea8cf',tree:'c57356127612ea1cf797d5645dff5712f1901117',
+  parents:['c828b34320b5c93e412e6aa475a0ef089b9daaa5']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
+ if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
  throw new Error('unqualified pull request');
 }
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
