@@ -48,11 +48,20 @@ export const PEOPLE_SERVICE_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual approved Rooms copy app, independently of the frozen historical run.
+export const ROOMS_HINT_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:533,branch:'codex/rooms-live-floor-hint',
+ base:{commit:'636521e003481b823ae4d73543868c52cb69977b',tree:'b5bc508dc7d0b76e25fb23c0a9619510894c9fdb'},
+ current:{commit:'6bc683ed95dab188abc6594897bb56522fe063b9',tree:'38adf11a1b6ebc4b25cb98ecd872610226ac0308',parents:['636521e003481b823ae4d73543868c52cb69977b']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===ROOMS_HINT_POLICY.pullRequest)return ROOMS_HINT_POLICY;
  throw new Error('unqualified pull request');
 }
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
