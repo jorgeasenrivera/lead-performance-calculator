@@ -329,13 +329,14 @@ ${policy}
   .lb2 td.sold2 { padding:0; font-size:calc(var(--rowfs) * 1.15); }
   .lb2 .sold2 .soldnum { display:inline-block; }
   .lb2 .carcell { width:26%; padding-left:.6vw; }
-  /* soft "holding the last board" banner when a refresh is distrusted */
-  .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
+  /* soft banner: the salespeople's credits fell while the printed store total
+     did not. It is a note only; the board underneath always renders. */
+  .credit-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
     background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
     padding:1vh 2vw; border-radius:1vh; border:1px solid rgba(136,198,234,.3);
     box-shadow:0 1vh 3vh rgba(0,0,0,.35); backdrop-filter:blur(8px);
     transition:transform .6s cubic-bezier(.22,1,.36,1); pointer-events:none; }
-  .stale-note.on { transform:translate(-50%, 0); }
+  .credit-note.on { transform:translate(-50%, 0); }
 
   /* congratulations sweep: a card per new sale, entering from the right with a
      confetti burst, holding, then sliding off. Staggered so a double gets its own. */
@@ -525,7 +526,7 @@ ${policy}
   }
 </style></head>
 <body>
-<div class="stale-note" id="stale-note">Holding the last board: the newest report looked incomplete. Updating on the next cycle.</div>
+<div class="credit-note" id="credit-note">Salesperson credits dropped while the store total stayed the same. The store total is shown as reported.</div>
 <div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
 
 <!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
@@ -1149,27 +1150,71 @@ ${scriptTag}
     var dt = document.getElementById('datt');
     if(dt) dt.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
     else if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
-  // A refresh that swings wildly from the last one is almost always a bad import
-  // or a half-written file, not real. Hold the current board and try again next
-  // cycle rather than flashing garbage onto a showroom TV. "Wildly" = the total
-  // units moved by more than half, on a board that had real numbers to begin with.
-  function tooDifferent(prev, next){
+  /* Salesperson credits that fall while the printed store total stays exactly
+     the same are almost always a fault in the split credit, not a correction: a
+     real correction changes the printed total too. The board still renders as it
+     arrives, printed total included; this only puts up a small note, and
+     remembers what each person lost so the credits coming back later are not
+     celebrated as new deliveries. It never holds back or changes a total. */
+  var CREDIT_DIP = null;   // { key, month, owed: { person: units } } for one store and one Eastern month
+  function rowIn(st, ym, name){
+    var v = (st && st.months && st.months[ym] && st.months[ym].stats) || {};
+    return v[norm(name)] || null;
+  }
+  /* Service counts only when both reports carry it, as for the congratulations,
+     so Service first appearing or going missing is never read as a credit move. */
+  function unitsIn(st, other, ym, name){
+    var o = rowIn(st, ym, name), x = rowIn(other, ym, name); if (!o) return 0;
+    var withService = !!(x && o.serviceUnits != null && x.serviceUnits != null);
+    return (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0)
+      + (withService ? (+o.serviceUnits||0) : 0);
+  }
+  function printedCount(st, ym){
+    var r = st && st.months && st.months[ym] && st.months[ym].reportedTotal;
+    return (r && r.status === 'provisional' && r.month === ym && Number.isSafeInteger(r.count) && r.count >= 0) ? r.count : null;
+  }
+  function dipKey(st){ return ((st && st.storeId) || '') + '|' + ((st && st.ym) || easternMonth()); }
+  function owedLeft(){
+    if (!CREDIT_DIP) return 0;
+    var t = 0; for (var k in CREDIT_DIP.owed) t += CREDIT_DIP.owed[k];
+    return t;
+  }
+  function watchCredits(prev, next){
     try {
-      if (!prev || !prev.store || !next || !next.store) return false;
-      function totalUnits(st){
-        var t = 0, r = (st.roster||[]);
-        for (var i=0;i<r.length;i++){
-          var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
-          var k = norm(r[i].name), o = v[k]; if (!o) continue;
-          t += (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0)+(+o.serviceUnits||0);
-        }
-        return t;
+      /* Only the current Eastern month is watched. A late report for any other
+         month neither starts, extends nor ends a watch. */
+      var ym = easternMonth();
+      if (!prev || !next || (next.ym && next.ym !== ym) || (prev.ym && prev.ym !== ym)) return;
+      if (CREDIT_DIP && (CREDIT_DIP.key !== dipKey(next) || CREDIT_DIP.month !== easternMonth())) CREDIT_DIP = null;
+      if (dipKey(prev) !== dipKey(next)) return;
+      var a = printedCount(prev, ym), b = printedCount(next, ym);
+      if (a === null || a !== b) return;              // only when the printed total is known and unchanged
+      var roster = prev.roster || [], before = 0, after = 0, i;
+      for (i = 0; i < roster.length; i++){ before += unitsIn(prev, next, ym, roster[i].name); after += unitsIn(next, prev, ym, roster[i].name); }
+      if (after > before - 1e-6) return;
+      if (!CREDIT_DIP) CREDIT_DIP = { key: dipKey(next), month: easternMonth(), owed: {} };
+      for (i = 0; i < roster.length; i++){
+        var k = norm(roster[i].name), lost = unitsIn(prev, next, ym, roster[i].name) - unitsIn(next, prev, ym, roster[i].name);
+        if (lost > 1e-6) CREDIT_DIP.owed[k] = (CREDIT_DIP.owed[k] || 0) + lost;
       }
-      var a = totalUnits(prev), b = totalUnits(next);
-      if (a < 5) return false;                       // nothing meaningful to protect yet
-      var drop = (a - b) / a;
-      return drop > 0.5;                             // lost more than half: distrust it
-    } catch(e){ return false; }
+    } catch(e){}
+  }
+  /* Credits coming back after a dip pay down what was owed first; only units
+     beyond that count as a new delivery. */
+  function payBack(name, gained, st){
+    if (!CREDIT_DIP || CREDIT_DIP.key !== dipKey(st) || CREDIT_DIP.month !== easternMonth()) return gained;
+    var k = norm(name), owed = CREDIT_DIP.owed[k] || 0;
+    if (owed <= 1e-6) return gained;
+    var used = Math.min(owed, gained);
+    CREDIT_DIP.owed[k] = owed - used;
+    if (owedLeft() <= 1e-6) CREDIT_DIP = null;
+    return gained - used;
+  }
+  function syncCreditNote(s){
+    var note = document.getElementById('credit-note');
+    if (!note) return;
+    if (CREDIT_DIP && s && !s.__err && CREDIT_DIP.key === dipKey(s) && CREDIT_DIP.month === easternMonth() && owedLeft() > 1e-6) note.classList.add('on');
+    else note.classList.remove('on');
   }
 
   // Who sold since the last good refresh — drives the congratulations sweep.
@@ -1194,7 +1239,10 @@ ${scriptTag}
         var b = rowOf(prev, nm), n = rowOf(next, nm);
         var both = !!(b && n && b.serviceUnits != null && n.serviceUnits != null);
         var before = unitsOf(b, both), after = unitsOf(n, both);
-        if (after > before + 1e-6) out.push({ name: nm, gained: after - before });
+        if (after > before + 1e-6) {
+          var fresh = payBack(nm, after - before, next);
+          if (fresh > 1e-6) out.push({ name: nm, gained: fresh });
+        }
       }
     } catch(e){}
     return out;
@@ -1222,14 +1270,10 @@ ${scriptTag}
   async function loop(){
     var s = await getStore();
     var switched = SWITCHING; SWITCHING = false;
-    // Failsafe: a good previous board plus a suspicious new one = keep the old one.
-    // Skipped across a hand-over: two different dealerships are supposed to look
-    // nothing like each other, and this check would refuse every rotation.
-    if (!switched && LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
-      var warn = document.getElementById('stale-note');
-      if (warn) warn.classList.add('on');
-      return;                                        // skip this render entirely
-    }
+    /* Every refresh renders as it arrives. The credit watch compares the board
+       on screen with the one arriving, so it is skipped across a hand-over:
+       two different dealerships are supposed to look nothing like each other. */
+    if (!switched && LAST && !LAST.__err && s && !s.__err) watchCredits(LAST, s);
     /* Nobody "just delivered" anything because the screen changed store, so the
        congratulations are held across a hand-over too. */
     var wsold = (!switched && LAST && !LAST.__err && s && !s.__err) ? newlySold(LAST, s) : [];
@@ -1271,8 +1315,6 @@ ${scriptTag}
        carries a name, and brand, icon and thresholds all differ per store. */
     SWITCHING = switched;
     renderStore(s);
-    var warn = document.getElementById('stale-note');
-    if (warn) warn.classList.remove('on');
     if (wsold.length) congratulate(wsold);
   }
   /* ---------- rotating through more than one store ----------
@@ -1389,9 +1431,13 @@ ${scriptTag}
       if (s.brand) CFG.brand = s.brand;
       if (s.thresholds) CFG.thresholds = s.thresholds;
     }
+    /* A real hand-over to another store ends the credit watch: the note and what
+       it was owed are dropped, so coming back to this store later starts clean. */
+    if (switched) CREDIT_DIP = null;
     if (s && !s.__err) LAST = s;
     applyDisp();
     render(s);
+    syncCreditNote(s);
     wireTuner();
     applyDisp();
   }
@@ -1576,7 +1622,11 @@ ${scriptTag}
     // existing clock tick will retry once the handover is complete.
     if (month !== renderedMonth && !HANDING) {
       renderedMonth = month;
+      /* A new Eastern month ends the credit watch even with no new report. The
+         note is cleared after the redraw and can never stop it. */
+      CREDIT_DIP = null;
       if (LAST) render(LAST);
+      try { syncCreditNote(LAST); } catch (e) {}
     }
   }
 
