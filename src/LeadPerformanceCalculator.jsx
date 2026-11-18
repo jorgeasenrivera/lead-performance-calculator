@@ -1327,7 +1327,7 @@ async function saveStoreCAS(key, build, tries = 8) {
       return { ok: false, rev: null, conflictsResolved: conflicts };
     }
   }
-  lastSaveError = `Could not save after ${tries} attempts. Someone else may be saving this store at the same moment, or the row is being rejected by a database rule. Nothing was overwritten.`;
+  lastSaveError = `Could not save after ${tries} attempts. Someone else may be saving this store, or a database rule is rejecting the row. Nothing was overwritten.`;
   console.error("save gave up after conflicts", key);
   return { ok: false, rev: null, conflictsResolved: conflicts };
 }
@@ -1745,10 +1745,10 @@ function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard, review
   const rows = useMemo(() => (open ? failedDiffRows(rec.baseline, rec.attempted) : []), [open, rec]);
   const f = rec.refresh;
   const status = rec.busy ? "Checking the saved data..."
-    : !f ? "The screen may still show this change as if it were saved. It is kept in this window only and is lost if you reload or sign out."
-    : f.state === "loaded" ? "Latest saved store data loaded. The screen now shows it. This change is kept here and is not saved."
-    : f.state === "absent" ? "No saved copy of this store exists yet. The screen now shows an empty store. This change is kept here and is not saved."
-    : f.state === "saving" ? "A save is still in progress, so nothing was loaded and the screen was left as it is. This change is kept here. Try again when it finishes."
+    : !f ? "The screen may still show this change as saved. It is kept in this window only and is lost if you reload or sign out."
+    : f.state === "loaded" ? "The latest saved data is now on screen. This change is kept here, unsaved."
+    : f.state === "absent" ? "This store has no saved copy yet, so the screen shows it empty. This change is kept here, unsaved."
+    : f.state === "saving" ? "A save is still running, so nothing was loaded. This change is kept here. Try again when it finishes."
     : f.state === "skipped" ? "Something else changed while this was loading, so the screen was left as it is. This change is kept here."
     : "Could not load the latest saved data (" + f.error + "). The screen was left as it is. This change is kept here.";
   const t = new Date(rec.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -1774,7 +1774,7 @@ function FailedSaveItem({ rec, onLoad, onReturn, onDiscard, onAskDiscard, review
       )}
       {open && (
         <ul id={panel} className="fs-rows">
-          {rows.length === 0 && <li>No difference was found between the copy this change started from and the change.</li>}
+          {rows.length === 0 && <li>This change matches the copy it started from.</li>}
           {rows.slice(0, shown).map((r, i) => <li key={i}><strong>{r.path}</strong>: <FailedValue v={r.from} /> to <FailedValue v={r.to} removed /></li>)}
           {rows.length > shown && <li><button type="button" className="btn-link fs-more" onClick={() => setShown(shown + FAILED_PAGE)}>Show {Math.min(FAILED_PAGE, rows.length - shown)} more of {rows.length - shown} not shown</button></li>}
         </ul>
@@ -2881,7 +2881,7 @@ export default function LeadPerformanceCalculator() {
 
   const persistStoreNow = async (storeId, next, audit, seq = saveSeq.current, baseline = null, reportedFields = [], absence = null, epoch0 = authEpoch, actor0 = session && session.id) => {
     if (storeLoadFailed) {
-      alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
+      alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload, check that everything is showing, and try again. If it keeps happening, report it with the Help button in the corner.");
       return false;
     }
     /* The last line of defence. Every loaded document knows which store it is, and a
@@ -2890,13 +2890,13 @@ export default function LeadPerformanceCalculator() {
        stores at once. */
     if (next && next.__storeId && next.__storeId !== storeId) {
       console.error("refused cross-store save", { belongsTo: next.__storeId, wouldWriteTo: storeId });
-      alert("That change was NOT saved, on purpose.\n\nThe data on screen belongs to a different store than the one currently selected, which usually means a store was switched while it was still loading. Nothing was overwritten.\n\nReload the page and try again, and please report it with the Help button so it can be looked at.");
+      alert("That change was NOT saved, on purpose.\n\nThe data on screen belongs to another store, which usually means the store was switched mid-load. Nothing was overwritten.\n\nReload and try again, and please report it with the Help button.");
       return false;
     }
     const looksEmpty = (o) => !o || (!(o.roster || []).length && !Object.keys(o.months || {}).length && !Object.keys(o.activity || {}).length && !(o.plateRegistry || []).length);
     const prior = adminData[storeId] || storeData;
     if (prior && !looksEmpty(prior) && looksEmpty(next)) {
-      alert("That change was blocked because it would have wiped this store's records. Nothing was lost.\n\nReload the page and try again. If it happens twice, use the Help button in the corner to report it, because that means something is wrong.");
+      alert("That change was blocked because it would have wiped this store's records. Nothing was lost.\n\nReload and try again. If it happens twice, something is wrong: report it with the Help button in the corner.");
       return false;
     }
     /* Restore points live in their own row now, so any still sitting inside a
@@ -3149,7 +3149,7 @@ export default function LeadPerformanceCalculator() {
       }
       if (heldNow.length) {
         log.push({ ok: false, msg: `${fileName} → ${heldNow.length} ${heldNow.length === 1 ? "name is" : "names are"} not on this store's people list, so ${heldNow.length === 1 ? "it was" : "they were"} held rather than added: ${
-          heldNow.slice(0, 6).join(", ")}${heldNow.length > 6 ? `, +${heldNow.length - 6} more` : ""}. Their figures are kept and are waiting under People. Say whether they work here and they will be folded in.` });
+          heldNow.slice(0, 6).join(", ")}${heldNow.length > 6 ? `, +${heldNow.length - 6} more` : ""}. Their figures are waiting under People. Say whether they work here and they'll be folded in.` });
       }
 
       M.names[type] = Object.keys(parsed);
@@ -3398,7 +3398,7 @@ export default function LeadPerformanceCalculator() {
           }
           log.push({ ok: false, msg: `${file.name} is a PDF, but its layout isn't a Daily Activity or Delivery Summary report, so it was skipped.` });
         } catch (e) {
-          log.push({ ok: false, msg: `${file.name} couldn't be read. If it's a scan or a photo rather than a report exported from DriveCentric, there is no text in it to read.` });
+          log.push({ ok: false, msg: `${file.name} couldn't be read. A scan or a photo has no text in it; export the report from DriveCentric instead.` });
         }
         continue;
       }
@@ -4256,7 +4256,7 @@ async function openLeaderboard(config, storeId) {
   const pub = await publishBoard(config, storeId, sdata || {});
   if (!pub.ok) {
     alert("This board opened here, but it could NOT be published for the TVs.\n\nWhat the database said:\n" + pub.err
-      + "\n\nA casted screen will keep showing whatever it already had. This is almost always a write-permission rule on the board keys. Use the Help button to report it with these details.");
+      + "\n\nA cast screen keeps showing what it already had. This is almost always a write-permission rule on the board keys. Report it with these details through the Help button.");
   }
   const payload = {
     ...board,
@@ -4654,7 +4654,7 @@ function AccountSheet({ name, onClose, onDeleted, desk = false }) {
           <div className="mc-card mc-you-card">
             <button type="button" className="mc-set-row mc-set-out" onClick={() => { setStep("confirm"); setTyped(""); setErr(""); }}>
               <span className="ic"><PixIcon glyph="close" size={16} /></span>
-              <span>Delete my account<span className="hint">Your login goes. Your store keeps its figures.</span></span>
+              <span>Delete my account<span className="hint">This removes your login, not your store's figures.</span></span>
               <span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
           </div>
         </>) : (<>
@@ -4845,7 +4845,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
      against 30. Silent when everything is at or over, because inventing something to
      fix on a good month is how a coaching tool stops being read. */
   const FOCUS_PLAY = {
-    internet: "Send a personalized video on every new lead before you do anything else with it. It is the single biggest lever on this number.",
+    internet: "Send a personalized video on top of the phone call, text message and email attempt. The video is our biggest selling point.",
     phone: "Take the phone ups you are passing on, and get the appointment set before you hang up.",
     showroom: "Ask for the appointment before they leave the lot, and log the be-back the same day.",
   };
@@ -5021,9 +5021,9 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
         <SfDisplay a={standing.missed + " of your last " + standing.counted}
           b="days missed the bar" />
         <p className="sf-sub">
-          The bar is {std.minCalls} calls and {std.minVideos} videos in a day. Write down what is
-          stopping you and this goes away. Nobody is being marked down for what you say here,
-          and it is the only way anyone finds out what you are up against.
+          The bar is {std.minCalls} calls and {std.minVideos} videos in a day. Write down what's
+          stopping you and this goes away. Nobody is marked down for what you say here, and it's
+          the only way anyone learns what you're up against.
         </p>
 
         <div className="sf-owe-days">
@@ -5366,8 +5366,8 @@ function HelpPanel({ config, who, store, context, figures, onClose, dark = false
                 <b>Flagged.</b>
                 <p className="hint">
                   {s.name ? s.name.split(" ")[0] : "An administrator"} gets this with the figure you were looking at
-                  and everything else on the screen beside it. Nothing about your day changes in the meantime;
-                  the number stays as it is until somebody has looked.
+                  and the rest of the screen. Nothing about your day changes; the number stays as it is until
+                  somebody looks.
                 </p>
               </div>
             ) : (
@@ -7159,14 +7159,14 @@ function PendingScreen({ profile, onSignOut, config = null, onClaimed = null }) 
           {isAssociate ? (claimed ? (<>
             You are in{first ? ", " + first : ""}. Your manager at <b>{storeName(claimed.store)}</b> has
             a note that this account is <b>{claimed.name || "you"}</b>; one tap from them and the line,
-            your standards and your day are on this phone. This screen will let you through on its own.
+            your standards and your day are on this phone. This screen lets you through on its own.
           </>) : (<>
             Your account exists{first ? ", " + first : ""}. Say which store you work at and which
-            name on the roster is yours. Your manager joins the two with one tap, and then the line,
-            your standards and your day are on your phone.
+            roster name is yours. Your manager joins the two with one tap, and the line, your
+            standards and your day are on your phone.
           </>)) : (<>
-            Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
-            Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
+            Your account exists{first ? ", " + first : ""}, but it has no store yet. Your group admin needs to
+            approve you and grant access, then sign in again.
           </>)}
         </p>
         {/* The one thing this screen can hand somebody that is useful to the
@@ -8058,8 +8058,8 @@ function MyStationDay({ row, meId, store, date, now = Date.now() }) {
           Delivery Summary carries counts and no timestamps. */}
       {anyShort && (
         <p className="sf-stnday-note">
-          Counted by the hour, from the report that lands hourly. A stretch that
-          did not cover most of an hour does not get one.
+          Counted from the hourly report. A stretch that didn't cover most of an
+          hour isn't counted.
         </p>
       )}
     </div>
@@ -10739,8 +10739,7 @@ function ChannelLine({ series, col, target = null }) {
         </span>
       </div>
       <div className="mc-cline-note">
-        The line is your month so far. The dots are single days, which swing on a
-        handful of leads &mdash; the line is the answer, the dots are why.
+        The line is your month so far. Each dot is one day, and a handful of leads can swing it.
       </div>
     </div>
   );
@@ -11071,7 +11070,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         <div className="mc-offc">
           <b>{offState === "no2" ? "Enjoy it." : offState === "no1" && activityNow ? "Numbers are coming in." : "Day off today"}</b>
           {offState !== "no2" && <span className="hint">{offState === "no1" && activityNow ? "Working today after all?" : "Working anyway? Say so and the day starts counting. Your stats stay open either way."}</span>}
-          {offState === "no2" && <span className="hint">Your stats stay open. The day is not counting.</span>}
+          {offState === "no2" && <span className="hint">Your stats stay open, but the day isn't counting.</span>}
           {(offState === "" || (offState === "no1" && activityNow)) && (
             <div className="mc-offb">
               <button type="button" className="yes" onClick={() => onOffAnswer(true)}>I&rsquo;m in today</button>
@@ -12677,7 +12676,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>The Sage app</b>
               <button type="button" className="mc-x x-close" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
-            <p className="mc-steps-p">The Sage app is on its way to the App Store and Google Play. It is the way to carry your corner and the line, with a buzz when you are up. Until it lands, this page in your browser is the same screen.</p>
+            <p className="mc-steps-p">The Sage app is on its way to the App Store and Google Play, with your corner, the line and a buzz when you're up. Until then, this page is the same screen.</p>
           </div>
         </div></Overlay>
       )}

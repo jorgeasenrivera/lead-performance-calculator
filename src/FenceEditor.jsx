@@ -175,11 +175,11 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
           <h3>The lot</h3>
           <p className="hint">
             Tap the map at each corner of the property to trace it, and tap a corner again to take it
-            off. The green shape is the lot. The dashed circle is what a phone can actually watch in
-            the background: crossing it is what wakes the app, and the shape is what the app then
-            checks, so the circle is always a little wider than the lot itself. Switch to
-            "The building" to trace the showroom in sand: a FlyBy from a phone standing outside it
-            offers "out on the lot" first. Optional, and nothing is guessed without it.
+            off. The green shape is the lot. The dashed circle is what a phone watches in the
+            background: crossing it wakes the app, which then checks the shape, so the circle is
+            always a little wider than the lot. Switch to "The building" to trace the showroom in
+            sand: a FlyBy from a phone standing outside it offers "out on the lot" first. Optional,
+            and nothing is guessed without it.
           </p>
         </div>
       </div>
@@ -209,15 +209,14 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
 
       {tooSmall && (
         <p className="fence-warn">
-          That is a very small area. A phone's own accuracy is routinely 10 to 40 metres, so a lot
-          this size would spend most of its time being unsure, which means nobody would ever be
-          marked off it.
+          That's a very small area. A phone's own accuracy is often 10 to 40 metres, so a lot this
+          size would mostly be unsure, and nobody would ever be marked off it.
         </p>
       )}
       {huge && (
         <p className="fence-warn">
-          That circle is over a kilometre wide. It will still work, but the phone will wake up a long
-          way from the lot, and anybody at a restaurant nearby may still count as being on it.
+          That circle is over a kilometre wide. It still works, but the phone wakes up far from the
+          lot, and anybody at a nearby restaurant may count as on it.
         </p>
       )}
       {msg && <p className="fence-warn">{msg}</p>}

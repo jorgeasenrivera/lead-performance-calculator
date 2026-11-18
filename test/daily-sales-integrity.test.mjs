@@ -184,6 +184,8 @@ test("the shipped Manager holds every legacy consumer without changing real acti
         ['<SignalCopy full={"The schedule"} short={"Schedule"} />', 'The schedule', 1],
         ['<SignalCopy full={"Hit their minimums"} short={"At minimums"} />', 'Hit their minimums', 1],
         ['<SignalPenaltyRank rank={i + 1} />', '<span className={"da-medal m" + (i + 1)}>{i + 1}</span>', 2],
+        // Jorge approved these copy-only edits on the copy pass page (18 Nov, PR 535).
+        ["<p className=\"da-hint\">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes as a day off after midnight.</p>", "<p className=\"da-hint\">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>", 1],
       ];
       for (const [after, before, count] of visualOnly) {
         assert.equal(section.split(after).length - 1, count, `approved visual anchor: ${after}`);
@@ -195,6 +197,11 @@ test("the shipped Manager holds every legacy consumer without changing real acti
         ['<SignalHeading title={title} meta={sub}><div className="s2-greet">{sub}</div>', '<div className="s2-greet">{sub}</div>'],
         ['<h2 className="s2-store">{title}</h2></SignalHeading>', '<h2 className="s2-store">{title}</h2>'],
         ['<SignalCopy full={`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`} short={<><PixIcon glyph="calendar" size={11} /> {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</>} />', '`${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`'],
+        // Jorge approved these copy-only edits on the copy pass page (18 Nov, PR 535).
+        ["<p className=\"hint act-backfill\">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It's filed as that month's totals and leaves day-by-day history alone.</p>", "<p className=\"hint act-backfill\">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It is filed as that month's totals and does not touch day-by-day history.</p>"],
+        ["? \"The Standard Daily Activity report pulled for the whole month. It becomes that month's totals, which the month-end recap reads.\"", "? \"The Standard Daily Activity report pulled across the whole month. It becomes that month's totals, which is what the month-end recap reads.\""],
+        ["<div className=\"dz2-s\">CSV or PDF, straight from DriveCentric. It works out which report it is\n          and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>", "<div className=\"dz2-s\">CSV or PDF, straight from DriveCentric. It reads the file, works out which\n          report it is, and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>"],
+        ["Performance is measured month to date and resets on the 1st. Each import replaces that report's\n        previous numbers instead of adding to them, and every import goes in the audit log. A day's\n        activity is saved apart from the month, so the Check Out sheet and the history stay accurate day to\n        day.", "Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the\n        previous numbers for that report rather than adding to them, and every import is recorded in the\n        audit log. A day's activity is saved separately from the month, so the Check Out sheet and the\n        history stay accurate day to day."],
       ];
       for (const [after, before] of visualOnly) {
         assert.equal(section.split(after).length - 1, 1, `approved import heading: ${after}`);

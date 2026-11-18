@@ -126,7 +126,7 @@ const METRIC_FIX = {
   apptVideoDayPct: {
     play: "Get ahead of tomorrow's appointments",
     steps: [
-      "Look forward for your appointments, check all appointments that are coming in 48 hours to tomorrow's visits. Confirm them prior - not the morning of.",
+      "Check every appointment coming in the next 48 hours and confirm each one ahead of time, not the morning of.",
       "Name the vehicle and the appointment time in the first 10 seconds.",
       "It only counts if it lands before the appointment starts, so send it early.",
       "Then be ready for them: arrive early, have the vehicle pulled up and the paperwork started before they walk in.",
@@ -137,7 +137,7 @@ const METRIC_FIX = {
     steps: [
       "Chase the shown-but-unsold before touching a single new lead.",
       "Confirm the day before. A confirmed appointment closes far better than a hoped-for one.",
-      "Find in mining your leads that haven't been touched in more than 3 days and clear out all of your first row daily.",
+      "In mining, find leads untouched for more than 3 days and clear your first row daily.",
     ],
   },
   engagedVideoPct: {
@@ -152,7 +152,7 @@ const METRIC_FIX = {
     play: "Same day or it scores nothing",
     steps: [
       "Build the video into the first response, not a follow-up step.",
-      "Watch the leads that land after 4pm. Those are the ones that slip to tomorrow.",
+      "Watch the leads that land after 4pm; those are the ones that slip to tomorrow.",
       "A video sent the next morning counts as a miss, however good it is.",
     ],
   },
@@ -1099,7 +1099,7 @@ function DeliveryGuideSteps() {
     <ol className="guide-steps">
       <li>
         <div className="guide-step-head"><span className="guide-num">1</span><span className="guide-step-title">Pull the <strong>Delivery Summary</strong> report</span></div>
-        <p className="guide-step-body">In DriveCentric, open the report titled exactly <strong>Delivery Summary</strong>. This one report covers all four channels: you filter it by Source, you do not pull a separate report per channel.</p>
+        <p className="guide-step-body">In DriveCentric, open the report titled exactly <strong>Delivery Summary</strong>. This one report covers all four channels; you filter it by Source instead of pulling one per channel.</p>
         <img className="guide-img" src={GUIDE_IMG_REPORT} alt="Delivery Summary report title" />
       </li>
       <li>
@@ -1112,7 +1112,7 @@ function DeliveryGuideSteps() {
       </li>
       <li>
         <div className="guide-step-head"><span className="guide-num">3</span><span className="guide-step-title">Export one file per <strong>Source</strong>, in order</span></div>
-        <p className="guide-step-body">Open the <strong>Source</strong> filter and select <strong>one</strong> source at a time, then Save and export. Do all four so you end up with four files. The files won't be named by channel, so export them in this order and upload them in the same order: <strong>Campaign → Internet → Phone → Showroom</strong>. The tool will ask you to confirm which channel each file is.</p>
+        <p className="guide-step-body">Open the <strong>Source</strong> filter and select <strong>one</strong> source at a time, then Save and export, until you have four files. The files aren't named by channel, so export and upload them in this order: <strong>Campaign → Internet → Phone → Showroom</strong>. The tool will ask you to confirm which channel each file is.</p>
         <img className="guide-img" src={GUIDE_IMG_SOURCE} alt="Source filter with Campaign, Internet, Phone, Showroom" />
       </li>
     </ol>
@@ -1146,7 +1146,7 @@ function AppointmentVideoGuideSteps() {
       </li>
       <li>
         <div className="guide-step-head"><span className="guide-num">4</span><span className="guide-step-title">Upload both files together</span></div>
-        <p className="guide-step-body">Drop the Appointment file and the Video file in at the same time. The tool works out which is which on its own, so the order does not matter.</p>
+        <p className="guide-step-body">Drop the Appointment file and the Video file in together. The tool works out which is which, so order doesn't matter.</p>
       </li>
     </ol>
   );
@@ -1354,7 +1354,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
           <div className="bl-logo">{s.icon ? <img src={s.icon} alt="" /> : <Logo size={54} animated />}</div>
           <h2 className="bl-title">{s.name}</h2>
           <p className="bl-onesub">The Board opens in its own window, sized for a TV or a big screen. It
-            refreshes on its own every 30 seconds and shows the five: {FIVE.map((f) => f.label.toLowerCase()).join(", ")}.</p>
+            refreshes every 30 seconds and shows the five: {FIVE.map((f) => f.label.toLowerCase()).join(", ")}.</p>
           <div className="bl-tile-acts">
             <button className="bl-go" onClick={() => launch(s.id)}>Open the board <PixIcon glyph="arrow" size={11} /></button>
             <CastLink storeId={s.id} config={config} compact />
@@ -1474,7 +1474,7 @@ function BoardScreen({ storeId }) {
         const row = await loadShared(boardKey(storeId), null, true);
         if (dead) return;
         if (!row) {
-          setMsg("Nothing to read for this store yet. Either the board has not been published from the tool, or this screen is not allowed to read it. In the tool, open The Board and use Publish to TVs, which will name the exact problem.");
+          setMsg("Nothing to read for this store yet. Either the board has not been published, or this screen isn't allowed to read it. In the tool, open The Board and use Publish to TVs, which names the exact problem.");
           return;
         }
         const document = await renderLeaderboard({
@@ -1847,20 +1847,20 @@ function RepairPanel({ config }) {
       </div>
       {mode === "shared" ? (
         <p className="hint">
-          For a store showing names that belong somewhere else. Every shared name is listed with how much
-          each store's own records actually say about that person: real days worked and real figures. Where
-          the other store clearly has the stronger claim it is ticked for you, and everything else is left
-          for you to decide. Nothing is removed until you press the button.
+          For a store showing names that belong somewhere else. Every shared name is listed with what each
+          store's records say about that person: real days worked and real figures. Where the other store
+          clearly has the stronger claim it is ticked for you; the rest is your call. Nothing is removed
+          until you press the button.
         </p>
       ) : (
         <p className="hint">
           For when the comparison finds nothing and you can see perfectly well that it is wrong. That happens
-          when another dealership's <b>report</b> was filed here rather than its roster: its people arrived
-          with real figures and real days attached, so they are on no other store's list to be compared
-          against, and every test of "does this store know them" comes back yes, because the wrong record
-          is the one that got written. Nothing can tell them apart from your real floor except somebody who
-          knows who works there. Every name this store carries is below, with the cars it is currently
-          counting for each. Tick the ones who do not work here.
+          when another dealership's <b>report</b> was filed here instead of its roster: its people arrived
+          with real figures and real days, so they're on no other store's list to compare against, and
+          every check of "does this store know them" says yes, because the wrong record is the one that got
+          written. Only somebody who knows who works there can tell them apart from your real floor. Every
+          name this store carries is below, with the cars it counts for each. Tick the ones who don't work
+          here.
         </p>
       )}
       <div className="inline-form">
@@ -1940,11 +1940,10 @@ function RepairPanel({ config }) {
               <p className="hint" style={{ marginTop: 10 }}>
                 {mode === "shared"
                   ? <>The numbers are how much real work each store has on record for that person. A high number
-                     somewhere else and a zero here is the clearest sign a name got in by mistake.</>
-                  : <>Removing somebody takes this month's cars with them, so the store's total and its pace
-                     correct themselves. A copy of the store as it stands is saved first, and the removal is
-                     written down rather than just done. Otherwise the next manager whose tab is still open
-                     would put everybody straight back.</>}
+                     elsewhere and a zero here is the clearest sign a name got in by mistake.</>
+                  : <>Removing somebody takes this month's cars with them, so the store's total and pace
+                     correct themselves. A copy of the store is saved first, and the removal is recorded,
+                     not just done, so a manager with an old tab open can't put everybody back.</>}
               </p>
               <button className="btn" style={{ marginTop: 8 }} disabled={busy || !chosen.length} onClick={apply}>
                 {busy ? "Working..." : `Remove the ${chosen.length} ticked`}
@@ -2025,18 +2024,18 @@ function TicketsPanel({ config, onChange }) {
 
         <label className="help-lbl" style={{ marginTop: 14 }}>Send wrong-number reports to</label>
         <p className="hint">
-          A report sitting in this panel until somebody next opens it is barely a report. The value of
-          a salesperson saying "that is not what I sold" is that they said it today. Paste an incoming
-          webhook here and every flagged number arrives wherever you already look: Slack and Teams both
-          hand one out in about a minute, and so does any automation service. Leave it blank and reports
-          still land below, just quietly. Reports of things being broken are not sent; only numbers.
+          A report sitting here until somebody next opens it is barely a report. A salesperson saying
+          "that is not what I sold" matters because they said it today. Paste an incoming webhook here
+          and every flagged number arrives wherever you already look: Slack, Teams and any automation
+          service hand one out in about a minute. Leave it blank and reports still land below, quietly.
+          Only numbers are sent, not reports of things being broken.
         </p>
         <input className="help-in" value={form.alertWebhook || ""}
           onChange={(e) => setForm({ ...form, alertWebhook: e.target.value })}
           placeholder="https://hooks.slack.com/services/…" />
         {form.alertWebhook && !/^https:\/\//i.test(form.alertWebhook.trim()) && (
-          <p className="sched-err">That has to start with https. A plain http address would put whatever
-            somebody typed across the wire in clear.</p>
+          <p className="sched-err">That has to start with https. A plain http address would send what
+            somebody typed in the clear.</p>
         )}
         <button className="go-log2" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
       </div>
@@ -3274,8 +3273,8 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
         ))}
         {!people.some((p) => p.counted > 0) && (
           <p className="qr-pmuted">
-            Nothing attributed yet. The figures come from the Delivery Summary, which lands
-            hourly, and a sit only picks up an hour it covered most of.
+            Nothing attributed yet. The figures come from the hourly Delivery Summary, and
+            a sit only counts an hour it covered most of.
           </p>
         )}
       </div>
@@ -3514,7 +3513,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
         <p className="sd-psub">
           {fmtPct(warn.gate.pct)} closing this month against the store&rsquo;s {warn.gate.standard}%,
           over {warn.gate.leads} phone {warn.gate.leads === 1 ? "lead" : "leads"}.
-          Seating them is allowed. It goes to the audit log with your name on it.
+          Seating them is allowed and goes to the audit log with your name on it.
         </p>
         <div className="sd-pbtns">
           <button type="button" className="btn btn-sm" disabled={!!busy}
@@ -3542,8 +3541,8 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
           <span className="sd-pmeta">{stnLeft(st.offerLeftMs)} left</span>
         </div>
         <p className="sd-psub">
-          It goes to the next person on the line when the clock runs out. Skipping needs a reason
-          and costs them nothing but this chair.
+          It goes to the next person on the line when the clock runs out. A skip needs a reason
+          and costs them only this chair.
         </p>
         <div className="sd-pbtns">
           <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
@@ -3813,8 +3812,8 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
               )}
             {people.length > 0 && !people.some((p) => p.counted > 0) && (
               <p className="sd-note">
-                Nothing attributed yet. The figures come from the Delivery Summary, which lands
-                hourly, and a sit only picks up an hour it covered most of.
+                Nothing attributed yet. The figures come from the hourly Delivery Summary, and
+                a sit only counts an hour it covered most of.
               </p>
             )}
           </div>
@@ -3937,9 +3936,9 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       const next = await mutateRow((cur) => (cur ? mutator(cur) : cur));
       if (next) { setRow(next); mirror(next, audit); }
     } catch (e) {
-      toast("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
+      toast("That didn't save, so it will disappear when the page next checks the server. Nothing else changed.\n\nWhat the database said:\n"
         + String((e && e.message) || e)
-        + "\n\nTry once more. If it happens again, use the Help button in the corner and it will be sent with everything needed to look into it.");
+        + "\n\nTry once more. If it happens again, use the Help button in the corner and it will send everything needed to look into it.");
     }
     setBusy(false);
   }
@@ -5615,9 +5614,9 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
       const next = await mutateFloorRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
       if (next) setRow(next);
     } catch (e) {
-      toast("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
+      toast("That didn't save, so it will disappear when the page next checks the server. Nothing else changed.\n\nWhat the database said:\n"
         + String((e && e.message) || e)
-        + "\n\nTry once more. If it happens again, use the Help button in the corner and it will be sent with everything needed to look into it.");
+        + "\n\nTry once more. If it happens again, use the Help button in the corner and it will send everything needed to look into it.");
     }
     setBusy(false);
   }
@@ -5795,7 +5794,7 @@ function FloorBoard({ config, store, data, onData, userName, onSettings }) {
       {unmatched.length > 0 && (
         <div className="f-unmatched">
           <div className="f-unmatched-head">Deal events we couldn't place on the floor</div>
-          <p className="muted f-unmatched-sub">The alert only names the primary salesperson. If one of these is a secondary rep, or the name is a near-miss, add them to the floor and they'll pick up future events.</p>
+          <p className="muted f-unmatched-sub">The alert only names the primary salesperson. If one of these is a secondary rep or a near-miss name, add them to the floor and they'll pick up future events.</p>
           {unmatched.map((u) => (
             <div key={u.key} className="f-unmatched-row">
               <span className="f-um-name">{u.sales}</span>
@@ -6053,7 +6052,7 @@ function FloorPhones({ store, roster, onClose, onClaims = null, compact = false 
             <button className="btn-quiet" onClick={onClose}>Close</button>
           </div>
           <p className="hint">
-            Which account belongs to which person, and so whose phone buzzes when their customer walks in. They sign up as usual, with no stores ticked: off the dashboard, but their phone knows who they are.
+            Which account belongs to which person, so the right phone buzzes when their customer walks in. They sign up as usual with no stores ticked: off the dashboard, but their phone knows who they are.
           </p>
         </>
       )}
@@ -6120,7 +6119,7 @@ function FloorPhones({ store, roster, onClose, onClaims = null, compact = false 
                   <td className={"f-ph-dev" + (l && !l.devices ? " f-ph-none" : "")}>
                     {!l ? <span className="muted">—</span>
                       : l.devices ? seen(l)
-                      : <span title="The link is made, but no phone has ever registered against it. Nothing will buzz until the app is installed and opened once.">{compact ? "No phone" : "No phone yet"}</span>}
+                      : <span title="The link is made, but no phone has registered against it. Nothing buzzes until the app is installed and opened once.">{compact ? "No phone" : "No phone yet"}</span>}
                   </td>
                   <td>
                     {l && (
@@ -6226,15 +6225,15 @@ function MissedStandards({ store, data, roster, userName, open, onCount }) {
         <h3>Behind the standard</h3>
         <p className="muted">
           Missing {std.minCalls} calls or {std.minVideos} videos on {std.repeatDays} of the
-          last {std.repeatWindow} days they worked. Days off and days with no report are not
-          counted either way. Each of these people has been asked, on their own phone, to write
-          down what is stopping them, and their My Day is waiting until they do. Nothing about
-          the floor is blocked: they can still sign in, take ups and log deliveries.
+          last {std.repeatWindow} days they worked. Days off and days with no report don't
+          count either way. Each person has been asked on their phone to write down what's
+          stopping them, and their My Day waits until they do. The floor isn't blocked: they
+          can still sign in, take ups and log deliveries.
         </p>
       </div>
       {err && <p className="sched-err">{err}</p>}
       {people === null ? <p className="muted">Reading the last three weeks&hellip;</p>
-        : people.length === 0 ? <p className="muted">Nobody is behind the standard. Nothing to do here.</p>
+        : people.length === 0 ? <p className="muted">Nobody is behind the standard.</p>
         : (
           <div className="ms-list">
             {people.map((p) => (
@@ -6313,8 +6312,8 @@ function MissedStandards({ store, data, roster, userName, open, onCount }) {
             {owing > 0 && (
               <p className="muted ms-foot">
                 {owing === 1 ? "One person is" : `${owing} people are`} waiting on their own answer.
-                Whatever they write arrives in Tickets, under Behind, and goes out to wherever
-                wrong-number reports already go.
+                What they write arrives in Tickets, under Behind, and goes wherever wrong-number
+                reports already go.
               </p>
             )}
           </div>
@@ -6400,9 +6399,9 @@ function FloorBacklog({ store, data, userName, open, onCount }) {
         <h3>Off the lot while in line</h3>
         <p className="muted">
           Yesterday and the {BACKLOG_DAYS - 1} days before it. Somebody appears here only when they
-          left the lot while they were in the running, said it was a customer or said nothing at all,
-          and neither the line nor that day's visit count shows a customer for them. That is a fact,
-          not a verdict. A dead phone looks exactly the same.
+          left the lot while in the running, said it was a customer or said nothing, and neither the
+          line nor that day's visit count shows a customer for them. That's a fact, not a verdict; a
+          dead phone looks the same.
         </p>
       </div>
 
@@ -6412,8 +6411,8 @@ function FloorBacklog({ store, data, userName, open, onCount }) {
 
       {days !== null && all.length === 0 && (
         <p className="muted f-backlog-none">
-          Nothing to look at. Either every trip off the lot was backed up by the day's record, or no
-          phone on this floor is reporting its location yet.
+          Nothing to look at. Either every trip off the lot matched the day's record, or no phone on
+          this floor is reporting its location yet.
         </p>
       )}
 
@@ -6448,7 +6447,7 @@ function FloorBacklog({ store, data, userName, open, onCount }) {
                   )}
                 </div>
                 {f.status === "unverified" && !d.hasReport && (
-                  <div className="f-bl-wait">Waiting on that day's activity report. The visit count isn't in yet, and it's the only record a second salesperson on a deal ever shows up in.</div>
+                  <div className="f-bl-wait">Waiting on that day's activity report. The visit count isn't in yet, and it's the only record where a second salesperson on a deal shows up.</div>
                 )}
                 {f.status === "unverified" && d.hasReport && (
                   <div className="f-bl-acts">
@@ -6659,7 +6658,7 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
         ) : sel && sel.k === "car" ? (
           <>
             <button className="btn secondary" onClick={() => setCars((cs) => cs.map((c, i) => (i === sel.i ? { ...c, r90: c.r90 ? undefined : 1 } : c)))}>Turn it</button>
-            <span className="hint">Scenery. It blocks nothing but the view, exactly like the real one.</span>
+            <span className="hint">Scenery. It blocks the view and nothing else, like the real one.</span>
             <button className="btn secondary danger" onClick={() => { setCars((cs) => cs.filter((_, i) => i !== sel.i)); setSel(null); }}>Drive it out</button>
           </>
         ) : (
@@ -6763,9 +6762,9 @@ function PhoneRoomCard({ config, storeId, onChange }) {
     <div className="card">
       <h3>The phone room</h3>
       <p className="hint">
-        The stations on the Phone Line tab: who is at which desk, how long they have been there,
-        and how much of the room was staffed each hour. Drawn from the same plan model as the
-        floor, so the same editor arranges it.
+        The stations on the Phone Line tab: who is at which desk, for how long, and how much of
+        the room was staffed each hour. It uses the floor's plan model, so the same editor
+        arranges it.
       </p>
 
       {/* Which rooms this store's people see on their own phones. Separate
@@ -6784,7 +6783,7 @@ function PhoneRoomCard({ config, storeId, onChange }) {
         {!rooms.floor && !rooms.line && (
           <p className="prc-warn">
             With both off, a salesperson signing in has nothing to open. The app tells them so
-            and offers a way out, but it is worth knowing that is what it does.
+            and offers a way out.
           </p>
         )}
         {["floor", "line"].filter((k) => rooms[k]).map((k) => (
@@ -6832,9 +6831,9 @@ function PhoneRoomCard({ config, storeId, onChange }) {
       <details className="tagt prc-owners">
         <summary>Whose desk is whose</summary>
         <p className="hint">
-          For a room where the same people sit at the same desks. A name here is a label on the
-          desk and nothing more: the desk still reads as empty until they check in, and nothing is
-          recorded for anybody who is not there.
+          For a room where the same people sit at the same desks. A name here only labels the
+          desk: it still reads as empty until they check in, and nothing is recorded for anybody
+          who isn't there.
         </p>
         {roster.length === 0
           ? <p className="hint">No tracked people on this store's roster yet.</p>
@@ -6936,10 +6935,10 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
   return (
     <div className="standards f-settings mf mf-floor mf-settings">
-      {unlinked && <div className="f-note"><PixIcon glyph="warn" size={12} /> No dealership is linked yet, so deal events do not reach the floor. Add the DriveCentric dealership name below; the board works as a manual line until then.</div>}
+      {unlinked && <div className="f-note"><PixIcon glyph="warn" size={12} /> No dealership is linked yet, so deal events don't reach the floor. Add the DriveCentric dealership name below; until then the board works as a manual line.</div>}
       <div className="mf-settings-banner">Live Floor settings</div>      <div className="card">
         <h3>Live Floor <span className="section-sub">{store.name}</span></h3>
-        <p className="hint">The floor board self-governs from DriveCentric deal events. Turn it off to run a purely manual floor line.</p>
+        <p className="hint">The floor board runs itself from DriveCentric deal events. Turn it off to run a manual floor line.</p>
         <label className="f-toggle">
           <input type="checkbox" checked={cfg.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
           <span>Deal events drive the floor for this store</span>
@@ -6948,7 +6947,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
       <div className="card">
         <h3>Linked dealerships</h3>
-        <p className="hint">Exactly as the deal alerts spell it. Case and punctuation do not matter.</p>
+        <p className="hint">Spelled exactly as the deal alerts spell it. Case and punctuation don't matter.</p>
         <div className="f-dealer-add">
           <input className="f-input" placeholder="Dealership name from DriveCentric" value={dealerInput}
             onChange={(e) => setDealerInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addDealer(); }} />
@@ -7012,8 +7011,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
         <h3>The floor plan</h3>
         <p className="hint">
           The room the FlyBy system draws: the Console on the board and the "where are you" tap on
-          every salesperson's phone both use this. Until it is arranged, a sensible default room
-          stands in.
+          every salesperson's phone both use it. Until it's arranged, a default room stands in.
         </p>
         {store.floorPlan && store.floorPlan.updatedAt && !arranging && (
           <p className="hint"><b>{(store.floorPlan.tables || []).length} tables</b> drawn · last changed {new Date(store.floorPlan.updatedAt).toLocaleDateString()}.</p>
@@ -7032,10 +7030,10 @@ function FloorConfigEditor({ config, storeId, onChange }) {
             <summary>Table tags · NFC and QR</summary>
             <p className="hint">
               Each table has a permanent link. Write it to a cheap NFC sticker under the table's edge
-              (any tag-writer app can), or print it as a QR on the table tent -- the same link works as
-              both. A salesperson who taps it with a signed-in phone is seated there with a guest, one
-              tap, no map. The tag only says WHERE: who you are still comes from today's sign-in code,
-              so a tag read off a table at home does nothing.
+              (any tag-writer app can), or print it as a QR on the table tent; the same link works as
+              both. A salesperson who taps it with a signed-in phone is seated there with a guest in
+              one tap, no map. The tag only says WHERE: who you are still comes from today's sign-in
+              code, so a tag read at home does nothing.
             </p>
             <div className="tagt-list">
               {floorPlanOf(config, storeId).tables.map((t) => {
@@ -7055,7 +7053,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
       <div className="card">
         <h3>Event → action map</h3>
-        <p className="hint">How each DriveCentric event moves the floor. Defaults match the known DriveCentric vocabulary; override any of them, or add a new event type as DriveCentric introduces one, with no code change needed. Note: the two "sold" events differ only by their subject, so this map keys off the subject event, not the alert.</p>
+        <p className="hint">How each DriveCentric event moves the floor. The defaults match DriveCentric's known events; override any of them, or add a new event type when DriveCentric introduces one, with no code change. The two "sold" events differ only by their subject, so this map keys off the subject event, not the alert.</p>
         <div className="f-map">
           {knownEvents.map((evt) => (
             <div key={evt} className="f-map-row">
@@ -7077,7 +7075,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
       <div className="card">
         <h3>Schedule presence <span className="section-sub">applies when Live Floor is built into coaching</span></h3>
-        <p className="hint">A rep who signs onto the floor (or the phone line) counts as present today. These thresholds let activity alone also mark them present. The retroactive coaching fix that clears a "missed scheduled day" flag lands in the next build; these settings are stored now so they're ready.</p>
+        <p className="hint">A rep who signs onto the floor (or the phone line) counts as present today. These thresholds let activity alone mark them present too. The coaching fix that clears a "missed scheduled day" flag after the fact lands in the next build; these settings are stored now so they're ready.</p>
         <div className="stepper-row">
           <Stepper label="Calls to count present" field="overrideCalls" value={cfg.overrideCalls} hint="more than this many calls" min={0} />
           <Stepper label="Videos to count present" field="overrideVideos" value={cfg.overrideVideos} hint="more than this many videos" min={0} />
@@ -7250,7 +7248,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   const persist = async (next, audit) => {
     const st = storeRef.current;
     if (!st) return;
-    if (failRef.current) { toast("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
+    if (failRef.current) { toast("This store's data didn't finish loading, so saving is paused to protect your records. Reload the page and try again."); return; }
     if (next && next.__storeId && next.__storeId !== st.id) {
       console.error("refused cross-store save", { belongsTo: next.__storeId, wouldWriteTo: st.id });
       return;
@@ -7527,7 +7525,7 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
     }
     if (pop.k === "asks") {
       return (<>{hd("Nothing logged", <><span className="fr-st away">{noShowSuspects.length} {noShowSuspects.length === 1 ? "name" : "names"}</span>{fresh.lastAt && <span className="fr-w">report ran {fmtClock(fresh.lastAt)}</span>}</>)}
-        <div className="bp-defn">On the schedule, no calls, no videos. Off keeps the day from counting. On counts it. Left alone it closes as a day off at midnight.</div>
+        <div className="bp-defn">On the schedule, no calls, no videos. Off keeps the day from counting; On counts it. Left alone, it closes as a day off at midnight.</div>
         <div className="fr-list co-nl">
           {noShowSuspects.map((r) => (
             <div key={r.a.id} className="co-nr"><span>{r.a.name}</span>
@@ -8022,7 +8020,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
       {noShowSuspects.length > 0 && (
         <div className="da-panel da-askpanel">
           <div className="da-pcap"><PixIcon glyph="dash" size={13} /> Nothing logged today · say which it is</div>
-          <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>
+          <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes as a day off after midnight.</p>
           <div className="da-asks">
             {noShowSuspects.map((r) => (
               <span key={r.a.id} className="da-ask">
@@ -8454,7 +8452,7 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
       } else {
         download(blob);
         setImgState(null);
-        setImgErr("This browser will not put an image on the clipboard, so it downloaded instead.");
+        setImgErr("This browser won't put an image on the clipboard, so it downloaded instead.");
       }
     } catch (e) {
       setImgState(null);
@@ -8502,8 +8500,8 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
         {freshness && day === today() && (freshness.missed || freshness.waiting) && (
           <p className="dr-warn">
             {freshness.missed
-              ? `Nothing has landed today and it is past ${freshness.cutoffLabel}. There is nothing to report.`
-              : "No activity report has landed today yet, so there is nothing to report."}
+              ? `Nothing has landed today and it's past ${freshness.cutoffLabel}. There is nothing to report.`
+              : "No activity report has landed today, so there's nothing to report."}
           </p>
         )}
         {freshness && day === today() && freshness.lateButCounted && (
@@ -10002,10 +10000,10 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
     if (pop.k === "setup") {
       return (<>{hd("How this store runs plates")}
         <div className="pl-setup">
-          <button type="button" className={standing ? "" : "on"} onClick={() => { setMode("daily"); close(); }}><b>Taken and returned daily</b><p>Plates go out and come back by close. The log runs a day at a time and a plate that did not come back is flagged.</p></button>
-          <button type="button" className={standing ? "on" : ""} onClick={() => { setMode("standing"); close(); }}><b>Held until returned</b><p>A salesperson keeps a plate for weeks. Nothing is overdue for being out overnight; the screen shows who holds what and since when.</p></button>
+          <button type="button" className={standing ? "" : "on"} onClick={() => { setMode("daily"); close(); }}><b>Taken and returned daily</b><p>Plates go out and come back by close. The log runs a day at a time, and a plate that didn't come back is flagged.</p></button>
+          <button type="button" className={standing ? "on" : ""} onClick={() => { setMode("standing"); close(); }}><b>Held until returned</b><p>A salesperson keeps a plate for weeks. Nothing is overdue for being out overnight; the screen shows who holds what, and since when.</p></button>
         </div>
-        <div className="bp-defn">Per store. Every trip and custody log is the same underneath either way.</div></>);
+        <div className="bp-defn">Set per store. Every trip and custody log works the same either way.</div></>);
     }
     if (pop.k === "assign") {
       return (<>{hd("Take a plate out", <span className="fr-st in">{dayLabel(day)}</span>)}
@@ -10066,7 +10064,7 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
     if (pop.k === "back") return (<>{hd("Back today", <span className="fr-w">{backToday.length} {backToday.length === 1 ? "plate" : "plates"}</span>)}{recordList(backToday, "Nothing has come back yet today.")}</>);
     if (pop.k === "missing") {
       return (<>{hd("Never came back", <span className="fr-st away">{missing.length} {missing.length === 1 ? "plate" : "plates"}</span>)}
-        <div className="bp-defn">Out on an earlier day and never marked returned. It cannot go out again until it is back, or removed if it was never this store's.</div>
+        <div className="bp-defn">Out on an earlier day and never marked returned. It can't go out again until it's back, or removed if it was never this store's.</div>
         <div className="fr-list pl-rl">
           {missing.map((x) => (
             <div key={x.plate.id} className="pl-pr static">
@@ -10438,7 +10436,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     const entry = registry.find((r) => r.id === id); if (!entry) return;
     const used = Object.values(data.plates || {}).some((list) => (list || []).some((p) => p.tag === entry.tag));
     if (used) {
-      if (!(await askConfirm(`${entry.tag} has been logged out before. Removing it from the master list does NOT delete that history, but it will stop being suggested.\n\nRetiring it instead keeps it on the list, greyed out. Remove it anyway?`))) return;
+      if (!(await askConfirm(`${entry.tag} has been logged out before. Removing it from the master list keeps that history but stops it being suggested.
+
+Retiring it instead keeps it on the list, greyed out. Remove it anyway?`))) return;
     } else if (!(await askConfirm(`Remove ${entry.tag} from the master plate list?`))) return;
     const next = JSON.parse(JSON.stringify(data));
     next.plateRegistry = (next.plateRegistry || []).filter((r) => r.id !== id);
@@ -10672,7 +10672,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const dropPriorRecord = async (d, id) => {
     const p = ((data.plates || {})[d] || []).find((x) => x.id === id);
     if (!p) return;
-    if (!(await askConfirm(`Remove the record of ${p.tag} entirely?\n\nUse this only if the plate was never this store's, for example if it arrived here by mistake. The whole entry for ${d} goes, including its custody log. If this store really did have the plate, use Mark returned instead so the record stays honest.`))) return;
+    if (!(await askConfirm(`Remove the record of ${p.tag} entirely?
+
+Only do this if the plate was never this store's, for example if it arrived here by mistake. The whole entry for ${d} goes, custody log included. If this store really had the plate, use Mark returned instead so the record stays honest.`))) return;
     const next = JSON.parse(JSON.stringify(data));
     next.plates = next.plates || {};
     next.plates[d] = (next.plates[d] || []).filter((x) => x.id !== id);
@@ -10758,14 +10760,14 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           <SignalCopy full={setupOpen ? "Hide setup" : "How this store runs plates"} short={<><PixIcon glyph="gear" size={13} />{setupOpen ? "Close setup" : "Setup"}</>} />
         </button>
         <SignalPlateCustody more={<>
-          The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
+          The time taken is logged when you add a plate, and you can adjust it if it was entered late. Anyone not on the roster can be typed in by hand.
           {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
           {" "}Handing a plate straight to somebody else closes the current trip and opens a new one, so the
           log never says the wrong person had it.
         </>}>
           {standing
-            ? "Plates stay with whoever is holding them until they are handed back. Every trip keeps its time and a full custody log, so you can always see who has had a plate and for how long."
-            : "Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when."}
+            ? "Plates stay with whoever holds them until they're handed back. Every trip keeps its time and a full custody log, so you can see who has had a plate and for how long."
+            : "Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see who had it and when."}
         </SignalPlateCustody>
       </div>
       {setupOpen && (
@@ -10776,20 +10778,20 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             value={standing ? "standing" : "daily"} onChange={setMode} />
           <p className="hint">
             {standing
-              ? "This store gives a salesperson a plate and they keep it. There is no day to work through and nothing is overdue for being out overnight, so the screen shows who is holding what and since when. Changing this back to daily does not touch a single record."
-              : "This store hands plates out and wants them back by close, so the log runs a day at a time and a plate that did not come back is flagged. Switch to held-until-returned if your salespeople keep a plate for weeks at a time."}
+              ? "This store gives a salesperson a plate and they keep it. There's no day to work through and nothing is overdue for being out overnight, so the screen shows who holds what, and since when. Switching back to daily changes no records."
+              : "This store hands plates out and wants them back by close, so the log runs a day at a time and a plate that didn't come back is flagged. Switch to held-until-returned if your salespeople keep a plate for weeks."}
           </p>
-          <p className="hint">Per store. The trips, times and custody logs are the same underneath either way.</p>
+          <p className="hint">Set per store. The trips, times and custody logs work the same either way.</p>
         </div>
       )}
       {masterOpen && (
         <div className="card">
           <h3>Master plate list</h3>
           <Explain label="What the list is for">
-            Every plate the store owns. This is what the one-click row suggests from, and what a
-            typed tag is checked against, so a number that is one character off gets questioned
-            rather than quietly becoming a second plate. Retiring keeps the history and stops the
-            suggestions; removing takes it off the list entirely.
+            Every plate the store owns. The one-click row suggests from it and a typed tag is
+            checked against it, so a number one character off gets questioned instead of quietly
+            becoming a second plate. Retiring keeps the history and stops the suggestions;
+            removing takes it off the list.
           </Explain>
           <div className="inline-form">
             <textarea className="plate-bulk" value={bulk} onChange={(e) => setBulk(e.target.value)}
@@ -10797,7 +10799,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             <button className="btn" onClick={addBulkPlates}>Add to list</button>
           </div>
           {registry.length === 0
-            ? <p className="hint">Nothing on the list yet. Paste the drawer of dealer plates above and they will be ready to one-click from tomorrow.</p>
+            ? <p className="hint">Nothing on the list yet. Paste the drawer of dealer plates above and they'll be ready to one-click from tomorrow.</p>
             : <table className="roster-table wide">
                 <thead><tr><th>Tag</th><th>Type</th><th>Status</th><th>Right now</th><th /></tr></thead>
                 <tbody>
@@ -10856,7 +10858,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           </div>
         )}
         <SignalPlateOriginalHelp><Explain label="How the log works">
-          The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
+          The time taken is logged when you add a plate, and you can adjust it if it was entered late. Anyone not on the roster can be typed in by hand.
           {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
           {" "}Handing a plate straight to somebody else closes the current trip and opens a new one, so the
           log never says the wrong person had it.
@@ -11043,8 +11045,8 @@ function ThresholdGrid({ value, onChange }) {
       ))}
       <p className="hint">
         Each channel is scored on its own scale, because a 25% showroom close and a 25% internet
-        close are not the same achievement. At or above green shows green on The Board, at or above
-        yellow shows yellow, anything below that shows red.
+        close aren't the same achievement. At or above green shows green on The Board, at or above
+        yellow shows yellow, and anything below shows red.
       </p>
     </div>
   );
@@ -11092,7 +11094,7 @@ function ChecklistEditor({ config, storeId, onChange }) {
     <div className="card">
       <h3>The floor checklist</h3>
       <p className="hint">
-        What a salesperson sees under My day. Read on a phone, between customers, and graded on nothing.
+        What a salesperson sees under My day. Read on a phone between customers, and graded on nothing.
       </p>
 
       <div className="md-cap">Ticked by the reports</div>
@@ -11183,8 +11185,8 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
           To RockEd: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b>
           {std.minStars > 0 ? <> and <b>{std.minStars} stars</b></> : null} in a day.
           Missing that on <b>{std.repeatDays ?? 3}</b> of the last <b>{std.repeatWindow ?? 5}</b> days
-          somebody works asks them, on their own phone, to write down what is stopping them
-          before My Day will show them anything else. Signing in and taking ups is never blocked.
+          somebody works asks them, on their own phone, to write down what's stopping them before My
+          Day shows them anything else. Signing in and taking ups are never blocked.
           {!std.minStars && " Stars are recorded but not required at 0."}
         </div>
       </div>
@@ -11445,7 +11447,7 @@ function buildRoundUp({ config, store, data, M, digests }) {
   if (!daysOnFile.enough)
     aware.push({
       t: "Not enough history to compare days yet",
-      d: `${daysOnFile.n} day${daysOnFile.n === 1 ? "" : "s"} of activity on file. Two days of imports and yesterday's comparison starts; two weeks and the weekly one joins it.`,
+      d: `${daysOnFile.n} day${daysOnFile.n === 1 ? "" : "s"} of activity on file. Yesterday's comparison starts after two days of imports, and the weekly one after two weeks.`,
     });
   else if (!was)
     aware.push({ t: DAILY_TOTALS_UNAVAILABLE, d: "" });
@@ -11887,8 +11889,8 @@ function AdminOverview({ config, adminData, onOpenStore }) {
         ))}
       </div>
       <p className="hint gv-note">
-        Store colours come from each store's brand setting, the same one its hero band and its board already
-        use. The five figures are the store's own, not an average of its people.
+        Store colours come from each store's brand setting, the same one its hero band and board use. The
+        five figures are the store's own, not an average of its people.
       </p>
     </div>
   );
@@ -12153,7 +12155,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       {!query && inGrace && P && recap.length === 0 && (
         <div className="da-panel s2-gracestrip">
           <PixIcon glyph="check" size={13} />
-          <span>{monthLabel(prevYm())} wrap-up · everyone finished at or above standard. Clean slate.</span>
+          <span>{monthLabel(prevYm())} wrap-up · everyone finished at or above standard.</span>
         </div>
       )}
       {filter && (
@@ -12960,8 +12962,8 @@ function WelcomeCard({ store, onDismiss }) {
         <button className="btn-x" onClick={onDismiss} aria-label="Dismiss">Got it <PixIcon glyph="close" size={12} /></button>
       </div>
       <p className="welcome-lede">
-        This is where {store?.name || "your store"} tracks who has earned the right to take more internet leads.
-        The idea is simple: handle your leads well, and you unlock the next one.
+        This is where {store?.name || "your store"} tracks who has earned the right to take more internet leads:
+        handle your leads well, and you unlock the next one.
       </p>
       <div className="welcome-steps">
         <div className="welcome-step">
@@ -12975,18 +12977,18 @@ function WelcomeCard({ store, onDismiss }) {
           <span className="ws-num">2</span>
           <div>
             <b>Read the board</b>
-            <p>Green means cleared to grab leads. Red means their numbers say to pause them. The reasons are listed on each card.</p>
+            <p>Green means cleared to grab leads. Red means their numbers say to pause them. Each card lists the reasons.</p>
           </div>
         </div>
         <div className="welcome-step">
           <span className="ws-num">3</span>
           <div>
             <b>Act, then confirm</b>
-            <p>If you take someone off leads, hit "Confirm removed from leads" so the tool knows and can re-check them later.</p>
+            <p>If you take someone off leads, hit "Confirm removed from leads" so the tool can re-check them later.</p>
           </div>
         </div>
       </div>
-      <p className="hint">No one is restricted during the first days of the month while numbers settle, you'll see "Early month" instead. This card won't show again.</p>
+      <p className="hint">Nobody is restricted in the first days of the month while numbers settle; you'll see "Early month" instead. This card won't show again.</p>
     </div>
   );
 }
@@ -13221,7 +13223,7 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
     if (!(await askConfirm(
       "Restore the automatic backup from " + new Date(b.t).toLocaleString() + "?" +
       String.fromCharCode(10, 10) +
-      "This OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and settings. It cannot be undone." +
+      "This OVERWRITES everything in the tool: all stores, rosters, imports, standards and settings. It can't be undone." +
       String.fromCharCode(10, 10) +
       "Download a fresh backup first if you're unsure."
     ))) return;
@@ -13270,7 +13272,11 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
         setMsg("That doesn't look like a Sage backup file."); return;
       }
       const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
-      if (!(await askConfirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`))) return;
+      if (!(await askConfirm(`Restore the backup from ${when}?
+
+This OVERWRITES everything in the tool: all stores, rosters, imports, standards and users. It can't be undone.
+
+Consider downloading a fresh backup first.`))) return;
       setBusy(true);
       await onRestoreAll(data);
       setBusy(false);
@@ -13300,7 +13306,7 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
       <div className="card recover-card">
         <h3>Recover missing stores</h3>
         <p className="hint">
-          Scans for store data no longer attached to a store, and offers to put it back with its roster, imports and history intact.
+          Scans for store data no longer attached to a store, and offers to put it back with its roster, imports and history.
         </p>
         <button className="btn" disabled={busy} onClick={scanOrphans}>Scan for missing stores</button>
         {orphans !== null && (
@@ -13325,8 +13331,8 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
       <div className="card">
         <h3>Automatic backups</h3>
         <p className="hint">
-          The tool saves a full snapshot of everything once a day, the first time you open it.
-          Nothing to remember and nothing to schedule. The last {KEEP_BACKUPS} are kept.
+          The tool saves a full snapshot of everything once a day, the first time you open it,
+          with nothing to remember or schedule. The last {KEEP_BACKUPS} are kept.
         </p>
         {autoList === null ? <p className="hint">Loading backups...</p>
           : autoList.length === 0 ? <p className="hint">No automatic backup yet. One will be written the next time you open the tool.</p>
@@ -13343,14 +13349,14 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
             </div>
           )}
         <p className="hint">
-          These live in the same database, so they cover a bad import but not losing the project itself. Download a copy now and then and keep it elsewhere.
+          These live in the same database, so they cover a bad import but not losing the project itself. Download a copy now and then and keep it somewhere else.
         </p>
       </div>
 
       <div className="card">
         <h3>Recover one store</h3>
         <p className="hint">
-          Puts one store back and leaves the rest untouched. Every daily backup is read first, so you can see whose people are in each before choosing.
+          Puts one store back and leaves the rest alone. Every daily backup is read first, so you can see whose people are in each before choosing.
         </p>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select className="inp" value={recStore} onChange={(e) => { setRecStore(e.target.value); setRecRows(null); }}>
@@ -13383,11 +13389,11 @@ function BackupPanel({ config, adminData, session, restorePoints = {}, onLoadRes
               <p className="hint">
                 <b>Read this before restoring.</b> {recDays.count} day{recDays.count === 1 ? "" : "s"} of activity
                 {recDays.first ? ` (${recDays.first} to ${recDays.last})` : ""} are stored as separate rows for this
-                store, and those rows are used in preference to whatever is in the document. Putting the document
-                back will not change them. The names in them are:{" "}
+                store, and those rows win over the document. Putting the document back won't change them. The names
+                in them are:{" "}
                 {recDays.names.join(", ")}{recDays.names.length >= 6 ? ", and others" : ""}. If those are the wrong
-                store's people, say so before restoring: the rows have to be dealt with too, or they will put that
-                store's days straight back on top.
+                store's people, say so before restoring: the rows have to be dealt with too, or they'll put that
+                store's days straight back.
               </p>
             ) : null}
             {recRows.map((r) => (
@@ -13467,9 +13473,9 @@ function ChannelPrompt({ pending, onCancel, onConfirm }) {
         </div>
         <div style={{ padding: "8px 24px 4px" }}>
           <p className="hint">
-            Every channel comes from the same Delivery Summary, filtered by Source, so the files all look identical
-            and the tool can't tell them apart on its own. Tell it which channel each one is. Tip: export them in a
-            set order (Campaign, Internet, Phone, Showroom) and they'll line up here the same way every time.
+            Every channel comes from the same Delivery Summary filtered by Source, so the files look identical and
+            the tool can't tell them apart. Tell it which channel each one is. Export them in a set order
+            (Campaign, Internet, Phone, Showroom) and they'll line up here the same way every time.
           </p>
           {pending.ambiguous.map((f, i) => (
             <div key={i} className="chan-row">
@@ -13483,7 +13489,7 @@ function ChannelPrompt({ pending, onCancel, onConfirm }) {
               </select>
             </div>
           ))}
-          {dupes && <div className="login-err">Two files are set to the same channel. Each channel should only be imported once.</div>}
+          {dupes && <div className="login-err">Two files are set to the same channel. Import each channel once.</div>}
         </div>
         <div className="wiz-foot">
           <button className="btn-x danger" onClick={onCancel}>Cancel import</button>
@@ -13621,10 +13627,10 @@ function StoreWizard({ config, store, onCancel, onSave }) {
 
             <label>This month's goal</label>
             <p className="hint">
-              What the store is being asked for, and the share of it that counts as having got there — a
+              What the store is being asked for, and the share of it that counts as hitting it: a
               100-car goal at 85% is judged at 85. Both show at the top of the health popup, with the
-              month's pace against them. Set here each month; the last figure carries over to a month
-              nobody has set. Holidays come out of the count on their own.
+              month's pace against them. Set it each month; the last figure carries over to any month
+              left unset. Holidays come out of the count on their own.
             </p>
             <div className="wiz-nums">
               <label className="thr-label">Goal (units)
@@ -13838,7 +13844,7 @@ function BaselineImport({ data, onChange }) {
     }
     setBusy(false);
     if (!rows) {
-      setPreview({ error: "That is not a Daily Activity report. Pull the activity report for your date range \u2014 CSV or PDF \u2014 and drop it here." });
+      setPreview({ error: "That isn't a Daily Activity report. Pull the activity report for your date range as a CSV or PDF and drop it here." });
       return;
     }
     const parsed = parseReport(rows, "activity");
@@ -13925,10 +13931,10 @@ function BaselineImport({ data, onChange }) {
       <h3>Seed baselines from history {seeded > 0 && <span className="badge badge-ok">{seeded} seeded</span>}</h3>
       <p className="hint">
         Every coaching target is built from a person's own conversion history, and the tool has none until it has
-        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric (a
-        whole year works), drop it here, and it seeds everyone at once. CSV or PDF, and either the normal
-        export or the stacked totals export. It sets per-day averages only; it does not touch this month's numbers.
-        Set the working days below so the per-day math is right, then from here the tool builds its own history.
+        run a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric (a
+        whole year works), drop it here, and it seeds everyone at once. CSV or PDF, the normal export or the
+        stacked totals export. It sets per-day averages only and leaves this month's numbers alone. Set the working
+        days below so the per-day math is right; from then on the tool builds its own history.
       </p>
 
       <div className="bl-dates">
@@ -14016,7 +14022,7 @@ function UploadHistory({ data, onChange, storeId }) {
       if (error) throw error;
       const v = row && row.value;
       if (!v || !v.b64) {
-        toast("This file is not in the archive. Files are kept for reports that arrived by email after the archive shipped, for sixty days; hand-dropped files never leave this browser.");
+        toast("This file isn't in the archive. Reports that arrived by email after the archive shipped are kept for sixty days; hand-dropped files never leave this browser.");
         return;
       }
       const bin = atob(v.b64);
@@ -14048,7 +14054,7 @@ function UploadHistory({ data, onChange, storeId }) {
     if (!(await askConfirm(
       "Delete the activity for " + new Date(u.day + "T12:00").toLocaleDateString() + "?" +
       String.fromCharCode(10, 10) +
-      "Only that day is removed. Every other day and every other report stays exactly as it is." +
+      "Only that day is removed. Every other day and report stays as it is." +
       String.fromCharCode(10, 10) +
       "Stars you typed in for that day are kept, in case you re-import it."
     ))) return;
@@ -14473,7 +14479,7 @@ function CoachingPhone({ config, store, data, onChange, userName, scored, withDa
     if (!pop) return null;
     if (pop.k === "bench") {
       return (<>{hd("The bar", <><span className="fr-st in">{top.length} of {withData.length}</span><span className="fr-w">every imported day</span></>)}
-        <div className="bp-defn">What the strongest third by cars do, averaged across every imported day. Anyone excluded from store stats is left out of the averages.</div>
+        <div className="bp-defn">What the strongest third by cars do, averaged across every imported day. Anyone excluded from store stats is left out.</div>
         <div className="cx-bench2">{benchTiles.map((b) => <div key={b.id}><b>{fmtB(b, topAvg[b.id])}</b><span>{shortLabel(b)}</span></div>)}</div>
         <div className="pl-sec">Who sets it</div>
         <div className="fr-list pl-rl">{top.map((r) => personRow(r, `${r.units} cars`))}{top.length === 0 && <p className="fr-empty">Nobody with activity on file yet.</p>}</div></>);
@@ -14633,7 +14639,9 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
     setMore(false);
   };
   const depart = async () => {
-    if (!(await askConfirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`))) return;
+    if (!(await askConfirm(`${a.name} has left ${store.name}?
+
+They come off the roster, the check out sheet, the line and the board right away, and future reports won't put them back. Everything they did stays on file, and you can undo this under Roster.`))) return;
     onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
     onClose();
   };
@@ -14750,10 +14758,10 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
       {sec("What to coach")}
       {behind.length > 0 ? <div className="cx-coach">{behind.slice(0, 3).map((g, i) => (
           <div key={g.id} className="cx-ci"><em>{i + 1}</em><div><b>{g.label}</b><div className="cx-cv">{fmtB(g, g.mine)} <small>against {fmtB(g, g.theirs)} for the strongest here</small></div>
-            {g.id === "contactRate" && <p>Effort is not the issue if calls are fine; this is about when they are calling and what they open with.</p>}
-            {g.id === "video" && <p>Personalized video is the single easiest habit to add, and it shows up in delivery rate.</p>}
+            {g.id === "contactRate" && <p>Effort isn't the issue if calls are fine; this is about when they call and what they open with.</p>}
+            {g.id === "video" && <p>Personalized video is the easiest habit to add, and it shows up in delivery rate.</p>}
             {g.id === "showRate" && <p>Appointments are being set but not landing. Look at confirmation habits the day before.</p>}</div></div>))}</div>
-        : <div className="cx-hint">At or above the bar on everything tracked. Worth asking what they do that the report does not see.</div>}
+        : <div className="cx-hint">At or above the bar on everything tracked. Ask what they do that the report doesn't see.</div>}
       {ahead.length > 0 && (<>{sec("Strengths to name out loud")}<div className="cx-str">{ahead.slice(0, 3).map((g) => <span key={g.id}>{g.label.toLowerCase()}</span>)}</div></>)}
       <div className="cx-hint">Based on {act.days} {act.days === 1 ? "day" : "days"} of activity on file. The more days imported, the more the pattern means.</div>
     </>)}
@@ -15113,15 +15121,15 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     headTitle = "Leads are paused while we build the habits back up.";
     headBody = "Off leads since " + new Date(restriction.since).toLocaleDateString() +
       (restriction.until ? ". We'll review together on " + new Date(restriction.until).toLocaleDateString() + "." : ".") +
-      " This isn't a penalty. It's where we focus the coaching.";
+      " This is where we focus the coaching, not a penalty.";
     headClass = "bad";
   } else if (ev && ev.status === "fail") {
     headTitle = "A couple of things to tighten up, then leads keep flowing.";
-    headBody = "You're close. The items below are what stands between you and full lead flow, and each one is a habit, not a talent.";
+    headBody = "You're close. The items below stand between you and full lead flow, and each one is a habit, not a talent.";
     headClass = "bad";
   } else if (ev && ev.status === "pass") {
-    headTitle = "You're doing the work. Let's build on it.";
-    headBody = "You're meeting every standard at your tier. This page is about squeezing more out of the same effort.";
+    headTitle = "You're doing the work, so let's build on it.";
+    headBody = "You're meeting every standard at your tier. This page is about getting more out of the same effort.";
     headClass = "good";
   } else {
     headTitle = "Let's set your targets together.";
@@ -15650,7 +15658,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             <span className="oyo-from-op">across</span>
             <b>{base.daysWorked}</b> working days
             {missingDays > 0 && (
-              <span className="oyo-from-warn" title={`${calElapsed} working days have passed but activity is on file for ${mtd.daysElapsed}. The per-day figures are averaged over the days we actually have, so they are honest. Import the missing days and the picture sharpens.`}>
+              <span className="oyo-from-warn" title={`${calElapsed} working days have passed but activity is on file for ${mtd.daysElapsed}. The per-day figures are averaged over the days we have, so they're honest. Import the missing days and the picture sharpens.`}>
                 <PixIcon glyph="warn" size={10} /> {mtd.daysElapsed} of {calElapsed} days on file
               </span>
             )}
@@ -15696,9 +15704,9 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
 
           <h3 className="ac-h3">How many leads does it take to reach your goal?</h3>
           {goal === 0 ? (
-            <p className="hint">Set a monthly goal above and this turns the gap into a concrete lead count per channel.</p>
+            <p className="hint">Set a monthly goal above and this turns the gap into a lead count per channel.</p>
           ) : stillNeeded === 0 ? (
-            <p className="hint">Goal met. Nothing left to split; anything from here is gravy.</p>
+            <p className="hint">Goal met. Anything from here is gravy.</p>
           ) : (() => {
             // The remaining gap, split by this person's own sales mix once they have
             // enough delivered to read one (typical split until then), turned into leads
@@ -15885,7 +15893,7 @@ function HourlyBlock({ data, name, store }) {
       {!ready && (
         <div className="hourly-veil">
           <b>Not enough data yet</b>
-          <span>{days} of {HOURLY_MIN_DAYS} days collected. This needs the activity report arriving hourly, and a fortnight of it before the pattern means anything.</span>
+          <span>{days} of {HOURLY_MIN_DAYS} days collected. This needs the activity report arriving hourly, and two weeks of it before the pattern means anything.</span>
         </div>
       )}
       <svg className="hourly-chart" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
@@ -15916,7 +15924,7 @@ function HourlyBlock({ data, name, store }) {
       {ready && best && worst && best.h !== worst.h && (
         <p className="hourly-read">
           You connect best around <b>{HOUR_LABEL(best.h)}</b> at {fmtPct(best.rate)}, and worst around{" "}
-          <b>{HOUR_LABEL(worst.h)}</b> at {fmtPct(worst.rate)}. Same calls, different hour.
+          <b>{HOUR_LABEL(worst.h)}</b> at {fmtPct(worst.rate)}, on the same calls.
         </p>
       )}
       {ready && <p className="hint">Bars are calls made in that hour; the line is the share that reached someone. Across {days} days.</p>}
@@ -16021,12 +16029,14 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
         </div>
         <div className="ac-actions no-print">
           <button className={"btn-ghost " + (isStatsExcluded ? "on" : "")} onClick={toggleStatsExcluded}
-            title={isStatsExcluded ? "This person is excluded from the store benchmark. Their card still works. Click to include them." : "Exclude this person's activity from the store benchmark averages (their own card is unaffected)."}>
+            title={isStatsExcluded ? "This person is excluded from the store benchmark, but their card still works. Click to include them." : "Exclude this person's activity from the store benchmark averages (their own card is unaffected)."}>
             {isStatsExcluded ? <><PixIcon glyph="check" size={11} /> Out of store stats</> : "Exclude from store stats"}
           </button>
           <button className="btn-ghost" onClick={copy}>Copy summary</button>
           <button className="btn-ghost danger" onClick={async () => {
-            if (!(await askConfirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`))) return;
+            if (!(await askConfirm(`${a.name} has left ${store.name}?
+
+They come off the roster, the check out sheet, the line and the board right away, and future reports won't put them back. Everything they did stays on file, and you can undo this under Roster.`))) return;
             onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
           }}>No longer here</button>
           <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
@@ -16092,15 +16102,15 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
             </div>
             <ul className="ac-flags">
               {flags.slice(0, 6).map((f, i) => (
-                <li key={f.day + i}><b>{when(f.day)}</b> &mdash; the floor had them {wasDoing(f.was)}</li>
+                <li key={f.day + i}><b>{when(f.day)}</b> · the floor had them {wasDoing(f.was)}</li>
               ))}
               {flags.length > 6 && <li className="ac-flags-more">and {flags.length - 6} more</li>}
             </ul>
             <p className="hint">
-              The desk asked for them, they answered that they were with a guest, and the floor
-              had them somewhere else at that moment. Worth a conversation rather than a
-              conclusion: somebody can be shaking a hand at the door before anything is typed
-              in. Nothing here is scored, and the salesperson does not see it.
+              The desk asked for them, they said they were with a guest, and the floor had them
+              somewhere else at that moment. Worth a conversation, not a conclusion: somebody
+              can be shaking a hand at the door before anything is typed in. Nothing here is
+              scored, and the salesperson doesn't see it.
             </p>
           </div>
         );
@@ -16171,8 +16181,8 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
                     return (
                       <li key={g.id}>
                         <b>{g.label}</b> is at {f(g.mine)}, against {f(g.theirs)} for the strongest people here.
-                        {g.id === "contactRate" && " Effort is not the issue if calls are fine; this is about when they are calling and what they open with."}
-                        {g.id === "video" && " Personalized video is the single easiest habit to add, and it shows up in delivery rate."}
+                        {g.id === "contactRate" && " Effort isn't the issue if calls are fine; this is about when they call and what they open with."}
+                        {g.id === "video" && " Personalized video is the easiest habit to add, and it shows up in delivery rate."}
                         {g.id === "showRate" && " Appointments are being set but not landing. Look at confirmation habits the day before."}
                       </li>
                     );
@@ -16180,7 +16190,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
                 </ul>
               </>
             ) : (
-              <p className="hint">At or above the benchmark on everything tracked. Worth asking what they do that the report does not see.</p>
+              <p className="hint">At or above the benchmark on everything tracked. Ask what they do that the report doesn't see.</p>
             )}
             {ahead.length > 0 && (
               <p className="hint">Strengths worth naming out loud: {ahead.slice(0, 3).map((g) => g.label.toLowerCase()).join(", ")}.</p>
@@ -16592,8 +16602,8 @@ function StoreStuck({ store, detail, onRetry }) {
     <div className="noaccess">
       <h2 className="noaccess-title">{store?.name || "This store"} is not loading</h2>
       <p className="noaccess-lead">
-        The data for this store has not come back. Reloading fixes a dropped connection.
-        If it happens again, tell your admin which store it was, along with the line below.
+        The data for this store hasn't come back. Reloading fixes a dropped connection. If
+        it happens again, tell your admin which store it was and send the line below.
       </p>
       {detail ? <p className="noaccess-lead"><code>{detail}</code></p> : null}
       <button className="btn" onClick={onRetry}>Reload</button>
@@ -16616,7 +16626,7 @@ function StoreMismatch({ config, mismatch, isAdmin }) {
         people under another store's name.
       </p>
       <p className="noaccess-lead">
-        This needs the record repaired rather than a reload. Send your admin these two keys:
+        This needs the record repaired, not a reload. Send your admin these two keys:
         {" "}<code>{mismatch.want}</code> and <code>{mismatch.claims}</code>.
       </p>
       {isAdmin && f ? (
@@ -18388,7 +18398,7 @@ function CrossCheck({ store, data, config, onClose }) {
         const nameAt = head ? head.findIndex((c) => /^(user|name|salesperson)$/i.test(c)) : -1;
         const unitAt = head ? head.findIndex((c) => /^units delivered$/i.test(c)) : -1;
         if (!head || nameAt < 0 || unitAt < 0) {
-          setErr("That file is neither the per-person list nor the store roll-up. Both come out of the Delivery Summary; drop either, or both.");
+          setErr("That file is neither the per-person list nor the store roll-up. Both come out of the Delivery Summary; drop either or both.");
           setBusy(false); return;
         }
         const oppAt = head.findIndex((c) => /^net opportunities$/i.test(c));
@@ -18447,7 +18457,7 @@ function CrossCheck({ store, data, config, onClose }) {
         month: monthLabel(ym()),
       });
     } catch (e) {
-      setErr("That file could not be read. If it is a scan or a photo rather than a PDF exported from DriveCentric, there is no text in it to read.");
+      setErr("That file couldn't be read. A scan or a photo has no text in it; export the PDF from DriveCentric instead.");
     }
     setBusy(false);
   };
@@ -18475,9 +18485,9 @@ function CrossCheck({ store, data, config, onClose }) {
                 <div className="dz-icon"><span>⇩</span></div>
                 <div className="dz-title">{busy ? "Reading…" : "Drop a Delivery Summary in"}</div>
                 <div className="dz-sub">
-                  The PDF grid, the per-person CSV, or the store roll-up -- drop the roll-up and the
-                  list together and both figures land side by side. Everything here is read and thrown
-                  away: nothing is imported.
+                  The PDF grid, the per-person CSV or the store roll-up. Drop the roll-up and the list
+                  together and both figures land side by side. Everything here is read and thrown
+                  away; nothing is imported.
                 </div>
               </label>
               {shownRoll && (
@@ -18527,10 +18537,10 @@ function CrossCheck({ store, data, config, onClose }) {
                     <b>{res.halfHolders.length} {res.halfHolders.length === 1 ? "person holds" : "people hold"} half a unit{res.halfHolders.length % 2 ? ", which is an odd number of them" : ""}</b>
                     <p>
                       A split deal is credited half to each name, so half a unit against a person is
-                      right. Halves pair off: if both sides of every split were in this report there
-                      would be an even number of people holding one, and the total would land whole.
+                      right. Halves pair off: if both sides of every split were in this report, an
+                      even number of people would hold one and the total would land whole.
                       {res.halfHolders.length % 2
-                        ? " There is an odd number, so at least one split has its other half against somebody this report cannot see \u2014 a manager, a house deal, or somebody who has left."
+                        ? " There is an odd number, so at least one split has its other half against somebody this report can't see: a manager, a house deal, or somebody who has left."
                         : " There is an even number here, so the halves account for each other and a fractional total is coming from somewhere else."}
                     </p>
                     <div className="xc-halves">
@@ -18563,10 +18573,9 @@ function CrossCheck({ store, data, config, onClose }) {
                       <p>
                         The roll-up counts each delivery once. The per-person list credits it to
                         everybody who touched it, so a car sold by one person off an appointment set
-                        by another is a whole delivery on both rows. Adding the rows up therefore
-                        runs {over > 0 ? "high" : "low"} by <b>{n(Math.abs(over))}</b>
+                        by another is a whole delivery on both rows. So adding the rows up runs {over > 0 ? "high" : "low"} by <b>{n(Math.abs(over))}</b>
                         {res.roll && res.roll.opps != null && res.fileOpps != null
-                          ? `, and the opportunity counts run apart the same way \u2014 ${n(res.fileOpps)} across the people against ${n(res.roll.opps)} for the store.`
+                          ? `, and the opportunity counts run apart the same way: ${n(res.fileOpps)} across the people against ${n(res.roll.opps)} for the store.`
                           : "."}
                         {" "}The figure to trust for the store is <b>{n(auth)}</b>.
                       </p>
@@ -18714,7 +18723,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
                     onChange={(e) => { if (e.target.value && e.target.value <= today()) setActivityDay(e.target.value); }} />}
             </div>
             {monthMode ? (
-              <p className="hint act-backfill">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It is filed as that month's totals and does not touch day-by-day history.</p>
+              <p className="hint act-backfill">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It's filed as that month's totals and leaves day-by-day history alone.</p>
             ) : (aDay !== today() && aDay !== yday) ? (
               <p className="hint act-backfill">Backfilling <strong>{dayLabel(aDay)}</strong>. The report will land on that date.</p>
             ) : null}
@@ -18738,7 +18747,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
             <div className="dz-icon"><span>⇩</span></div>
             <div className="dz-title"><span className="dz-drop">Drop</span><span className="dz-tap">Choose</span> the Daily Activity report for {monthMode ? monthLabel(aMonth) : (aDay === today() ? "today" : dayLabel(aDay))}</div>
             <div className="dz-sub">{monthMode
-              ? "The Standard Daily Activity report pulled across the whole month. It becomes that month's totals, which is what the month-end recap reads."
+              ? "The Standard Daily Activity report pulled for the whole month. It becomes that month's totals, which the month-end recap reads."
               : "The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet." + (aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : "")}</div>
             <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
@@ -18804,8 +18813,8 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         onClick={() => fileRef.current?.click()}>
         <PixIcon glyph="arrowdown" size={40} className="dz2-ico" />
         <div className="dz2-t"><span className="dz-drop">Drop any report here</span><span className="dz-tap">Choose a report</span></div>
-        <div className="dz2-s">CSV or PDF, straight from DriveCentric. It reads the file, works out which
-          report it is, and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>
+        <div className="dz2-s">CSV or PDF, straight from DriveCentric. It works out which report it is
+          and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>
         <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
           onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
       </div>
@@ -18865,10 +18874,10 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         </div>
       )}
       <Explain label="What an import does to the numbers">
-        Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the
-        previous numbers for that report rather than adding to them, and every import is recorded in the
-        audit log. A day's activity is saved separately from the month, so the Check Out sheet and the
-        history stay accurate day to day.
+        Performance is measured month to date and resets on the 1st. Each import replaces that report's
+        previous numbers instead of adding to them, and every import goes in the audit log. A day's
+        activity is saved apart from the month, so the Check Out sheet and the history stay accurate day to
+        day.
       </Explain>
     </div>
   );
@@ -19073,7 +19082,7 @@ function TrendsPanel({ config, stores, data }) {
       </div>
       <p className="hint tr-hint">
         {byHour
-          ? "Each hour is the difference between two imports on the same day, so this fills in once the activity report is scheduled to arrive more than once a day."
+          ? "Each hour is the difference between two imports on the same day, so this fills in once the activity report arrives more than once a day."
           : "Built from the daily imports, so the trail starts the day this store began importing."}
       </p>
 
@@ -19106,7 +19115,7 @@ function TrendsPanel({ config, stores, data }) {
       {days.length === 0 ? (
         <p className="hint">
           {byHour
-            ? "No hourly picture yet. It needs at least two imports on the same day, which means scheduling the Daily Activity report hourly rather than once each morning."
+            ? "No hourly picture yet. It needs two imports on the same day, so schedule the Daily Activity report hourly instead of once each morning."
             : "Nothing imported in this window yet."}
         </p>
       ) : (
@@ -19276,7 +19285,7 @@ function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, row
       const col = CHANNEL_HUE[c.id];
       return (<>{hd(`${c.label} closing`, <><span className={"fr-st " + (target != null && c.pct != null && c.pct * 100 >= target ? "in" : "away")}>{c.pct == null ? "–" : fmtPct(c.pct)}</span>{target != null && <span className="fr-w">target {target}%</span>}<span className="fr-w">{fmtNum(c.units)} from {Math.round(c.leads)} leads</span></>)}
         <div className="cx-bars">{trail.map((m, i) => { const v = vals[i]; const w = v == null ? 0 : Math.min(100, (v * 100 / Math.max(target || 1, 1)) * 70); return <div key={m} className="cx-bar"><span className="cx-bl"><span className="cx-l">{monthLabel(m)}</span><span className="cx-tr"><i style={{ width: w + "%", background: col }} /><em /></span></span><span className="cx-bv">{v == null ? "–" : fmtPct(v)}</span></div>; })}</div>
-        <div className="bp-defn">The line is the target. Units delivered against the leads worked, by month.</div></>);
+        <div className="bp-defn">The line is the target: units delivered against leads worked, by month.</div></>);
     }
     return null;
   };
@@ -19397,7 +19406,7 @@ function HistoryPhone({ config, store, data, months, month, setMonth, roster, th
       const target = f.thr(thr);
       return (<>{hd(`${shortLabel(f)} · the store`, <><span className="fr-st in">{f.now == null ? "–" : fmtPct(f.now)} in {monthLabel(month)}</span><span className="fr-w">target {target}%</span></>)}
         <div className="cx-bars">{allTrail.map((mk, i) => { const v = vals[i]; return <div key={mk} className="cx-bar"><span className="cx-bl"><span className="cx-l">{monthLabel(mk)}</span><span className="cx-tr"><i style={{ width: (v == null ? 0 : Math.min(100, (v * 100 / target) * 70)) + "%", background: f.col }} /><em /></span></span><span className="cx-bv">{v == null ? "–" : fmtPct(v)}</span></div>; })}</div>
-        <div className="bp-defn">The line is the target. Every month on record.</div></>);
+        <div className="bp-defn">The line is the target, across every month on record.</div></>);
     }
     if (pop.k === "person") {
       const a = roster.find((x) => x.id === pop.id); if (!a) return null;
@@ -20000,8 +20009,8 @@ function HistoryPanel({ config, store, data }) {
       <p className="hint hist-key2">
         Each figure is the month shown and the points it moved against the month before, with the last
         {" "}{Math.min(8, months.length)} months as bars underneath. A full bar is that metric's target, and the
-        dashed line across them is where the target sits. Channel colours are the ones their lines are drawn
-        in on the dashboard's delivery chart.
+        dashed line marks where the target sits. Channel colours match the lines on the dashboard's delivery
+        chart.
       </p>
     </div>
   );
@@ -20168,9 +20177,9 @@ function TargetsEditor({ config, storeId, data, onChange }) {
         ))}
       </div>
       <p className="hint tg-note">
-        Each metric is scored on its own scale, because a 25% showroom close and a 25% internet close are not
+        Each metric is scored on its own scale, because a 25% showroom close and a 25% internet close aren't
         the same achievement. At or above green shows green on The Board, at or above yellow shows yellow,
-        anything under that shows red.
+        and anything under shows red.
       </p>
 
       <div className="tg-grid">
@@ -20188,14 +20197,14 @@ function TargetsEditor({ config, storeId, data, onChange }) {
               }} />
             days
           </label>
-          <p className="hint">Colours are held back while the month's numbers are still thin, so nobody is
+          <p className="hint">Colours are held back while the month's numbers are thin, so nobody is
             judged on four days of figures. Set it to 0 to turn this off.</p>
         </div>
 
         <div className="card tg-panel">
           <div className="p-cap2">Lead caps <span className="tg-chip">still on, no longer the headline</span></div>
           <p className="hint">The tier ladder decides how many leads somebody can hold at once, because the
-            board needs a number to stop at. It is a queue rule, not a verdict on the person.</p>
+            board needs a number to stop at. It's a queue rule, not a verdict on the person.</p>
           {std.tiers.map((tier, ti) => (
             <div key={ti} className="tg-tier">
               <div className="tg-tierh">
@@ -21888,7 +21897,7 @@ function AccessPanel({ config, session, onChange }) {
         <div className="card">
           <div className="p-cap2">Waiting for approval <span className="tg-chip wt">{pending.length}</span></div>
           <p className="hint">
-            Tick the stores they should see, then approve. A salesperson needs none: approve with nothing ticked and they stay off the dashboard with an account you can join to their name.
+            Tick the stores they should see, then approve. A salesperson needs none: approve with nothing ticked and they stay off the dashboard, with an account you can join to their name.
           </p>
           {pending.map((u) => (
             <PendingRow key={u.id} u={u} stores={config.stores} busy={busy}
@@ -22084,7 +22093,7 @@ function AuditLog({ config }) {
       </div>
       <p className="hint ad-note">
         The last {log.length} events, capped at 400. Imports, target changes, roster changes and access
-        changes all land here on their own. Showing {shown.length}.
+        changes all land here. Showing {shown.length}.
       </p>
       <div className="ad-tbl">
         <div className="ad-h">
@@ -22164,8 +22173,8 @@ function HolidayPanel({ config, onChange }) {
             ))}
           </div>
           <p className="hint" style={{ marginTop: 10 }}>
-            {list.length} on file, {upcoming} still ahead. Past dates are dimmed but still count, because
-            they affect the month they fell in.
+            {list.length} on file, {upcoming} still ahead. Past dates are dimmed but still count toward
+            the month they fell in.
           </p>
         </>
       )}
@@ -22201,7 +22210,7 @@ function SettingsPanel({ config, onChange }) {
     onChange(next, { action: "Reordered stores", detail: `${item.name} moved ${dir < 0 ? "up" : "down"}` });
   };
   const deleteStore = async (s) => {
-    const ok = await askConfirm(`Delete ${s.name}? Its roster, imports, and history stay saved in storage, but the store disappears from every view and its standards are removed. Anyone whose only access was this store will have nothing to see.`);
+    const ok = await askConfirm(`Delete ${s.name}? Its roster, imports and history stay in storage, but the store disappears from every view and its standards are removed. Anyone whose only access was this store will have nothing to see.`);
     if (!ok) return;
     const next = JSON.parse(JSON.stringify(config));
     next.stores = next.stores.filter((x) => x.id !== s.id);
@@ -22232,7 +22241,7 @@ function SettingsPanel({ config, onChange }) {
   };
   const setIcon = (storeId, file) => {
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) { toast("That image is too large. Please use one under 4 MB."); return; }
+    if (file.size > 4 * 1024 * 1024) { toast("That image is too large. Use one under 4 MB."); return; }
     const reader = new FileReader();
     reader.onload = () => setCropping({ storeId, src: reader.result });
     reader.readAsDataURL(file);
@@ -22420,7 +22429,7 @@ function LogoCropper({ src, onCancel, onSave }) {
     <div className="crop-overlay" onClick={onCancel}>
       <div className="card crop-card" onClick={(e) => e.stopPropagation()}>
         <h3>Crop Logo</h3>
-        <p className="hint">Drag to position, use the slider to zoom. The square is exactly what everyone will see.</p>
+        <p className="hint">Drag to position and use the slider to zoom. The square is exactly what everyone sees.</p>
         <div className="crop-stage">
           <canvas ref={canvasRef} width={SIZE} height={SIZE} className="crop-canvas"
             onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
@@ -22476,7 +22485,7 @@ const askConfirm = (text, opts = {}) => {
 };
 const askText = (title, body, opts = {}) => ask({ kind: "text", title, body, ...opts });
 const askStock = (name) => askText(`Assigning ${name}`,
-  "Stock number or lead name, so this opportunity can be looked up later. Leave it blank if there is none yet.",
+  "Stock number or lead name, so this opportunity can be looked up later. Leave it blank if there's none yet.",
   { placeholder: "Stock # or lead name", ok: "Assign", allowEmpty: true });
 const askCopy = (title, value) => ask({ kind: "copy", title, value });
 const toast = (text, opts = {}) => {
