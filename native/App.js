@@ -21,7 +21,7 @@
  *   - turns the page's "buzz" into a real haptic, which WebViews swallow;
  *   - opens outside links in the phone's browser rather than inside itself.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppState, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { StatusBar } from "expo-status-bar";
@@ -265,17 +265,19 @@ function Shell() {
      not possible do they hand the page one word to do it with its own session,
      which is what arrives here. A press before the page is up waits for it. */
   const pendingAct = useRef([]);
+  const readyRef = useRef(ready);
+  useLayoutEffect(() => { readyRef.current = ready; }, [ready]);
   const relayAct = useCallback((action) => {
     if (!action) return;
-    if (!ready || !web.current) { pendingAct.current.push(action); return; }
+    if (!readyRef.current || !web.current) { pendingAct.current.push(action); return; }
     web.current.injectJavaScript(`(function(){ try { window.dispatchEvent(new CustomEvent("lpc:action", { detail: { action: ${JSON.stringify(String(action))} } })); } catch (e) {} })(); true;`);
-  }, [ready]);
+  }, []);
   useEffect(() => {
     if (!SageLive.available) return;
     const sub = SageLive.addActionListener((e) => relayAct(e && e.action));
     SageLive.pendingAction().then((a) => { if (a) relayAct(a); });
     return () => sub.remove();
-  }, [relayAct]);
+  }, [ready, relayAct]);
   /* ---- the lot question, answered ----
      "Done for the day" leaves the floor through the API with the session in
      hand, and the page is told too so it agrees the moment it is next opened.
