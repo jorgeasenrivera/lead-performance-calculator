@@ -118,15 +118,38 @@ try{
    await page.evaluate(insetScript(insets));
    await page.evaluate(scale=>{document.documentElement.style.fontSize=`${16*scale}px`;document.querySelectorAll('.sect-chip').forEach(n=>{n.style.removeProperty('font-size');if(scale===2)n.style.fontSize=`${parseFloat(getComputedStyle(n).fontSize)*2}px`});scrollTo(0,0)},scale);
    expectedViewport={width,height,scale,insets};
-   const settled=await settleViewport(name,'initial');
+   let settled=await settleViewport(name,'initial');
+   // Desktop can present the existing Round-up during a responsive remount.
+   // Measure Pages only after the recognized modal's real dismiss action. An
+   // unknown obstruction must still fail the same hit-target assertions.
+   const recap=page.locator('.ru-sheet');
+   const recapDismissed=await recap.isVisible();
+   if(recapDismissed){
+    await page.screenshot({path:`${out}/${name}-round-up-before-dismissal.png`});
+    await recap.getByRole('button',{name:'Close the round-up',exact:true}).click();
+    await recap.waitFor({state:'hidden'});
+    settled=await settleViewport(name,'after-round-up');
+   }
    const g=await page.evaluate(()=>{
     const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
     return{width:innerWidth,scroll:document.documentElement.scrollWidth,header:rect(document.querySelector('.topbar')),controls:[...document.querySelectorAll('.topbar button,.topbar select,.sect-chip,.sage-pages-rail > button,.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(n=>({text:n.textContent,...rect(n)})),nav:[...document.querySelectorAll('.botnav>button')].filter(n=>n.getBoundingClientRect().width).map(rect)};
-   });results.push({name,insets,...g});await page.screenshot({path:`${out}/${name}.png`});
+   });results.push({name,insets,recapDismissed,...g});await page.screenshot({path:`${out}/${name}.png`});
    assert.deepEqual(await renderedState(),settled,`${name}: screenshot and measured layout agree`);
    assert.ok(g.scroll<=width+1,`${name}: page fits`);
    const pages=await pagesNav.geometry(page);
    assert.ok(pages.buttons.every(b=>b.box.x>=insets.left-1&&b.box.right<=width-insets.right+1),`${name}: Pages clears injected side insets`);
+   results.at(-1).pagesClosed=pages;
+   if(width>760){
+    // The intentionally open disclosure is measured as an overlay in its own
+    // right; never waive rail hit tests just because the disclosure can open.
+    await pagesNav.openPages(page);
+    const drawer=await pagesNav.geometry(page,{drawer:true});
+    assert.ok(drawer.outer.x>=insets.left-1&&drawer.outer.right<=width-insets.right+1,`${name}: Pages disclosure clears injected side insets`);
+    results.at(-1).pagesOpen=drawer;
+    await page.screenshot({path:`${out}/${name}-pages-open.png`});
+    await pagesNav.closePages(page);
+    results.at(-1).pagesAfterClose=await pagesNav.geometry(page);
+   }
    for(const c of g.controls){assert.ok(c.x>=insets.left-1&&c.right<=width-insets.right+1,`${name}: ${c.text} clear of side insets`);assert.ok(c.y>=insets.top-1,`${name}: ${c.text} clear of top inset`);}
    if(width<=760){assert.equal(g.nav.length,4);assert.ok(g.nav.every(n=>n.bottom<=height-insets.bottom+1),'navigation clear of bottom inset');
     const trigger=page.locator('.assoc-search-trigger'),field=page.getByPlaceholder('Search associates',{exact:true});await trigger.click();await field.pressSequentially('Alex');await page.getByRole('button',{name:'Clear search',exact:true}).click();assert.equal(await field.inputValue(),'');assert.ok(await field.evaluate(n=>n===document.activeElement));await field.pressSequentially('Sam');await page.setViewportSize({width,height:420});expectedViewport={width,height:420,scale,insets};
