@@ -5,6 +5,7 @@ import { patchManager, patchPhoneLayout } from "./build.mjs";
 import postcss from "postcss";
 import {historicalManagerFixture,CURRENT_MANAGER_SHA,HISTORICAL_MANAGER_SHA} from "./historical-manager-fixture.mjs";
 import {createHash} from "node:crypto";
+import { peoplePreviewInput } from "./people-preview-input.mjs";
 
 test("scheduler styles require a scheduler root or an explicit standalone/ghost marker", async () => {
  for (const name of ["planner.css", "calendar-tokens.css"]) {
@@ -22,7 +23,7 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   );
   // Historical approval is still tested against its exact bytes. The current
   // app is checked separately and remains refused by this transform.
-  const source = historicalManagerFixture(current);
+  const source = historicalManagerFixture(peoplePreviewInput(current));
   assert.throws(() => patchManager(current), /Re-review entry points/);
   assert.throws(() => patchManager(source + "\n"), /Re-review entry points/);
   const patched = patchManager(source);
@@ -54,10 +55,24 @@ test("preview input-aware layout transform refuses changed core source", async()
 test("historical Manager fixture preserves exact source approval and rejects drift",async()=>{
  const sha=value=>createHash("sha256").update(value).digest("hex");
  const current=await readFile(new URL("../../src/Manager.jsx",import.meta.url),"utf8");
- assert.equal(sha(current),CURRENT_MANAGER_SHA);
- assert.equal(sha(historicalManagerFixture(current)),HISTORICAL_MANAGER_SHA);
- assert.throws(()=>historicalManagerFixture(current+"\n"),/fixture input changed/);
- assert.throws(()=>historicalManagerFixture(current.replace('layout="panel"','layout="compact"')),/fixture input changed/);
+ const qualified = peoplePreviewInput(current);
+ assert.equal(sha(qualified),CURRENT_MANAGER_SHA);
+ assert.equal(sha(historicalManagerFixture(qualified)),HISTORICAL_MANAGER_SHA);
+ assert.throws(()=>historicalManagerFixture(qualified+"\n"),/fixture input changed/);
+ assert.throws(()=>historicalManagerFixture(qualified.replace('layout="panel"','layout="compact"')),/fixture input changed/);
  const builder=await readFile(new URL("build.mjs",import.meta.url),"utf8"),start=builder.indexOf("export function patchManager("),end=builder.indexOf("export async function buildPreview()",start);
  assert.equal(sha(builder.slice(start,end)),"29503dece524a14f6f1ebca2ecad0e9363dffc45a80279cc3d3e820572b6b654","historical transform and source guard remain byte-identical");
+});
+
+test("People preview qualification is exact and leaves the historical fixture gate unchanged", async () => {
+ const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
+ const approved = peoplePreviewInput(current);
+ assert.notEqual(current, approved, "exercise the separate People input");
+ assert.equal(peoplePreviewInput(approved), approved);
+ assert.throws(() => historicalManagerFixture(current), /fixture input changed/);
+ for (const drift of [current + "\n", current.replace("out[k] = deliveredUnits(st);", "out[k] = 0;")]) {
+  assert.notEqual(drift, current);
+  assert.equal(peoplePreviewInput(drift), drift);
+  assert.throws(() => historicalManagerFixture(peoplePreviewInput(drift)), /fixture input changed/);
+ }
 });

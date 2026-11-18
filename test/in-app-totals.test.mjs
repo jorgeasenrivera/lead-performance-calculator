@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { deliveredUnits, DELIVERED_UNIT_FIELDS } from "../api/_delivered-units.mjs";
+import { unclaimed, pendingList, priorFor, manglings, mergeManglings, claimPending, transferIn, packUp } from "../api/_people-status.mjs";
 import { BOARD_STAT_FIELDS } from "../api/_store-keys.mjs";
 
 /* Every store and person here is fictional. The TV board counts a delivery from
@@ -61,17 +62,65 @@ test("the manager screens count Service: hover card, board, store hero, coaching
   assert.equal(personUnits(M, "Nobody Example"), 0);
 });
 
-test("no screen adds the sources up by hand, apart from the two held for review", () => {
-  /* A hand-written sum is how Service went missing: each one listed four
-     sources and nobody had a reason to look at it when a fifth arrived. The two
-     left are the roster repair tool and the store's people panel, which belong
-     to the People work and wait on that review before they change. */
+test("the app and People summaries no longer hand-add delivery sources", () => {
   const sums = (file) => fs.readFileSync(new URL(file, import.meta.url), "utf8").split("\n")
     .map((line, i, all) => ({ line, before: all.slice(Math.max(0, i - 4), i + 1).join("\n") }))
     .filter(({ line }) => /internetUnits\s*(\?\?|\|\|)\s*0\)\s*\+/.test(line));
   assert.deepEqual(sums("../src/LeadPerformanceCalculator.jsx"), []);
-  const held = sums("../src/Manager.jsx");
-  assert.equal(held.length, 2);
-  assert.ok(held.some((s) => /const monthUnits = /.test(s.before)), "roster repair tool");
-  assert.ok(held.some((s) => /const monthUnitsFor = /.test(s.before)), "store people panel");
+  assert.deepEqual(sums("../src/Manager.jsx"), []);
+  assert.deepEqual(sums("../api/_people-status.mjs"), []);
+});
+
+test("the Manager roster repair and People panel count Service without inventing missing rows", () => {
+  const source = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
+  const repair = source.match(/^      const monthUnits = (\(\(\) => \{[\s\S]*?^      \}\)\(\));$/m);
+  const people = source.match(/^  const monthUnitsFor = (\(key\) => \{[\s\S]*?^  \});$/m);
+  assert.ok(repair && people, "the actual People and repair calculations are present");
+  const month = "2026-11";
+  const data = { months: { [month]: { stats: { alex: ALEX, legacy: { phoneUnits: 1.25 }, service: { serviceUnits: 0.5 } } } } };
+  const evaluate = (match, input) => new Function("data", "ym", "deliveredUnits", "return " + match[1])(input, () => month, deliveredUnits);
+  assert.deepEqual(evaluate(repair, data), { alex: 6, legacy: 1.25, service: 0.5 });
+  assert.deepEqual(evaluate(repair, {}), {});
+  const monthUnitsFor = evaluate(people, data);
+  assert.deepEqual(["alex", "legacy", "service", "absent"].map(monthUnitsFor), [6, 1.25, 0.5, 0]);
+  assert.equal(evaluate(people, {})("alex"), 0);
+});
+
+test("People previews count Service while claim, fold and transfer preserve the source credits", () => {
+  const month = "2026-11";
+  const legacy = { internetUnits: 0.75, showroomUnits: 0.5 };
+  const misspelled = "Alex Example Alex Example";
+  const foldKey = misspelled.toLowerCase();
+  const alexKey = "alex example";
+  const pendingKey = "casey example";
+  const data = {
+    roster: [{ id: "alex", name: "Alex Example", roleId: "sales" }],
+    months: { [month]: { stats: {
+      [foldKey]: { ...ALEX, displayName: misspelled },
+      [alexKey]: { serviceUnits: 0.25 }, "legacy example": legacy,
+    } } },
+    pendingPeople: {
+      [pendingKey]: { name: "Casey Example", months: { [month]: { serviceUnits: 0.5 } }, days: {} },
+      "no data": { name: "No Data" },
+    },
+    priorHistory: { [alexKey]: { previous: { storeName: "Fictional", months: { [month]: ALEX, "2026-10": legacy } } } },
+  };
+  const original = structuredClone(data);
+  assert.deepEqual(unclaimed(data).map(({ key, units }) => [key, units]), [[foldKey, 6], ["legacy example", 1.25]]);
+  assert.deepEqual(pendingList(data).map(({ key, units }) => [key, units]), [[pendingKey, 0.5], ["no data", 0]]);
+  assert.equal(priorFor(data, "Alex Example")[0].units, 7.25);
+  const repairs = manglings(data);
+  assert.deepEqual(repairs.map(({ from, to, units }) => [from, to, units]), [[misspelled, "Alex Example", 6]]);
+  assert.deepEqual(data, original, "previews never change figures");
+  const folded = mergeManglings(data, repairs);
+  assert.equal(folded.months[month].stats[foldKey], undefined);
+  assert.equal(folded.months[month].stats[alexKey].serviceUnits, 2.75);
+  assert.equal(deliveredUnits(folded.months[month].stats[alexKey]), 6.25);
+  const claimed = claimPending(data, "Casey Example", { newId: "casey" });
+  assert.deepEqual(claimed.months[month].stats[pendingKey], { serviceUnits: 0.5 });
+  assert.equal(claimed.pendingPeople[pendingKey], undefined);
+  const packed = packUp(claimed, "Casey Example", "old-store", "Fictional");
+  const destination = transferIn({ months: {} }, packed);
+  assert.deepEqual(destination.months, {}, "prior-store credits stay off the destination totals");
+  assert.equal(priorFor(destination, "Casey Example")[0].units, 0.5);
 });

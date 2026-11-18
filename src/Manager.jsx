@@ -1654,8 +1654,7 @@ function RepairPanel({ config }) {
         const M = data.months?.[ym()];
         const out = {};
         for (const [k, st] of Object.entries((M && M.stats) || {})) {
-          out[k] = (st?.internetUnits ?? 0) + (st?.phoneUnits ?? 0)
-                 + (st?.showroomUnits ?? 0) + (st?.campaignUnits ?? 0);
+          out[k] = deliveredUnits(st);
         }
         return out;
       })();
@@ -20865,7 +20864,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   const monthUnitsFor = (key) => {
     const st = data.months?.[ym()]?.stats?.[key];
     if (!st) return 0;
-    return (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+    return deliveredUnits(st);
   };
   const strangers = useMemo(() => unclaimed(data), [data]);
   const waiting = useMemo(() => pendingList(data), [data]);
