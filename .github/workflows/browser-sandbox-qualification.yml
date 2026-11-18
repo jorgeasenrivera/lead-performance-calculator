@@ -1,0 +1,41 @@
+name: Browser sandbox qualification
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/browser-sandbox-qualification.yml
+      - scripts/browser-sandbox-qualification.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    if: github.head_ref == 'codex/browser-sandbox-qualification-20261026'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Install pinned driver and its full Chromium through official routes
+        run: |
+          npm install --prefix "$RUNNER_TEMP/sandbox-driver" --ignore-scripts --no-audit --no-fund --package-lock=false playwright@1.63.0
+          "$RUNNER_TEMP/sandbox-driver/node_modules/.bin/playwright" install --no-shell chromium
+      - name: Require effective sandbox, then exercise synthetic content
+        env:
+          QUALIFICATION_DRIVER: ${{ runner.temp }}/sandbox-driver/node_modules/playwright
+          QUALIFICATION_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/browser-sandbox-qualification.mjs
+      - name: Keep bounded synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-sandbox-qualification
+          path: sandbox-qualification-evidence/
+          retention-days: 3
+          if-no-files-found: warn
