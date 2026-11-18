@@ -91,3 +91,24 @@ test("fractional store channel and vehicle figures remain unchanged", () => {
   assert.equal(got.stated.units.internet, 5.5);
   assert.equal(got.stated.vehicles.new, 7.5);
 });
+
+/* A user named exactly like the store, listed among the people with its block
+   split by a page break that reprints the header. Its Total row is that user's,
+   so the store's own total must still read. */
+test("a user named like the store, after other people, does not hide the store total", () => {
+  const zeros = (tag) => line(`${tag} 0 0 0 0 0 -`);
+  const lines = report([...channels, ...vehicles, total("12")]);
+  lines.push(header("Fictional Demo Motors"), zeros("New"), zeros("Used"),
+    header("Fictional Demo Motors"), zeros("Other"), zeros("Total"),
+    zeros("Showroom"), zeros("Phone"), zeros("Internet"), zeros("Campaign"));
+  const got = mapDeliverySummaryGrid(lines);
+  assert.equal(got.stated.total, 12);
+  assert.deepEqual(got.stated.vehicles, { new: 7, used: 5, other: 0 });
+  assert.ok(got.rows.slice(2).some((row) => row[0] === "Fictional Demo Motors"), "the user stays a person row");
+});
+
+test("a non-zero Total row on that same-named user is still not a store total", () => {
+  const lines = report([...channels, ...vehicles, total("12")]);
+  lines.push(header("Fictional Demo Motors"), line("Internet 3 0 0 0 1 33%"), line("Total 3 0 0 0 1 33%"));
+  assert.equal(mapDeliverySummaryGrid(lines).stated.total, 12);
+});
