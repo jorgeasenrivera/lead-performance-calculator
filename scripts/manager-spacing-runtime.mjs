@@ -90,11 +90,20 @@ export const STORE_HERO_LAYOUT_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual approved Calendar app, independently of the frozen historical run.
+export const MANAGER_PAGES_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:540,branch:'codex/manager-pages-pix-20261118',
+ base:{commit:'855d6d8f1c6c55fe71fa8329aad197b07cf4486d',tree:'c0fe6ddbc916856d44fb08dc9f4b1795a6b002eb'},
+ current:{commit:'9de0c76ead006e610eb906a438a7ce122cc0d832',tree:'a936079a392de3d85539a6574966b73fcb85ea74',parents:['a574e1a89cdaa8346cb0772e0e16685e63289df6','855d6d8f1c6c55fe71fa8329aad197b07cf4486d']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===MANAGER_PAGES_POLICY.pullRequest)return MANAGER_PAGES_POLICY;
  if(number===STORE_HERO_LAYOUT_POLICY.pullRequest)return STORE_HERO_LAYOUT_POLICY;
  if(number===PEOPLE_SCHEDULER_COPY_POLICY.pullRequest)return PEOPLE_SCHEDULER_COPY_POLICY;
  if(number===DUET_COPY_POLICY.pullRequest)return DUET_COPY_POLICY;
