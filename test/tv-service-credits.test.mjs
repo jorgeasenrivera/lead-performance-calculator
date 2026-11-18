@@ -49,7 +49,7 @@ test("a later printed day wins even when it is lower, as when a deal is unwound"
   assert.deepEqual(select(bucket(observation(60, 15, hashes[0]), observation(59, 16, hashes[1]))), provisional(59));
 });
 
-test("two reports printed for the same latest day that disagree still read as a conflict", () => {
+test("two reports for the same latest day processed at the same instant that disagree still read as a conflict", () => {
   const values = [observation(20, 3, hashes[0]), observation(60, 16, hashes[1]), observation(61, 16, hashes[2])];
   for (const order of permutations(values)) assert.deepEqual(select(bucket(...order)), { ...unknown(), status: "conflict" });
   assert.deepEqual(select(bucket(observation(60, 16, hashes[0]), observation(60, 16, hashes[1]))), provisional(60));
