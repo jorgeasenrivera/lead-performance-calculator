@@ -58,6 +58,44 @@ export function openRoom(config, storeId, remembered) {
   return list.includes(remembered) ? remembered : list[0];
 }
 
+/* ---- who can see a room at all ----
+   Jorge, 18 November: one switch per room, and off takes the room away from
+   the store's managers as well as its salespeople. The two switches above used
+   to reach only a salesperson's phone, so a manager at a store that runs no
+   phone line still had a Phone Line to wander into, and Online, which has no
+   room behind it yet, had no switch at all.
+
+   Online is the managers' alone: a salesperson's phone has no Online room, so
+   it stays out of ROOMS and out of everything that opens one. It is off until
+   a store turns it on, the same way round as the line: the store that has the
+   feature is the store that asks for it.
+
+   An admin sees every room whatever the switches say. They are the person who
+   turns a room back on, and a switch that hid itself from them could not be. */
+export const VIEW_ROOMS = ["floor", "line", "online"];
+
+/** The three switches for a store, as booleans. */
+export function viewSwitchesOf(config, storeId) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  return { ...roomsOf(config, storeId), online: !!(st && st.rooms && st.rooms.online === true) };
+}
+
+/** The rooms this store's managers see, in the order they are shown. */
+export const viewRoomsOf = (config, storeId) => {
+  const r = viewSwitchesOf(config, storeId);
+  return VIEW_ROOMS.filter((k) => r[k]);
+};
+
+/** Every room on at any of these stores: the overseer's combined view. */
+export const viewRoomsFor = (config, storeIds) => {
+  const on = new Set((storeIds || []).flatMap((id) => viewRoomsOf(config, id)));
+  return VIEW_ROOMS.filter((k) => on.has(k));
+};
+
+/** A store's rooms setting with one switch moved and the other two kept as
+    they read, so turning one on never quietly writes over another. */
+export const withRoom = (config, storeId, k, on) => ({ ...viewSwitchesOf(config, storeId), [k]: !!on });
+
 /* ---- when a room opens on its own ----
    A day's row is what makes a room "open": the desk used to create it, at the
    wall, whenever a manager got to it, and a floor whose manager was late was a

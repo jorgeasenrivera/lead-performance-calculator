@@ -88,7 +88,7 @@ export function sharedManager(source){
  source=once(source,'aria-pressed={value === id} className={"tool-btn "','disabled={id!=="perf"} aria-pressed={value === id} className={"tool-btn "');
  source=once(source,'type="button" aria-pressed={value === id}','type="button" disabled aria-pressed={value === id}');
  source=once(source,'{BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => <button type="button" key={id}','{BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => <button type="button" disabled={id!=="perf"} key={id}');
- source=once(source,'{QUEUE_TOOLS.map(q => <button type="button" key={q.id}','{QUEUE_TOOLS.map(q => <button type="button" disabled key={q.id}');
+ source=once(source,'{shownRooms.map(q => <button type="button" key={q.id}','{shownRooms.map(q => <button type="button" disabled key={q.id}');
  source=once(source,'<button key={id} className={"drawer-item " + (appModule','<button disabled key={id} className={"drawer-item " + (appModule');
  source=once(source,'<button className="bm-item" onClick={() => { setOpen(false); setAcct(true); }}>','<button disabled className="bm-item" onClick={() => { setOpen(false); setAcct(true); }}>');
  source=once(source,'<button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>','<button disabled className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>');
