@@ -26803,6 +26803,15 @@ html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big small{ font-size:13px; pad
 /* With the "of target" line gone the video label sat on the ring; this gives
    it the breath the line used to. */
 html.manager-signal .s2-hero .s2-mark > svg + .s2-mklbl{ margin-top:8px; }
+/* The paper cards on the coaching view, made to stand off the page on 18
+   November at Jorge's word. The page behind them runs from near white on the
+   left to teal on the right, so a cream card with a pale hairline vanished
+   into it on the left side however solid the card itself was. A firmer edge
+   and a soft lift hold the card's shape against both ends of the page. */
+html.manager-signal .board .s2-rolecard,
+html.manager-signal .s2-podium.s2-podium,
+html.manager-signal .s2-focusgrid .s2-spot{ border-color:#aebba6;
+  box-shadow:0 1px 2px #1631211a, 0 10px 24px -16px #16312152; }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
