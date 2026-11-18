@@ -54,16 +54,30 @@ export function selectReportedTotal(observations, storeId, month) {
      stretch of the month: only those ending on the latest printed day count. An
      older report that could not be read is superseded, not a blocker. */
   const latest = valid.reduce((day, observation) => observation.printedRange.endDay > day ? observation.printedRange.endDay : day, "");
-  const counts = new Set();
-  for (const observation of valid) {
-    if (observation.printedRange.endDay !== latest) continue;
-    if (observation.count === null) return result;
-    counts.add(observation.count === 0 ? 0 : observation.count);
-  }
+  const sameDay = valid.filter((observation) => observation.printedRange.endDay === latest);
 
-  // Distinct sources ending on the same day have no established ordering. Even a
-  // downward correction stays unresolved; processing/arrival/header times cannot
-  // pick the winner.
-  if (counts.size > 1) return { ...result, status: "conflict" };
-  return { ...result, count: counts.values().next().value, status: "provisional" };
+  /* DriveCentric can send the same day's report more than once, and the counts
+     move between sends: a deal delivered or unwound that afternoon. The report
+     prints its dates but no time, so its own content cannot say which send came
+     second. Jorge chose the newest arrival: the report Sage processed last for
+     that day sets the total, corrections down included. processingAt is Sage's
+     own clock at intake, not a header the sender wrote, and the same bytes sent
+     again keep the instant they first arrived, so a duplicate cannot reorder. */
+  const newest = sameDay.reduce((a, b) => b.processingAt > a.processingAt ? b : a);
+  if (newest.count === null) return result;
+
+  /* Two sends that arrived at the same instant, or came in the same email, have
+     no order between them. If they differ, the board still says so rather than
+     pick one. */
+  const messageIds = (observation) => new Set(observation.sourceAssertions.flatMap((assertion) => assertion.messageId));
+  const newestIds = messageIds(newest);
+  for (const observation of sameDay) {
+    if (observation === newest) continue;
+    const unordered = observation.processingAt === newest.processingAt
+      || [...messageIds(observation)].some((id) => newestIds.has(id));
+    if (!unordered) continue;
+    if (observation.count === null) return result;
+    if (observation.count !== newest.count) return { ...result, status: "conflict" };
+  }
+  return { ...result, count: newest.count, status: "provisional" };
 }
