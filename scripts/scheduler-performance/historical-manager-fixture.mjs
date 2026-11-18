@@ -1,8 +1,8 @@
 // Undo the exact reviewed rail placement before the historical three-hunk inverse.
 import {createHash} from 'node:crypto';
-export const CURRENT_MANAGER_SHA='acdf1359579becb7634dbe89939862e0e04169fde3dfe5841f2a174d7241c010';
-const PRE_RAIL_MANAGER_SHA='87951ff6562bd4c22bf4d5deef368eab368bc98b25a27a99e3d10a312a205749';
-export const HISTORICAL_MANAGER_SHA='5e81fd44a0359876f0ef992ab04b00043d0e5d15aba670efedf19d40277a35f4';
+export const CURRENT_MANAGER_SHA='3f411992b93290b935230f9db21e1c499c6d55100f56819e08e4b4372afc8e30';
+const PRE_RAIL_MANAGER_SHA='a2209a4723257e106b1d7a2e1179f5b620889b172efff97f48618778863b9f69';
+export const HISTORICAL_MANAGER_SHA='0df8c8248e0efa96cfab231585e787ef2de274c01592c25c616bc522fd850488';
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const railInverse=[
   [
