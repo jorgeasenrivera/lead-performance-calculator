@@ -56,12 +56,22 @@ export const DUET_STORE_CARD_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual approved Rooms copy app, independently of the frozen historical run.
+export const ROOMS_HINT_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:533,branch:'codex/rooms-live-floor-hint',
+ base:{commit:'2b2fda912107e2071cc0a2e281bfe3cd2cfb61d1',tree:'6202d0a287825ccb761689ba576ba6510acc5952'},
+ current:{commit:'b75e10f7b50674554d65f78f8ef647192e3b0b63',tree:'9f8203c52df7eb1a95d2cf038372961d8938f2da',parents:['c60cfe15f9971c16cdc4d54e0b4d97b8e2a91438','2b2fda912107e2071cc0a2e281bfe3cd2cfb61d1'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
  if(number===DUET_STORE_CARD_POLICY.pullRequest)return DUET_STORE_CARD_POLICY;
+ if(number===ROOMS_HINT_POLICY.pullRequest)return ROOMS_HINT_POLICY;
  throw new Error('unqualified pull request');
 }
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);

@@ -6798,7 +6798,7 @@ function PhoneRoomCard({ config, storeId, onChange }) {
                 </label>
               ))}
             </div>
-            <p className="hint">Blank means the desk opens it, as before. Store time.</p>
+            <p className="hint">{k === "floor" ? "Leave blank to open Live Floor 1 hour before the store opens, or at 8:00 AM if store hours aren’t set. A time you set for a weekday takes priority. Store time." : "Blank means the desk opens it, as before. Store time."}</p>
           </div>
         ))}
       </div>
