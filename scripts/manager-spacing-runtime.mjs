@@ -59,8 +59,9 @@ export const DUET_STORE_CARD_POLICY=Object.freeze({
 // Verify the actual approved Rooms copy app, independently of the frozen historical run.
 export const ROOMS_HINT_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:533,branch:'codex/rooms-live-floor-hint',
- base:{commit:'636521e003481b823ae4d73543868c52cb69977b',tree:'b5bc508dc7d0b76e25fb23c0a9619510894c9fdb'},
- current:{commit:'6bc683ed95dab188abc6594897bb56522fe063b9',tree:'38adf11a1b6ebc4b25cb98ecd872610226ac0308',parents:['636521e003481b823ae4d73543868c52cb69977b']},
+ base:{commit:'2b2fda912107e2071cc0a2e281bfe3cd2cfb61d1',tree:'6202d0a287825ccb761689ba576ba6510acc5952'},
+ current:{commit:'b75e10f7b50674554d65f78f8ef647192e3b0b63',tree:'9f8203c52df7eb1a95d2cf038372961d8938f2da',parents:['c60cfe15f9971c16cdc4d54e0b4d97b8e2a91438','2b2fda912107e2071cc0a2e281bfe3cd2cfb61d1'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
