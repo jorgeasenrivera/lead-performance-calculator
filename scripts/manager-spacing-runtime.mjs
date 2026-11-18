@@ -48,11 +48,20 @@ export const PEOPLE_SERVICE_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual Duet #531 app composed on the pinned main, independently of the frozen historical run.
+export const DUET_STORE_CARD_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:531,branch:'claude/project-thread-i2fcpc',
+ base:{commit:'636521e003481b823ae4d73543868c52cb69977b',tree:'b5bc508dc7d0b76e25fb23c0a9619510894c9fdb'},
+ current:{commit:'a54a60e05806d43d1d5cd18c46152eed7b6678c5',tree:'33f6afd1be2257734434e8050973a64d8f792360',parents:['c66d16532145c736b85d1cbee6b391f84587e75e','636521e003481b823ae4d73543868c52cb69977b']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===DUET_STORE_CARD_POLICY.pullRequest)return DUET_STORE_CARD_POLICY;
  throw new Error('unqualified pull request');
 }
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
