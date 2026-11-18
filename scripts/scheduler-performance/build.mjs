@@ -12,7 +12,7 @@ import {historicalManagerFixture} from "./historical-manager-fixture.mjs";
 import { peoplePreviewInput } from "./people-preview-input.mjs";
 import { roomHintPreviewInput } from "./room-hint-preview-input.mjs";
 export const MANAGER_SHA =
-  "1d8adb9c7d7f24d73fb518853efa13b4def7d6ba4f2614ede34963341c72af09";
+  "0de4c70459a533e399044b2598d5b0fa666fb9c3eeec771cc6f90219732e8b1a";
 export function patchPhoneLayout(source) {
   if (createHash("sha256").update(source).digest("hex") !== "401f0fb6fbabe165cf7c480f2ed659023e73d69e8862c218a953b92e4a06fa9b") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';

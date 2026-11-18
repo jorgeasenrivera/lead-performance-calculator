@@ -481,6 +481,20 @@ const personUnits = (M, name) => {
   return deliveredUnits(st);
 };
 
+/* A store's units for the month, the one number every screen that shows the
+   store's month has to agree on. DriveCentric's own count when one is filed;
+   otherwise the people the board shows (Sales roles, plus anyone who left this
+   month with credits), which is how the store's own home screen counts it. The
+   group page summed every person on the roster instead, BDC and managers
+   included, so shared credit put its card a few cars above the store's home. */
+function storeMonthUnits(data, M, roles) {
+  const stated = statedOf(M);
+  if (stated) return stated.deliveries;
+  const onBoard = new Set((roles || []).filter((r) => r.onBoard !== false).map((r) => r.id));
+  const board = ((data && data.roster) || []).filter((a) => a.roleId && onBoard.has(a.roleId));
+  return monthRoster(data, M, board).reduce((n, a) => n + personUnits(M, a.name), 0);
+}
+
 /* ---- Why the total ends in a half ----
    A half is never a rounding error: it is one side of a split deal. Two partners
    carry .5 each, so a store's own halves always pair up to whole cars — unless a
@@ -11549,14 +11563,8 @@ function RoundUp({ config, store, data, M }) {
     const cumOf = (row) => row.u != null ? row.u
       : Object.values(row.ch || {}).reduce((n, c) => n + (c.u || 0), 0);
     const pacePts = days.map(([day, row]) => ({ day: +day.slice(8, 10), v: cumOf(row) }));
-    const sold = (() => {   // month to date, live, exact
-      // DriveCentric's own count when it is on file; the roster sum runs high.
-      const st = statedOf(M);
-      if (st) return st.deliveries;
-      let n = 0;
-      for (const a of data.roster || []) n += unitsOf(M?.stats?.[norm(a.name)]);
-      return Math.round(n * 10) / 10;
-    })();
+    // Month to date, live: the same figure the store's home and the group card show.
+    const sold = Math.round(storeMonthUnits(data, M, config.roles) * 10) / 10;
     const goal = storeGoalFor(store, mk)?.units ?? 0;
     const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
     const elapsed = Math.max(1, dayOfMonth() - 1);   // through yesterday
@@ -11596,7 +11604,7 @@ function RoundUp({ config, store, data, M }) {
     for (const t of trends) { if (t.pct != null) { if (t.pct > 0) up++; else if (t.pct < 0) down++; } }
     for (const c of close) { if (c.delta != null) { if (c.delta > 0) up++; else if (c.delta < 0) down++; } }
     return { pacePts, sold, goal, onPaceFor, paceDelta, dim, soldY, close, trends, up, down };
-  }, [digests, data, M, store.goal]); // eslint-disable-line
+  }, [digests, data, M, store.goal, config.roles]); // eslint-disable-line
 
   if (!ru.any) return null;
 
@@ -11784,12 +11792,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
     const t = M?.imports?.[today()] || {};
     const done = ["appointment", "video"].filter((k) => t[k]).length;
     const roster = d.roster || [];
-    let units = 0;
-    for (const a of roster) {
-      const st = M?.stats?.[norm(a.name)];
-      if (!st) continue;
-      units += deliveredUnits(st);
-    }
+    const units = storeMonthUnits(d, M, config.roles);
     const goal = storeGoalFor(s, mk)?.units ?? 0;
     const chan = channelRates(M, roster);
     const five = FIVE.map((f) => {
