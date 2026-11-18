@@ -433,6 +433,12 @@ function mapDeliverySummaryGrid(lines) {
   const printedStoreTotals = [];
   const totalHeaderTokens = new Set([...DS_VOCAB].map(squashT).filter(Boolean));
   let curName = null;
+  /* Somebody other than the store has had a block. DriveCentric can list a user
+     named exactly like the store (a house account), and that user's block comes
+     after other people's. Its Total row is that user's, not a second store total,
+     and treating it as one made the store's own total unreadable. Before anybody
+     else has had a block, a repeat of the store's name is still ambiguous. */
+  let seenPerson = false;
   let pendingFrags = [];
   const people = {};       // norm(name) -> { displayName, sources }
   const order = [];
@@ -446,6 +452,7 @@ function mapDeliverySummaryGrid(lines) {
     if (!storeName) { storeName = nm; curName = null; return; }
     curName = nm;
     const k = norm(nm);
+    if (k !== norm(storeName)) seenPerson = true;
     if (!people[k]) { people[k] = { displayName: nm, sources: {}, vehicles: {} }; order.push(k); }
   };
 
@@ -459,7 +466,7 @@ function mapDeliverySummaryGrid(lines) {
     // A data row ends the header block, so commit whatever name accumulated.
     if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
       commitName();
-      if (rowTag === "Total" && storeName && (!curName || norm(curName) === norm(storeName))) {
+      if (rowTag === "Total" && storeName && (!curName || (!seenPerson && norm(curName) === norm(storeName)))) {
         // Validate before filtering tokens, which could shift a malformed cell
         // into the Delivered column. Repeated store totals are ambiguous.
         const cells = texts.slice(1);
