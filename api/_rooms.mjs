@@ -66,19 +66,27 @@ export function openRoom(config, storeId, remembered) {
    times on different days.
 
    The times live on the store: hours: { floor: { mon: "09:00", ... }, line:
-   { ... } }, a time per weekday, blank for "the desk opens it", which is what
-   every store has until somebody sets one. Store time, which is Eastern
+   { ... } }, a time per weekday. Blank is the room's default, which is
+   what every store has until somebody sets one: the desk for Phone Line, an
+   hour before the store for Live Floor (below). Store time, which is Eastern
    everywhere this runs, and the reader says so. */
 export const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 export const DAY_SHORT = { sun: "Sun", mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat" };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** The store's opening times, as { floor: {mon..sun}, line: {mon..sun} }, blanks as null. */
+/** The store's opening times, as { floor: {mon..sun}, line: {mon..sun} }, blanks as null.
+
+    The store's own open and close ride along untouched when they are there.
+    They share the `hours` key, and the rooms setup saves a room time by
+    spreading this object back onto the store: built from the room times alone,
+    that save erased the store's hours and put every hourly view back on its
+    9 to 11:30 default. Carrying them here fixes the save without touching it. */
 export function hoursOf(config, storeId) {
   const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
   const set = (st && st.hours) || {};
   const out = {};
+  for (const k of ["open", "close"]) if (typeof set[k] === "string") out[k] = set[k];
   for (const room of ROOMS) {
     out[room] = {};
     for (const d of DAY_KEYS) {
@@ -89,6 +97,45 @@ export function hoursOf(config, storeId) {
   return out;
 }
 
+/* ---- Live Floor's own rule ----
+   Jorge, 17 October (D5): Live Floor opens an hour before the store does.
+   Jorge, 18 November (Q3): a store with no hours set is taken as a 9 AM store,
+   so its floor opens at 8 until somebody sets its real hours. A time set for
+   the weekday in the rooms setup still wins, which is how a store with a late
+   Sunday says so.
+
+   Floor only. Phone Line keeps its own times and the desk otherwise: the
+   contract is explicit that the early hour is not to spread to it.
+
+   The store's hours are the { open, close } pair on the store, set in the
+   store's setup. They share the `hours` key with the per-room times above,
+   which is why hoursOf reads only `floor` and `line` from it and this reads
+   only `open`.
+
+   Daylight saving asks nothing of this: every time here is a wall-clock
+   "HH:MM" in Eastern, compared against the Eastern clock (localClock), so 8 AM
+   is 8 AM in July and in December. */
+export const ASSUMED_OPEN = "09:00";
+export const FLOOR_LEAD_MIN = 60;
+
+/** The store's own opening time, "HH:MM", or the 9 AM it is taken to be. */
+export function storeOpenOf(config, storeId) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  const v = st && st.hours && st.hours.open;
+  return typeof v === "string" && HHMM.test(v) ? v : ASSUMED_OPEN;
+}
+
+/** "HH:MM" this many minutes earlier, held at midnight rather than wrapping
+    into the day before. */
+export function minutesBefore(hhmm, min) {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  const t = Math.max(0, h * 60 + m - min);
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
+/** When Live Floor opens on its own if no weekday time is set: an hour before the store. */
+export const floorDefaultOf = (config, storeId) => minutesBefore(storeOpenOf(config, storeId), FLOOR_LEAD_MIN);
+
 /** "HH:MM" the room opens on the given day (YYYY-MM-DD), or null when the desk opens it. */
 export function openAtFor(config, storeId, room, day) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
@@ -96,7 +143,9 @@ export function openAtFor(config, storeId, room, day) {
   /* The weekday of a calendar day is the same in every zone, so UTC noon is
      safe to ask. */
   const dow = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12)).getUTCDay();
-  return hoursOf(config, storeId)[room][DAY_KEYS[dow]];
+  const set = hoursOf(config, storeId)[room][DAY_KEYS[dow]];
+  if (set) return set;
+  return room === "floor" ? floorDefaultOf(config, storeId) : null;
 }
 
 /** The clock in a zone: { day: "YYYY-MM-DD", hm: "HH:MM" }. */

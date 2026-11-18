@@ -3,23 +3,69 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hoursOf, openAtFor, localClock, openedBy, clockLabel, DAY_KEYS } from "../api/_rooms.mjs";
+import { hoursOf, openAtFor, localClock, openedBy, clockLabel, DAY_KEYS, storeOpenOf, minutesBefore } from "../api/_rooms.mjs";
 import { rosterSnapshot, dayRowFor } from "../api/open-room.mjs";
 
 const cfg = { roles: [{ id: "sales", name: "Sales Associate" }, { id: "bdc", name: "BDC", coaching: false }, { id: "mgr", name: "Manager", tracked: false }],
   stores: [{ id: "s1", name: "One", hours: { floor: { mon: "09:00", sat: "10:00", sun: "" , fri: "9:00" }, line: { tue: "08:30" } } }, { id: "s2", name: "Two" }] };
 
-test("a store with no times set has the desk open every room, as today", () => {
+test("a store with no times set: the desk opens Phone Line, Live Floor opens an hour before the store", () => {
   const h = hoursOf(cfg, "s2");
   for (const d of DAY_KEYS) { assert.equal(h.floor[d], null); assert.equal(h.line[d], null); }
-  assert.equal(openAtFor(cfg, "s2", "floor", "2026-09-21"), null);
+  /* s2 has no store hours either, so it is taken as a 9 AM store (Q3). */
+  assert.equal(openAtFor(cfg, "s2", "floor", "2026-09-21"), "08:00");
+  assert.equal(openAtFor(cfg, "s2", "line", "2026-09-21"), null);
+});
+
+test("Live Floor follows the store's own opening time, and a weekday time still wins", () => {
+  const c = { stores: [
+    { id: "late", hours: { open: "10:30", close: "19:00" } },
+    { id: "mixed", hours: { open: "09:00", close: "20:00", floor: { sun: "11:00" }, line: { mon: "09:00" } } },
+    { id: "junk", hours: { open: "9am" } },
+    { id: "dawn", hours: { open: "00:30" } },
+  ] };
+  assert.equal(storeOpenOf(c, "late"), "10:30");
+  assert.equal(openAtFor(c, "late", "floor", "2026-11-18"), "09:30");
+  assert.equal(openAtFor(c, "mixed", "floor", "2026-11-22"), "11:00");   // a Sunday, set by hand
+  assert.equal(openAtFor(c, "mixed", "floor", "2026-11-23"), "08:00");   // a Monday, the default
+  assert.equal(openAtFor(c, "mixed", "line", "2026-11-23"), "09:00");    // the line's own time
+  assert.equal(openAtFor(c, "mixed", "line", "2026-11-24"), null);       // and never the floor's early hour
+  assert.equal(storeOpenOf(c, "junk"), "09:00");                         // not a time: taken as 9
+  assert.equal(openAtFor(c, "junk", "floor", "2026-11-18"), "08:00");
+  assert.equal(openAtFor(c, "nobody", "floor", "2026-11-18"), "08:00");  // unknown store, same
+  assert.equal(minutesBefore("00:30", 60), "00:00");                    // held at midnight, not yesterday
+  assert.equal(openAtFor(c, "dawn", "floor", "2026-11-18"), "00:00");
+});
+
+test("saving a room time keeps the store's own hours", () => {
+  const c = { stores: [{ id: "h", hours: { open: "09:00", close: "20:00" } }] };
+  /* What the rooms setup does with a new Live Floor time for Monday. */
+  const cur = hoursOf(c, "h");
+  const saved = { ...cur, floor: { ...cur.floor, mon: "07:45" } };
+  assert.equal(saved.open, "09:00");
+  assert.equal(saved.close, "20:00");
+  c.stores[0].hours = saved;
+  assert.equal(storeOpenOf(c, "h"), "09:00");
+  assert.equal(openAtFor(c, "h", "floor", "2026-11-23"), "07:45");      // the Monday just set
+  assert.equal(openAtFor(c, "h", "floor", "2026-11-24"), "08:00");      // the rest still an hour early
+  assert.equal("open" in hoursOf({ stores: [{ id: "n" }] }, "n"), false);
+});
+
+test("daylight saving: 8 AM is 8 AM on the Eastern clock either side of the change", () => {
+  const at = openAtFor({ stores: [] }, "x", "floor", "2026-11-01");
+  /* 2026-11-01 is the fall-back Sunday. 12:00 UTC is 7 AM EST, 13:00 UTC is 8. */
+  assert.equal(openedBy(at, localClock(new Date("2026-11-01T12:59:00Z")).hm), false);
+  assert.equal(openedBy(at, localClock(new Date("2026-11-01T13:00:00Z")).hm), true);
+  /* 2027-03-14 springs forward: 8 AM EDT is 12:00 UTC. */
+  assert.equal(openedBy(at, localClock(new Date("2027-03-14T11:59:00Z")).hm), false);
+  assert.equal(openedBy(at, localClock(new Date("2027-03-14T12:00:00Z")).hm), true);
 });
 
 test("a time per weekday, read by the calendar day, and only a real HH:MM counts", () => {
   assert.equal(openAtFor(cfg, "s1", "floor", "2026-09-21"), "09:00");   // a Monday
   assert.equal(openAtFor(cfg, "s1", "floor", "2026-09-19"), "10:00");   // a Saturday
-  assert.equal(openAtFor(cfg, "s1", "floor", "2026-09-20"), null);      // Sunday, blank
-  assert.equal(openAtFor(cfg, "s1", "floor", "2026-09-18"), null);      // Friday, "9:00" is not a time
+  assert.equal(openAtFor(cfg, "s1", "floor", "2026-09-20"), "08:00");   // Sunday, blank: the floor's default
+  assert.equal(openAtFor(cfg, "s1", "floor", "2026-09-18"), "08:00");   // Friday, "9:00" is not a time, so the same
   assert.equal(openAtFor(cfg, "s1", "line", "2026-09-22"), "08:30");    // a Tuesday
   assert.equal(openAtFor(cfg, "s1", "line", "2026-09-21"), null);
   assert.equal(openAtFor(cfg, "s1", "online", "2026-09-21"), null);
