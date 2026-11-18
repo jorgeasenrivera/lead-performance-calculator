@@ -18248,7 +18248,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
           <div className={"s2-ansq an-" + (weakest.mean >= 1 ? 5 : weakest.mean >= 0.9 ? 4 : weakest.mean >= 0.75 ? 3 : weakest.mean >= 0.5 ? 2 : 1)}>
             <div className="s2-an-cap"><Verdict ratio={weakest.mean} size={13} className="on-dark" /> {weakest.below === 0 ? "Standards" : "Weakest standard"}</div>
             <div className="s2-an-name">{weakest.below === 0 ? "Everyone is on target" : METRICS[weakest.metric].label}</div>
-            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={10} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
+            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={8} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
             {/* The "2 of 3 below" line, the play under a rule and the hover card
                 that repeated it came off on 18 November, on Jorge's word: the
                 card says which standard and how far, and stops there. */}
@@ -26794,8 +26794,10 @@ html.manager-signal .s2-hero .s2-pacewrap{ margin-top:22px; }
 html.manager-signal .s2-hero .s2-splitwrap{ margin-top:18px; }
 /* The weakest standard card, grown into its space on 18 November at Jorge's
    word, the percentage most of all: with the count and the play gone, the
-   figure is what the card is for. Ten-pixel dots put "100%" at about 245px,
-   which still fits the card at phone width. */
+   figure is what the card is for. Eight-pixel dots, taken down from ten at
+   his word the same evening so the figure reads under the hero's sold count
+   rather than level with it. "100%" is then about 195px, which fits the card
+   at phone width. */
 html.manager-signal .s2-focusgrid .s2-ansq .s2-an-cap{ font-size:13px; }
 html.manager-signal .s2-focusgrid .s2-ansq .s2-an-name{ font-size:24px; margin-top:4px; max-width:none; }
 html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big{ flex-wrap:wrap; align-items:flex-end; gap:6px 14px; margin-top:18px; }
@@ -26803,6 +26805,11 @@ html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big small{ font-size:13px; pad
 /* With the "of target" line gone the video label sat on the ring; this gives
    it the breath the line used to. */
 html.manager-signal .s2-hero .s2-mark > svg + .s2-mklbl{ margin-top:8px; }
+/* The channel bars, as tall as the video rings under them (84px), at Jorge's
+   word on 18 November: the two rows read as one set of instruments. The 98px
+   the bars had held the figure and the label too, so the column itself was
+   about 50px; 132px gives the column the ring's height. */
+html.manager-signal .s2-hero .s2-hbars{ height:132px; }
 /* The paper cards on the coaching view, made to stand off the page on 18
    November at Jorge's word. The page behind them runs from near white on the
    left to teal on the right, so a cream card with a pale hairline vanished

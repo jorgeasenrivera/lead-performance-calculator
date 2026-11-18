@@ -84,8 +84,8 @@ test("the frozen preview restores only the exact Rooms copy change", async () =>
  const prior = roomHintPreviewInput(current);
  assert.notEqual(current, prior);
  const sha = (source) => createHash("sha256").update(source).digest("hex");
- assert.equal(sha(current),"a1158563cb3b8901012a61e39ce44ab49a006a44c15b19f04b27028fda73c1d8");
- assert.equal(sha(prior),"1c39e25917dc225649429f206ae8a7bc9a78d92eb739e09eac8e03e8922d4250");
+ assert.equal(sha(current),"4856759537c2d4091f060c853ecfebe9b9a596b3c2b9d31098bab6c724346d8d");
+ assert.equal(sha(prior),"9f468e577bc8e123b4e0589fcf30d7b9d92a4e208ba8b75c0a4b019b9b95d580");
  assert.match(current, /k === "floor" \? "Leave blank to open Live Floor 1 hour before the store opens, or at 8:00 AM if store hours aren’t set\. A time you set for a weekday takes priority\. Store time\." : "Blank means the desk opens it, as before\. Store time\."/);
  const altered = current + "\n";
  assert.equal(roomHintPreviewInput(altered), altered);
