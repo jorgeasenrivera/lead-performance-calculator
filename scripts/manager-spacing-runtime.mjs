@@ -85,7 +85,7 @@ export const PEOPLE_SCHEDULER_COPY_POLICY=Object.freeze({
 export const STORE_HERO_LAYOUT_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:538,branch:'claude/project-thread-khhfx0',
  base:{commit:'58360cf8721f9a7ed0bbad30233e38cec29f561a',tree:'cc833f3c029b55f92244c9ca3f8044eb8d9dd703'},
- current:{commit:'15b6e3a22755bb84c6b671589e53937cbfcfb1bd',tree:'426c974e054a25068ebf622fd1f2342807024274',parents:['7de1f72e741d6ad4778a0417332f884767f7f86f'],
+ current:{commit:'0a017c582e0136c3252edf7ae189f66f11b389c7',tree:'263c8a4e4d1925d4d65717b45dafc90a1f857031',parents:['480b3b27a08f430fc785a180708be314e8993966'],
   definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
