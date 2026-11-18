@@ -275,7 +275,8 @@ test('the People Service route pins its own source and shares only the immutable
   assert.notEqual(runtimeFor('current',policy).commit,old.current.commit);
   assert.equal(runtimeFor('historical',policy),old.historical);
  }
- assert.deepEqual(policy.current.parents,[policy.base.commit]);
+ assert.deepEqual(policy.current.parents,['5e013fc694b31f21b4d7c68ef834b18dd61cb28d',policy.base.commit]);
+ assert.deepEqual(policy.current.definitionChanges,['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']);
  assert.ok(caller.includes("number == "+number+" && github.head_ref == '"+policy.branch+"' && github.base_ref == 'main'"));
  assert.ok(runner.includes("number == "+number+" && '"+policy.current.commit+"'"));
  const f=fixture();try{

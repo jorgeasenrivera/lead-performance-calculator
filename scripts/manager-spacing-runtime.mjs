@@ -38,12 +38,13 @@ export const SERVICE_TOTALS_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
-// Qualify the actual reviewed People application tree with no source substitution.
+// Qualify the actual reviewed People application tree composed on live main with no source substitution.
 export const PEOPLE_SERVICE_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:529,branch:'codex/people-service-credits',
- base:{commit:'c828b34320b5c93e412e6aa475a0ef089b9daaa5',tree:'0d3e6fa77cf01778d347519160686f8a887024e0'},
- current:{commit:'661bc17d58a1a68fe52d1f3a3a4c9b4fec7ea8cf',tree:'c57356127612ea1cf797d5645dff5712f1901117',
-  parents:['c828b34320b5c93e412e6aa475a0ef089b9daaa5']},
+ base:{commit:'f4b8f22453d10c5d342b2947a10d8fa94ba7f70e',tree:'8e1bc7ba7f0132280733340fff13f0ce46a46d95'},
+ current:{commit:'de5d6fb07fdc54d1f7cc7a8bdaa1523d5cf1e002',tree:'5a1a5b35f06ae52e0c75f750fcedbb30c781ff56',
+  parents:['5e013fc694b31f21b4d7c68ef834b18dd61cb28d','f4b8f22453d10c5d342b2947a10d8fa94ba7f70e'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
