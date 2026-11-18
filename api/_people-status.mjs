@@ -33,6 +33,7 @@
  */
 
 import { dedupeName, DA_VOCAB, squashT } from "./_report-parsers.mjs";
+import { deliveredUnits } from "./_delivered-units.mjs";
 
 export const STATUSES = ["active", "departed", "ignored"];
 
@@ -222,7 +223,7 @@ export function unclaimed(data) {
   for (const [mk, m] of Object.entries(data.months || {})) {
     for (const [k, st] of Object.entries((m && m.stats) || {})) {
       if (claimed.has(k) || folded[k]) continue;
-      const units = (st?.internetUnits ?? 0) + (st?.phoneUnits ?? 0) + (st?.showroomUnits ?? 0) + (st?.campaignUnits ?? 0);
+      const units = deliveredUnits(st);
       const cur = found.get(k) || { key: k, name: st?.displayName || k, months: [], units: 0, days: 0 };
       cur.months.push(mk); cur.units += units;
       found.set(k, cur);
@@ -288,7 +289,7 @@ export function pendingList(data) {
   for (const [k, v] of Object.entries((data && data.pendingPeople) || {})) {
     let units = 0;
     for (const m of Object.values(v.months || {})) {
-      units += (m?.internetUnits ?? 0) + (m?.phoneUnits ?? 0) + (m?.showroomUnits ?? 0) + (m?.campaignUnits ?? 0);
+      units += deliveredUnits(m);
     }
     out.push({ key: k, name: v.name || k, firstSeen: v.firstSeen, files: v.files || [],
       months: Object.keys(v.months || {}), days: Object.keys(v.days || {}).length, units });
@@ -402,7 +403,7 @@ export function priorFor(data, name) {
   for (const [id, rec] of Object.entries(all)) {
     let units = 0;
     for (const m of Object.values(rec.months || {})) {
-      units += (m?.internetUnits ?? 0) + (m?.phoneUnits ?? 0) + (m?.showroomUnits ?? 0) + (m?.campaignUnits ?? 0);
+      units += deliveredUnits(m);
     }
     out.push({ store: id, storeName: rec.storeName || id, months: Object.keys(rec.months || {}).sort(),
       days: Object.keys(rec.days || {}).length, units });
@@ -798,7 +799,7 @@ function monthUnitsOf(data, key) {
   for (const m of Object.values(data.months || {})) {
     const st = m && m.stats && m.stats[key];
     if (!st) continue;
-    n += (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+    n += deliveredUnits(st);
   }
   return n;
 }

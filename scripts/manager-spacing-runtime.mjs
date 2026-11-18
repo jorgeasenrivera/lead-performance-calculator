@@ -38,10 +38,21 @@ export const SERVICE_TOTALS_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Qualify the actual reviewed People application tree composed on live main with no source substitution.
+export const PEOPLE_SERVICE_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:529,branch:'codex/people-service-credits',
+ base:{commit:'f4b8f22453d10c5d342b2947a10d8fa94ba7f70e',tree:'8e1bc7ba7f0132280733340fff13f0ce46a46d95'},
+ current:{commit:'de5d6fb07fdc54d1f7cc7a8bdaa1523d5cf1e002',tree:'5a1a5b35f06ae52e0c75f750fcedbb30c781ff56',
+  parents:['5e013fc694b31f21b4d7c68ef834b18dd61cb28d','f4b8f22453d10c5d342b2947a10d8fa94ba7f70e'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
+ if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
  throw new Error('unqualified pull request');
 }
 const roots=new Set(['.claude','api','download','fixtures','infra','native','public','scripts','src','supabase','test','workers']);
