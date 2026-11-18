@@ -73,11 +73,20 @@ export const DUET_COPY_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual approved People/Scheduler copy app, independently of the frozen historical run.
+export const PEOPLE_SCHEDULER_COPY_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:536,branch:'codex/people-scheduler-copy',
+ base:{commit:'8d3da0f732b5f2003e880f3cff6e1114f3a0d740',tree:'b74b410d0ab9e29d76e57984676bf3ce42c9f3a8'},
+ current:{commit:'d13813fefa9d5fd244431b9dde60dce324b56c8f',tree:'c3794223c3ed1e963dc02ad8c24eb7a8aa2f464d',parents:['8d3da0f732b5f2003e880f3cff6e1114f3a0d740']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===PEOPLE_SCHEDULER_COPY_POLICY.pullRequest)return PEOPLE_SCHEDULER_COPY_POLICY;
  if(number===DUET_COPY_POLICY.pullRequest)return DUET_COPY_POLICY;
  if(number===DUET_STORE_CARD_POLICY.pullRequest)return DUET_STORE_CARD_POLICY;
  if(number===ROOMS_HINT_POLICY.pullRequest)return ROOMS_HINT_POLICY;

@@ -9438,8 +9438,7 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
   const uploaded = !src ? (
     <div className="sr-nosrc">
       <b>No upload on record for {monthLabel(mk)}</b>
-      <p>Either nothing has been uploaded for this month, or it was applied before the app started
-        keeping a copy of what the file put on the board. Upload the sheet again and this fills in.</p>
+      <p>No schedule was uploaded for this month, or the upload predates saved records. Upload the sheet again to fill this in.</p>
     </div>
   ) : (
     <>
@@ -9457,7 +9456,7 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
               ? `Nearly everybody reads as off on ${dayLabel(srcThin[0])}`
               : `${srcThin.length} days read with nearly the whole floor off`}</b>
             <p>A day where {srcThin.length === 1 ? "only " + srcOnCount(srcThin[0]) + " of " + roster.length + " are working" : "almost nobody is working"} is
-              usually a column the reader lost rather than a day the store closed. Check it against the sheet before it counts against anybody.</p>
+              usually a column the reader lost, not a day the store closed. Check it against the sheet before it counts against anyone.</p>
             <div className="sr-warn-days">
               {srcThin.map((d) => (
                 <button key={d} className="sr-put" onClick={() => { setMode("edit"); setPick(d); putBack(d); }}>
@@ -9495,9 +9494,8 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
         </table>
       </div>
       <p className="sr-srcnote">
-        This is what the upload wrote, not the spreadsheet itself. To change a day go back to
-        <b> The month</b>; uploading the sheet again only ever adds days off, so a day taken off in
-        error is cleared here.
+        This is what the upload wrote, not the spreadsheet. To change a day, go back to
+        <b> The month</b>. Uploading the sheet again only adds days off. Clear a mistaken day off there.
       </p>
     </>
   );
@@ -9585,7 +9583,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
           }
         }
         if (!items.length || fullText.trim().length < 20) {
-          setErr("This PDF has no readable text; it looks like a scan or photo. Export the schedule as a PDF from your scheduling software (not a scanned copy), or save it as CSV/Excel.");
+          setErr("This PDF has no readable text. Export a new PDF directly from your scheduling software instead of scanning it, or save the schedule as CSV or Excel.");
           setBusy(false); return;
         }
         // month from the page text (e.g. "JULY 2026")
@@ -9853,9 +9851,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
                   <div className="sched-ask-head">
                     <b>Who are these?</b>
                     <span className="hint">
-                      The sheet uses names the roster does not. Point each one at the right person and the answer is
-                      remembered, so the next upload places them without asking. Anything left as "not on the roster"
-                      is skipped, exactly as before.
+                      Match each name to the right person on the roster. Sage remembers the match for the next upload and skips any name you leave set to "not on the roster".
                     </span>
                   </div>
                   {(preview.unmatchedRows || []).map((u) => {
@@ -20422,7 +20418,7 @@ const foldCars = (n) => fmtNum(Math.round((n || 0) * 10) / 10);
 const foldClaimed = (people, name) => (people || []).some((x) => x.key === norm(name) && x.status !== "ignored");
 const foldSentence = (from, to, units) =>
   `${from} and ${to} are the same person?\n\n` +
-  `${from}'s figures move onto ${to}` + (units > 0 ? ` — ${foldCars(units)} cars` : "") +
+  `${from}'s figures move onto ${to}` + (units > 0 ? `, with ${foldCars(units)} cars` : "") +
   `, and ${from} comes off this store's lists. ` +
   `The spelling is remembered, so the next report needs no repair.`;
 async function foldNames({ data, people, from, to, units = 0, why, by, onChange, after }) {
@@ -20545,7 +20541,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
     }
     if (pop.k === "why") return (<>{hd("Left, or not this store's")}
       <div className="bp-defn"><b>Left</b> keeps everything they did on file and their cars in the month they sold them, because the store did sell those. They come off the board, the sheet and the line straight away.<br /><br />
-        <b>Not this store's</b> is for a name that arrived in a report by mistake. Their figures come back off the store entirely. Said by mistake, it is one tap to undo: the figures are set aside, not thrown away, and putting the person back on the floor puts them back.</div></>);
+        <b>Not this store's</b> is for a name that arrived in a report by mistake. It takes their figures out of the store's totals but doesn't delete them. If you make a mistake, put the person back on the floor to restore their figures.</div></>);
     if (pop.k === "add") {
       const nm = nuName.trim();
       const reset = () => { setNuName(""); setNuRole(config.roles?.[0]?.id || null); setNuDate(today()); };
@@ -21089,11 +21085,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <p className="hint">Your own people with something stuck to their name. Merging puts the figures
             back together and remembers the spelling.</p>
           <Explain>
-            A column heading the reader did not recognise, or a name the report printed twice. Each one is
-            sitting in the books as a stranger while their real row carries the rest of their month, so the
-            store's totals are split across two spellings of one person. Merging teaches the spelling as
-            well, and the next report needs no repair. Anything that looks like two people welded into one
-            is never offered here: it could be split two ways and both would be wrong.
+            The reader may mistake a column heading for part of a name, or copy a name the report printed twice. Either way, one person's figures are split across two entries. Merging combines the figures and remembers the spelling for the next report. This list excludes names that look like two different people joined together.
           </Explain>
           <div className="pp-batch">
             <button className="btn"
@@ -21140,9 +21132,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             as they arrived.
           </p>
           <Explain>
-            Nothing is lost whichever way you answer: say they work here and everything folds in, say they
-            do not and it goes with them. Until somebody says, the store's totals are unaffected, which is
-            why a name can sit here safely for a week.
+            Their figures are kept either way. If they work here, their figures join this store's books. If they don't, the figures stay out of this store's totals. While you decide, the totals don't change.
           </Explain>
           <BatchBar rows={waiting}
             onAll={() => setBatch(new Set(waiting.map((w) => norm(w.name))))}
@@ -21213,8 +21203,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           </h3>
           <p className="hint">Credited with work at {storeName || "this store"}, and on none of your lists.</p>
           <Explain>
-            That is what another dealership's report looks like after it has been filed in the wrong place,
-            and it is also what a heading looks like when the reader mistook it for a person. <b>Not ours</b>
+            This can happen when another dealership's report is filed here or when the reader mistakes a heading for a person. <b>Not ours</b>
             takes their figures out of this store's totals. <b>They work here</b> puts them on the floor and
             leaves the figures alone. <b>Same as someone</b> folds them into a person you already have.
           </Explain>
@@ -21300,12 +21289,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
       <div className="card pp-card">
         <Explain label="Left, or not this store's: what the difference costs">
-          Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
-          did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
-          delivered. Somebody who was <b>never here</b> loses theirs, because the store never earned them
-          and they are inflating its totals. That difference is the whole reason both exist. A not-ours said
-          by mistake is one click to undo: the figures are set aside, not thrown away, and putting the person
-          back on the floor puts the figures back with them.
+          Somebody who <b>leaves</b> keeps credit in the month they sold the cars. Those deliveries still belong to this store. Without a leaver's half credit, a month of 85 could read 84.5. Somebody who was <b>never here</b> doesn't count toward this store's totals. Their figures are set aside, not deleted. If you marked them by mistake, put them back on the floor to restore their figures.
         </Explain>
 
         <div className="pp-bar">
@@ -21590,10 +21574,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     <>
                       <p className="hint">Nobody signs in as {p.name} yet.</p>
                       <Explain label="How somebody gets an account">
-                        They sign up on this site with a dealership address like anybody else; leave their
-                        stores unticked and they stay off the dashboard while still having an account to be
-                        joined to. Then pick it here. This is what decides whose phone buzzes when their
-                        customer walks in, which is why a manager sets it and not the salesperson.
+                        They sign up here with a dealership email address. Leave their stores unticked so they stay off the dashboard, then select their account here. A manager sets the link that decides whose phone buzzes when their customer walks in.
                       </Explain>
                       <div className="pp-move-row">
                         <select className="q-flag-sel" value="" disabled={acctBusy === key}
@@ -21633,10 +21614,8 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                             "Unjoined. Their phones were unregistered with it.")}>Unjoin this account</button>
                       </div>
                       <Explain label="Switch off, or unjoin?">
-                        <b>Switching off</b> stops them signing in and leaves everything they have done
-                        exactly where it is; it is the one to reach for when somebody is let go.
-                        <b> Unjoining</b> only breaks the link between the account and this person, and takes
-                        their registered phones with it so nothing keeps buzzing about a floor they are not on.
+                        <b>Switching off</b> stops them signing in without removing any of their past work. Use it when someone is let go.
+                        <b> Unjoining</b> doesn't switch off the account. It unlinks the account from this person and unregisters their phones so they stop receiving alerts for this floor.
                       </Explain>
                     </>
                   )}
@@ -21665,9 +21644,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                         by: userName, onChange })} />
                   </div>
                   <Explain label="When to use this">
-                    Only when they are genuinely one person under two spellings. {p.name} comes off this
-                    store's lists and their cars move across. Two people who happen to share a name are
-                    not this, and merging them puts one person's month onto the other.
+                    Only when they are genuinely one person under two spellings. {p.name} comes off this store's lists and their cars move across. Don't merge two different people who share a name: it moves one person's monthly figures onto the other person's record.
                   </Explain>
                   {/* A test person exists to be looked at from a phone, and an empty
                       month shows nothing worth looking at. One tap gives them a
@@ -21696,10 +21673,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <div className="pp-move">
             <div className="pp-move-head">Move <b>{moving.name}</b> to another store</div>
             <Explain label="What moves with them, and what does not">
-              They go on the new store's floor with everything {storeName || "this store"} knows about them
-              carried across, so a manager there can see how they have been doing. Their record is kept beside
-              that store's books rather than inside them: cars sold here are this store's and stay in its month,
-              and adding them to another store's total is the exact mistake all of this exists to stop.
+              They join the new store's floor, and the manager there can see their history from {storeName || "this store"}. Cars sold here stay in this store's monthly totals and never count toward the new store's totals.
             </Explain>
             <div className="pp-move-row">
               <select className="q-flag-sel" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
