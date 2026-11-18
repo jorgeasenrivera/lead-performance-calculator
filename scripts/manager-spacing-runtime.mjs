@@ -65,11 +65,20 @@ export const ROOMS_HINT_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual Duet #535 wording-only source on pinned main, independently of the frozen historical run.
+export const DUET_COPY_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:535,branch:'claude/project-thread-gfqvq0',
+ base:{commit:'733812f44a2032f93fefa169dbb33d6ee9c590b9',tree:'7dee4483d90723163600ed9a417a6f1f2e295508'},
+ current:{commit:'57406343a43422fe5cab78553b5affa640b3c873',tree:'fcbff90eaead98199cf1ba1071c2a6b664287390',parents:['d5cd927050f359e4ebeb0b75ed2306ee51206ed1']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===DUET_COPY_POLICY.pullRequest)return DUET_COPY_POLICY;
  if(number===DUET_STORE_CARD_POLICY.pullRequest)return DUET_STORE_CARD_POLICY;
  if(number===ROOMS_HINT_POLICY.pullRequest)return ROOMS_HINT_POLICY;
  throw new Error('unqualified pull request');
