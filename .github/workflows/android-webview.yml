@@ -1,0 +1,62 @@
+name: Android WebView review check
+# Review-only preparation: neither push nor PR runs the emulator.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      reviewed_head:
+        description: Exact 40-character test commit approved by the parent reviewer
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: android-webview-review
+  cancel-in-progress: false
+jobs:
+  emulator:
+    if: >-
+      github.run_attempt == 1 &&
+      github.event.repository.private == false &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/android-webview-verification') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/android-webview-verification' &&
+      github.event.label.name == format('android:{0}', github.event.pull_request.head.sha)))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the reviewed immutable head
+        env:
+          REVIEWED_HEAD: ${{ inputs.reviewed_head || github.event.pull_request.head.sha }}
+        run: test "$REVIEWED_HEAD" = "$(git rev-parse HEAD)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Use preinstalled Java 17
+        run: |
+          test -x "$JAVA_HOME_17_X64/bin/java"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+      - name: Check prerequisites, build debug wrapper and exercise WebView
+        run: bash scripts/android-webview/with-kvm.sh
+      - name: Always stop descendants and restore original KVM ACL
+        if: always()
+        timeout-minutes: 2
+        run: bash scripts/android-webview/cleanup-kvm.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-webview-fictional-evidence
+          path: android-webview-evidence/
+          retention-days: 7
+          if-no-files-found: warn
