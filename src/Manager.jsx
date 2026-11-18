@@ -18129,7 +18129,11 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
                 <div className="s2-marks">
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
-                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} /><SignalQualifier />
+                      {/* Ring grown from 54px and the "of target" line under it dropped on
+                         18 November at Jorge's word: the percentage in the ring
+                         says it. Three 84px rings still fit side by side at
+                         phone width. */}
+                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={84} />
                       <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
                       <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
@@ -18244,7 +18248,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
           <div className={"s2-ansq an-" + (weakest.mean >= 1 ? 5 : weakest.mean >= 0.9 ? 4 : weakest.mean >= 0.75 ? 3 : weakest.mean >= 0.5 ? 2 : 1)}>
             <div className="s2-an-cap"><Verdict ratio={weakest.mean} size={13} className="on-dark" /> {weakest.below === 0 ? "Standards" : "Weakest standard"}</div>
             <div className="s2-an-name">{weakest.below === 0 ? "Everyone is on target" : METRICS[weakest.metric].label}</div>
-            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
+            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={10} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
             {/* The "2 of 3 below" line, the play under a rule and the hover card
                 that repeated it came off on 18 November, on Jorge's word: the
                 card says which standard and how far, and stops there. */}
@@ -26788,6 +26792,17 @@ html.manager-signal .board .s2-pod .s2-podval{ font-family:var(--font-ui); font-
 html.manager-signal .s2-hero .s2-big{ margin-top:8px; }
 html.manager-signal .s2-hero .s2-pacewrap{ margin-top:22px; }
 html.manager-signal .s2-hero .s2-splitwrap{ margin-top:18px; }
+/* The weakest standard card, grown into its space on 18 November at Jorge's
+   word, the percentage most of all: with the count and the play gone, the
+   figure is what the card is for. Ten-pixel dots put "100%" at about 245px,
+   which still fits the card at phone width. */
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-cap{ font-size:13px; }
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-name{ font-size:24px; margin-top:4px; max-width:none; }
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big{ flex-wrap:wrap; align-items:flex-end; gap:6px 14px; margin-top:18px; }
+html.manager-signal .s2-focusgrid .s2-ansq .s2-an-big small{ font-size:13px; padding-bottom:6px; }
+/* With the "of target" line gone the video label sat on the ring; this gives
+   it the breath the line used to. */
+html.manager-signal .s2-hero .s2-mark > svg + .s2-mklbl{ margin-top:8px; }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
