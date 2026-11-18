@@ -11,10 +11,11 @@ import { buildDemo } from "../demo-seed.mjs";
 import {historicalManagerFixture} from "./historical-manager-fixture.mjs";
 import { peoplePreviewInput } from "./people-preview-input.mjs";
 import { roomHintPreviewInput } from "./room-hint-preview-input.mjs";
+import { managerPagesPreviewInput } from "./manager-pages-preview-input.mjs";
 export const MANAGER_SHA =
   "5e81fd44a0359876f0ef992ab04b00043d0e5d15aba670efedf19d40277a35f4";
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "d4393b45caba82fbc549fafe8adc2e7d0df1cf0638bb9aab25a272278cf4cdae") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "4cb54f6d7cf403687594e1686361d99c586b8adf848e663c652a1958f7c80b71") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
@@ -97,7 +98,7 @@ export function patchManager(source) {
 }
 export async function buildPreview() {
   const currentManager=await readFile("src/Manager.jsx","utf8");
-  const previewManager=createHash("sha256").update(currentManager).digest("hex")===MANAGER_SHA?currentManager:historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(currentManager)));
+  const previewManager=createHash("sha256").update(currentManager).digest("hex")===MANAGER_SHA?currentManager:historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(currentManager))));
   const seed = buildDemo(new Date("2026-10-14T16:00:00Z"));
   // One synthetic daily-sales source drives the hero roll-up and calendar.
   const total = monthSales(fixtures()[0], "2026-10", "2026-10-14").total;
