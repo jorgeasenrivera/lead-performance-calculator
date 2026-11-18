@@ -4845,7 +4845,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
      against 30. Silent when everything is at or over, because inventing something to
      fix on a good month is how a coaching tool stops being read. */
   const FOCUS_PLAY = {
-    internet: "Send a personalized video on every new lead before anything else. It's the biggest lever on this number.",
+    internet: "Send a personalized video on top of the phone call, text message and email attempt. The video is our biggest selling point.",
     phone: "Take the phone ups you are passing on, and get the appointment set before you hang up.",
     showroom: "Ask for the appointment before they leave the lot, and log the be-back the same day.",
   };

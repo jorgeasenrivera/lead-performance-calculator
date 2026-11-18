@@ -8020,7 +8020,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
       {noShowSuspects.length > 0 && (
         <div className="da-panel da-askpanel">
           <div className="da-pcap"><PixIcon glyph="dash" size={13} /> Nothing logged today · say which it is</div>
-          <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>
+          <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes as a day off after midnight.</p>
           <div className="da-asks">
             {noShowSuspects.map((r) => (
               <span key={r.a.id} className="da-ask">
@@ -18723,7 +18723,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
                     onChange={(e) => { if (e.target.value && e.target.value <= today()) setActivityDay(e.target.value); }} />}
             </div>
             {monthMode ? (
-              <p className="hint act-backfill">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It is filed as that month's totals and does not touch day-by-day history.</p>
+              <p className="hint act-backfill">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It's filed as that month's totals and leaves day-by-day history alone.</p>
             ) : (aDay !== today() && aDay !== yday) ? (
               <p className="hint act-backfill">Backfilling <strong>{dayLabel(aDay)}</strong>. The report will land on that date.</p>
             ) : null}
@@ -18747,7 +18747,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
             <div className="dz-icon"><span>⇩</span></div>
             <div className="dz-title"><span className="dz-drop">Drop</span><span className="dz-tap">Choose</span> the Daily Activity report for {monthMode ? monthLabel(aMonth) : (aDay === today() ? "today" : dayLabel(aDay))}</div>
             <div className="dz-sub">{monthMode
-              ? "The Standard Daily Activity report pulled across the whole month. It becomes that month's totals, which is what the month-end recap reads."
+              ? "The Standard Daily Activity report pulled for the whole month. It becomes that month's totals, which the month-end recap reads."
               : "The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet." + (aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : "")}</div>
             <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
@@ -18813,8 +18813,8 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         onClick={() => fileRef.current?.click()}>
         <PixIcon glyph="arrowdown" size={40} className="dz2-ico" />
         <div className="dz2-t"><span className="dz-drop">Drop any report here</span><span className="dz-tap">Choose a report</span></div>
-        <div className="dz2-s">CSV or PDF, straight from DriveCentric. It reads the file, works out which
-          report it is, and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>
+        <div className="dz2-s">CSV or PDF, straight from DriveCentric. It works out which report it is
+          and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>
         <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
           onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
       </div>
@@ -18874,10 +18874,10 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         </div>
       )}
       <Explain label="What an import does to the numbers">
-        Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the
-        previous numbers for that report rather than adding to them, and every import is recorded in the
-        audit log. A day's activity is saved separately from the month, so the Check Out sheet and the
-        history stay accurate day to day.
+        Performance is measured month to date and resets on the 1st. Each import replaces that report's
+        previous numbers instead of adding to them, and every import goes in the audit log. A day's
+        activity is saved apart from the month, so the Check Out sheet and the history stay accurate day to
+        day.
       </Explain>
     </div>
   );
