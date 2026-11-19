@@ -1,5 +1,6 @@
 import managerSignalCSS from "./manager-signal.css?inline";
 import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
+import { MK, mkLand } from "./motion-kit.mjs";
 /* The manager's pages.
    -------------------------------------------------------------------------
    Everything a salesperson's phone never opens: the dashboard, the desks, the
@@ -650,10 +651,10 @@ const DOT_DIGITS = {
   ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
 };
 
-function DotNum({ value, dot = 6, color = "currentColor" }) {
+function DotNum({ value, dot = 6, color = "currentColor", boxRef = undefined }) {
   const chars = String(value).split("");
   return (
-    <span className="dotnum" style={{ display: "inline-flex", alignItems: "center", gap: dot * 1.1 }} aria-label={String(value)}>
+    <span className="dotnum" ref={boxRef} style={{ display: "inline-flex", alignItems: "center", gap: dot * 1.1 }} aria-label={String(value)}>
       {chars.map((ch, di) => {
         const rows = DOT_DIGITS[ch];
         if (!rows) return null;
@@ -12124,7 +12125,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
               <span className="s2-podname">{r.name}
                 <SignalCopy full={<span className="s2-podsub">{r.passing ? `on standard · ${r.met}/${r.total} above bar` : `${r.met}/${r.total} standards`}</span>} short={null} />
               </span>
-              <span className="s2-podval"><CountUp value={r.units} decimals={1} delay={180 + i * 80} /></span>
+              <span className="s2-podval"><CountUp value={r.units} decimals={1} delay={180 + i * 80} mem={"pod:" + r.name} /></span>
             </button>
           ))}
         </div>
@@ -12450,7 +12451,13 @@ function createSignalCardMotion(el, origin, onClose, env = window) {
   el.style.animation="none";
   el.style.transformOrigin="0 0";
   const r = el.getBoundingClientRect(), a = origin?.rect;
-  const from = a?.width && a?.height && r.width && r.height
+  /* Under the motion kit the card keeps its own shape on the way out of the
+     row: one scale for both sides, the row's width over the card's, held
+     between half and full size, so it never squashes into a strip (item 8). */
+  const even = MK.on && a?.width && r.width ? Math.max(.5, Math.min(1, a.width / r.width)) : 0;
+  const from = even
+    ? `translate(${(a.left-r.left).toFixed(1)}px, ${(a.top-r.top).toFixed(1)}px) scale(${even.toFixed(4)})`
+    : a?.width && a?.height && r.width && r.height
     ? `translate(${(a.left-r.left).toFixed(1)}px, ${(a.top-r.top).toFixed(1)}px) scale(${(a.width/r.width).toFixed(4)}, ${(a.height/r.height).toFixed(4)})`
     : "translateY(12px) scale(.98)";
   const play = (frames, duration, easing, onDone) => {
@@ -12478,7 +12485,12 @@ function createSignalCardMotion(el, origin, onClose, env = window) {
   label("opening");
   if (reduced() || doc.hidden || typeof el.animate!=="function") finish();
   else {
-    play([{transform:from},{transform:"none"}],320,"cubic-bezier(.16,.78,.24,1)",finish);
+    if (even) {
+      // The kit's pop, and the card fades in over its first eighth rather than
+      // sitting invisible at the row while it travels.
+      play([{transform:from},{transform:"none"}],320,MK.pop,finish);
+      own(el.animate([{opacity:0},{opacity:1,offset:.12},{opacity:1}],{duration:320,easing:"linear",fill:"both"}));
+    } else play([{transform:from},{transform:"none"}],320,"cubic-bezier(.16,.78,.24,1)",finish);
     for (const k of children) own(k.animate([{opacity:0},{opacity:0,offset:.18},{opacity:originals.get(k).opacity || "1"}],{duration:240,easing:"ease-out",fill:"both"}));
   }
   return {close,dispose() {
@@ -16692,13 +16704,22 @@ function createSignalCount(target, options, env = window) {
   media.addEventListener("change",change);doc.addEventListener("visibilitychange",change);change();
   return ()=>{done=true;remove();};
 }
-function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
-  const [v, setV] = useState(0);
-  const displayed = useRef(0), counted = useRef(false);
+/* A figure with a name (mem) remembers where it last stood, across tabs and
+   remounts, so coming back to it never counts up from zero again: it shows what
+   it showed, and rolls only when the figure itself has changed (the motion
+   kit, item 5). The first sight of a named figure is the figure, not a count. */
+const COUNT_MEMORY = new Map();
+function useCountUp(target, ms = 1000, delay = 150, decimals = 0, mem = null) {
+  const [v, setV] = useState(() => {
+    if (mem == null) return 0;
+    if (!COUNT_MEMORY.has(mem)) COUNT_MEMORY.set(mem, target || 0);
+    return COUNT_MEMORY.get(mem);
+  });
+  const displayed = useRef(v), counted = useRef(mem != null);
   useEffect(() => {
     if (true) {
       const first = !counted.current; counted.current = true;
-      return createSignalCount(target || 0, {from:displayed.current, ms:Math.min(ms, first ? 640 : 320), delay:first ? Math.min(delay,160) : 0, decimals, onValue:value => {displayed.current=value;setV(value);}});
+      return createSignalCount(target || 0, {from:displayed.current, ms:Math.min(ms, first ? 640 : 320), delay:first ? Math.min(delay,160) : 0, decimals, onValue:value => {displayed.current=value;if (mem != null) COUNT_MEMORY.set(mem, value);setV(value);}});
     }
     const reduce = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -16736,8 +16757,21 @@ function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
 
 /* Numbers roll up rather than snapping into place, and roll again whenever the
    underlying figure changes, so a fresh import visibly lands on the page. */
-function CountUp({ value, decimals = 0, ms = 900, delay = 120 }) {
-  return <>{fmtNum(useCountUp(value || 0, ms, delay, decimals))}</>;
+function CountUp({ value, decimals = 0, ms = 900, delay = 120, mem = null }) {
+  const v = useCountUp(value || 0, ms, delay, decimals, mem);
+  const box = useLanding(v, value || 0);
+  if (!MK.on) return <>{fmtNum(v)}</>;
+  return <span ref={box} className="mk-num">{fmtNum(v)}</span>;
+}
+/* When a rolling figure arrives at a new value it gives a small bounce. */
+function useLanding(shown, target) {
+  const box = useRef(null), from = useRef(shown);
+  useEffect(() => {
+    if (shown !== target) return;
+    if (from.current !== shown) mkLand(box.current);
+    from.current = shown;
+  }, [shown, target]);
+  return box;
 }
 
 /* ---------------- Store hero (manager landing) ---------------- */
@@ -16820,9 +16854,15 @@ function flowMarks(days) {
 function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   const wrapRef = useRef(null);
   const [w, setW] = useState(560);
-  useEffect(() => {
+  /* Measured before the first paint, so the chart is drawn once at its real
+     width rather than at 560 and then again a frame later. */
+  useLayoutEffect(() => {
     const el = wrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const cw0 = el.clientWidth - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0);
+    if (cw0 > 60) setW(Math.round(cw0));
+    if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((es) => {
       const cw = es[0]?.contentRect?.width;
       if (cw && cw > 60) setW(Math.round(cw));
@@ -17961,7 +18001,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
           <div className="s2-left">
             <SignalCopy full={<div className="s2-cap"><PixIcon glyph="sold" size={11} /> Units this month</div>} short={<span className="sg-sr">Units sold this month</span>} />
             <div className="s2-big">
-              <SignalSold value={String(totalUnits)} />
+              <SignalSold value={String(totalUnits)} mem={"hero:" + store.id} />
               {/* The goal is read here, so it is set here: with one already on
                   the month a tap on it opens the same field, filled in. A month
                   with none yet offers last month's figure as the prompt, so the
@@ -26897,14 +26937,20 @@ function SignalActions({children, className, ...props}) {
 function SignalHeading({title, meta, children}) {
   return useSignal() ? <><h2 className="s2-store">{title}</h2>{meta && <div className="sg-heading-meta">{meta}</div>}</> : children;
 }
-function SignalSold({value}) {
+function SignalSold({value, mem = null}) {
   const signal = useSignal();
+  /* The month's count rolls from what it last showed for this store when a
+     report moves it, and lands with a bounce (motion kit, item 5). The dot
+     size is read off the figure it is going to, so the roll never resizes. */
+  const n = Number(value), counts = Number.isFinite(n) && mem != null;
+  const shown = useCountUp(counts ? n : 0, 640, 0, 0, counts ? mem : null);
+  const box = useLanding(counts ? shown : 0, counts ? n : 0);
   /* A third larger than it was on 18 November, on Jorge's word: the month's
      count is the one figure the hero exists to say. Three digits at 11 still
      leave room for the goal beside it on a phone (189px of numeral, the
      goal's own 15px type unchanged); four digits wrap the goal under it. */
   const dot = value.length <= 2 ? 13 : value.length === 3 ? 11 : value.length === 4 ? 8.6 : 6.4;
-  return <DotNum value={value} dot={signal ? dot : 6} color="#fff" />;
+  return <DotNum value={counts ? String(shown) : value} dot={signal ? dot : 6} color="#fff" boxRef={box} />;
 }
 function SignalRoomHeader({title, storeName, date, count, noun, full = null}) {
   return useSignal() ? <div className="sd-head sg-room-head">
