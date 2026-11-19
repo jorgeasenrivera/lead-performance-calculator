@@ -8,6 +8,7 @@ import {historicalManagerFixture,CURRENT_MANAGER_SHA,HISTORICAL_MANAGER_SHA} fro
 import {createHash} from "node:crypto";
 import { peoplePreviewInput } from "./people-preview-input.mjs";
 import { roomHintPreviewInput } from "./room-hint-preview-input.mjs";
+import { managerPagesPreviewInput } from "./manager-pages-preview-input.mjs";
 
 test("scheduler styles require a scheduler root or an explicit standalone/ghost marker", async () => {
  for (const name of ["planner.css", "calendar-tokens.css"]) {
@@ -25,7 +26,7 @@ test("preview refuses to patch a changed Manager ownership boundary", async () =
   );
   // Historical approval is still tested against its exact bytes. The current
   // app is checked separately and remains refused by this transform.
-  const source = historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(current)));
+  const source = historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(current))));
   assert.throws(() => patchManager(current), /Re-review entry points/);
   assert.throws(() => patchManager(source + "\n"), /Re-review entry points/);
   const patched = patchManager(source);
@@ -57,7 +58,7 @@ test("preview input-aware layout transform refuses changed core source", async()
 test("historical Manager fixture preserves exact source approval and rejects drift",async()=>{
  const sha=value=>createHash("sha256").update(value).digest("hex");
  const current=await readFile(new URL("../../src/Manager.jsx",import.meta.url),"utf8");
- const qualified = peoplePreviewInput(roomHintPreviewInput(current));
+ const qualified = peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(current)));
  assert.equal(sha(qualified),CURRENT_MANAGER_SHA);
  assert.equal(sha(historicalManagerFixture(qualified)),HISTORICAL_MANAGER_SHA);
  assert.throws(()=>historicalManagerFixture(qualified+"\n"),/fixture input changed/);
@@ -68,7 +69,7 @@ test("historical Manager fixture preserves exact source approval and rejects dri
 
 test("People preview qualification is exact and leaves the historical fixture gate unchanged", async () => {
  const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
- const peopleSource = roomHintPreviewInput(current);
+ const peopleSource = roomHintPreviewInput(managerPagesPreviewInput(current));
  const approved = peoplePreviewInput(peopleSource);
  assert.notEqual(peopleSource, approved, "exercise the separate People input");
  assert.equal(peoplePreviewInput(approved), approved);
@@ -82,10 +83,10 @@ test("People preview qualification is exact and leaves the historical fixture ga
 
 test("the frozen preview restores only the exact Rooms copy change", async () => {
  const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
- const prior = roomHintPreviewInput(current);
+ const prior = roomHintPreviewInput(managerPagesPreviewInput(current));
  assert.notEqual(current, prior);
  const sha = (source) => createHash("sha256").update(source).digest("hex");
- assert.equal(sha(current),"eb546a60c96a9e22fde29a4bdfacf7c6fc468cd00fda25591893cb5119f77a6a");
+ assert.equal(sha(managerPagesPreviewInput(current)),"eb546a60c96a9e22fde29a4bdfacf7c6fc468cd00fda25591893cb5119f77a6a");
  assert.equal(sha(prior),"415683001243b7b28469b863d01404174ba1c206c8e8f8cf99660a7825973a9a");
  assert.match(current, /k === "floor" \? "Leave blank to open Live Floor 1 hour before the store opens, or at 8:00 AM if store hours aren’t set\. A time you set for a weekday takes priority\. Store time\." : "Blank means the desk opens it, as before\. Store time\."/);
  const altered = current + "\n";
@@ -95,7 +96,7 @@ test("the frozen preview restores only the exact Rooms copy change", async () =>
 
 test("exact room toggle preview keeps the production room filter while disabling fictional room controls", async () => {
  const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
- const priorInput = peoplePreviewInput(roomHintPreviewInput(current));
+ const priorInput = peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(current)));
  const fixture = patchManager(historicalManagerFixture(priorInput));
  const active = '{shownRooms.map(q => <button type="button" key={q.id}';
  const legacy = '{QUEUE_TOOLS.map(q => <button type="button" key={q.id}';
@@ -106,4 +107,14 @@ test("exact room toggle preview keeps the production room filter while disabling
   assert.throws(()=>sharedManager(drift),/boundary|anchor/i);
  }
  assert.ok(current.includes(active) && !current.includes('{shownRooms.map(q => <button type="button" disabled'),"the production room picker remains enabled");
+});
+
+test("the Manager Pages shell adapter restores only the exact reviewed slot", async () => {
+ const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
+ const restored = managerPagesPreviewInput(current);
+ assert.notEqual(restored,current);
+ assert.equal(createHash("sha256").update(restored).digest("hex"),"eb546a60c96a9e22fde29a4bdfacf7c6fc468cd00fda25591893cb5119f77a6a");
+ const altered = current + "\n";
+ assert.equal(managerPagesPreviewInput(altered),altered);
+ assert.throws(() => historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(altered)))), /fixture input changed/);
 });

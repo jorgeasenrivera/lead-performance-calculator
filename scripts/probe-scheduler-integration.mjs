@@ -9,6 +9,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const MOCK='http://127.0.0.1:5433';
 const ENABLED=process.env.PROBE_SCHEDULER_FLAG!=='0';
+const MANAGER_PAGES=process.env.PROBE_MANAGER_PAGES==='1';
 const EVIDENCE=path.resolve(process.env.PROBE_EVIDENCE_DIR||path.join(ROOT,'../entry-probe'));
 fs.mkdirSync(EVIDENCE,{recursive:true});
 const USER='00000000-0000-4000-8000-000000000001';
@@ -74,6 +75,98 @@ try{
     if(await roundup.isVisible())await roundup.click();
     if(ENABLED)assert.equal(await page.locator('[data-delivery-status=unavailable]').count()>0,true,'absent counts remain unavailable');
     else assert.equal(await page.locator('.sc-toggle').count(),0,'flag OFF preserves existing entry');
+  });
+  if(MANAGER_PAGES)await check('manager disclosure fits and opens the real Import page with its report badge',async()=>{
+    const nav=page.getByRole('navigation',{name:'Store pages'});
+    const pages=nav.getByRole('button',{name:'Pages',exact:true});
+    const pinned=nav.locator('.sage-page-pinned');
+    const choices=nav.locator('.sage-pages-panel');
+    const intake=nav.locator('.sage-page-import');
+    const initialUrl=page.url();
+    for(const width of [320,390,1280]){
+      await page.setViewportSize({width,height:900});
+      // Crossing the breakpoint can mount the other lazy Dashboard body.
+      // Do not open the disclosure during that responsive hand-off.
+      await page.locator(width <= 700 ? '.bp-row' : '.assoc-card').first().waitFor({state:'visible'});
+      await page.locator('html:is(.sage-cover-active,.sage-assemble,.refresh-hold)').waitFor({state:'detached'});
+      await pinned.waitFor({state:'visible'});
+      assert.equal(await pinned.innerText(),'Dashboard');
+      assert.equal(await pinned.getAttribute('aria-current'),'page');
+      assert.equal(await choices.isVisible(),false);
+      await pages.focus(); await page.keyboard.press('Enter');
+      await choices.waitFor({state:'visible'});
+      assert.equal(await pages.getAttribute('aria-expanded'),'true');
+      assert.deepEqual(await choices.getByRole('button').allTextContents(),['Dashboard','Summary','History','Targets','People']);
+      await page.keyboard.press('Tab');
+      assert.ok(await choices.isVisible(),'Pages stays open after Tab at '+width);
+      const focus=await choices.evaluate(panel=>({
+        first:panel.querySelector(':scope > button')===document.activeElement,
+        actual:document.activeElement?.getAttribute('class')||document.activeElement?.tagName,
+      }));
+      assert.ok(focus.first,'Tab enters Dashboard at '+width+'; actual focus: '+focus.actual);
+      await page.keyboard.press('Escape');
+      assert.equal(await pages.evaluate(el=>el===document.activeElement),true);
+      assert.equal(await choices.isVisible(),false);
+      await pages.click();
+      await choices.waitFor({state:'visible'});
+      // The real reveal scales the panel from 94%; measure its settled targets,
+      // not a transient animation frame, without disabling the animation.
+      await choices.evaluate(async el=>{
+        await new Promise(requestAnimationFrame);
+        await Promise.all(el.getAnimations({subtree:true})
+          .filter(a=>['sage-pages-reveal','sage-page-arrive'].includes(a.animationName))
+          .map(a=>a.finished));
+        await new Promise(requestAnimationFrame);
+      });
+      assert.equal(await pages.getAttribute('aria-expanded'),'true');
+      assert.equal(await choices.isVisible(),true);
+      const clipped=await nav.evaluate(el=>[...el.querySelectorAll('button')].filter(node=>node.getClientRects().length).flatMap(node=>{
+        const {left,right,height}=node.getBoundingClientRect();
+        return left>=-1&&right<=innerWidth+1&&height>=44?[]:[{label:node.textContent.trim(),left,right,height}];
+      }));
+      assert.deepEqual(clipped,[],'visible controls fit and are at least 44px at '+width);
+      await page.locator('body').dispatchEvent('click');
+      assert.equal(await pages.getAttribute('aria-expanded'),'false');
+      await pages.click();
+      await page.screenshot({path:path.join(EVIDENCE,'manager-pages-'+width+'.png')});
+      await page.keyboard.press('Escape');
+    }
+    await page.setViewportSize({width:320,height:720});
+    await page.evaluate(()=>{document.documentElement.style.fontSize='32px';});
+    const search=page.locator('.assoc-search-trigger:visible');
+    await search.click();
+    const field=page.getByPlaceholder('Search associates',{exact:true});
+    await field.waitFor(); await field.fill('Alex');
+    await pages.click();
+    const overlay=await choices.evaluate(el=>{
+      const panel=el.getBoundingClientRect(), first=el.querySelector('button').getBoundingClientRect();
+      const point=document.elementFromPoint(first.left+first.width/2,first.top+first.height/2);
+      return panel.left>=-1&&panel.right<=innerWidth+1&&panel.top>=0&&el.contains(point)
+        &&document.documentElement.scrollWidth<=innerWidth+1;
+    });
+    assert.equal(overlay,true,'active search does not cover the menu or clip 200% text');
+    await page.screenshot({path:path.join(EVIDENCE,'manager-pages-search-200.png')});
+    await page.keyboard.press('Escape');
+    await page.locator('.assoc-search-done:visible').click();
+    await page.evaluate(()=>document.documentElement.style.removeProperty('font-size'));
+    await page.setViewportSize({width:1280,height:900});
+    const badge=await intake.locator('.badge').innerText();
+    assert.match(badge,/^[012]\/2$/);
+    await pages.click(); await choices.getByRole('button',{name:'Summary',exact:true}).click();
+    assert.equal(await pages.evaluate(el=>el===document.activeElement),true);
+    assert.equal(await pinned.innerText(),'Summary');
+    await intake.click(); await page.locator('.sage-intake-entry .import-hero').waitFor();
+    assert.equal(await intake.getAttribute('aria-current'),'page');
+    assert.equal(await intake.locator('.badge').innerText(),badge);
+    assert.equal(await pinned.innerText(),'Summary');
+    assert.equal(await pinned.getAttribute('aria-current'),null);
+    assert.equal(await page.url(),initialUrl);
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.equal(await intake.locator('.sage-page-ticket').evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.equal(await page.locator('.sage-intake-entry').evaluate(el=>getComputedStyle(el,'::before').animationName),'none');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await pages.click(); await choices.getByRole('button',{name:'Dashboard',exact:true}).click();
+    assert.equal(await pinned.getAttribute('aria-current'),'page');
   });
   if(ENABLED){
   await check('accepted editor opens through actual calendar entry',async()=>{
