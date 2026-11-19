@@ -46,7 +46,7 @@ import { assistWhere } from "../api/_queue-notify.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
   packUp, transferOut, likelyMatches, sameAs, servedOn,
-  manglings, mergeManglings, folds, unfold, transferIn } from "../api/_people-status.mjs";
+  manglings, mergeManglings, folds, unfold, transferIn, needsReview } from "../api/_people-status.mjs";
 import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
 import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
@@ -11957,7 +11957,7 @@ function AssocSearch({ value, onChange, store }) {
    above the fold next to the hero without the board turning into a scroll. */
 const ROLL_CAP = 5;
 
-function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onFilter, onClearFilter, query = "", focusName, onFocus, onIgnore }) {
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onFilter, onClearFilter, query = "", focusName, onFocus, onIgnore, onOpenPeople }) {
   const [rollOpen, setRollOpen] = useState({});
   /* The board is where you notice somebody who does not belong — a name from
      another rooftop that an import dragged in. Sending you to the Roster tab to
@@ -12088,9 +12088,10 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       if (at >= ROLL_CAP) setRollOpen((o) => (o[role.id] ? o : { ...o, [role.id]: true }));
     }
   }, [focusName]); // eslint-disable-line
-  // unassigned people have no standards to be judged by, so a bucket filter hides them
-  const unassigned = filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
-  const totalMatches = sections.reduce((n, s) => n + s.people.length, 0) + unassigned.length;
+  // People without a position are no longer drawn here (they are counted in the
+  // People link below), so the search count leaves them out too.
+  const totalMatches = sections.reduce((n, s) => n + s.people.length, 0);
+  const reviewCount = useMemo(() => needsReview(data), [data]);
 
   if ((data.roster || []).length === 0)
     return <div className="empty">No associates yet. Drop today's three reports in the Import tab and the roster builds itself.</div>;
@@ -12178,7 +12179,6 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             <PixIcon glyph="users" size={16} style={{ color: "#D0821E" }} />
             {role.name} <span className="da-count">{people.length}</span>
             <span className="s2-hflex" />
-            {role.id === sections[0]?.role.id && <SignalIgnoreEntry readOnly={readOnly} allowed={!!onIgnore} picking={picking} selected={sel.size} onStart={() => setPicking(true)} onApply={() => { onIgnore([...sel]); stopPicking(); }} onStop={stopPicking} />}
             {["cleared", "attention", "off"].map((b) => {
               const n = counts[b] || 0;
               if (!n && filter !== b) return null;
@@ -12228,26 +12228,15 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           )}
         </section>
       ))}</Late>
-      {unassigned.length > 0 && (
-        <section className="da-tbl lite s2-rolecard unassigned" style={{ "--role": "#8E8E93" }}>
-          <div className="warmhead">
-            <PixIcon glyph="warn" size={16} style={{ color: "#D0821E" }} />
-            Needs a position <span className="da-count">{unassigned.length}</span>
-          </div>
-          <p className="da-hint s2-recaphint">These names came in from reports. Give each one a position to start scoring them.</p>
-          {unassigned.map((a) => (
-            <div key={a.id} className="assoc-row unassigned-row">
-              <span className="assoc-name">{a.name}</span>
-              {!readOnly && (
-                <select className="assign-select" value=""
-                  onChange={(e) => { if (e.target.value) onMove(a.name, null, e.target.value); }}>
-                  <option value="">Assign a position…</option>
-                  {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              )}
-            </div>
-          ))}
-        </section>
+      {/* One way into People, not two half-ways. The Dashboard used to carry an
+          ignore picker and a "Needs a position" card, which asked a manager to
+          make People decisions in the wrong room and counted a name twice when
+          it was on both lists. Now it only counts, each name once, and the
+          decisions, a position or an ignore, stay apart inside People. */}
+      {!readOnly && onOpenPeople && !query && reviewCount > 0 && (
+        <button type="button" className="s2-rowbtn s2-pickbtn s2-reviewlink" onClick={onOpenPeople}>
+          <PixIcon glyph="warn" size={11} /> {reviewCount} {reviewCount === 1 ? "name needs" : "names need"} review · Open People
+        </button>
       )}
     </div>
   );
@@ -17477,7 +17466,7 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
             );
           })}
         </div>
-        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="compact" /></React.Suspense>}
+        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(floorRoster.length ? onToday.length : null, floorRoster.length ? offToday.length : null)} /></React.Suspense>}
       </div>
 
       {canSetGoal && !goalMonth.set && (
@@ -18230,9 +18219,9 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
               <PixIcon glyph="arrow" size={11} />
             </button>
           </div>
-          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>}
+          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(floorRoster.length ? onCount : null, floorRoster.length ? offToday.length : null)} /></React.Suspense>}
           <div className="s2-chip-state">
-<SignalSchedule onCount={onCount} offCount={offToday.length} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
+<SignalSchedule onCount={floorRoster.length ? onCount : null} offCount={floorRoster.length ? offToday.length : null} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
             <div className="s2-rota bloop-host" tabIndex={0}>
               <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
               <div className="bloopwin dn r s2-rotawin">
@@ -26974,18 +26963,15 @@ function SignalBucketChip({bucket, children}) {
   return signal && (bucket === "cleared" || bucket === "attention") ? null : children;
 }
 function SignalOriginalIgnore({children}) { return useSignal() ? null : children; }
-function SignalIgnoreEntry({readOnly, allowed, picking, selected, onStart, onApply, onStop}) {
-  const signal = useSignal();
-  if (!signal || readOnly || !allowed) return null;
-  return <div className="sg-ignore-tools">{picking ? <>
-    <span>{selected} selected</span><button className="s2-rowbtn" disabled={!selected} onClick={onApply}>Ignore selected</button>
-    <button className="s2-rowbtn" onClick={onStop}>Done</button>
-  </> : <button className="s2-rowbtn" onClick={onStart}><PixIcon glyph="user" size={11} /> Select people to ignore</button>}</div>;
-}
 function SignalLeadMeter({value, cap, children}) {
   return useSignal() ? <span className="sg-lead-meter">{children}<span className="assoc-leads"><b>{value}</b><span className="of-cap">/ {cap ?? "-"}</span></span></span> : children;
 }
 function SignalOriginalLeadCount({cap, children}) { return useSignal() && cap != null ? null : children; }
+/* "Today’s schedule · 8 on, 3 off", or just "Today’s schedule" when the counts
+   are not known, rather than a zero that reads as an empty floor. */
+function todaysScheduleLabel(on, off) {
+  return Number.isInteger(on) && Number.isInteger(off) ? `Today’s schedule · ${on} on, ${off} off` : "Today’s schedule";
+}
 function SignalSchedule({onCount, offCount, children, store, data, schedulerPrincipalEpoch, schedulerCanOpen}) {
   const signal = useSignal();
   const [hover, setHover] = React.useState(false);
@@ -27000,12 +26986,16 @@ function SignalSchedule({onCount, offCount, children, store, data, schedulerPrin
   return <div className="sg-schedule" onPointerEnter={e => { if(e.pointerType === "mouse") setHover(true); }} onPointerLeave={() => setHover(false)}
     onBlur={e => { if(!e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}
     onKeyDown={e => { if(e.key === "Escape") {setPinned(false);setHover(false);} }}>
+    {/* One control, not a month grid beside an on and off chip (Jorge, 18
+        November). The label is today; the panel it opens is today's people
+        first and the month under them, so the calendar is the same tap. */}
     <button className="sg-schedule-trigger" aria-label="Today's schedule and month details" aria-expanded={open} aria-controls={panelId}
       onFocus={() => setHover(true)} onClick={() => {setHover(false);setPinned(v=>!v);}}>
-      {calendar[0]}<span className="sg-schedule-count">{onCount} on today{offCount ? <small> · {offCount} off</small> : null}</span>
+      <span className="sg-schedule-count"><PixIcon glyph="calendar" size={10} /> {todaysScheduleLabel(onCount, offCount)}</span>
     </button>
-    {React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}
-    {open && <div id={panelId} className="sg-schedule-details">{roster.props.children}<div className="sg-schedule-month">{calendar[3].props.children}</div></div>}
+    {open && <div id={panelId} className="sg-schedule-details">{roster.props.children}<div className="sg-schedule-month">
+      {calendar[0]}{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}{calendar[3].props.children}
+    </div></div>}
   </div>;
 }
 

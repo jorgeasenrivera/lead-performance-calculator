@@ -210,7 +210,7 @@ function ScheduleDialog({hidden,closeRef,onClose,storeName,children,draft,onDraf
   </div>,container);
 }
 
-export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenStore,layout='panel'}){
+export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenStore,layout='panel',label='Today’s schedule'}){
   const auth=currentReportedAuth()||NO_AUTH;
   const identity=useSyncExternalStore(auth.subscribe,auth.getSnapshot,auth.getSnapshot);
   const button=useRef(null),opener=useRef(null),id=useId();
@@ -262,7 +262,12 @@ export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenSt
   const toggle=()=>{if(!trusted)return;const next={key:scopeKey,expanded:!expanded};heroExpansion=next;setExpansion(next);};
   return <div className="sc-entry" data-layout={layout} data-delivery-status={reported.status} data-calendar-weeks={weeks.length}>
     <style>{css}</style>
-    {layout==='compact'?<>
+    {/* The Dashboard's one schedule control: it opens on today, and the
+        planner's own Back to month is the full calendar, one tap on. */}
+    {layout==='today'?<button type="button" ref={button} className="sc-toggle sc-today-open" aria-haspopup="dialog" disabled={!trusted||!today} onClick={event=>open(today,event.currentTarget)} title={trusted?'Open today’s schedule':'This sign-in’s store data is not ready.'}>
+      <svg className="sc-calendar-icon" viewBox="0 0 7 7" aria-hidden="true" focusable="false" fill="currentColor">{glyphs.calendar.flatMap((row,y)=>[...row].flatMap((value,x)=>value==='1'?[<circle key={x+':'+y} cx={x+.5} cy={y+.5} r=".48"/>]:[]))}</svg>
+      <strong>{label}</strong>
+    </button>:layout==='compact'?<>
       <button type="button" ref={button} className="sc-toggle" aria-label={(month?monthText(month):'Month')+', calendar'} aria-expanded={expanded} aria-controls={id+'-dates'} disabled={!trusted||!today} onClick={toggle}>
         <svg className="sc-calendar-icon" viewBox="0 0 7 7" aria-hidden="true" focusable="false" fill="currentColor">{glyphs.calendar.flatMap((row,y)=>[...row].flatMap((value,x)=>value==='1'?[<circle key={x+':'+y} cx={x+.5} cy={y+.5} r=".48"/>]:[]))}</svg>
         <strong>{month?monthText(month):'Month'}</strong>

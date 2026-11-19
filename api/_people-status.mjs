@@ -283,6 +283,27 @@ export function holdPerson(data, name, { monthKey, rec, day, dayRow, at, file } 
   return next;
 }
 
+/**
+ * How many names a manager still has to look at in People, each counted once.
+ *
+ * Three lists ask for the same kind of decision: somebody on the floor with no
+ * position yet, a name a report brought that nobody has claimed, and a name
+ * held from a report until somebody says who it is. One person can sit on two
+ * of them at once (a held name that also left figures in the books), and the
+ * Dashboard's link has to say how many people that is, not how many rows. It
+ * only counts. Every decision stays in People, made by a person.
+ */
+export function needsReview(data) {
+  if (!data) return 0;
+  const keys = new Set();
+  for (const a of data.roster || []) {
+    if (a && !a.roleId && nm(a.name) && statusOf(data, a.name) === "active") keys.add(nm(a.name));
+  }
+  for (const p of unclaimed(data)) keys.add(p.key);
+  for (const p of pendingList(data)) keys.add(p.key);
+  return keys.size;
+}
+
 /** What is waiting, in the order a manager should look at it. */
 export function pendingList(data) {
   const out = [];
