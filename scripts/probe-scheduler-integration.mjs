@@ -10,6 +10,7 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const MOCK='http://127.0.0.1:5433';
 const ENABLED=process.env.PROBE_SCHEDULER_FLAG!=='0';
 const MANAGER_PAGES=process.env.PROBE_MANAGER_PAGES==='1';
+const DASHBOARD_TODAY=process.env.PROBE_DASHBOARD_TODAY==='1';
 const EVIDENCE=path.resolve(process.env.PROBE_EVIDENCE_DIR||path.join(ROOT,'../entry-probe'));
 fs.mkdirSync(EVIDENCE,{recursive:true});
 const USER='00000000-0000-4000-8000-000000000001';
@@ -168,15 +169,39 @@ try{
     await pages.click(); await choices.getByRole('button',{name:'Dashboard',exact:true}).click();
     assert.equal(await pinned.getAttribute('aria-current'),'page');
   });
+  if(DASHBOARD_TODAY&&!ENABLED)await check('an actual month day keeps the Dashboard schedule details open',async()=>{
+    const control=page.getByRole('button',{name:"Today's schedule and month details",exact:true});
+    await control.click();
+    const details=page.locator('.sg-schedule-details');
+    await details.waitFor({state:'visible'});
+    await details.locator('.s2-mc-grid i:not(.e)').first().click();
+    await details.locator('.sg-schedule-month .s2-detail').waitFor({state:'visible'});
+    assert.equal(await control.getAttribute('aria-expanded'),'true');
+    assert.equal(await details.isVisible(),true);
+    await control.press('Escape');
+    await details.waitFor({state:'hidden'});
+  });
+  const entry=()=>page.locator(DASHBOARD_TODAY?'.sc-today-open:visible:enabled':'.sc-toggle:visible:enabled').first();
+  const planner=()=>page.frameLocator('iframe[title="Schedule editor"]');
+  const openEditor=async()=>{
+    await entry().click();await page.locator('.sc-planner-dialog').waitFor();
+    await planner().locator(DASHBOARD_TODAY?'#sheet .day-heading:visible':'#app [data-view-switch]:visible').waitFor();
+  };
   if(ENABLED){
   await check('accepted editor opens through actual calendar entry',async()=>{
-    await page.locator('.sc-toggle:visible').first().click();await page.locator('.sc-planner-dialog').waitFor();
-    await page.frameLocator('iframe[title="Schedule editor"]').locator('#app [data-view-switch]:visible').waitFor();
+    await openEditor();
     assert.match(await page.locator('.sc-dialog-bar').innerText(),/Not saved/);
     assert.equal(await page.locator('.sc-close').evaluate(e=>document.activeElement===e),true);
     assert.equal(await page.locator('#root').getAttribute('inert')!==null,true);
     const frame=page.frameLocator('iframe[title="Schedule editor"]'),view=()=>frame.locator('[data-view-switch]:visible');
-    assert.equal(await view().inputValue(),'month','fresh dashboard entry starts in Month');
+    if(DASHBOARD_TODAY){
+      const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      assert.equal(await frame.locator('#app').getAttribute('data-haptic-date'),today,'the Dashboard opens on the current Eastern date');
+      await frame.getByRole('button',{name:'Back to month calendar',exact:true}).click();
+      await view().waitFor({state:'visible'});
+      assert.equal(await frame.locator(`[data-day="${today}"]`).getAttribute('aria-current'),'date');
+    }
+    assert.equal(await view().inputValue(),'month',DASHBOARD_TODAY?'back from today opens Month':'fresh dashboard entry starts in Month');
     assert.equal(await frame.locator('.calendar-pane').isVisible(),true);
     assert.equal(await frame.locator('#week-schedule').isVisible(),false);
     await view().selectOption('week');assert.equal(await frame.locator('#week-schedule').isVisible(),true);
@@ -197,7 +222,6 @@ try{
     await page.setViewportSize({width:1280,height:900});
 
   });
-  const planner=()=>page.frameLocator('iframe[title="Schedule editor"]');
   await check('actual roster and unknown hours stay honest',async()=>{
     const text=await planner().locator('#app').innerText();
     assert.match(text,/unknown|unverified|unavailable/i);assert.doesNotMatch(text,/Fictional|Stale Sam/);
@@ -231,8 +255,13 @@ try{
   await check('explicit close and reopen do not duplicate editor',async()=>{
     page.removeAllListeners('dialog');page.once('dialog',dialog=>dialog.accept());
     await page.locator('.sc-close').click();await page.locator('.sc-planner-dialog').waitFor({state:'detached'});
+    if(DASHBOARD_TODAY){
+      const opener=page.locator('.sc-today-open:focus');
+      await opener.waitFor({state:'visible'});
+      assert.equal(await opener.evaluate(button=>button===document.activeElement),true,'closing planner returns focus to Today’s schedule');
+    }
     page.on('dialog',dialog=>dialog.dismiss());
-    await page.locator('.sc-toggle:visible').first().click();await planner().locator('#app [data-view-switch]:visible').waitFor();assert.equal(await page.locator('iframe[title="Schedule editor"]').count(),1);
+    await openEditor();assert.equal(await page.locator('iframe[title="Schedule editor"]').count(),1);
   });
   await check('same-session store revocation and inactive profile retire private editor and unlock app',async()=>{
     for(const revoked of [{role:'manager',stores:['another-store']},{active:false}]){
@@ -240,8 +269,8 @@ try{
       await page.locator('.sc-planner-dialog').waitFor({state:'detached'});
       assert.equal(await page.locator('#root').getAttribute('inert'),null);assert.notEqual(await page.evaluate(()=>document.body.style.overflow),'hidden');
       profilePatch=null;await announce('TOKEN_REFRESHED');
-      await page.locator('.sc-toggle:visible:enabled').first().waitFor({timeout:30000});
-      await page.locator('.sc-toggle:visible').first().click();await planner().locator('#app [data-view-switch]:visible').waitFor();
+      await entry().waitFor({timeout:30000});
+      await openEditor();
       assert.equal(await planner().locator('.timeline-event').count(),0,'retired local attempts do not resurface');
     }
   });

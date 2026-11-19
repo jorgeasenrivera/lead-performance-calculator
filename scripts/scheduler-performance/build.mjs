@@ -1,3 +1,4 @@
+import { dashboardPreviewInput } from "./dashboard-preview-input.mjs";
 import {deliveryRoutes} from "./delivery-routing.mjs";
 import {sharedCore,sharedManager,relativeTypography} from "./shared-transform.mjs";
 import { readFile, writeFile, mkdir, cp } from "node:fs/promises";
@@ -15,7 +16,7 @@ import { managerPagesPreviewInput } from "./manager-pages-preview-input.mjs";
 export const MANAGER_SHA =
   "90edcd67ca1e04bbcd42cffbc5a4ebc157c6589f2226f6e115de6c26306c43fb";
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "7580c39c17bc0739bc5faa7a6b8ae2221dbd6af4293322d87d37a82be0c5883e") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "d01835f43db898b6ef464fb19343b5da527a86d3b0c03c200cfeabb3f2767354") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
@@ -98,7 +99,7 @@ export function patchManager(source) {
 }
 export async function buildPreview() {
   const currentManager=await readFile("src/Manager.jsx","utf8");
-  const previewManager=createHash("sha256").update(currentManager).digest("hex")===MANAGER_SHA?currentManager:historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(currentManager))));
+  const previewManager=createHash("sha256").update(currentManager).digest("hex")===MANAGER_SHA?currentManager:historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(dashboardPreviewInput(currentManager)))));
   const seed = buildDemo(new Date("2026-10-14T16:00:00Z"));
   // One synthetic daily-sales source drives the hero roll-up and calendar.
   const total = monthSales(fixtures()[0], "2026-10", "2026-10-14").total;
