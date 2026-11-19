@@ -43,7 +43,9 @@ export async function verifyManagerPhoneSearch(browser, url) {
       }
       await field.waitFor({ state: "visible", timeout: 5000 });
       const display = await field.evaluate((input) => {
-        const row = input.closest(".assoc-search-panel-slot,.seg-wrap");
+        // On a desk the search rides in the Pages row (#545); elsewhere it is in
+        // the page's own row, or the phone's panel under the header.
+        const row = input.closest(".assoc-search-panel-slot,.sage-pages-row,.seg-wrap");
         const box = input.getBoundingClientRect();
         return { row: getComputedStyle(row).display, width: box.width, height: box.height,
           tabs: [...row.querySelectorAll(".seg")].map((tab) => getComputedStyle(tab).display) };
