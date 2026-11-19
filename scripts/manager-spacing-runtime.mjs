@@ -107,12 +107,21 @@ export const STORE_ROOM_VISIBILITY_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual approved motion kit app, independently of the frozen historical run.
+export const MOTION_KIT_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:543,branch:'claude/project-thread-iu4k4x',
+ base:{commit:'ad34b191a69e5d86276d0ef383d5c60e42d3a2b3',tree:'3b144282c36d7960848e10f7d71037aae66c9ed4'},
+ current:{commit:'4d0d2721971bddda6c509e8c0da9f78e2f901cc3',tree:'b1ac99c5223691eddc33c5b688f5eb41263e8183',parents:['2c3c48b265c12b0e7898c2ffc41936801004cb1f']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
  if(number===STORE_ROOM_VISIBILITY_POLICY.pullRequest)return STORE_ROOM_VISIBILITY_POLICY;
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===MOTION_KIT_POLICY.pullRequest)return MOTION_KIT_POLICY;
  if(number===MANAGER_PAGES_POLICY.pullRequest)return MANAGER_PAGES_POLICY;
  if(number===STORE_HERO_LAYOUT_POLICY.pullRequest)return STORE_HERO_LAYOUT_POLICY;
  if(number===PEOPLE_SCHEDULER_COPY_POLICY.pullRequest)return PEOPLE_SCHEDULER_COPY_POLICY;
