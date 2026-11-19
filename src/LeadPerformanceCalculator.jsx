@@ -3861,7 +3861,8 @@ export default function LeadPerformanceCalculator() {
       brand={currentStore?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       sectionNav={managerPages ? <ManagerPagesNav key={view} items={navItems} value={navValue}
-        onChange={navOnChange} Icon={PixIcon} importBadge={<ImportBadge storeData={storeData} />} /> : null}
+        onChange={navOnChange} Icon={PixIcon} importBadge={<ImportBadge storeData={storeData} />}
+        search={tab === "board" ? <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} /> : null} /> : null}
       storeData={storeData}
       storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
       right={<>
@@ -4001,7 +4002,7 @@ export default function LeadPerformanceCalculator() {
             ) : !managerPages && <SegControl items={navItems} value={navValue} onChange={navOnChange}
               attentionId={reportsDue ? "import" : null}
               renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />}
-            {appModule !== "activity" && tab === "board" &&
+            {!managerPages && appModule !== "activity" && tab === "board" &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
             {appModule === "activity" && (tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}

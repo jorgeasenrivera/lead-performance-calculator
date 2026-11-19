@@ -3,7 +3,7 @@ import "./manager-pages-nav.css";
 
 const useBrowserLayoutEffect = typeof document === "undefined" ? useEffect : useLayoutEffect;
 
-export default function ManagerPagesNav({ items, value, onChange, Icon, importBadge }) {
+export default function ManagerPagesNav({ items, value, onChange, Icon, importBadge, search }) {
   const pages = items.filter(([id]) => id !== "import");
   const [lastPage, setLastPage] = useState(null);
   const [open, setOpen] = useState(false);
@@ -53,7 +53,7 @@ export default function ManagerPagesNav({ items, value, onChange, Icon, importBa
     onChange(key);
   };
 
-  return (
+  const nav = (
     <nav ref={root} className="sage-pages-nav no-print" aria-label="Store pages" onKeyDown={(event) => {
       if (event.key === "Escape" && open) { event.preventDefault(); event.stopPropagation(); close(true); }
     }}>
@@ -85,4 +85,7 @@ export default function ManagerPagesNav({ items, value, onChange, Icon, importBa
       </div>
     </nav>
   );
+  // The associate search shares this row on a desk. On its own row below it
+  // left a band of empty space above the store's hero.
+  return search ? <div className="sage-pages-row no-print">{nav}{search}</div> : nav;
 }
