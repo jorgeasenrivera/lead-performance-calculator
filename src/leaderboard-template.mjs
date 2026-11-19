@@ -256,6 +256,9 @@ ${policy}
      rows stay where they are and only what changed moves (see tvRefresh). */
   #root.tv-calm .lb tbody tr.row, #root.tv-calm .lb2 tbody tr.row { animation:none; }
   .soldnum { display:inline-block; }
+  /* The total is right-aligned in a box as wide as its captions, so its landing
+     grows from the right edge, where the figure is, not from the middle. */
+  .total-num { transform-origin:right center; }
   .tv-stale { display:inline-block; margin-top:.6vh; padding:.3vh .9vw; border-radius:99px;
     background:rgba(255,207,107,.16); color:#FFCF6B; font-size:1.5vh; font-weight:700; letter-spacing:.02em; }
 
