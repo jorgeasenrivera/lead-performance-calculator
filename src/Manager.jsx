@@ -27023,14 +27023,26 @@ function SignalSchedule({onCount, offCount, children, store, data, schedulerPrin
   const [hover, setHover] = React.useState(false);
   const [pinned, setPinned] = React.useState(false);
   const panelId = React.useId();
+  const rootRef = React.useRef(null);
+  const open = hover || pinned;
+  /* A press outside closes the panel, and so does focus moving to something
+     outside it. Focus dropping to nowhere does not: WebKit does that when a
+     button inside the panel is pressed, and when the window itself lets go of
+     focus, and in neither case has the person left. Closing then took the
+     month away between finding a day and pressing it. */
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const away = e => { if (!rootRef.current?.contains(e.target)) { setPinned(false); setHover(false); } };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [open]);
   if (SCHEDULER_CALENDAR) return null;
   const parts = React.Children.toArray(children).filter(React.isValidElement);
   if (!signal) return children;
   const roster = React.Children.toArray(parts[0].props.children)[1];
   const calendar = React.Children.toArray(parts[1].props.children);
-  const open = hover || pinned;
-  return <div className="sg-schedule" onPointerEnter={e => { if(e.pointerType === "mouse") setHover(true); }} onPointerLeave={() => setHover(false)}
-    onBlur={e => { if(!e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}
+  return <div ref={rootRef} className="sg-schedule" onPointerEnter={e => { if(e.pointerType === "mouse") setHover(true); }} onPointerLeave={() => setHover(false)}
+    onBlur={e => { if(e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}
     onKeyDown={e => { if(e.key === "Escape") {setPinned(false);setHover(false);} }}>
     {/* One control, not a month grid beside an on and off chip (Jorge, 18
         November). The label is today; the panel it opens is today's people
@@ -27039,9 +27051,9 @@ function SignalSchedule({onCount, offCount, children, store, data, schedulerPrin
       onFocus={() => setHover(true)} onClick={() => {setHover(false);setPinned(v=>!v);}}>
       <span className="sg-schedule-count"><PixIcon glyph="calendar" size={10} /> {todaysScheduleLabel(onCount, offCount)}</span>
     </button>
-    {/* tabIndex -1 so a press on a day, which is not focusable, lands focus
-        on the panel instead of the page. Otherwise the blur below closes the
-        panel on mousedown and the day's click never arrives. */}
+    {/* tabIndex -1 so a press on a day, which is not focusable, keeps focus
+        on the panel instead of dropping it on the page, and Tab goes on from
+        the month. */}
     {open && <div id={panelId} className="sg-schedule-details" tabIndex={-1}>{roster.props.children}<div className="sg-schedule-month">
       {calendar[0]}{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}{calendar[3].props.children}
     </div></div>}

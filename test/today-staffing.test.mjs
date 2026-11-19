@@ -107,3 +107,18 @@ test("the Dashboard lists come from the planner's roster, not the floor roster",
   assert.equal((src.match(/const onToday = staffing\?\.onPeople \|\| \[\];/g) || []).length, 2);
   assert.doesNotMatch(src, /offToday = floorRoster/);
 });
+
+test("the schedule panel stays open when focus drops to nowhere, and a press outside closes it", async () => {
+  // WebKit drops focus to the page on a press of a button inside the panel and
+  // when the window lets go of focus. Closing on that took the month away
+  // between finding a day and pressing it (#542, WebKit run, 19 November).
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
+  const start = src.indexOf("function SignalSchedule(");
+  const body = src.slice(start, src.indexOf("\nfunction ", start + 1));
+  assert.match(body, /onBlur=\{e => \{ if\(e\.relatedTarget && !e\.currentTarget\.contains\(e\.relatedTarget\)\)/);
+  assert.doesNotMatch(body, /if\(!e\.currentTarget\.contains\(e\.relatedTarget\)\)/);
+  assert.match(body, /document\.addEventListener\("pointerdown", away, true\)/);
+  assert.match(body, /if \(!rootRef\.current\?\.contains\(e\.target\)\) \{ setPinned\(false\); setHover\(false\); \}/);
+  assert.match(body, /<div ref=\{rootRef\} className="sg-schedule"/);
+});

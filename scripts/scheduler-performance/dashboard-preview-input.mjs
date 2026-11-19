@@ -3,9 +3,19 @@ import { createHash } from "node:crypto";
 const sha = source => createHash("sha256").update(source).digest("hex");
 // Strip the exact reviewed Dashboard adjustment from the frozen synthetic preview only.
 // In particular, restore the two prior entry anchors before the historical inverse.
-export const DASHBOARD_MANAGER_SHA = "f9bb7863883289c35c09b575c2cfb198a10977f944c54b87da2878876e18009e";
+export const DASHBOARD_MANAGER_SHA = "6d398d5b746df3e8c328a464f42948ea03ab0d93321bf2d73fb6c6ec6d448692";
 export const PRIOR_DASHBOARD_MANAGER_SHA = "17de0d26c06578a97b5daae50f05d07f16f6c14cdbfa278a02bdb549f59fae0e";
 const inverses = [
+  // The panel keeps its month when focus drops to nowhere (#542, WebKit):
+  // put the blur-only close back first, so the entries below meet their source.
+  [
+    "  const panelId = React.useId();\n  const rootRef = React.useRef(null);\n  const open = hover || pinned;\n  /* A press outside closes the panel, and so does focus moving to something\n     outside it. Focus dropping to nowhere does not: WebKit does that when a\n     button inside the panel is pressed, and when the window itself lets go of\n     focus, and in neither case has the person left. Closing then took the\n     month away between finding a day and pressing it. */\n  React.useEffect(() => {\n    if (!open) return undefined;\n    const away = e => { if (!rootRef.current?.contains(e.target)) { setPinned(false); setHover(false); } };\n    document.addEventListener(\"pointerdown\", away, true);\n    return () => document.removeEventListener(\"pointerdown\", away, true);\n  }, [open]);\n  if (SCHEDULER_CALENDAR) return null;\n",
+    "  const panelId = React.useId();\n  if (SCHEDULER_CALENDAR) return null;\n"
+  ],
+  [
+    "  const calendar = React.Children.toArray(parts[1].props.children);\n  return <div ref={rootRef} className=\"sg-schedule\" onPointerEnter={e => { if(e.pointerType === \"mouse\") setHover(true); }} onPointerLeave={() => setHover(false)}\n    onBlur={e => { if(e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}\n",
+    "  const calendar = React.Children.toArray(parts[1].props.children);\n  const open = hover || pinned;\n  return <div className=\"sg-schedule\" onPointerEnter={e => { if(e.pointerType === \"mouse\") setHover(true); }} onPointerLeave={() => setHover(false)}\n    onBlur={e => { if(!e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}\n"
+  ],
   // The count and the list on one planner roster (#542, ddde157): put the
   // floor roster reads back first, so the entries below meet the source they were written for.
   [
@@ -129,7 +139,7 @@ const inverses = [
     "      {calendar[0]}<span className=\"sg-schedule-count\">{onCount} on today{offCount ? <small> · {offCount} off</small> : null}</span>\n"
   ],
   [
-    "    {/* tabIndex -1 so a press on a day, which is not focusable, lands focus\n        on the panel instead of the page. Otherwise the blur below closes the\n        panel on mousedown and the day's click never arrives. */}\n    {open && <div id={panelId} className=\"sg-schedule-details\" tabIndex={-1}>{roster.props.children}<div className=\"sg-schedule-month\">\n      {calendar[0]}{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}{calendar[3].props.children}\n    </div></div>}\n",
+    "    {/* tabIndex -1 so a press on a day, which is not focusable, keeps focus\n        on the panel instead of dropping it on the page, and Tab goes on from\n        the month. */}\n    {open && <div id={panelId} className=\"sg-schedule-details\" tabIndex={-1}>{roster.props.children}<div className=\"sg-schedule-month\">\n      {calendar[0]}{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}{calendar[3].props.children}\n    </div></div>}\n",
     "    {React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}\n    {open && <div id={panelId} className=\"sg-schedule-details\">{roster.props.children}<div className=\"sg-schedule-month\">{calendar[3].props.children}</div></div>}\n"
   ]
 ];
