@@ -67,7 +67,7 @@ async function capture(name,surface){
  const g=await hero.evaluate(n=>{
   const box=x=>{const r=x.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};
   const update=n.querySelector('.bp-upd,.co-upd');const s=update&&getComputedStyle(update),dot=update?.querySelector('i'),ds=dot&&getComputedStyle(dot);
-  return{hero:box(n),width:innerWidth,scroll:document.documentElement.scrollWidth,update:update?{text:update.textContent,title:update.title,box:box(update),font:s.fontSize,weight:s.fontWeight,tracking:s.letterSpacing,lineHeight:s.lineHeight,dot:dot?{box:box(dot),color:ds.backgroundColor,shadow:ds.boxShadow,animation:ds.animationName}:null}:null,upper:n.querySelector('.bp-h5')?box(n.querySelector('.bp-h5')):null,controls:[...n.querySelectorAll('.bp-h5>button')].map(c=>({class:c.className,text:c.textContent,...box(c)}))};
+  return{hero:box(n),width:innerWidth,scroll:document.documentElement.scrollWidth,update:update?{text:update.textContent,title:update.title,box:box(update),font:s.fontSize,weight:s.fontWeight,tracking:s.letterSpacing,lineHeight:s.lineHeight,dot:dot?{box:box(dot),color:ds.backgroundColor,shadow:ds.boxShadow,animation:ds.animationName}:null}:null,upper:n.querySelector('.bp-h5')?box(n.querySelector('.bp-h5')):null,controls:[...n.querySelectorAll('.bp-h5>button')].map(c=>({class:c.className,text:c.textContent,...box(c)})),schedule:[...n.querySelectorAll('.sg-schedule-trigger')].map(c=>({text:c.textContent.trim(),...box(c)}))};
  });results.push({name,surface,...g});await hero.screenshot({path:`${out}/${name}-${surface}.png`});assert.ok(g.scroll<=g.width+1,`${name}/${surface}: fits page`);
  if(g.update)assert.ok(g.update.box.x>=g.hero.x&&g.update.box.right<=g.hero.right+1,`${name}: timestamp contained`);
  for(const c of g.controls)assert.ok(c.x>=g.hero.x&&c.right<=g.hero.right+1,`${name}: ${c.class} contained`);
@@ -113,7 +113,17 @@ try{
   for(const current of results.filter(x=>x.upper&&!x.name.startsWith('state-'))){
    const before=baseline.results.find(x=>x.name===current.name&&x.surface===current.surface);
    assert.ok(current.upper.height<before.upper.height,`${current.name}: Performance upper panel is shorter`);
-   assert.deepEqual(current.controls.map(x=>x.text),before.controls.map(x=>x.text),`${current.name}: facts and affordances preserved`);
+   // #542 (Jorge, 19 November): the phone's on/off chip (.bp-r3, "8 on") gave
+   // way to one Today's schedule control under the channel row, which counts
+   // nobody as on unless the planner confirms it. That swap is the one
+   // expected change; every other control is still compared exactly.
+   const chip=before.controls.filter(x=>/(^|\s)bp-r3(\s|$)/.test(x.class));
+   assert.deepEqual(current.controls.map(x=>x.text),before.controls.filter(x=>!chip.includes(x)).map(x=>x.text),`${current.name}: facts and affordances preserved`);
+   if(chip.length){
+    assert.equal(current.schedule?.length,1,`${current.name}: one schedule control replaces the on/off chip`);
+    assert.match(current.schedule[0].text,/^Today’s schedule/,`${current.name}: the schedule control names today's schedule`);
+    assert.ok(current.schedule[0].x>=current.hero.x&&current.schedule[0].right<=current.hero.right+1,`${current.name}: schedule control contained`);
+   }
   }
  }
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
