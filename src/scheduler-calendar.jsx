@@ -6,6 +6,7 @@ import {calendarCells,deliveriesMonth,monthText,STORE_TIME_ZONE} from './schedul
 import {createLegacyScheduleResolver,editorStore,zonedToday} from './scheduler-editor-adapter.mjs';
 import {currentReportedAuth,registerLeaveGuard,trustedFor} from './scheduler-load-context.mjs';
 import {useReportedMonth} from './use-reported-month.mjs';
+import {useZonedToday} from './zoned-today.mjs';
 import {createLocalManualDraftConnection,createPilotDraftConnection,manualDraftView} from './scheduler-manual-setup.mjs';
 import {validMonth} from '../scripts/scheduler-performance/month-model.mjs';
 import {timeLabel} from '../scripts/scheduler-performance/shift-intervals.mjs';
@@ -210,7 +211,7 @@ function ScheduleDialog({hidden,closeRef,onClose,storeName,children,draft,onDraf
   </div>,container);
 }
 
-export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenStore,layout='panel'}){
+export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenStore,layout='panel',label='Today’s schedule'}){
   const auth=currentReportedAuth()||NO_AUTH;
   const identity=useSyncExternalStore(auth.subscribe,auth.getSnapshot,auth.getSnapshot);
   const button=useRef(null),opener=useRef(null),id=useId();
@@ -218,7 +219,8 @@ export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenSt
   const scopeKey=JSON.stringify([store?.id,identity.principalEpoch]);
   const [expansion,setExpansion]=useState(()=>({...heroExpansion}));
   const timezone=store?.timezone||STORE_TIME_ZONE;
-  const today=zonedToday(timezone,new Date()),month=today?.slice(0,7);
+  // Moves on at midnight in the store's zone, and again when a sleeping tab wakes.
+  const today=useZonedToday(timezone),month=today?.slice(0,7);
   const trusted=Boolean(store && identity.sessionReady===true && principalEpoch===identity.principalEpoch
     && canOpenStore?.(store.id)===true && trustedFor(data,store.id,auth).ok);
   const expanded=trusted&&expansion.key===scopeKey&&expansion.expanded;
@@ -233,7 +235,7 @@ export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenSt
   },[id,store?.id]);
   useLayoutEffect(()=>{if(!trusted && state.open && state.props?.store.id===store?.id)closePlan();},[trusted,store?.id]);
   const open=(day=null,target=button.current)=>{
-    if(!trusted || !today || day!==null&&!calendarCells(month).includes(day))return;
+    if(!trusted || !today || day!==null&&!calendarCells(day.slice(0,7)).includes(day))return;
     opener.current=target;
     try{
       const copied=structuredClone(data),scoped=editorStore(store,copied,timezone);
@@ -262,7 +264,14 @@ export function SchedulerCalendarEntry({store,data,principalEpoch=null,canOpenSt
   const toggle=()=>{if(!trusted)return;const next={key:scopeKey,expanded:!expanded};heroExpansion=next;setExpansion(next);};
   return <div className="sc-entry" data-layout={layout} data-delivery-status={reported.status} data-calendar-weeks={weeks.length}>
     <style>{css}</style>
-    {layout==='compact'?<>
+    {/* The Dashboard's one schedule control: it opens on today, and the
+        planner's own Back to month is the full calendar, one tap on. The day
+        is read again at the press, so the first tap after a tab slept past
+        midnight opens the new day, not the one the tab last drew. */}
+    {layout==='today'?<button type="button" ref={button} className="sc-toggle sc-today-open" aria-haspopup="dialog" disabled={!trusted||!today} onClick={event=>open(zonedToday(timezone,new Date())||today,event.currentTarget)} title={trusted?'Open today’s schedule':'This sign-in’s store data is not ready.'}>
+      <svg className="sc-calendar-icon" viewBox="0 0 7 7" aria-hidden="true" focusable="false" fill="currentColor">{glyphs.calendar.flatMap((row,y)=>[...row].flatMap((value,x)=>value==='1'?[<circle key={x+':'+y} cx={x+.5} cy={y+.5} r=".48"/>]:[]))}</svg>
+      <strong>{label}</strong>
+    </button>:layout==='compact'?<>
       <button type="button" ref={button} className="sc-toggle" aria-label={(month?monthText(month):'Month')+', calendar'} aria-expanded={expanded} aria-controls={id+'-dates'} disabled={!trusted||!today} onClick={toggle}>
         <svg className="sc-calendar-icon" viewBox="0 0 7 7" aria-hidden="true" focusable="false" fill="currentColor">{glyphs.calendar.flatMap((row,y)=>[...row].flatMap((value,x)=>value==='1'?[<circle key={x+':'+y} cx={x+.5} cy={y+.5} r=".48"/>]:[]))}</svg>
         <strong>{month?monthText(month):'Month'}</strong>

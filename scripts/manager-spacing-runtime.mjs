@@ -116,7 +116,17 @@ export const MOTION_KIT_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Qualify the exact Dashboard/Today source separately from the frozen historical runtime.
+export const DASHBOARD_TODAY_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:542,branch:'claude/sage-dashboard-people-scheduler-8ntqy6',
+ base:{commit:'deb8df18768767701b55ba024be476e681ed4d65',tree:'dce88532c1d63aa06315157be9a023a68088e7cc'},
+ current:{commit:'51a1177f4e95f699e6c3a2ca4522eb5a91d8cc6f',tree:'2a6d88bd8e0923b279cda7ea4242657db56b7461',parents:['b2db4d946a5c2b8a3994655b571ba3387a273c0f'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
+ if(number===DASHBOARD_TODAY_POLICY.pullRequest)return DASHBOARD_TODAY_POLICY;
  if(number===STORE_ROOM_VISIBILITY_POLICY.pullRequest)return STORE_ROOM_VISIBILITY_POLICY;
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;

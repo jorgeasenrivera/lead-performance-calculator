@@ -1,6 +1,8 @@
 import managerSignalCSS from "./manager-signal.css?inline";
 import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
 import { MK, mkLand } from "./motion-kit.mjs";
+import { staffingFor } from "./today-staffing.mjs";
+import { useZonedToday } from "./zoned-today.mjs";
 /* The manager's pages.
    -------------------------------------------------------------------------
    Everything a salesperson's phone never opens: the dashboard, the desks, the
@@ -46,7 +48,7 @@ import { assistWhere } from "../api/_queue-notify.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
   packUp, transferOut, likelyMatches, sameAs, servedOn,
-  manglings, mergeManglings, folds, unfold, transferIn } from "../api/_people-status.mjs";
+  manglings, mergeManglings, folds, unfold, transferIn, needsReview } from "../api/_people-status.mjs";
 import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
 import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
@@ -11957,7 +11959,7 @@ function AssocSearch({ value, onChange, store }) {
    above the fold next to the hero without the board turning into a scroll. */
 const ROLL_CAP = 5;
 
-function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onFilter, onClearFilter, query = "", focusName, onFocus, onIgnore }) {
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onFilter, onClearFilter, query = "", focusName, onFocus, onIgnore, onOpenPeople }) {
   const [rollOpen, setRollOpen] = useState({});
   /* The board is where you notice somebody who does not belong — a name from
      another rooftop that an import dragged in. Sending you to the Roster tab to
@@ -12088,12 +12090,28 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       if (at >= ROLL_CAP) setRollOpen((o) => (o[role.id] ? o : { ...o, [role.id]: true }));
     }
   }, [focusName]); // eslint-disable-line
-  // unassigned people have no standards to be judged by, so a bucket filter hides them
-  const unassigned = filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
+  // A manager gets the People link instead of a "Needs a position" card. The
+  // overseer's board is read only and has no People to go to, so it keeps the
+  // list, and its search keeps finding those names, with no controls on it.
+  // Unassigned people have no standards to be judged by, so a bucket filter
+  // hides them.
+  const showUnassigned = !onOpenPeople;
+  const unassigned = !showUnassigned || filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
   const totalMatches = sections.reduce((n, s) => n + s.people.length, 0) + unassigned.length;
+  const reviewCount = useMemo(() => needsReview(data), [data]);
+  const reviewLink = !readOnly && onOpenPeople && !query && reviewCount > 0 ? (
+    <button type="button" className="s2-rowbtn s2-pickbtn s2-reviewlink" onClick={onOpenPeople}>
+      <PixIcon glyph="warn" size={11} /> {reviewCount} {reviewCount === 1 ? "name needs" : "names need"} review · Open People
+    </button>
+  ) : null;
 
+  // An empty roster can still have names held back or in the books unclaimed,
+  // and People is the only place they get decided, so the link stays.
   if ((data.roster || []).length === 0)
-    return <div className="empty">No associates yet. Drop today's three reports in the Import tab and the roster builds itself.</div>;
+    return <>
+      <div className="empty">No associates yet. Drop today's three reports in the Import tab and the roster builds itself.</div>
+      {reviewLink}
+    </>;
 
   return (
     <div className="board">
@@ -12178,7 +12196,6 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             <PixIcon glyph="users" size={16} style={{ color: "#D0821E" }} />
             {role.name} <span className="da-count">{people.length}</span>
             <span className="s2-hflex" />
-            {role.id === sections[0]?.role.id && <SignalIgnoreEntry readOnly={readOnly} allowed={!!onIgnore} picking={picking} selected={sel.size} onStart={() => setPicking(true)} onApply={() => { onIgnore([...sel]); stopPicking(); }} onStop={stopPicking} />}
             {["cleared", "attention", "off"].map((b) => {
               const n = counts[b] || 0;
               if (!n && filter !== b) return null;
@@ -12238,17 +12255,16 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           {unassigned.map((a) => (
             <div key={a.id} className="assoc-row unassigned-row">
               <span className="assoc-name">{a.name}</span>
-              {!readOnly && (
-                <select className="assign-select" value=""
-                  onChange={(e) => { if (e.target.value) onMove(a.name, null, e.target.value); }}>
-                  <option value="">Assign a position…</option>
-                  {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              )}
             </div>
           ))}
         </section>
       )}
+      {/* One way into People, not two half-ways. The Dashboard used to carry an
+          ignore picker and a "Needs a position" card, which asked a manager to
+          make People decisions in the wrong room and counted a name twice when
+          it was on both lists. Now it only counts, each name once, and the
+          decisions, a position or an ignore, stay apart inside People. */}
+      {reviewLink}
     </div>
   );
 }
@@ -17175,9 +17191,18 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
     return o;
   }, [digests]);
   const series = useMemo(() => (digests ? dailySeries(digests, thr) : null), [digests, thr]); // eslint-disable-line
-  const floorRoster = activityRoster(config, data);
-  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
-  const onToday = floorRoster.filter((a) => !offToday.includes(a));
+  // Today in the store's zone. It moves on at midnight there, and again when a
+  // sleeping tab wakes, so the control never keeps yesterday's day or counts.
+  const schedDay = useZonedToday(store?.timezone || STORE_TZ);
+  // The schedule control's counts come from what the planner confirms, not from
+  // who is merely not listed off. Unknown leaves the label without numbers.
+  const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);
+  const scheduleLabel = todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off);
+  // The list behind it is explicit days off, and only those the planner
+  // confirms are called on. Not being listed off is not being on. It is the
+  // planner's roster, the same one the count reads, so the two always agree.
+  const offToday = staffing?.offPeople || [];
+  const onToday = staffing?.onPeople || [];
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -17188,7 +17213,7 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
     let best = null;
     for (const [k, v] of Object.entries(dayUnits)) if (k.slice(0, 7) === mk && v.u != null && (!best || v.u > best.u)) best = { d: k, u: v.u };
     return { mk, dim, off, dNow, satsLeft, best };
-  }, [dayUnits]);
+  }, [dayUnits, schedDay]); // schedDay: the month grid moves on at midnight too
   const lastImport = (data.importLog || [])[0] || null;
   const updatedAt = (() => {
     const stamps = [];
@@ -17405,8 +17430,8 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
         </div>
       );
       return (<>
-        {hd("Today", <><span className="fr-st in">{onToday.length} on</span><span className="fr-st away">{offToday.length} off</span></>)}
-        <div className="fr-list">{onToday.map((a) => row(a, true))}{offToday.map((a) => row(a, false))}</div>
+        {hd("Today", <>{onToday.length > 0 && <span className="fr-st in">{onToday.length} on</span>}<span className="fr-st away">{offToday.length} off</span></>)}
+        <div className="fr-list">{onToday.map((a) => row(a, true))}{offToday.map((a) => row(a, false))}{!onToday.length && !offToday.length && <p className="fr-empty">No days off set for today.</p>}</div>
       </>);
     }
     return null;
@@ -17443,9 +17468,6 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
             <span className="bp-nu"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></span>
             <span className="bp-nul"><span><b>{fmtNum(split.nw)}</b> new</span><span><b>{fmtNum(split.us)}</b> used</span></span>
           </button>
-          <button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>
-            <span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>
-          </button>
         </div>
         <div className="bp-secdiv" />
         <div className="bp-five">
@@ -17477,7 +17499,11 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
             );
           })}
         </div>
-        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="compact" /></React.Suspense>}
+        {/* One schedule control on the phone. With the calendar on it opens the
+            planner on today; with it off, the Signal fallback opens today's list. */}
+        {SCHEDULER_CALENDAR
+          ? <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={scheduleLabel} /></React.Suspense>
+          : <div className="sg-schedule bp-sched"><button type="button" className="sg-schedule-trigger" aria-haspopup="dialog" onClick={() => setPop({ k: "onoff" })}><span className="sg-schedule-count"><PixIcon glyph="calendar" size={10} /> {scheduleLabel}</span></button></div>}
       </div>
 
       {canSetGoal && !goalMonth.set && (
@@ -17868,11 +17894,14 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
     }
     return o;
   }, [digests]);
-  /* The same people the check-out sheet counts, read the same way, so the two
-     screens can never put a different number of bodies on the floor. */
-  const floorRoster = activityRoster(config, data);
-  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
-  const onCount = floorRoster.length - offToday.length;
+  // Today in the store's zone, moving on at midnight and when a sleeping tab
+  // wakes. Days off are the explicit ones; on is only what the planner confirms.
+  // The names come from the planner's roster, the one the count reads, so the
+  // label and the list it opens cannot disagree.
+  const schedDay = useZonedToday(store?.timezone || STORE_TZ);
+  const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);
+  const offToday = staffing?.offPeople || [];
+  const onToday = staffing?.onPeople || [];
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -17885,7 +17914,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
     for (const [k, v] of Object.entries(dayUnits))
       if (k.slice(0, 7) === mk && v.u != null && (!best || v.u > best.u)) best = { d: k, u: v.u };
     return { mk, dim, off, dNow, satsLeft, best };
-  }, [dayUnits]);
+  }, [dayUnits, schedDay]); // schedDay: the month grid moves on at midnight too
   const lastImport = (data.importLog || [])[0] || null;
   const videoDials = ["apptVideoDayPct", "bhVideoPct", "engagedVideoPct"]
     .map((m) => metricRoll[m]
@@ -18230,20 +18259,25 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
               <PixIcon glyph="arrow" size={11} />
             </button>
           </div>
-          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="panel" /></React.Suspense>}
+          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off)} /></React.Suspense>}
           <div className="s2-chip-state">
-<SignalSchedule onCount={onCount} offCount={offToday.length} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
+<SignalSchedule onCount={staffing?.counts?.on ?? null} offCount={staffing?.counts?.off ?? null} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
             <div className="s2-rota bloop-host" tabIndex={0}>
-              <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
+              <b>{staffing?.counts
+                ? <>{staffing.counts.on}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</>
+                : offToday.length ? `${offToday.length} off today` : "Today’s schedule"}</b>
               <div className="bloopwin dn r s2-rotawin">
-                <div className="bw-title">On today · {onCount}</div>
-                <div className="s2-names">
-                  {floorRoster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
-                    <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
-                  ))}
-                </div>
+                {onToday.length > 0 && (<>
+                  <div className="bw-title">On today · {onToday.length}</div>
+                  <div className="s2-names">
+                    {onToday.slice(0, 14).map((a) => (
+                      <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
+                    ))}
+                  </div>
+                </>)}
+                {!onToday.length && !offToday.length && <div className="bw-title">No days off set for today</div>}
                 {offToday.length > 0 && (<>
-                  <div className="bw-title" style={{ marginTop: 10 }}>Off today · {offToday.length}</div>
+                  <div className="bw-title" style={onToday.length ? { marginTop: 10 } : undefined}>Off today · {offToday.length}</div>
                   <div className="s2-names">
                     {offToday.map((a) => (<s key={a.id} className="off"><i className="s2-pdot off" />{a.name}</s>))}
                   </div>
@@ -25890,6 +25924,7 @@ button.da-lbrow { cursor:pointer; }
 .bp-nul{ display:flex; justify-content:space-between; font:600 9.5px var(--font-mono); color:rgba(255,255,255,.75); margin-top:6px; }
 .bp-nul b{ color:#fff; }
 .bp-r3{ grid-column:2; grid-row:3; align-self:center; padding-top:16px; display:flex; justify-content:flex-end; }
+.bp-hero > .bp-sched{ margin-top:16px; }
 .bp-onoff{ background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.12); border-radius:9px; padding:5px 8px; font:700 11px var(--font-mono); color:#fff; white-space:nowrap; }
 .bp-onoff em{ font-style:normal; color:#F08A80; }
 .bp-secdiv{ margin-top:18px; border-top:2px dotted rgba(255,255,255,.28); }
@@ -26974,38 +27009,54 @@ function SignalBucketChip({bucket, children}) {
   return signal && (bucket === "cleared" || bucket === "attention") ? null : children;
 }
 function SignalOriginalIgnore({children}) { return useSignal() ? null : children; }
-function SignalIgnoreEntry({readOnly, allowed, picking, selected, onStart, onApply, onStop}) {
-  const signal = useSignal();
-  if (!signal || readOnly || !allowed) return null;
-  return <div className="sg-ignore-tools">{picking ? <>
-    <span>{selected} selected</span><button className="s2-rowbtn" disabled={!selected} onClick={onApply}>Ignore selected</button>
-    <button className="s2-rowbtn" onClick={onStop}>Done</button>
-  </> : <button className="s2-rowbtn" onClick={onStart}><PixIcon glyph="user" size={11} /> Select people to ignore</button>}</div>;
-}
 function SignalLeadMeter({value, cap, children}) {
   return useSignal() ? <span className="sg-lead-meter">{children}<span className="assoc-leads"><b>{value}</b><span className="of-cap">/ {cap ?? "-"}</span></span></span> : children;
 }
 function SignalOriginalLeadCount({cap, children}) { return useSignal() && cap != null ? null : children; }
+/* "Today’s schedule · 8 on, 3 off", or just "Today’s schedule" when the counts
+   are not known, rather than a zero that reads as an empty floor. */
+function todaysScheduleLabel(on, off) {
+  return Number.isInteger(on) && Number.isInteger(off) ? `Today’s schedule · ${on} on, ${off} off` : "Today’s schedule";
+}
 function SignalSchedule({onCount, offCount, children, store, data, schedulerPrincipalEpoch, schedulerCanOpen}) {
   const signal = useSignal();
   const [hover, setHover] = React.useState(false);
   const [pinned, setPinned] = React.useState(false);
   const panelId = React.useId();
+  const rootRef = React.useRef(null);
+  const open = hover || pinned;
+  /* A press outside closes the panel, and so does focus moving to something
+     outside it. Focus dropping to nowhere does not: WebKit does that when a
+     button inside the panel is pressed, and when the window itself lets go of
+     focus, and in neither case has the person left. Closing then took the
+     month away between finding a day and pressing it. */
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const away = e => { if (!rootRef.current?.contains(e.target)) { setPinned(false); setHover(false); } };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [open]);
   if (SCHEDULER_CALENDAR) return null;
   const parts = React.Children.toArray(children).filter(React.isValidElement);
   if (!signal) return children;
   const roster = React.Children.toArray(parts[0].props.children)[1];
   const calendar = React.Children.toArray(parts[1].props.children);
-  const open = hover || pinned;
-  return <div className="sg-schedule" onPointerEnter={e => { if(e.pointerType === "mouse") setHover(true); }} onPointerLeave={() => setHover(false)}
-    onBlur={e => { if(!e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}
+  return <div ref={rootRef} className="sg-schedule" onPointerEnter={e => { if(e.pointerType === "mouse") setHover(true); }} onPointerLeave={() => setHover(false)}
+    onBlur={e => { if(e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {setPinned(false); setHover(false);} }}
     onKeyDown={e => { if(e.key === "Escape") {setPinned(false);setHover(false);} }}>
+    {/* One control, not a month grid beside an on and off chip (Jorge, 18
+        November). The label is today; the panel it opens is today's people
+        first and the month under them, so the calendar is the same tap. */}
     <button className="sg-schedule-trigger" aria-label="Today's schedule and month details" aria-expanded={open} aria-controls={panelId}
       onFocus={() => setHover(true)} onClick={() => {setHover(false);setPinned(v=>!v);}}>
-      {calendar[0]}<span className="sg-schedule-count">{onCount} on today{offCount ? <small> · {offCount} off</small> : null}</span>
+      <span className="sg-schedule-count"><PixIcon glyph="calendar" size={10} /> {todaysScheduleLabel(onCount, offCount)}</span>
     </button>
-    {React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}
-    {open && <div id={panelId} className="sg-schedule-details">{roster.props.children}<div className="sg-schedule-month">{calendar[3].props.children}</div></div>}
+    {/* tabIndex -1 so a press on a day, which is not focusable, keeps focus
+        on the panel instead of dropping it on the page, and Tab goes on from
+        the month. */}
+    {open && <div id={panelId} className="sg-schedule-details" tabIndex={-1}>{roster.props.children}<div className="sg-schedule-month">
+      {calendar[0]}{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}{calendar[3].props.children}
+    </div></div>}
   </div>;
 }
 

@@ -4054,7 +4054,7 @@ export default function LeadPerformanceCalculator() {
                       onMove={moveAssociate} onSetRestriction={setRestriction}
                       filter={boardFilter} onFilter={setBoardFilter} onClearFilter={() => setBoardFilter(null)}
                       query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc}
-                      onIgnore={ignoreNames} />
+                      onIgnore={ignoreNames} onOpenPeople={() => chooseSchedulerTab("roster")} />
                     </>)}
                   </div>
                 )}

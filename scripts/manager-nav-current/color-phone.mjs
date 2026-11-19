@@ -58,7 +58,13 @@ async function capture(phase,width,scale,view){
   const borders=['.sect-strip','.assoc-search-trigger','.view-select','.manager-context-action'].flatMap(sel=>[...document.querySelectorAll(sel)].filter(n=>n.getBoundingClientRect().width).map(n=>({sel,ratio:contrast(getComputedStyle(n).borderTopColor,bg(n))})));
   const hero=document.querySelector('.bp-hero'),upper=hero?.querySelector('.bp-h5'),update=hero?.querySelector('.bp-upd');
   const heroUpperHeight=(upper?.getBoundingClientRect().height||0)+(update?update.getBoundingClientRect().height+parseFloat(getComputedStyle(update).marginBottom||0):0);
-  return{boxes,colors,borders,heroUpperHeight,stickyHeight:document.querySelector('.topstack').getBoundingClientRect().height,scroll:document.documentElement.scrollWidth,width:innerWidth};
+  // #542 (Jorge, 19 November): the on/off chip left the upper panel for one
+  // Today's schedule control of its own under the channel row. Its height and
+  // margins are the one approved addition to the hero outside the panel.
+  const sched=hero?[...hero.children].filter(n=>n.classList.contains('bp-sched')):[];
+  const heroScheduleHeight=sched.reduce((s,n)=>{const c=getComputedStyle(n);return s+n.getBoundingClientRect().height+parseFloat(c.marginTop||0)+parseFloat(c.marginBottom||0)},0);
+  const heroScheduleText=sched.map(n=>n.textContent.trim());
+  return{boxes,colors,borders,heroUpperHeight,heroScheduleHeight,heroScheduleText,stickyHeight:document.querySelector('.topstack').getBoundingClientRect().height,scroll:document.documentElement.scrollWidth,width:innerWidth};
  });
  results.push({phase,width,scale,view,...data});
  assert.ok(data.scroll<=width+1,'no horizontal overflow');
@@ -71,7 +77,14 @@ async function capture(phase,width,scale,view){
   assert.deepEqual(unchanged(data),unchanged(before),'unrelated controls retain exact geometry and the hero moves only with the approved sticky stack');
   assert.ok(data.colors.filter(c=>c.sel.startsWith('.sage-pages-rail')).length>=3,'assess new rail contrast rather than vacuous pass');
   const hero=data.boxes.find(b=>b.sel==='.bp-hero'),oldHero=before.boxes.find(b=>b.sel==='.bp-hero');
-  assert.ok(Math.abs((hero.h-data.heroUpperHeight)-(oldHero.h-before.heroUpperHeight))<.05,'hero height outside the approved upper panel is unchanged');
+  // Only where the swap happened: a build that already had the control, or
+  // still has the chip, is held to the hero height exactly as before.
+  const added=before.heroScheduleText.length===0&&data.heroScheduleText.length===1?data.heroScheduleHeight:0;
+  if(added){
+   assert.match(data.heroScheduleText[0],/^Today\u2019s schedule/,'the one control added to the hero is today\'s schedule');
+   assert.ok(added>0,'the schedule control takes its own room in the hero');
+  }
+  assert.ok(Math.abs((hero.h-data.heroUpperHeight-added)-(oldHero.h-before.heroUpperHeight))<.05,'hero height outside the approved upper panel is unchanged');
   }else assert.equal(view,'pages-disclosure','only the approved new disclosure lacks a historical equivalent');
   for(const c of data.colors)assert.ok(c.ratio>=4.5,`${c.sel} text contrast ${c.ratio}`);
   for(const c of data.borders)assert.ok(c.ratio>=3,`${c.sel} UI contrast ${c.ratio}`);

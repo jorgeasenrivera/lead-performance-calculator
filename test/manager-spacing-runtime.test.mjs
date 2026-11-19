@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY,DUET_STORE_CARD_POLICY,ROOMS_HINT_POLICY,DUET_COPY_POLICY,PEOPLE_SCHEDULER_COPY_POLICY,STORE_HERO_LAYOUT_POLICY,MANAGER_PAGES_POLICY,STORE_ROOM_VISIBILITY_POLICY,MOTION_KIT_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
+import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY,DUET_STORE_CARD_POLICY,ROOMS_HINT_POLICY,DUET_COPY_POLICY,PEOPLE_SCHEDULER_COPY_POLICY,STORE_HERO_LAYOUT_POLICY,MANAGER_PAGES_POLICY,STORE_ROOM_VISIBILITY_POLICY,MOTION_KIT_POLICY,DASHBOARD_TODAY_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
 
 const sha=b=>createHash('sha256').update(b).digest('hex');
 function fixture(extra=false,withSnapshot=false){
@@ -467,7 +467,7 @@ test('Sage #538 layout checks verify exact current source while retaining all hi
 });
 
 
-test('Manager Pages and motion kit use the current Pages lanes in Chromium and WebKit',()=>{
+test('Manager Pages, motion kit and Dashboard Today use the current Pages lanes in Chromium and WebKit',()=>{
  const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
  const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
  const p=MANAGER_PAGES_POLICY,n=p.pullRequest;
@@ -478,12 +478,18 @@ test('Manager Pages and motion kit use the current Pages lanes in Chromium and W
  const steps=runner.split('      - name: ');
  const heat=steps.find(s=>s.startsWith('Exercise Manager Pages navigation'));
  const plain=steps.find(s=>s.startsWith('Exercise the current Calendar entry'));
- const pagesWhen="matrix.runtime == 'current' && (github.event.pull_request.number == "+n+" || github.event.pull_request.number == "+MOTION_KIT_POLICY.pullRequest+")";
+ const pagesWhen="matrix.runtime == 'current' && (github.event.pull_request.number == "+n+" || github.event.pull_request.number == "+MOTION_KIT_POLICY.pullRequest+" || github.event.pull_request.number == "+DASHBOARD_TODAY_POLICY.pullRequest+")";
  assert.ok(heat.includes("if: "+pagesWhen));
  assert.ok(heat.includes("PROBE_SCHEDULER_FLAG: '0'")&&heat.includes("PROBE_MANAGER_PAGES: '1'"));
  assert.ok(heat.includes('/manager-pages-integration')&&plain.includes('/hero-integration'));
  assert.ok(heat.includes('node scripts/probe-scheduler-integration.mjs')&&plain.includes('node scripts/probe-scheduler-integration.mjs'));
  assert.ok(!plain.includes('PROBE_MANAGER_PAGES'));
+ const dash=DASHBOARD_TODAY_POLICY;
+ assert.equal(policyForPullRequest(542),dash);
+ assert.equal(runtimeFor('historical',dash),runtimeFor('historical',p));
+ assert.ok(caller.includes("number == 542 && github.head_ref == '"+dash.branch+"' && github.base_ref == 'main'"));
+ assert.ok(runner.includes("number == 542 && '"+dash.current.commit+"'"));
+ assert.ok(heat.includes("PROBE_DASHBOARD_TODAY:")&&plain.includes("PROBE_DASHBOARD_TODAY:"));
  assert.ok(steps.indexOf(heat)<steps.findIndex(s=>s.startsWith('Recheck both source')));
  assert.ok(runner.includes("MANAGER_PAGES_CURRENT: $"+"{{ "+pagesWhen+" }}"));
  assert.ok(runner.includes('NAV_DRIVERS="$DRIVERS"'));
