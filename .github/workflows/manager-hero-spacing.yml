@@ -301,7 +301,7 @@ jobs:
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           SEARCH_TEST_SHA: ${{ github.event.pull_request.head.sha }}
-          MANAGER_PAGES_CURRENT: ${{ matrix.runtime == 'current' && github.event.pull_request.number == 540 }}
+          MANAGER_PAGES_CURRENT: ${{ matrix.runtime == 'current' && (github.event.pull_request.number == 540 || github.event.pull_request.number == 543) }}
           SEARCH_RUNTIME_SHA: ${{ steps.runtime.outputs.runtime_sha }}
           HERO_BASELINE_URL: http://127.0.0.1:5181/
         run: |
@@ -373,7 +373,7 @@ jobs:
             node "$DRIVERS/manager-spacing.mjs"
           fi
       - name: Exercise Manager Pages navigation using fictional loopback data
-        if: matrix.runtime == 'current' && github.event.pull_request.number == 540
+        if: matrix.runtime == 'current' && (github.event.pull_request.number == 540 || github.event.pull_request.number == 543)
         env:
           FEEL_BROWSER: ${{ matrix.engine }}
           FEEL_PLAYWRIGHT: ${{ github.workspace }}/spacing-runtime/node_modules/playwright/index.mjs
