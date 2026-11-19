@@ -1,7 +1,8 @@
 import managerSignalCSS from "./manager-signal.css?inline";
 import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
 import { MK, mkLand } from "./motion-kit.mjs";
-import { confirmedStaffingToday } from "./today-staffing.mjs";
+import { staffingFor } from "./today-staffing.mjs";
+import { useZonedToday } from "./zoned-today.mjs";
 /* The manager's pages.
    -------------------------------------------------------------------------
    Everything a salesperson's phone never opens: the dashboard, the desks, the
@@ -12089,9 +12090,14 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       if (at >= ROLL_CAP) setRollOpen((o) => (o[role.id] ? o : { ...o, [role.id]: true }));
     }
   }, [focusName]); // eslint-disable-line
-  // People without a position are no longer drawn here (they are counted in the
-  // People link below), so the search count leaves them out too.
-  const totalMatches = sections.reduce((n, s) => n + s.people.length, 0);
+  // A manager gets the People link instead of a "Needs a position" card. The
+  // overseer's board is read only and has no People to go to, so it keeps the
+  // list, and its search keeps finding those names, with no controls on it.
+  // Unassigned people have no standards to be judged by, so a bucket filter
+  // hides them.
+  const showUnassigned = !onOpenPeople;
+  const unassigned = !showUnassigned || filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
+  const totalMatches = sections.reduce((n, s) => n + s.people.length, 0) + unassigned.length;
   const reviewCount = useMemo(() => needsReview(data), [data]);
   const reviewLink = !readOnly && onOpenPeople && !query && reviewCount > 0 ? (
     <button type="button" className="s2-rowbtn s2-pickbtn s2-reviewlink" onClick={onOpenPeople}>
@@ -12239,6 +12245,20 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           )}
         </section>
       ))}</Late>
+      {unassigned.length > 0 && (
+        <section className="da-tbl lite s2-rolecard unassigned" style={{ "--role": "#8E8E93" }}>
+          <div className="warmhead">
+            <PixIcon glyph="warn" size={16} style={{ color: "#D0821E" }} />
+            Needs a position <span className="da-count">{unassigned.length}</span>
+          </div>
+          <p className="da-hint s2-recaphint">These names came in from reports. Give each one a position to start scoring them.</p>
+          {unassigned.map((a) => (
+            <div key={a.id} className="assoc-row unassigned-row">
+              <span className="assoc-name">{a.name}</span>
+            </div>
+          ))}
+        </section>
+      )}
       {/* One way into People, not two half-ways. The Dashboard used to carry an
           ignore picker and a "Needs a position" card, which asked a manager to
           make People decisions in the wrong room and counted a name twice when
@@ -17172,12 +17192,17 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
   }, [digests]);
   const series = useMemo(() => (digests ? dailySeries(digests, thr) : null), [digests, thr]); // eslint-disable-line
   const floorRoster = activityRoster(config, data);
-  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
-  const onToday = floorRoster.filter((a) => !offToday.includes(a));
+  // Today in the store's zone. It moves on at midnight there, and again when a
+  // sleeping tab wakes, so the control never keeps yesterday's day or counts.
+  const schedDay = useZonedToday(store?.timezone || STORE_TZ);
   // The schedule control's counts come from what the planner confirms, not from
   // who is merely not listed off. Unknown leaves the label without numbers.
-  const staffing = useMemo(() => confirmedStaffingToday(store, data), [store, data]);
-  const scheduleLabel = todaysScheduleLabel(staffing?.on, staffing?.off);
+  const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);
+  const scheduleLabel = todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off);
+  // The list behind it is explicit days off, and only those the planner
+  // confirms are called on. Not being listed off is not being on.
+  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(schedDay));
+  const onToday = floorRoster.filter((a) => staffing?.on.has(a.id));
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -17188,7 +17213,7 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
     let best = null;
     for (const [k, v] of Object.entries(dayUnits)) if (k.slice(0, 7) === mk && v.u != null && (!best || v.u > best.u)) best = { d: k, u: v.u };
     return { mk, dim, off, dNow, satsLeft, best };
-  }, [dayUnits]);
+  }, [dayUnits, schedDay]); // schedDay: the month grid moves on at midnight too
   const lastImport = (data.importLog || [])[0] || null;
   const updatedAt = (() => {
     const stamps = [];
@@ -17405,8 +17430,8 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
         </div>
       );
       return (<>
-        {hd("Today", <><span className="fr-st in">{onToday.length} on</span><span className="fr-st away">{offToday.length} off</span></>)}
-        <div className="fr-list">{onToday.map((a) => row(a, true))}{offToday.map((a) => row(a, false))}</div>
+        {hd("Today", <>{onToday.length > 0 && <span className="fr-st in">{onToday.length} on</span>}<span className="fr-st away">{offToday.length} off</span></>)}
+        <div className="fr-list">{onToday.map((a) => row(a, true))}{offToday.map((a) => row(a, false))}{!onToday.length && !offToday.length && <p className="fr-empty">No days off set for today.</p>}</div>
       </>);
     }
     return null;
@@ -17872,9 +17897,12 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
   /* The same people the check-out sheet counts, read the same way, so the two
      screens can never put a different number of bodies on the floor. */
   const floorRoster = activityRoster(config, data);
-  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
-  const onCount = floorRoster.length - offToday.length;
-  const staffing = useMemo(() => confirmedStaffingToday(store, data), [store, data]);
+  // Today in the store's zone, moving on at midnight and when a sleeping tab
+  // wakes. Days off are the explicit ones; on is only what the planner confirms.
+  const schedDay = useZonedToday(store?.timezone || STORE_TZ);
+  const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);
+  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(schedDay));
+  const onToday = floorRoster.filter((a) => staffing?.on.has(a.id));
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -17887,7 +17915,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
     for (const [k, v] of Object.entries(dayUnits))
       if (k.slice(0, 7) === mk && v.u != null && (!best || v.u > best.u)) best = { d: k, u: v.u };
     return { mk, dim, off, dNow, satsLeft, best };
-  }, [dayUnits]);
+  }, [dayUnits, schedDay]); // schedDay: the month grid moves on at midnight too
   const lastImport = (data.importLog || [])[0] || null;
   const videoDials = ["apptVideoDayPct", "bhVideoPct", "engagedVideoPct"]
     .map((m) => metricRoll[m]
@@ -18232,20 +18260,25 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
               <PixIcon glyph="arrow" size={11} />
             </button>
           </div>
-          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(staffing?.on, staffing?.off)} /></React.Suspense>}
+          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off)} /></React.Suspense>}
           <div className="s2-chip-state">
-<SignalSchedule onCount={staffing ? staffing.on : null} offCount={staffing ? staffing.off : null} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
+<SignalSchedule onCount={staffing?.counts?.on ?? null} offCount={staffing?.counts?.off ?? null} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
             <div className="s2-rota bloop-host" tabIndex={0}>
-              <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
+              <b>{staffing?.counts
+                ? <>{staffing.counts.on}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</>
+                : offToday.length ? `${offToday.length} off today` : "Today’s schedule"}</b>
               <div className="bloopwin dn r s2-rotawin">
-                <div className="bw-title">On today · {onCount}</div>
-                <div className="s2-names">
-                  {floorRoster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
-                    <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
-                  ))}
-                </div>
+                {onToday.length > 0 && (<>
+                  <div className="bw-title">On today · {onToday.length}</div>
+                  <div className="s2-names">
+                    {onToday.slice(0, 14).map((a) => (
+                      <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
+                    ))}
+                  </div>
+                </>)}
+                {!onToday.length && !offToday.length && <div className="bw-title">No days off set for today</div>}
                 {offToday.length > 0 && (<>
-                  <div className="bw-title" style={{ marginTop: 10 }}>Off today · {offToday.length}</div>
+                  <div className="bw-title" style={onToday.length ? { marginTop: 10 } : undefined}>Off today · {offToday.length}</div>
                   <div className="s2-names">
                     {offToday.map((a) => (<s key={a.id} className="off"><i className="s2-pdot off" />{a.name}</s>))}
                   </div>

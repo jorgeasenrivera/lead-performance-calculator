@@ -6,14 +6,17 @@
 import { STORE_TIME_ZONE } from './scheduler-calendar-model.mjs';
 import { createLegacyScheduleResolver, editorStore, zonedToday } from './scheduler-editor-adapter.mjs';
 
-export function confirmedStaffing(store, data, day) {
+// Who the planner confirms on, who it has explicitly off, and the counts when
+// every person that day is one or the other. With the calendar off, the lists
+// under the schedule control are drawn from this too: explicit days off, and
+// nobody called on unless the planner says so.
+export function staffingFor(store, data, day) {
   try {
     if (!store || !data || typeof day !== 'string') return null;
     const timezone = store.timezone || STORE_TIME_ZONE;
     const copied = structuredClone(data), scoped = editorStore(store, copied, timezone);
     // Somebody not yet hired or already gone that day is neither on nor off.
     const people = scoped.people.filter((p) => !(p.hiredAt && day < p.hiredAt) && !(p.departedAt && day > p.departedAt));
-    if (!people.length) return null;
     const resolver = createLegacyScheduleResolver({
       stores: [scoped],
       snapshots: [{ storeId: store.id, revision: Number.isSafeInteger(data.rev) ? data.rev : 'unversioned', data: copied }],
@@ -21,17 +24,22 @@ export function confirmedStaffing(store, data, day) {
     });
     const record = resolver.explicitAssignmentForDay(day, 0)?.record;
     if (!record) return null;
-    const on = new Set(record.on || []), off = new Set(record.off || []);
-    let onCount = 0, offCount = 0;
+    const onIds = new Set(record.on || []), offIds = new Set(record.off || []);
+    const on = new Set(), off = new Set();
+    let known = people.length > 0;
     for (const p of people) {
-      const isOn = on.has(p.id), isOff = off.has(p.id);
-      if (isOn === isOff) return null;
-      if (isOn) onCount++; else offCount++;
+      const isOn = onIds.has(p.id), isOff = offIds.has(p.id);
+      if (isOn === isOff) { known = false; continue; }
+      (isOn ? on : off).add(p.id);
     }
-    return { on: onCount, off: offCount };
+    return { day, on, off, counts: known ? { on: on.size, off: off.size } : null };
   } catch {
     return null;
   }
+}
+
+export function confirmedStaffing(store, data, day) {
+  return staffingFor(store, data, day)?.counts ?? null;
 }
 
 export function confirmedStaffingToday(store, data, now = new Date()) {

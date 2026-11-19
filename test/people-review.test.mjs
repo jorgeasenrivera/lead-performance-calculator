@@ -63,3 +63,19 @@ test("a spelling already folded into somebody is not asked about again", () => {
   d.aliases = { "dune stranger": "avery fable" };
   assert.equal(needsReview(d), 3);
 });
+
+/* Jorge, 19 November, for shipping #542: keep the overseer's read-only "Needs
+   a position" list and search results, without adding edit controls, and
+   managers keep the single Open People link. */
+test("the overseer keeps a read-only Needs a position list; managers get the link", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
+  const board = src.slice(src.indexOf("function Board({"), src.indexOf("\n}\n", src.indexOf("function Board({")));
+  assert.match(board, /const showUnassigned = !onOpenPeople;/);
+  assert.match(board, /\+ unassigned\.length;/);                 // search results count them
+  const at = board.indexOf("Needs a position <span");
+  const card = board.slice(at, board.indexOf("</section>", at));
+  assert.ok(card.length > 0);
+  assert.doesNotMatch(card, /<select|onMove|<button/);            // nothing to change on it
+  assert.match(board, /!readOnly && onOpenPeople && !query && reviewCount > 0/);
+});

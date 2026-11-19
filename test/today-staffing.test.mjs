@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { confirmedStaffing, confirmedStaffingToday } from "../src/today-staffing.mjs";
+import { confirmedStaffing, confirmedStaffingToday, staffingFor } from "../src/today-staffing.mjs";
 
 const DAY = "2026-11-19";
 const store = { id: "fictional-7", name: "Cedar Motors", timezone: "America/New_York" };
@@ -51,4 +51,24 @@ test("today is the store's own day, and reading changes nothing", () => {
   // 03:30 UTC on the 20th is still the 19th in Orlando.
   assert.deepEqual(confirmedStaffingToday(store, d, new Date("2026-11-20T03:30:00Z")), { on: 0, off: 2 });
   assert.equal(JSON.stringify(d), before);
+});
+
+/* Jorge, 19 November, for shipping #542: with the calendar off, show explicit
+   days off and do not call anyone on unless the planner confirms it. */
+test("the lists behind the control are explicit days off and confirmed on only", () => {
+  const partial = staffingFor(store, data({ p1: [DAY] }), DAY);
+  assert.deepEqual([...partial.off], ["p1"]);
+  assert.deepEqual([...partial.on], []);          // p2 is only not listed off
+  assert.equal(partial.counts, null);
+  const none = staffingFor(store, data(), DAY);
+  assert.deepEqual([...none.off], []);
+  assert.deepEqual([...none.on], []);
+});
+
+test("today rolls over at midnight Eastern, not at midnight UTC or on the device", () => {
+  const d = data({ p1: ["2026-11-19"], p2: ["2026-11-20"] });
+  // 11:59 PM in Orlando on the 19th, then one minute later.
+  assert.deepEqual(confirmedStaffingToday(store, { ...d, daysOff: { p1: ["2026-11-19"], p2: ["2026-11-19"] } }, new Date("2026-11-20T04:59:00Z")), { on: 0, off: 2 });
+  assert.equal(confirmedStaffingToday(store, d, new Date("2026-11-20T05:00:00Z")), null);
+  assert.deepEqual([...staffingFor(store, d, "2026-11-20").off], ["p2"]);
 });
