@@ -22744,7 +22744,7 @@ function ManagerHelpAccess({ children, onClose }) {
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
   right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
-  storeData, storeName, brand, children, corner, rooms,
+  storeData, storeName, brand, children, corner, rooms, sectionNav,
 }) {
   useLayoutEffect(() => ownManagerSignalSurface(), []);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -22794,8 +22794,8 @@ function AppShell({
         </button>
       </header>
 
-      <SectionStrip items={navItems} value={navValue} onChange={navOnChange}
-        appModule={appModule} storeData={storeData} />
+      {sectionNav || <SectionStrip items={navItems} value={navValue} onChange={navOnChange}
+        appModule={appModule} storeData={storeData} />}
       <div className="assoc-search-panel-slot" />
       </div>
 

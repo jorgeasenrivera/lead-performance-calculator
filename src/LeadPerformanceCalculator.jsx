@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import ManagerPagesNav from "./ManagerPagesNav.jsx";
+import { managerNavGlyphs } from "./manager-nav-glyphs.mjs";
 import { report, setReportContext } from "./report.js";
 import { renderLeaderboard } from "./board-loader.mjs";
 import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
@@ -459,6 +461,7 @@ function currentStreak(data, a, std) {
    phone are shapes now, and the label beside them carries the meaning. That was
    the deliberate trade for having one grid. */
 const PIX = {
+  ...managerNavGlyphs,
   check:     ["0000000","0000001","0000011","1000110","1101100","0111000","0010000"],
   close:     ["1000001","0100010","0010100","0001000","0010100","0100010","1000001"],
   warn:      ["0001000","0001000","0011100","0011100","0111110","0111110","1111111"],
@@ -3843,6 +3846,9 @@ export default function LeadPerformanceCalculator() {
     navOnChange = chooseSchedulerTab;
   }
 
+  const managerPages = appModule === "perf" && currentStore && storeData && accessibleStores.length > 0
+    && !storeMismatch && !storeHeld && !isOverseer && view !== "admin" && navItems?.some(([id]) => id === "import");
+
   return wrap(
     <AppShell entering={entering}
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
@@ -3853,6 +3859,8 @@ export default function LeadPerformanceCalculator() {
         ? <AssistWatcher store={currentStore.id} meName={session.name} /> : null}
       brand={currentStore?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
+      sectionNav={managerPages ? <ManagerPagesNav key={view} items={navItems} value={navValue}
+        onChange={navOnChange} Icon={PixIcon} importBadge={<ImportBadge storeData={storeData} />} /> : null}
       storeData={storeData}
       storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
       right={<>
@@ -3989,18 +3997,9 @@ export default function LeadPerformanceCalculator() {
                 onChange={chooseSchedulerTab}
                 attentionId={activityDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
-            ) : (
-              <SegControl
-                items={isAdmin
-                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Targets"], ["roster", "People"]]
-                  : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]]}
-                value={(isAdmin
-                  ? ["board", "import", "gm", "history", "standards", "roster"]
-                  : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
-                onChange={chooseSchedulerTab}
-                attentionId={reportsDue ? "import" : null}
-                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
-            )}
+            ) : !managerPages && <SegControl items={navItems} value={navValue} onChange={navOnChange}
+              attentionId={reportsDue ? "import" : null}
+              renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />}
             {appModule !== "activity" && tab === "board" &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
             {appModule === "activity" && (tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) &&
@@ -4061,7 +4060,7 @@ export default function LeadPerformanceCalculator() {
                 {/* The gutter the Dashboard has had all along. These four were
                     rendered straight into .page, which carries no padding, so they
                     ran edge to edge on anything wider than a laptop. */}
-                {tab === "import" && <div className="tab-page"><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "import" && <div className={"tab-page" + (managerPages ? " sage-intake-entry" : "")}><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} restorePoint={restorePoints[view]} onLoadRestorePoint={() => loadRestorePoint(view)} onSaveRestorePoint={(point) => saveRestorePoint(view, point)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
                 {tab === "standards" && isAdmin && <div className="tab-page"><TargetsEditor config={config} storeId={view} data={storeData} onChange={persistConfig} /></div>}

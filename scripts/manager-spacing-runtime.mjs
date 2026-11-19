@@ -90,6 +90,15 @@ export const STORE_HERO_LAYOUT_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify the actual approved Calendar app, independently of the frozen historical run.
+export const MANAGER_PAGES_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:540,branch:'codex/manager-pages-pix-20261118',
+ base:{commit:'50d65152638e5967247a0526d58a52f1d1f8361f',tree:'b27daff3119c85ab058f9eb22dba1f10e9547881'},
+ current:{commit:'eb62d2cce4513190f9f79c87791d589f684d1a80',tree:'053d4efb6f5a92f209b703d822b42a0d2fe8b60d',parents:['4b89c0bb88482f11864828bc1bcb008427b4c807','50d65152638e5967247a0526d58a52f1d1f8361f'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 // Verify this exact Rooms source while retaining the frozen historical runtime.
 export const STORE_ROOM_VISIBILITY_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:541,branch:'claude/sage-view-toggles-n72trw',
@@ -104,6 +113,7 @@ export function policyForPullRequest(number){
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
  if(number===PEOPLE_SERVICE_POLICY.pullRequest)return PEOPLE_SERVICE_POLICY;
+ if(number===MANAGER_PAGES_POLICY.pullRequest)return MANAGER_PAGES_POLICY;
  if(number===STORE_HERO_LAYOUT_POLICY.pullRequest)return STORE_HERO_LAYOUT_POLICY;
  if(number===PEOPLE_SCHEDULER_COPY_POLICY.pullRequest)return PEOPLE_SCHEDULER_COPY_POLICY;
  if(number===DUET_COPY_POLICY.pullRequest)return DUET_COPY_POLICY;
