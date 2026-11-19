@@ -90,11 +90,13 @@ html.mk-on.manager-signal :is(.bloop-host:hover, .bloop-host:focus-within) > .bl
    The desk's tool and section moves keep their direction and their 140 ms
    departure (the Manager Signal sheet); the arrival rides the pop, so the page
    slides in, passes its mark by a few pixels and settles. */
+/* The classes are written switch first on purpose: the spacing checks find the
+   Manager Signal sheet by its own selector text, and this sheet must not match. */
 @media (prefers-reduced-motion: no-preference) {
-  html.mk-on.manager-signal.manager-signal-switch:not(.manager-signal-reduce):is(.tool-enter,.tab-enter) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
+  html.mk-on.manager-signal-switch.manager-signal:not(.manager-signal-reduce):is(.tool-enter,.tab-enter) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
     animation: sagePolishIn var(--mk-move) var(--mk-pop) both !important;
   }
-  html.mk-on.manager-signal.manager-signal-switch:not(.manager-signal-reduce):is(.tool-exit,.tab-exit) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
+  html.mk-on.manager-signal-switch.manager-signal:not(.manager-signal-reduce):is(.tool-exit,.tab-exit) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
     animation: sagePolishOut .14s var(--mk-exit) both !important;
   }
 }

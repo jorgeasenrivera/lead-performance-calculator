@@ -70,3 +70,11 @@ test("opening More ends the room picker's fade at once: two menus are never up t
   assert.ok(drawer.includes('IN_PLACE + "[data-mk-ghost]"'));
   assert.ok(drawer.indexOf("[data-mk-ghost]") < drawer.indexOf("if (calm())"));
 });
+
+test("the kit's sheet is never mistaken for the Manager Signal sheet", () => {
+  // The spacing drivers pick the first <style> whose text has the Manager Signal
+  // switch selector, then edit that sheet. The kit's sheet is injected too, so it
+  // must not carry that text.
+  assert.ok(!css.includes(".manager-signal.manager-signal-switch"));
+  assert.ok(css.includes("html.mk-on.manager-signal-switch.manager-signal:not(.manager-signal-reduce)"));
+});
