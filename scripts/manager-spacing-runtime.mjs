@@ -120,7 +120,7 @@ export const MOTION_KIT_POLICY=Object.freeze({
 export const DASHBOARD_TODAY_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:542,branch:'claude/sage-dashboard-people-scheduler-8ntqy6',
  base:{commit:'deb8df18768767701b55ba024be476e681ed4d65',tree:'dce88532c1d63aa06315157be9a023a68088e7cc'},
- current:{commit:'45871c92eff7787e648dcc6d51eb2741f3a260f0',tree:'49b6c37c1f6cbca557c1aad72c9c621eb45bc114',parents:['8c9e4ac4e86f52d8a4e20051052f608fe4e3defb'],
+ current:{commit:'93c39887d91a60fc2cf9a8222d6e6b95389d9a63',tree:'127d0785439e67b2885652b772530c67ff63fae4',parents:['d76013901ba320467f40e9845adee2cfc2eecdaa'],
   definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
