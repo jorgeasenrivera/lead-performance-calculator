@@ -1,6 +1,7 @@
 import managerSignalCSS from "./manager-signal.css?inline";
 import { ownManagerSignalSurface, recapDue, recapPresented } from "./manager-signal.mjs";
 import { MK, mkLand } from "./motion-kit.mjs";
+import { confirmedStaffingToday } from "./today-staffing.mjs";
 /* The manager's pages.
    -------------------------------------------------------------------------
    Everything a salesperson's phone never opens: the dashboard, the desks, the
@@ -12092,9 +12093,19 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
   // People link below), so the search count leaves them out too.
   const totalMatches = sections.reduce((n, s) => n + s.people.length, 0);
   const reviewCount = useMemo(() => needsReview(data), [data]);
+  const reviewLink = !readOnly && onOpenPeople && !query && reviewCount > 0 ? (
+    <button type="button" className="s2-rowbtn s2-pickbtn s2-reviewlink" onClick={onOpenPeople}>
+      <PixIcon glyph="warn" size={11} /> {reviewCount} {reviewCount === 1 ? "name needs" : "names need"} review · Open People
+    </button>
+  ) : null;
 
+  // An empty roster can still have names held back or in the books unclaimed,
+  // and People is the only place they get decided, so the link stays.
   if ((data.roster || []).length === 0)
-    return <div className="empty">No associates yet. Drop today's three reports in the Import tab and the roster builds itself.</div>;
+    return <>
+      <div className="empty">No associates yet. Drop today's three reports in the Import tab and the roster builds itself.</div>
+      {reviewLink}
+    </>;
 
   return (
     <div className="board">
@@ -12233,11 +12244,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           make People decisions in the wrong room and counted a name twice when
           it was on both lists. Now it only counts, each name once, and the
           decisions, a position or an ignore, stay apart inside People. */}
-      {!readOnly && onOpenPeople && !query && reviewCount > 0 && (
-        <button type="button" className="s2-rowbtn s2-pickbtn s2-reviewlink" onClick={onOpenPeople}>
-          <PixIcon glyph="warn" size={11} /> {reviewCount} {reviewCount === 1 ? "name needs" : "names need"} review · Open People
-        </button>
-      )}
+      {reviewLink}
     </div>
   );
 }
@@ -17167,6 +17174,10 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
   const floorRoster = activityRoster(config, data);
   const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
   const onToday = floorRoster.filter((a) => !offToday.includes(a));
+  // The schedule control's counts come from what the planner confirms, not from
+  // who is merely not listed off. Unknown leaves the label without numbers.
+  const staffing = useMemo(() => confirmedStaffingToday(store, data), [store, data]);
+  const scheduleLabel = todaysScheduleLabel(staffing?.on, staffing?.off);
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -17432,9 +17443,6 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
             <span className="bp-nu"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></span>
             <span className="bp-nul"><span><b>{fmtNum(split.nw)}</b> new</span><span><b>{fmtNum(split.us)}</b> used</span></span>
           </button>
-          <button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>
-            <span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>
-          </button>
         </div>
         <div className="bp-secdiv" />
         <div className="bp-five">
@@ -17466,7 +17474,11 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
             );
           })}
         </div>
-        {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(floorRoster.length ? onToday.length : null, floorRoster.length ? offToday.length : null)} /></React.Suspense>}
+        {/* One schedule control on the phone. With the calendar on it opens the
+            planner on today; with it off, the Signal fallback opens today's list. */}
+        {SCHEDULER_CALENDAR
+          ? <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={scheduleLabel} /></React.Suspense>
+          : <div className="sg-schedule bp-sched"><button type="button" className="sg-schedule-trigger" aria-haspopup="dialog" onClick={() => setPop({ k: "onoff" })}><span className="sg-schedule-count"><PixIcon glyph="calendar" size={10} /> {scheduleLabel}</span></button></div>}
       </div>
 
       {canSetGoal && !goalMonth.set && (
@@ -17862,6 +17874,7 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
   const floorRoster = activityRoster(config, data);
   const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
   const onCount = floorRoster.length - offToday.length;
+  const staffing = useMemo(() => confirmedStaffingToday(store, data), [store, data]);
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -18219,9 +18232,9 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
               <PixIcon glyph="arrow" size={11} />
             </button>
           </div>
-          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(floorRoster.length ? onCount : null, floorRoster.length ? offToday.length : null)} /></React.Suspense>}
+          {SCHEDULER_CALENDAR && <React.Suspense fallback={null}><SchedulerCalendarEntry store={store} data={data} principalEpoch={schedulerPrincipalEpoch} canOpenStore={schedulerCanOpen} layout="today" label={todaysScheduleLabel(staffing?.on, staffing?.off)} /></React.Suspense>}
           <div className="s2-chip-state">
-<SignalSchedule onCount={floorRoster.length ? onCount : null} offCount={floorRoster.length ? offToday.length : null} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
+<SignalSchedule onCount={staffing ? staffing.on : null} offCount={staffing ? staffing.off : null} store={store} data={data} schedulerPrincipalEpoch={schedulerPrincipalEpoch} schedulerCanOpen={schedulerCanOpen}>
             <div className="s2-rota bloop-host" tabIndex={0}>
               <b>{onCount}<SignalCopy full={" working today"} short={" on today"} />{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
               <div className="bloopwin dn r s2-rotawin">
@@ -25879,6 +25892,7 @@ button.da-lbrow { cursor:pointer; }
 .bp-nul{ display:flex; justify-content:space-between; font:600 9.5px var(--font-mono); color:rgba(255,255,255,.75); margin-top:6px; }
 .bp-nul b{ color:#fff; }
 .bp-r3{ grid-column:2; grid-row:3; align-self:center; padding-top:16px; display:flex; justify-content:flex-end; }
+.bp-hero > .bp-sched{ margin-top:16px; }
 .bp-onoff{ background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.12); border-radius:9px; padding:5px 8px; font:700 11px var(--font-mono); color:#fff; white-space:nowrap; }
 .bp-onoff em{ font-style:normal; color:#F08A80; }
 .bp-secdiv{ margin-top:18px; border-top:2px dotted rgba(255,255,255,.28); }
