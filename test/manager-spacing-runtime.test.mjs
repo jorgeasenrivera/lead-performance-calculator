@@ -555,6 +555,7 @@ test('the motion kit checks use the exact current app, keeping independent histo
  const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
  const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
  const p=MOTION_KIT_POLICY,n=p.pullRequest;
+ assert.deepEqual(p.current.definitionChanges,['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']);
  assert.equal(policyForPullRequest(n),p);
  assert.ok(caller.includes("number == "+n+" && github.head_ref == '"+p.branch+"' && github.base_ref == 'main'"));
  assert.ok(runner.includes("number == "+n+" && '"+p.current.commit+"'"));
@@ -567,7 +568,7 @@ test('the motion kit checks use the exact current app, keeping independent histo
   assert.notEqual(runtimeFor('current',p).commit,old.current.commit);
  }
  const f=fixture();try{
-  const local={...p,base:f.policy.base,current:{...f.policy.current,parents:[f.policy.base.commit]},historical:f.policy.historical,manifest:f.policy.manifest};
+  const local={...p,base:f.policy.base,current:{...f.policy.current,parents:[f.policy.base.commit],definitionChanges:undefined},historical:f.policy.historical,manifest:f.policy.manifest};
   const event=structuredClone(f.event);event.number=n;event.pull_request.head.ref=local.branch;
   const env={...f.env,GITHUB_REF:'refs/pull/'+n+'/merge'};
   const verify=(overrides={},policy=local)=>verifyRouted({runtimeRoot:f.currentRoot,definitionRoot:f.definition,eventRoot:f.eventRoot,event,env,caseName:'current',...overrides},policy);
