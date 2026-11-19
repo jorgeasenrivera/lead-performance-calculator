@@ -252,6 +252,12 @@ ${policy}
   .lb tbody tr.row { animation: rowIn .5s cubic-bezier(.22,1,.36,1) both;
     animation-delay: calc(var(--i) * 45ms); }
   @keyframes rowIn { from { opacity:0; transform: translateY(1.2vh); } to { opacity:1; transform:none; } }
+  /* A refresh of the board already on screen is an update, not an arrival: the
+     rows stay where they are and only what changed moves (see tvRefresh). */
+  #root.tv-calm .lb tbody tr.row, #root.tv-calm .lb2 tbody tr.row { animation:none; }
+  .soldnum { display:inline-block; }
+  .tv-stale { display:inline-block; margin-top:.6vh; padding:.3vh .9vw; border-radius:99px;
+    background:rgba(255,207,107,.16); color:#FFCF6B; font-size:1.5vh; font-weight:700; letter-spacing:.02em; }
 
   /* the leader gets a lit band and a slow shine that travels across it */
   .lb tbody tr.leader { position:relative; }
@@ -750,6 +756,9 @@ ${scriptTag}
     var root = document.getElementById('root');
     // an error is not the same as an empty store: say which, never just hang
     if (store && store.__err){
+      // A refresh that fails keeps the last board up and says so, rather than
+      // blanking a room full of people for one bad connection.
+      if (keepStale(root)) return;
       root.innerHTML = '<div class="empty">' + text(store.__err) + '</div>';
       return;
     }
@@ -937,6 +946,9 @@ ${scriptTag}
     var tickerHtml = tickerItems.map(function(t){ return '<span class="ticker-item">' + t + '</span>'; }).join('');
     var tickDur = Math.max(25, tickerItems.length * 7);
 
+    var shownAs = CFG.storeKey + '|' + DISP.style;
+    var was = (SHOWN === shownAs) ? tvSnap(root) : null;
+    SHOWN = shownAs;
     root.innerHTML =
       '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+text(CFG.icon)+'"/>':'')+'</div>'+
       '<div><div class="head-title">'+text(CFG.storeName)+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
@@ -991,9 +1003,100 @@ ${scriptTag}
             ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
           '</div>');
     tick();
+    tvRefresh(root, was);
     countUp();
     trimFill(tightPad, rowPad);
     startScroll();
+  }
+
+  /* ---- a refresh updates in place ----
+     Every fifteen minutes the board is redrawn from scratch. It used to replay
+     its whole entrance each time, every number counting up from 0, so nobody
+     could tell what had actually changed. Now the board on screen is read first,
+     and after the redraw only the changes move: a number rolls from its old
+     value and lands, a bar stretches from its old length, a row that changed
+     rank hops to its new place. A different store, or a different style, is a
+     new board and gets the full entrance. */
+  var SHOWN = null;
+  var POP = 'cubic-bezier(.34,1.3,.64,1)';
+  function tvCalm(){
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+  }
+  function tvName(tr){
+    var nm = tr.querySelector('.nm');
+    return nm && nm.firstChild ? String(nm.firstChild.textContent).trim() : '';
+  }
+  function tvSnap(root){
+    if (!root || typeof root.querySelector !== 'function' || !root.querySelector('.panel')) return null;
+    var snap = { rows:{}, total:null };
+    var trs = root.querySelectorAll('tr.row');
+    for (var k = 0; k < trs.length; k++) {
+      var num = trs[k].querySelector('.soldnum');
+      snap.rows[tvName(trs[k])] = { i:k, sold: num ? num.getAttribute('data-to') : null,
+        barw: trs[k].style.getPropertyValue('--barw') };
+    }
+    var t = root.querySelector('.total-num');
+    if (t) snap.total = t.textContent;
+    return snap;
+  }
+  function tvLand(el){
+    if (tvCalm() || !el.animate) return;
+    try { el.animate([{ transform:'scale(1.14)' }, { transform:'none' }], { duration:380, easing:POP }); } catch (e) {}
+  }
+  function tvRefresh(root, was){
+    if (typeof root.querySelector !== 'function') return;
+    if (!was) { root.classList.remove('tv-calm'); return; }
+    root.classList.add('tv-calm');
+    var calm = tvCalm();
+    var trs = root.querySelectorAll('tr.row');
+    for (var k = 0; k < trs.length; k++) {
+      var tr = trs[k], old = was.rows[tvName(tr)];
+      if (!old) continue;
+      var num = tr.querySelector('.soldnum');
+      if (num && old.sold != null) num.setAttribute('data-from', old.sold);
+      var barw = tr.style.getPropertyValue('--barw');
+      if (!calm && old.barw && old.barw !== barw) {
+        tr.style.setProperty('--barw', old.barw);
+        (function(tr, barw){ requestAnimationFrame(function(){ requestAnimationFrame(function(){ tr.style.setProperty('--barw', barw); }); }); })(tr, barw);
+      }
+      var rows = old.i - k;
+      if (!calm && rows && Math.abs(rows) <= 8 && tr.animate) {
+        var dy = rows * tr.getBoundingClientRect().height;
+        var frames = rows > 0
+          ? [{ transform:'translateY(' + dy + 'px)' }, { transform:'translateY(' + (dy * .5) + 'px) scale(1.03)', offset:.35 }, { transform:'none' }]
+          : [{ transform:'translateY(' + dy + 'px)' }, { transform:'none' }];
+        try { tr.animate(frames, { duration:640, easing:POP }); } catch (e) {}
+      }
+    }
+    var t = root.querySelector('.total-num');
+    var from = parseFloat(was.total), to = t ? parseFloat(t.textContent) : NaN;
+    if (t && !calm && isFinite(from) && isFinite(to) && from !== to && to % 1 === 0) {
+      roll(t, from, to, function(){ tvLand(t); });
+    }
+  }
+  function roll(el, from, to, done){
+    var dur = 900, t0 = null;
+    function step(ts){
+      if (!t0) t0 = ts;
+      var p = Math.min(1, (ts - t0) / dur);
+      var v = from + (to - from) * (1 - Math.pow(1 - p, 3));
+      el.textContent = (to % 1 === 0) ? Math.round(v) : v.toFixed(1);
+      if (p < 1) requestAnimationFrame(step); else if (done) done();
+    }
+    requestAnimationFrame(step);
+  }
+  /* The last good board stays, with a chip that says it is the last good board.
+     Only an error with nothing on screen yet shows the message on its own. */
+  function keepStale(root){
+    if (!root || typeof root.querySelector !== 'function' || !root.querySelector('.panel')) return false;
+    var total = root.querySelector('.total');
+    if (total && !total.querySelector('.tv-stale')) {
+      var chip = document.createElement('div');
+      chip.className = 'tv-stale'; chip.setAttribute('role', 'status');
+      chip.textContent = 'Showing the last update. Reconnecting';
+      total.appendChild(chip);
+    }
+    return true;
   }
 
   /* The padding above is arithmetic against an ASSUMED 80vh of panel; the real
@@ -1131,16 +1234,16 @@ ${scriptTag}
     for (var k = 0; k < els.length; k++) {
       (function(el){
         var to = parseFloat(el.getAttribute('data-to')) || 0;
-        var dur = 900, t0 = null;
-        function step(ts){
-          if (!t0) t0 = ts;
-          var p = Math.min(1, (ts - t0) / dur);
-          var eased = 1 - Math.pow(1 - p, 3);
-          var v = to * eased;
-          el.textContent = (to % 1 === 0) ? Math.round(v) : v.toFixed(1);
-          if (p < 1) requestAnimationFrame(step);
+        /* On a refresh the number starts from what the board was showing, so
+           only a real change moves, and that change lands. */
+        var fromAttr = el.getAttribute('data-from');
+        if (fromAttr != null) {
+          var from = parseFloat(fromAttr) || 0;
+          if (from === to || tvCalm()) { el.textContent = (to % 1 === 0) ? to : to.toFixed(1); return; }
+          roll(el, from, to, function(){ tvLand(el); });
+          return;
         }
-        requestAnimationFrame(step);
+        roll(el, 0, to);
       })(els[k]);
     }
   }
