@@ -111,7 +111,7 @@ export const STORE_ROOM_VISIBILITY_POLICY=Object.freeze({
 export const MOTION_KIT_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:543,branch:'claude/project-thread-iu4k4x',
  base:{commit:'ad34b191a69e5d86276d0ef383d5c60e42d3a2b3',tree:'3b144282c36d7960848e10f7d71037aae66c9ed4'},
- current:{commit:'210f700e8d4b20830c893991a4388c1d87d5f2f8',tree:'3e00af0a4927c853204d80815a0bc71177cd734b',parents:['3ac222ccf5734d437c2f422c8bfcd7628b475577'],
+ current:{commit:'4e83e4ac0d9aed152b44f1a6cd67e7dab83b5fa0',tree:'846ae3e1147795fbb72efe3b7eed8b2387274905',parents:['7fad21f2cf6e5d6e1d4e531a2cf36472741aac9d'],
   definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,

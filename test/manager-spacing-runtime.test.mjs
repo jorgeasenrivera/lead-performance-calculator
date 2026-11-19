@@ -556,6 +556,7 @@ test('the motion kit checks use the exact current app, keeping independent histo
  const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
  const p=MOTION_KIT_POLICY,n=p.pullRequest;
  assert.deepEqual(p.current.definitionChanges,['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']);
+ assert.equal(p.current.commit,'4e83e4ac0d9aed152b44f1a6cd67e7dab83b5fa0');
  assert.equal(policyForPullRequest(n),p);
  assert.ok(caller.includes("number == "+n+" && github.head_ref == '"+p.branch+"' && github.base_ref == 'main'"));
  assert.ok(runner.includes("number == "+n+" && '"+p.current.commit+"'"));
