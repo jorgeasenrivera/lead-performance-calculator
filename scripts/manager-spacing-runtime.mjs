@@ -119,9 +119,9 @@ export const MOTION_KIT_POLICY=Object.freeze({
 // Qualify the exact Dashboard/Today source separately from the frozen historical runtime.
 export const DASHBOARD_TODAY_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:542,branch:'claude/sage-dashboard-people-scheduler-8ntqy6',
- base:{commit:'3457d4cd0e7639457e0ccd478c31f39041de387e',tree:'aa108b0ec9df08feb655fd4681deca2afd449eda'},
- current:{commit:'a777b3b5080c5ddc391c19b2f8b91da288d83302',tree:'5b587c6cf0d42692800a122d78805946f3a30cc0',parents:['f293d541cb7e7d66e724ed9aac0391663e587d1c'],
-  definitionChanges:['.github/workflows/manager-hero-spacing.yml','.github/workflows/manager-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']},
+ base:{commit:'deb8df18768767701b55ba024be476e681ed4d65',tree:'dce88532c1d63aa06315157be9a023a68088e7cc'},
+ current:{commit:'45871c92eff7787e648dcc6d51eb2741f3a260f0',tree:'49b6c37c1f6cbca557c1aad72c9c621eb45bc114',parents:['8c9e4ac4e86f52d8a4e20051052f608fe4e3defb'],
+  definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
