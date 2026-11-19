@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
+import { storeDaysInMonth, storeDaysDone, storeGoalFor, storePace, likeForLike } from "../api/_store-month.mjs";
 
 const none = () => false;
 const on = (...days) => (d) => days.includes(d);
@@ -129,4 +129,58 @@ test("and the same month going badly", () => {
   const needPerDay = (g.bar - units) / (daysAll - daysDone);
   assert.equal(needPerDay, 4.5,
     "4.5 a day against the 2 it has been running — the number that says push or do not bother");
+});
+
+test("one pace for the hero and the round-up", () => {
+  /* The round-up used to divide by calendar days against the raw goal. On this
+     month that printed "on pace for 93 / 100" while the hero, a screen away,
+     said 90 against the 85 the store is held to. One helper now. */
+  const isHol = on("2026-12-25");
+  const g = storeGoalFor({ goal: { pct: 85, byMonth: { "2026-12": 100 } } }, "2026-12");
+  const p = storePace(g, 60, "2026-12", isHol, "2026-12-21");
+  assert.equal(p.daysAll, 30);
+  assert.equal(p.daysDone, 20);
+  assert.equal(p.projected, 90);
+  assert.equal(p.short, 25);
+  assert.equal(p.needPerDay, 2.5);
+  assert.equal(p.shortAtPace, 0);
+  assert.equal(p.willHit, true);
+  assert.equal(p.tone, "g");
+  assert.equal(p.vsBarPct, 6, "90 against a bar of 85 is 6% over");
+});
+
+test("the shared pace waits three finished days before it projects", () => {
+  const g = storeGoalFor({ goal: { pct: 100, byMonth: { "2026-12": 100 } } }, "2026-12");
+  const p = storePace(g, 9, "2026-12", none, "2026-12-03");
+  assert.equal(p.tooEarly, true);
+  assert.equal(p.projected, undefined);
+});
+
+test("the shared pace still projects with no goal set", () => {
+  const p = storePace(null, 40, "2026-09", none, "2026-09-21");
+  assert.equal(p.projected, 60);
+  assert.equal(p.tone, undefined);
+  assert.equal(p.vsBarPct, undefined);
+});
+
+test("month over month compares the same days while the month is running", () => {
+  /* On 19 November the Summary used to set 18 days of November against all
+     30 of October and paint every row red. Now: Nov 1-18 against Oct 1-18. */
+  const f = likeForLike("2026-11", "2026-11-19");
+  assert.equal(f.cut, 18);
+  assert.ok(Math.abs(f.scale - 18 / 31) < 1e-9, "October's month totals scaled to 18 of its 31 days");
+});
+
+test("a month that is over compares whole months", () => {
+  assert.deepEqual(likeForLike("2026-10", "2026-11-19"), { cut: null, scale: 1 });
+});
+
+test("January reaches back to December for its scale", () => {
+  const f = likeForLike("2027-01", "2027-01-11");
+  assert.equal(f.cut, 10);
+  assert.ok(Math.abs(f.scale - 10 / 31) < 1e-9);
+});
+
+test("on the first nothing has finished yet", () => {
+  assert.deepEqual(likeForLike("2026-12", "2026-12-01"), { cut: 0, scale: 0 });
 });

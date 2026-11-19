@@ -4762,7 +4762,9 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     // Tasks are measured against what was actually posted that day, not a standard:
     // the pile is different every morning.
     const need = c.target === "__posted" ? (a.tasksPosted || 0) : c.target ? (std[c.target] || 0) : 1;
-    return { got, need, done: need > 0 ? got >= need * 0.8 : got > 0, left: Math.max(0, need - got) };
+    // Done means the whole bar, the same rule the points use, so a tick here
+    // never sits beside a missed point for the same thing.
+    return { got, need, done: need > 0 ? got >= need : got > 0, left: Math.max(0, need - got) };
   };
 
   const [ticks, setTicks] = useState(() => {
@@ -10680,7 +10682,10 @@ function McTimers({ sinceOn, sinceMove }) {
 }
 
 const MC_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-const mcMet = (got, need) => (need > 0 ? (got || 0) >= need * 0.8 : (got || 0) > 0);
+/* Met means the whole bar. It used to be 80%, which put COMPLETED on calls
+   right above an unticked "50 calls" in POINTS for the same 40 calls. One rule,
+   the one the points and the desk already use. */
+const mcMet = (got, need) => (need > 0 ? (got || 0) >= need : (got || 0) > 0);
 const mcClock = (iso) => {
   if (!iso) return null;
   const d = new Date(iso);
@@ -11223,7 +11228,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               {r2.met
                 ? <span className="mc-made"><PixIcon glyph="check" size={13} /><span>COMPLETED</span></span>
                 : <>
-                    <span className="st">OF {r2.need}</span>
+                    <span className="st">OF {r2.need}{r2.need > r2.got ? <> &middot; {r2.need - r2.got} TO GO</> : null}</span>
                     <span className="bar"><i style={{ width: Math.min(100, Math.round(((r2.got || 0) / Math.max(1, r2.need)) * 100)) + "%" }} /></span>
                   </>}
             </span>

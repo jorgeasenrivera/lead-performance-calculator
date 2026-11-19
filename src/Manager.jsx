@@ -39,7 +39,8 @@ import { homeLinkFor } from "../api/_people-link.mjs";
 import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT, VIEW_ROOMS, viewRoomsOf, viewSwitchesOf, withRoom } from "../api/_rooms.mjs";
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
-import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
+import { storeDaysInMonth, storeDaysDone, storeGoalFor, storePace, likeForLike } from "../api/_store-month.mjs";
+import { videoStandard } from "../api/_video-standard.mjs";
 import { deliveredUnits } from "../api/_delivered-units.mjs";
 import { doorCheck, readingVerdict, settle, watchCircle } from "../api/_geofence.mjs";
 import { assistWhere } from "../api/_queue-notify.mjs";
@@ -11569,11 +11570,16 @@ function RoundUp({ config, store, data, M }) {
     const pacePts = days.map(([day, row]) => ({ day: +day.slice(8, 10), v: cumOf(row) }));
     // Month to date, live: the same figure the store's home and the group card show.
     const sold = Math.round(storeMonthUnits(data, M, config.roles) * 10) / 10;
-    const goal = storeGoalFor(store, mk)?.units ?? 0;
+    /* The hero's pace, not one of its own: selling days with the holidays out,
+       finished days only, against the share of the goal the store is held to.
+       This used to count calendar days against the raw goal, so the two screens
+       printed different "on pace for" numbers for the same month. */
+    const hol = new Set((config.holidays || []).map((h) => (typeof h === "string" ? h : h.date)));
+    const sp = storePace(storeGoalFor(store, mk), sold, mk, (d) => hol.has(d), today());
+    const goal = sp.goal ? sp.goal.bar : 0;
     const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-    const elapsed = Math.max(1, dayOfMonth() - 1);   // through yesterday
-    const onPaceFor = Math.round((sold / elapsed) * dim);
-    const paceDelta = goal > 0 ? Math.round(((onPaceFor - goal) / goal) * 100) : null;
+    const onPaceFor = sp.tooEarly ? null : Math.round(sp.projected);
+    const paceDelta = sp.tooEarly || sp.vsBarPct == null ? null : sp.vsBarPct;
 
     const last = days[days.length - 1] ? days[days.length - 1][1] : null;
     const prior = days[days.length - 2] ? days[days.length - 2][1] : null;
@@ -11608,7 +11614,7 @@ function RoundUp({ config, store, data, M }) {
     for (const t of trends) { if (t.pct != null) { if (t.pct > 0) up++; else if (t.pct < 0) down++; } }
     for (const c of close) { if (c.delta != null) { if (c.delta > 0) up++; else if (c.delta < 0) down++; } }
     return { pacePts, sold, goal, onPaceFor, paceDelta, dim, soldY, close, trends, up, down };
-  }, [digests, data, M, store.goal, config.roles]); // eslint-disable-line
+  }, [digests, data, M, store.goal, config.roles, config.holidays]); // eslint-disable-line
 
   if (!ru.any) return null;
 
@@ -11659,8 +11665,9 @@ function RoundUp({ config, store, data, M }) {
                   <div className="ru2-pace-head">
                     <span className="ru2-cap">Monthly pace</span>
                     <span className="ru2-pace-line">
-                      <b><CountUp value={ru2.sold} delay={350} /></b>&nbsp;delivered&nbsp;&middot;&nbsp;on
-                      pace for <b>{fmtNum(ru2.onPaceFor)}</b>&nbsp;/&nbsp;<b>{fmtNum(ru2.goal)}</b> goal
+                      <b><CountUp value={ru2.sold} delay={350} /></b>&nbsp;delivered&nbsp;&middot;&nbsp;{ru2.onPaceFor == null
+                        ? <>too early to project&nbsp;/&nbsp;<b>{fmtNum(ru2.goal)}</b> goal</>
+                        : <>on pace for <b>{fmtNum(ru2.onPaceFor)}</b>&nbsp;/&nbsp;<b>{fmtNum(ru2.goal)}</b> goal</>}
                       {ru2.paceDelta != null && (
                         <span className={"ru-chip " + (ru2.paceDelta >= 0 ? "ru-up" : "ru-down")}>
                           {ru2.paceDelta >= 0 ? "+" : ""}{ru2.paceDelta}%</span>
@@ -17216,12 +17223,19 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
           const need = min / 100;
           if (need <= 0) continue;
           const got = Math.min(1, (st?.[m] ?? 0) / need);
-          const r = roll[m] || (roll[m] = { below: 0, total: 0, sum: 0, min });
+          const r = roll[m] || (roll[m] = { below: 0, total: 0, sum: 0, min, vals: [] });
           r.total++; r.sum += got; if (got < 1) r.below++;
+          r.vals.push({ got: st?.[m] ?? null, min });
         }
       }
     }
-    return ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].map((m) => (roll[m] ? { m, mean: roll[m].sum / roll[m].total, below: roll[m].below, total: roll[m].total, min: roll[m].min } : null)).filter(Boolean);
+    /* The ring prints the floor's own rate and the target beside it, not the
+       capped progress toward target it used to, which read as a video rate
+       and was not one. See api/_video-standard.mjs. */
+    return ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].map((m) => {
+      const vs = roll[m] && videoStandard(roll[m].vals);
+      return vs ? { m, mean: roll[m].sum / roll[m].total, ...vs, min: vs.target } : null;
+    }).filter(Boolean);
   })();
 
   /* ---- the people ---- */
@@ -17289,9 +17303,9 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
     if (pop.k === "dial") {
       const v = videoDials.find((x) => x.m === pop.m);
       if (!v) return null;
-      const under = Math.round(v.mean * 100) < 100;
+      const under = v.ratio < 1;
       return (<>
-        {hd(METRICS[pop.m].label, <><span className={"fr-st " + (under ? "away" : "in")}>{Math.round(v.mean * 100)}% of target</span><span className="fr-w">{v.below} of {v.total} below</span><span className="fr-w">target {v.min}%</span></>)}
+        {hd(METRICS[pop.m].label, <><span className={"fr-st " + (under ? "away" : "in")}>{Math.round(v.rate * 100)}% store average</span><span className="fr-w">target {v.target}%</span><span className="fr-w">{v.below} of {v.total} below</span></>)}
         <div className="bp-defn">{METRIC_DESC[pop.m] || "Measured month to date."}</div>
         <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { setDrill({ kind: "below", id: pop.m, label: "Below " + (METRIC_TINY[pop.m] || METRICS[pop.m].short) }); setLimitOnly(false); close(); }}>Who is below</button></div>
       </>);
@@ -17468,11 +17482,11 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
           })}
           <span className="bp-sep" />
           {videoDials.map((v) => {
-            const t = goalTier(v.mean, 1);
+            const t = goalTier(v.ratio, 1);
             return (
-              <button type="button" key={v.m} className="bp-dial" onClick={() => setPop({ k: "dial", m: v.m })} style={{ "--v": Math.round(v.mean * 100), "--c": t.col }}>
-                <span className="bp-ring"><span>{Math.round(v.mean * 100)}%</span></span>
-                <span className="bp-dl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span><SignalQualifier />
+              <button type="button" key={v.m} className="bp-dial" onClick={() => setPop({ k: "dial", m: v.m })} style={{ "--v": Math.round(Math.min(1, v.ratio) * 100), "--c": t.col }}>
+                <span className="bp-ring"><span>{Math.round(v.rate * 100)}%</span></span>
+                <span className="bp-dl">{METRIC_TINY[v.m] || METRICS[v.m].short}<br />target {v.target}%</span><SignalQualifier />
               </button>
             );
           })}
@@ -17624,8 +17638,9 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
         if (need <= 0) continue;
         const got = Math.min(1, (st?.[req.metric] ?? 0) / need);
         sum += got; n++;
-        const roll = metricRoll[req.metric] || (metricRoll[req.metric] = { below: 0, total: 0, sum: 0 });
+        const roll = metricRoll[req.metric] || (metricRoll[req.metric] = { below: 0, total: 0, sum: 0, vals: [] });
         roll.total++; roll.sum += got;
+        roll.vals.push({ got: st?.[req.metric] ?? null, min: req.min });
         if (got < 1) roll.below++;
       }
       if (n) { attSum += sum / n; attN++; }
@@ -17887,10 +17902,14 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
     return { mk, dim, off, dNow, satsLeft, best };
   }, [dayUnits]);
   const lastImport = (data.importLog || [])[0] || null;
+  /* The ring's number is the floor's own rate with the target beside it. It
+     used to be everyone's progress toward target, capped at 100, which read
+     as a video rate and was not one. See api/_video-standard.mjs. */
   const videoDials = ["apptVideoDayPct", "bhVideoPct", "engagedVideoPct"]
-    .map((m) => metricRoll[m]
-      ? { m, mean: metricRoll[m].sum / metricRoll[m].total, below: metricRoll[m].below, total: metricRoll[m].total }
-      : null)
+    .map((m) => {
+      const vs = metricRoll[m] && videoStandard(metricRoll[m].vals);
+      return vs ? { m, mean: metricRoll[m].sum / metricRoll[m].total, ...vs } : null;
+    })
     .filter(Boolean);
   const [dayPick, setDayPick] = useState(null);
   /* The delivery-against-target chart: every channel's close rate, month by
@@ -18180,15 +18199,18 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
                 <div className="s2-marks">
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
-                      {/* Ring grown from 54px and the "of target" line under it dropped on
-                         18 November at Jorge's word: the percentage in the ring
-                         says it. Three 84px rings still fit side by side at
-                         phone width. */}
-                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={84} />
+                      {/* Ring grown from 54px on 18 November at Jorge's word. On 19
+                         November he picked the clarity fix: the ring prints the
+                         floor's own rate and the target sits under its name,
+                         because the old capped progress toward target read as a
+                         video rate and was not one. Three 84px rings still fit
+                         side by side at phone width. */}
+                      <S2Dial value={Math.round(v.rate * 100)} ratio={v.ratio} size={84} />
                       <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
-                      <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
+                      <span className="s2-mktgt">target {v.target}%</span>
+                      <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.ratio, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
-                        <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
+                        <div className="bw-big">{Math.round(v.rate * 100)}% <small>store average · target {v.target}%</small></div>
                         <div className="bw-sub">{v.below} of {v.total} below target</div>
                         <div className="bw-desc">{METRIC_DESC[v.m] || "Measured month to date."}</div>
                       </BloopWin>
@@ -19307,7 +19329,7 @@ function TrendsPanel({ config, stores, data }) {
    month over month, the day-by-day chart with the desk's own controls, and
    where the floor is losing standard. Desktop keeps GMSummary's layout. */
 function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, rows, restricted, trending, cleared, paused,
-  byStandard, channels, thr, trail, trailPct, moLabel, mNow, mPrev, measures, move, totalUnits, single, exportCSV }) {
+  byStandard, channels, thr, trail, trailPct, moLabel, mNow, mPrev, measures, move, totalUnits, single, goalNow, moHead, exportCSV }) {
   const [pop, setPop] = useState(null);
   const close = useCallback(() => setPop(null), []);
   const hd = (title, meta) => (
@@ -19346,7 +19368,7 @@ function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, row
     <div className="bp-page cx-page sm-phone">
       <div className="bp-hero cx-hero">
         <div className="cx-hh"><button type="button" className="co-day" onClick={() => setPop({ k: "month" })}><PixIcon glyph="calendar" size={11} />{monthLabel(month)}</button><span className="cx-days">generated {new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</span></div>
-        <div className="cx-big" style={{ cursor: "default" }}><DotNum value={String(Math.round(totalUnits))} dot={8} color="#fff" /><span className="cx-of">delivered{single?.goal?.units ? <><br />of {fmtNum(single.goal.units)} goal</> : null}</span></div>
+        <div className="cx-big" style={{ cursor: "default" }}><DotNum value={String(Math.round(totalUnits))} dot={8} color="#fff" /><span className="cx-of">delivered{goalNow ? <><br />of {fmtNum(goalNow.bar)} goal</> : null}</span></div>
         {rows.length > 0 && (
           <div className="co-std">
             <button type="button" onClick={() => setPop({ k: "below" })}><b>{restricted.length}<small>/{rows.length}</small></b><span><PixIcon glyph="warn" size={9} />Below</span></button>
@@ -19385,13 +19407,14 @@ function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, row
       {mNow.any && (
         <div className="co-grp co-gon cx-card sm-mo">
           <div className="co-gh"><PixIcon glyph="calendar" size={14} />Month over month</div>
-          <div className="sm-r3 h"><span>Measure</span><span>{moLabel(month)}</span><span>{moLabel(`${month.split("-")[0]}-${month.split("-")[1]}`) && mPrev.any ? moLabel(prevOf(month)) : "before"}</span><span>move</span></div>
+          <div className="sm-r3 h"><span>Measure</span><span>{moHead.now}</span><span>{mPrev.any ? moHead.prev : "before"}</span><span>move</span></div>
           {measures.map(([label, k]) => {
             const a = mNow[k], b = mPrev.any ? mPrev[k] : null;
             const mv = b != null ? move(a, b) : null;
             return (<div key={k} className="sm-r3"><span className="sm-mn">{label}</span><span className="sm-mv">{fmtNum(a)}</span><span className="sm-mv dim">{b == null ? "–" : fmtNum(b)}</span>
               {mv == null ? <span className="sm-mm na">–</span> : <span className={"sm-mm " + (mv >= 0 ? "up" : "dn")}><PixIcon glyph={mv >= 0 ? "triup" : "tridown"} size={8} />{mv >= 0 ? "+" : ""}{mv}%</span>}</div>);
           })}
+          {moHead.note && <div className="sm-monote">{moHead.note}</div>}
         </div>
       )}
 
@@ -19618,27 +19641,34 @@ function GMSummary({ config, data, stores }) {
   for (const m of trail) for (const c of chFor(m)) (trailPct[c.id] = trailPct[c.id] || []).push(c.pct);
   const moLabel = (m) => new Date(m + "-15T12:00").toLocaleDateString("en-US", { month: "short" });
 
-  /* Per store: DriveCentric's own count when it is on file, the people's rows
-     when it is not. Mixing the two across stores is fine -- each store's figure
-     is the best one that store has. */
-  const totalUnits = stores.reduce((tot, s) => {
-    const M = data[s.id]?.months?.[month];
-    const st = statedOf(M);
-    if (st) return tot + st.deliveries;
-    return tot + rows.filter((r) => r.store === s.name)
-      .reduce((n, r) => n + deliveredUnits(r.stats), 0);
+  /* Per store, the same figure the store's hero prints: DriveCentric's own
+     count when it is on file, otherwise the people the board shows. The KPI and
+     the month-over-month row used to count this two different ways (the second
+     summed every roster row, BDC and managers included). */
+  const unitsFor = (mKey) => stores.reduce((tot, s) => {
+    const d = data[s.id]; const M = d?.months?.[mKey];
+    return M ? tot + storeMonthUnits(d, M, config.roles) : tot;
   }, 0);
-  const measureFor = (mKey) => {
+  const totalUnits = unitsFor(month);
+  /* The goal the hero shows, read the way the hero reads it. This read a
+     standing goal that saveMonthGoal stopped writing, so it never showed. */
+  const goalNow = single ? storeGoalFor(single, month) : null;
+  const measureFor = (mKey, cut = null, scale = 1) => {
     let any = false; const t = { units: 0, opps: 0, appts: 0, shows: 0, videos: 0, calls: 0 };
     for (const s of stores) {
       const d = data[s.id]; if (!d) continue;
       const M = d.months?.[mKey];
-      if (M) for (const a of d.roster || []) {
-        const st = M.stats?.[norm(a.name)]; if (!st) continue;
-        any = true; t.units += deliveredUnits(st); t.opps += st.opps || 0;
+      if (M) {
+        let seen = false;
+        for (const a of d.roster || []) {
+          const st = M.stats?.[norm(a.name)]; if (!st) continue;
+          seen = true; t.opps += st.opps || 0;
+        }
+        if (seen || statedOf(M)) { any = true; t.units += storeMonthUnits(d, M, config.roles); }
       }
       for (const [dy, rec] of Object.entries(d.activity || {})) {
         if (!dy.startsWith(mKey)) continue;
+        if (cut != null && Number(dy.slice(8, 10)) > cut) continue;
         for (const r of Object.values(rec)) {
           if (!r) continue; any = true;
           t.calls += r.calls || 0; t.videos += r.video || 0;
@@ -19646,13 +19676,21 @@ function GMSummary({ config, data, stores }) {
         }
       }
     }
+    // Month totals with no daily figures behind them, scaled to the same days.
+    if (scale !== 1) { t.units = Math.round(t.units * scale); t.opps = Math.round(t.opps * scale); }
     return { any, ...t };
   };
   const [py, pmo] = month.split("-").map(Number);
   const prevMonth = `${pmo === 1 ? py - 1 : py}-${String(pmo === 1 ? 12 : pmo - 1).padStart(2, "0")}`;
-  const mNow = measureFor(month), mPrev = measureFor(prevMonth);
+  /* A month in progress is compared through the same day of last month, not
+     against all of it, which sat every row red for most of the month. */
+  const lfl = likeForLike(month, today());
+  const mNow = measureFor(month, lfl.cut), mPrev = measureFor(prevMonth, lfl.cut, lfl.scale);
+  const moSpan = (m) => lfl.cut ? `${moLabel(m)} 1-${lfl.cut}` : moLabel(m);
+  const moHead = { now: moSpan(month), prev: moSpan(prevMonth),
+    note: lfl.cut ? `The same days of each month. Last month's units and opportunities are its totals, scaled to ${lfl.cut} days.` : null };
   const MEASURES = [
-    ["Units delivered", "units"], ["Total opportunities", "opps"],
+    ["Units delivered", "units"], ["Internet opportunities", "opps"],
     ["Appointments set", "appts"], ["Appointments shown", "shows"],
     ["Videos sent", "videos"], ["Calls made", "calls"],
   ];
@@ -19671,7 +19709,7 @@ function GMSummary({ config, data, stores }) {
     <SummaryPhone config={config} stores={stores} data={data} month={month} setMonth={setMonth} monthOptions={monthOptions}
       rows={rows} restricted={restricted} trending={trending} cleared={cleared} paused={paused} byStandard={byStandard}
       channels={channels} thr={thr} trail={trail} trailPct={trailPct} moLabel={moLabel} mNow={mNow} mPrev={mPrev}
-      measures={MEASURES} move={move} totalUnits={totalUnits} single={single} exportCSV={exportCSV} />
+      measures={MEASURES} move={move} totalUnits={totalUnits} single={single} goalNow={goalNow} moHead={moHead} exportCSV={exportCSV} />
   );
 
   return (
@@ -19699,7 +19737,7 @@ function GMSummary({ config, data, stores }) {
           <div className="da-kpis">
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="sold" size={10} /> Units delivered</div>
               <div className="da-krow"><span className="da-knum">{fmtNum(totalUnits)}</span>
-                {single?.goal?.units ? <span className="da-ksub">goal {fmtNum(single.goal.units)}</span> : null}</div></div>
+                {goalNow ? <span className="da-ksub">goal {fmtNum(goalNow.bar)}</span> : null}</div></div>
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Below standard</div>
               <div className="da-krow"><span className="da-knum">{restricted.length}<span className="da-ksub">/{rows.length}</span></span></div></div>
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="nope" size={10} /> Paused right now</div>
@@ -19745,8 +19783,8 @@ function GMSummary({ config, data, stores }) {
         <div className="da-tbl sm-mo">
           <div className="warmhead"><PixIcon glyph="calendar" size={16} style={{ color: "#D0821E" }} />Month over month</div>
           <div className="sm-mhead">
-            <span className="sm-mname">Measure</span><span className="sm-mval">{moLabel(month)}</span>
-            <span className="sm-mval dim">{moLabel(prevMonth)}</span><span className="da-flex" /><span className="sm-mmove">Move</span>
+            <span className="sm-mname">Measure</span><span className="sm-mval">{moHead.now}</span>
+            <span className="sm-mval dim">{moHead.prev}</span><span className="da-flex" /><span className="sm-mmove">Move</span>
           </div>
           {MEASURES.map(([label, k]) => {
             const a = mNow[k], b = mPrev.any ? mPrev[k] : null;
@@ -19764,6 +19802,7 @@ function GMSummary({ config, data, stores }) {
               </div>
             );
           })}
+          {moHead.note && <div className="sm-monote">{moHead.note}</div>}
         </div>
       )}
 
@@ -25018,6 +25057,7 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
         color:rgba(255,255,255,.78); white-space:nowrap; margin-top:6px; }
 .s2-marks { display:flex; gap:14px; justify-content:space-evenly; align-items:center; }
 .s2-mark { display:flex; flex-direction:column; align-items:center; cursor:default; }
+.s2-mktgt { font:600 9.5px var(--font-mono); letter-spacing:.05em; color:rgba(255,255,255,.6); white-space:nowrap; margin-top:2px; }
 .s2-dialrev { animation:s2dialrev .95s var(--ease-bloop) both; }
 .s2-focusgrid { display:grid; grid-template-columns:288px 1fr; gap:12px; align-items:stretch;
         margin-bottom:14px; position:relative; z-index:3; }
@@ -25203,6 +25243,7 @@ button.da-lbrow { cursor:pointer; }
 .sm-spark i { flex:1; border-radius:2px 2px 0 0; background:color-mix(in srgb, var(--p2) 32%, transparent); }
 .sm-spark i.hot { background:var(--p2); }
 .sm-mo { margin-top:14px; }
+.sm-monote { padding:8px 16px 12px; font-size:11.5px; line-height:1.4; color:var(--ink-3); }
 .sm-mhead { display:flex; align-items:center; gap:12px; padding:8px 16px 6px;
         font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
 .sm-mname { width:190px; flex:0 0 auto; font-size:12.5px; font-weight:600; }
