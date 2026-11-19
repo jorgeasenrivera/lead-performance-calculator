@@ -3,9 +3,23 @@ import { createHash } from "node:crypto";
 const sha = source => createHash("sha256").update(source).digest("hex");
 // Strip the exact reviewed Dashboard adjustment from the frozen synthetic preview only.
 // In particular, restore the two prior entry anchors before the historical inverse.
-export const DASHBOARD_MANAGER_SHA = "1352f3a772d852597a9fc8d14a7a1be5ac9fcc6a89798179fa4f8ff4782300a1";
+export const DASHBOARD_MANAGER_SHA = "f9bb7863883289c35c09b575c2cfb198a10977f944c54b87da2878876e18009e";
 export const PRIOR_DASHBOARD_MANAGER_SHA = "17de0d26c06578a97b5daae50f05d07f16f6c14cdbfa278a02bdb549f59fae0e";
 const inverses = [
+  // The count and the list on one planner roster (#542, ddde157): put the
+  // floor roster reads back first, so the entries below meet the source they were written for.
+  [
+    "  }, [digests]);\n  const series = useMemo(() => (digests ? dailySeries(digests, thr) : null), [digests, thr]); // eslint-disable-line\n  // Today in the store's zone. It moves on at midnight there, and again when a\n  // sleeping tab wakes, so the control never keeps yesterday's day or counts.\n",
+    "  }, [digests]);\n  const series = useMemo(() => (digests ? dailySeries(digests, thr) : null), [digests, thr]); // eslint-disable-line\n  const floorRoster = activityRoster(config, data);\n  // Today in the store's zone. It moves on at midnight there, and again when a\n  // sleeping tab wakes, so the control never keeps yesterday's day or counts.\n"
+  ],
+  [
+    "  const scheduleLabel = todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off);\n  // The list behind it is explicit days off, and only those the planner\n  // confirms are called on. Not being listed off is not being on. It is the\n  // planner's roster, the same one the count reads, so the two always agree.\n  const offToday = staffing?.offPeople || [];\n  const onToday = staffing?.onPeople || [];\n  const mcal = useMemo(() => {\n    const mk = ym();\n",
+    "  const scheduleLabel = todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off);\n  // The list behind it is explicit days off, and only those the planner\n  // confirms are called on. Not being listed off is not being on.\n  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(schedDay));\n  const onToday = floorRoster.filter((a) => staffing?.on.has(a.id));\n  const mcal = useMemo(() => {\n    const mk = ym();\n"
+  ],
+  [
+    "    return o;\n  }, [digests]);\n  // Today in the store's zone, moving on at midnight and when a sleeping tab\n  // wakes. Days off are the explicit ones; on is only what the planner confirms.\n  // The names come from the planner's roster, the one the count reads, so the\n  // label and the list it opens cannot disagree.\n  const schedDay = useZonedToday(store?.timezone || STORE_TZ);\n  const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);\n  const offToday = staffing?.offPeople || [];\n  const onToday = staffing?.onPeople || [];\n  const mcal = useMemo(() => {\n    const mk = ym();\n",
+    "    return o;\n  }, [digests]);\n  /* The same people the check-out sheet counts, read the same way, so the two\n     screens can never put a different number of bodies on the floor. */\n  const floorRoster = activityRoster(config, data);\n  // Today in the store's zone, moving on at midnight and when a sleeping tab\n  // wakes. Days off are the explicit ones; on is only what the planner confirms.\n  const schedDay = useZonedToday(store?.timezone || STORE_TZ);\n  const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);\n  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(schedDay));\n  const onToday = floorRoster.filter((a) => staffing?.on.has(a.id));\n  const mcal = useMemo(() => {\n    const mk = ym();\n"
+  ],
   [
     "import { staffingFor } from \"./today-staffing.mjs\";\nimport { useZonedToday } from \"./zoned-today.mjs\";\n",
     ""
