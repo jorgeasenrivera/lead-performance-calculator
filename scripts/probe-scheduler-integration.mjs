@@ -85,14 +85,25 @@ try{
     const initialUrl=page.url();
     for(const width of [320,390,1280]){
       await page.setViewportSize({width,height:900});
+      // Crossing the breakpoint can mount the other lazy Dashboard body.
+      // Do not open the disclosure during that responsive hand-off.
+      await page.locator(width <= 700 ? '.bp-row' : '.assoc-card').first().waitFor({state:'visible'});
+      await page.locator('html:is(.sage-cover-active,.sage-assemble,.refresh-hold)').waitFor({state:'detached'});
+      await pinned.waitFor({state:'visible'});
       assert.equal(await pinned.innerText(),'Dashboard');
       assert.equal(await pinned.getAttribute('aria-current'),'page');
       assert.equal(await choices.isVisible(),false);
       await pages.focus(); await page.keyboard.press('Enter');
+      await choices.waitFor({state:'visible'});
       assert.equal(await pages.getAttribute('aria-expanded'),'true');
       assert.deepEqual(await choices.getByRole('button').allTextContents(),['Dashboard','Summary','History','Targets','People']);
       await page.keyboard.press('Tab');
-      assert.equal(await choices.getByRole('button',{name:'Dashboard',exact:true}).evaluate(el=>el===document.activeElement),true);
+      assert.ok(await choices.isVisible(),'Pages stays open after Tab at '+width);
+      const focus=await choices.evaluate(panel=>({
+        first:panel.querySelector(':scope > button')===document.activeElement,
+        actual:document.activeElement?.getAttribute('class')||document.activeElement?.tagName,
+      }));
+      assert.ok(focus.first,'Tab enters Dashboard at '+width+'; actual focus: '+focus.actual);
       await page.keyboard.press('Escape');
       assert.equal(await pages.evaluate(el=>el===document.activeElement),true);
       assert.equal(await choices.isVisible(),false);
