@@ -93,8 +93,8 @@ export const STORE_HERO_LAYOUT_POLICY=Object.freeze({
 // Verify the actual approved Calendar app, independently of the frozen historical run.
 export const MANAGER_PAGES_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:540,branch:'codex/manager-pages-pix-20261118',
- base:{commit:'855d6d8f1c6c55fe71fa8329aad197b07cf4486d',tree:'c0fe6ddbc916856d44fb08dc9f4b1795a6b002eb'},
- current:{commit:'89b6cf8a0e1e0796ee4227b2c33fbe7cbfa4e8b6',tree:'f091b029c4a4265acd869b6a0a2c6bd044c2734f',parents:['48cdab1aa412fa1e499b56395820db3023275d5b'],
+ base:{commit:'50d65152638e5967247a0526d58a52f1d1f8361f',tree:'b27daff3119c85ab058f9eb22dba1f10e9547881'},
+ current:{commit:'eb62d2cce4513190f9f79c87791d589f684d1a80',tree:'053d4efb6f5a92f209b703d822b42a0d2fe8b60d',parents:['4b89c0bb88482f11864828bc1bcb008427b4c807','50d65152638e5967247a0526d58a52f1d1f8361f'],
   definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
