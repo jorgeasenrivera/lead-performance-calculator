@@ -26993,7 +26993,10 @@ function SignalSchedule({onCount, offCount, children, store, data, schedulerPrin
       onFocus={() => setHover(true)} onClick={() => {setHover(false);setPinned(v=>!v);}}>
       <span className="sg-schedule-count"><PixIcon glyph="calendar" size={10} /> {todaysScheduleLabel(onCount, offCount)}</span>
     </button>
-    {open && <div id={panelId} className="sg-schedule-details">{roster.props.children}<div className="sg-schedule-month">
+    {/* tabIndex -1 so a press on a day, which is not focusable, lands focus
+        on the panel instead of the page. Otherwise the blur below closes the
+        panel on mousedown and the day's click never arrives. */}
+    {open && <div id={panelId} className="sg-schedule-details" tabIndex={-1}>{roster.props.children}<div className="sg-schedule-month">
       {calendar[0]}{React.cloneElement(calendar[1], {onClickCapture:()=>setPinned(true)})}{calendar[2]}{calendar[3].props.children}
     </div></div>}
   </div>;
