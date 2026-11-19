@@ -45,7 +45,7 @@ import { stationPlanOf, claimStation, releaseStation,
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
-import { roomListOf, openRoom, roomsOf, openAtFor, localClock, openedBy, clockLabel } from "../api/_rooms.mjs";
+import { roomListOf, openRoom, roomsOf, openAtFor, localClock, openedBy, clockLabel, VIEW_ROOMS, viewRoomsOf, viewRoomsFor } from "../api/_rooms.mjs";
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -3733,6 +3733,12 @@ export default function LeadPerformanceCalculator() {
   const accessibleStores = isAdmin ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
   const currentStore = view !== "admin" ? config.stores.find((s) => s.id === view) : null;
   const overviewStores = isAdmin ? config.stores : accessibleStores;
+  /* The rooms in this person's bar: every one for an admin, otherwise what the
+     store has switched on, or what any of their stores has in a view across
+     several. */
+  const viewRooms = isAdmin ? VIEW_ROOMS
+    : currentStore ? viewRoomsOf(config, currentStore.id)
+    : viewRoomsFor(config, accessibleStores.map((s) => s.id));
 
   // "The Board" chosen from the splash: scope it to who's signed in.
   /* The store's headline figures as they stand on screen, so a manager saying
@@ -3772,7 +3778,7 @@ export default function LeadPerformanceCalculator() {
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
         appModule="board" onToolChange={switchTool} onImport={goImport}
-        rooms={currentStore ? roomListOf(config, currentStore.id) : null}>
+        rooms={viewRooms}>
         <div className="page">
           <BoardLauncher config={config} session={session}
             onLaunch={(storeId) => openLeaderboard(config, storeId)}
@@ -3842,7 +3848,7 @@ export default function LeadPerformanceCalculator() {
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
       appModule={appModule} onToolChange={switchTool} onImport={goImport}
-      rooms={currentStore ? roomListOf(config, currentStore.id) : null}
+      rooms={viewRooms}
       corner={(isAdmin || session.role === "manager") && currentStore
         ? <AssistWatcher store={currentStore.id} meName={session.name} /> : null}
       brand={currentStore?.brand}

@@ -90,7 +90,16 @@ export const STORE_HERO_LAYOUT_POLICY=Object.freeze({
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
 });
+// Verify this exact Rooms source while retaining the frozen historical runtime.
+export const STORE_ROOM_VISIBILITY_POLICY=Object.freeze({
+ repository:POLICY.repository,pullRequest:541,branch:'claude/sage-view-toggles-n72trw',
+ base:{commit:'855d6d8f1c6c55fe71fa8329aad197b07cf4486d',tree:'c0fe6ddbc916856d44fb08dc9f4b1795a6b002eb'},
+ current:{commit:'7b78216aab20993a84392d3911ddfe1eaa0a0bf0',tree:'86ea8a8d285dc64bd5d6558c3dbcb4f987ed451e',parents:['c2ed0bd5f14d165d7fda138a647eb00e398314aa']},
+ historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
+ requireMerge:true,
+});
 export function policyForPullRequest(number){
+ if(number===STORE_ROOM_VISIBILITY_POLICY.pullRequest)return STORE_ROOM_VISIBILITY_POLICY;
  if(number===POLICY.pullRequest)return POLICY;
  if(number===PARITY_POLICY.pullRequest)return PARITY_POLICY;
  if(number===SERVICE_TOTALS_POLICY.pullRequest)return SERVICE_TOTALS_POLICY;
