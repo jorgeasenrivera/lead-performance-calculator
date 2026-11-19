@@ -83,3 +83,58 @@ export function storeGoalFor(store, monthKey) {
   const pct = g.pct > 0 ? g.pct : 100;
   return { units, pct, bar: units * (pct / 100) };
 }
+
+/* ---- The store's pace, one way for every screen that prints one ----
+
+   The hero worked its pace over selling days with holidays out, finished days
+   only, against the share of the goal the store is held to. The morning
+   round-up worked its own over calendar days against the raw goal, so on a
+   holiday month or an 85% store the two printed different "on pace for"
+   numbers a screen apart. Both read this now.
+
+   Under three finished days it says so rather than projecting: one strong
+   Saturday is not a month. */
+export function storePace(goal, units, monthKey, isHoliday = () => false, todayStr = null) {
+  const daysAll = storeDaysInMonth(monthKey, isHoliday);
+  const daysDone = storeDaysDone(monthKey, isHoliday, todayStr);
+  const daysLeft = Math.max(0, daysAll - daysDone);
+  if (daysDone < 3 || !(daysAll > 0)) return { tooEarly: true, goal, daysAll, daysDone, daysLeft };
+  const perDay = units / daysDone;
+  const projected = perDay * daysAll;
+  const out = { goal, daysAll, daysDone, daysLeft, perDay, projected, units };
+  if (goal) {
+    out.short = Math.max(0, goal.bar - units);
+    out.shortAtPace = Math.max(0, goal.bar - projected);
+    out.needPerDay = daysLeft > 0 ? out.short / daysLeft : null;
+    out.willHit = projected >= goal.bar;
+    out.parToday = goal.bar * (daysDone / daysAll);
+    out.aheadBy = units - out.parToday;
+    out.tone = out.aheadBy >= 0 ? "g" : out.aheadBy > -(goal.bar * 0.05) ? "y" : "r";
+    // The projection against the bar, as a whole percent: +6 means the month is
+    // running 6% over what the store is held to.
+    out.vsBarPct = goal.bar > 0 ? Math.round(((projected - goal.bar) / goal.bar) * 100) : null;
+  }
+  return out;
+}
+
+/* ---- Month over month, compared on the same days ----
+
+   The Summary set this month so far against all of last month, so for most of
+   any month every row sat red: the 18th against a finished 31 days. A month in
+   progress is now compared through the same day: the finished days of this
+   month (through yesterday, since today's report has not landed) against the
+   same days of last month.
+
+   cut is the last day of each month to count, or null to compare whole months
+   (any month that is over). scale is what last month's month-to-date figures
+   are multiplied by when only a whole-month total exists for them, such as
+   units and opportunities: the share of last month those days cover. Daily
+   figures, the activity report's, are cut to the same days instead and need no
+   scaling. */
+export function likeForLike(monthKey, todayStr) {
+  if (!todayStr || todayStr.slice(0, 7) !== monthKey) return { cut: null, scale: 1 };
+  const cut = Math.max(0, Number(todayStr.slice(8, 10)) - 1);
+  const [y, m] = monthKey.split("-").map(Number);
+  const prevDays = new Date(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1, 0).getDate();
+  return { cut, scale: Math.min(1, cut / prevDays) };
+}
