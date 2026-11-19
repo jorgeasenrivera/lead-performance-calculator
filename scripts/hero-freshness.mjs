@@ -116,12 +116,15 @@ try{
    // #542 (Jorge, 19 November): the phone's on/off chip (.bp-r3, "8 on") gave
    // way to one Today's schedule control under the channel row, which counts
    // nobody as on unless the planner confirms it. That swap is the one
-   // expected change; every other control is still compared exactly.
-   const chip=before.controls.filter(x=>/(^|\s)bp-r3(\s|$)/.test(x.class));
-   assert.deepEqual(current.controls.map(x=>x.text),before.controls.filter(x=>!chip.includes(x)).map(x=>x.text),`${current.name}: facts and affordances preserved`);
-   if(chip.length){
+   // expected change, and only where it happened: a runtime that still has the
+   // chip, like the historical one, is compared exactly, chip included.
+   const isChip=x=>/(^|\s)bp-r3(\s|$)/.test(x.class);
+   const swapped=before.controls.some(isChip)&&!current.controls.some(isChip);
+   const expected=swapped?before.controls.filter(x=>!isChip(x)):before.controls;
+   assert.deepEqual(current.controls.map(x=>x.text),expected.map(x=>x.text),`${current.name}: facts and affordances preserved`);
+   if(swapped){
     assert.equal(current.schedule?.length,1,`${current.name}: one schedule control replaces the on/off chip`);
-    assert.match(current.schedule[0].text,/^Today’s schedule/,`${current.name}: the schedule control names today's schedule`);
+    assert.match(current.schedule[0].text,/^Today\u2019s schedule/,`${current.name}: the schedule control names today's schedule`);
     assert.ok(current.schedule[0].x>=current.hero.x&&current.schedule[0].right<=current.hero.right+1,`${current.name}: schedule control contained`);
    }
   }

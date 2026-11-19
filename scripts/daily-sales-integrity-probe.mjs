@@ -15,6 +15,33 @@ const mockRows = (store) => [20, 21].map((day, i) => ({
     nu: 6 + 7 * i, uu: 4 + 4 * i,
     ch: { internet: { u: 4 + i, l: 20 }, phone: { u: 2 + i, l: 12 }, showroom: { u: 4 + i, l: 15 } } },
 }));
+/* #542: the WebKit run closes the schedule panel at 1280px on some runs and
+   not others, and WebKit cannot be run outside CI. This records what the page
+   saw around the press (pointer, focus, keys, window focus, and every change
+   to the control's aria-expanded) and prints it, pass or fail, so the next
+   run says what closed it instead of leaving it to inference. It reads only. */
+const traceSchedule = (page) => page.evaluate(() => {
+  const name = (n) => !n || n === window ? String(n && "window") : n === document ? "document" : n.nodeType !== 1 ? n.nodeName
+    : `${n.tagName.toLowerCase()}${n.className && typeof n.className === "string" ? "." + n.className.trim().split(/\s+/).join(".") : ""}`;
+  const t0 = performance.now(), log = window.__scheduleTrace = [];
+  const push = (type, e) => log.push({ t: Math.round(performance.now() - t0), type, target: name(e?.target),
+    related: e && "relatedTarget" in e ? name(e.relatedTarget) : undefined, pointer: e?.pointerType, key: e?.key,
+    active: name(document.activeElement), expanded: document.querySelector(".sg-schedule-trigger[aria-controls]")?.getAttribute("aria-expanded") });
+  if (window.__scheduleTraceOff) window.__scheduleTraceOff();
+  const types = ["pointerover", "pointerout", "pointerdown", "pointerup", "click", "focusin", "focusout", "keydown"];
+  const on = (e) => { if ((e.type === "pointerover" || e.type === "pointerout") && !e.target.closest?.(".sg-schedule")) return; push(e.type, e); };
+  const win = (e) => push("window-" + e.type, null);
+  types.forEach((type) => document.addEventListener(type, on, true));
+  ["blur", "focus", "resize"].forEach((type) => window.addEventListener(type, win, true));
+  const seen = new MutationObserver((records) => records.forEach((r) => push(r.type === "attributes" ? "aria-expanded" : "panel", { target: r.target })));
+  seen.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["aria-expanded"] });
+  window.__scheduleTraceOff = () => { types.forEach((type) => document.removeEventListener(type, on, true));
+    ["blur", "focus", "resize"].forEach((type) => window.removeEventListener(type, win, true)); seen.disconnect(); };
+});
+const printScheduleTrace = async (page, label) => {
+  const trace = await page.evaluate(() => window.__scheduleTrace || []).catch(() => []);
+  console.log(`schedule trace ${label}: ${JSON.stringify(trace)}`);
+};
 const capture = async (page, name) => {
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true, animations: "disabled" });
   await page.screenshot({ path: `${OUT}/${name}-review.png`, fullPage: false, animations: "disabled" });
@@ -126,6 +153,7 @@ export async function verifyDailySalesIntegrity(browser) {
     assert.equal(result.preservation.afterMonth, result.preservation.beforeMonth);
 
     for (const width of [390, 700, 701, 1280]) {
+      if (width > 700) await traceSchedule(after.page).catch((error) => console.log(`schedule trace unavailable: ${error.message}`));
       await after.page.setViewportSize({ width, height: width <= 700 ? 844 : 1000 });
       await readySurface(after.page, width <= 700 ? '.bp-l2' : '.sg-schedule');
       await closeRecap(after.page);
@@ -152,10 +180,12 @@ export async function verifyDailySalesIntegrity(browser) {
         {
           const schedule = after.page.getByRole('button', { name: "Today's schedule and month details", exact: true });
           await schedule.click();
+          await printScheduleTrace(after.page, `${width} after the press`);
           assert.equal(await schedule.getAttribute('aria-expanded'), 'true');
           await after.page.locator('[data-daily-unavailable="desktop-day-detail"]').waitFor({ state: "visible" });
           await after.page.locator(".sg-schedule .s2-mc-grid i:not(.e)").first().click();
-          await after.page.locator(".sg-schedule-month .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" });
+          await after.page.locator(".sg-schedule-month .s2-detail").filter({ hasText: UNAVAILABLE }).waitFor({ state: "visible" }).catch(async (error) => {
+            await printScheduleTrace(after.page, `${width} after the day`); throw error; });
           assert.equal((await after.page.locator(".sg-schedule-month").innerText()).split(UNAVAILABLE).length - 1, 1, "one quiet unavailable line in the calendar");
           await capture(after.page, `after-calendar-${width}`);
           await schedule.press('Escape');
