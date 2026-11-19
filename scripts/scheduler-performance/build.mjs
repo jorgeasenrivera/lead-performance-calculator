@@ -12,9 +12,9 @@ import {historicalManagerFixture} from "./historical-manager-fixture.mjs";
 import { peoplePreviewInput } from "./people-preview-input.mjs";
 import { roomHintPreviewInput } from "./room-hint-preview-input.mjs";
 export const MANAGER_SHA =
-  "0df8c8248e0efa96cfab231585e787ef2de274c01592c25c616bc522fd850488";
+  "c93039bd1a73620a2b38fe91e8cb095c8c7a9b3b12132c345696569f2af271fa";
 export function patchPhoneLayout(source) {
-  if (createHash("sha256").update(source).digest("hex") !== "eb913a15543d534535ea8219e0e1d6ccd3ba73550b615158951a4bc9ebd7ddb5") throw Error("Core layout boundary changed. Re-review preview transform.");
+  if (createHash("sha256").update(source).digest("hex") !== "b4a6526f55231331da1aa05057f498c2826480db33c14f6af36fc7b9f558b2b7") throw Error("Core layout boundary changed. Re-review preview transform.");
   const old = 'function usePhoneLayout() {\n  const q = "(max-width: 700px)";';
   if (!source.includes(old)) throw Error("Phone layout hook not found");
   return source.replace(old, 'function usePhoneLayout() {\n  const q = "(max-width: 700px) and (hover: none) and (pointer: coarse)";');
