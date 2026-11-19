@@ -1,0 +1,168 @@
+/* The motion kit, as styles. src/motion-kit.mjs installs this after every other
+   stylesheet and puts html.mk-on on the page, so each rule here wins over the
+   one it replaces without the big files being edited. Take the class off
+   (?motion=off) and Sage moves exactly as it did before.
+
+   Three speeds and three curves, and nothing else:
+     tap 110 ms, move 380 ms, stage 560 ms;
+     pop, a spring with about 7% overshoot, for anything that arrives;
+     glide, the same spring damped, for anything that travels;
+     exit, quick and accelerating, for anything that leaves.
+   The JS sets --mk-pop and --mk-glide to the real springs where the browser can
+   draw them (CSS linear()); the values below are the nearest single curves.
+
+   The rooms keep their own clocks and curves (docs/sheets/rooms.html), so no
+   rule here reaches .sf, .mc-tab, .mcf or .ar, and the manager's own copy of
+   the Floor rail keeps its curves too. */
+:root {
+  --mk-tap: 110ms; --mk-move: 380ms; --mk-stage: 560ms;
+  --mk-pop: cubic-bezier(.34,1.3,.64,1);
+  --mk-glide: cubic-bezier(.22,1,.36,1);
+  --mk-exit: cubic-bezier(.4,0,.7,.2);
+}
+
+@keyframes mkFadeIn { from { opacity:0; } }
+@keyframes mkPopIn { from { transform:scale(.9); } }
+@keyframes mkSheetUp { from { transform:translateY(100%); } }
+@keyframes mkPushIn { from { transform:translateX(100%); } }
+@keyframes mkRowIn { from { opacity:0; transform:translateY(14px) scale(.97); } }
+@keyframes mkGrowX { from { transform:scaleX(0); } }
+@keyframes mkGrowY { from { transform:scaleY(0); } }
+
+/* ---- 1. one kit on the manager desk ----
+   The desk's rules already name their curves through three variables, so
+   pointing two of them at the kit moves nearly every manager motion onto it at
+   once: what arrives pops, what travels glides. --ease stays as it was, because
+   it is already the kit's decelerating travel. The Floor rail on the desk is
+   the rooms' own and keeps the rooms' curves. */
+html.mk-on.manager-signal { --spring: var(--mk-glide); --ease-bloop: var(--mk-pop); }
+html.mk-on.manager-signal .fr-rail { --spring: cubic-bezier(.32,.72,.33,1); --ease-bloop: cubic-bezier(.34,1.56,.64,1); }
+
+/* ---- 2. sheets and pop-ups spring up ----
+   Each fades in quickly and its shape rides the spring on its own track, so the
+   overshoot is in the movement and never in the opacity. "backwards", not
+   "both": a transform left filling after the end makes a sheet the containing
+   block for its fixed children (see the Overlay comment in the salesperson
+   file). The way out is in motion-kit.mjs. */
+html.mk-on :is(.mc-ov, .fsw-ov, .fba-sheetwrap, .help-back) {
+  animation: mkFadeIn 200ms ease-out backwards;
+}
+html.mk-on :is(.mc-sheet, .fsw-sheet) {
+  animation: mkFadeIn 160ms ease-out backwards, mkPopIn var(--mk-move) var(--mk-pop) backwards;
+}
+html.mk-on :is(.help-sheet, .fba-sheet) {
+  animation: mkSheetUp var(--mk-stage) var(--mk-pop) backwards;
+}
+/* My day is a page pushed over Home. */
+html.mk-on .q-page.sf-day-root {
+  animation: mkPushIn var(--mk-move) var(--mk-pop) backwards;
+}
+/* The desk's pop-ups: the Floor pop grows from under the thumb, the round-up
+   grows where the eye already is, the menu blooms from its tab. */
+html.mk-on.manager-signal .fr-pop { animation: mkFadeIn 180ms ease-out backwards; }
+html.mk-on.manager-signal .fr-sheet {
+  animation: mkFadeIn 160ms ease-out backwards, mkPopIn var(--mk-move) var(--mk-pop) backwards;
+}
+html.mk-on.manager-signal .ru-sheet {
+  animation: mkFadeIn 160ms ease-out backwards, mkPopIn var(--mk-move) var(--mk-pop) backwards;
+}
+html.mk-on.manager-signal .qpick {
+  animation: mkFadeIn 140ms ease-out backwards, mkPopIn var(--mk-move) var(--mk-pop) backwards;
+}
+html.mk-on.manager-signal .drawer-root.open .drawer {
+  animation: mkSheetUp var(--mk-stage) var(--mk-pop) backwards;
+}
+/* Closing the drawer: the kit holds it on screen for the exit. */
+html.mk-on .drawer-root.mk-closing { display:block; pointer-events:none; }
+html.mk-on .drawer-root.mk-closing .drawer { animation: mkSheetOut 380ms var(--mk-exit) forwards; }
+html.mk-on .drawer-root.mk-closing .drawer-scrim { animation: mkFadeOut 380ms ease-in forwards; }
+@keyframes mkSheetOut { to { transform:translateY(100%); } }
+@keyframes mkFadeOut { from { opacity:1; } to { opacity:0; } }
+/* Hover cards on the hero grow from the point, not from half size. */
+html.mk-on.manager-signal .bloopwin:not(.bloopclone) { transform:translate(-50%,6px) scale(.85); }
+html.mk-on.manager-signal :is(.bloop-host:hover, .bloop-host:focus-within) > .bloopwin:not(.bloopclone) { transform:translate(-50%,0) scale(1); }
+
+/* The copies left behind for an exit are pictures: no entrance of their own,
+   nothing to press, nothing for a screen reader. */
+[data-mk-ghost], [data-mk-ghost] * { animation:none !important; transition:none !important; pointer-events:none !important; }
+
+/* ---- 3. pages and tabs push in ----
+   The desk's tool and section moves keep their direction and their 140 ms
+   departure (the Manager Signal sheet); the arrival rides the pop, so the page
+   slides in, passes its mark by a few pixels and settles. */
+@media (prefers-reduced-motion: no-preference) {
+  html.mk-on.manager-signal.manager-signal-switch:not(.manager-signal-reduce):is(.tool-enter,.tab-enter) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
+    animation: sagePolishIn var(--mk-move) var(--mk-pop) both !important;
+  }
+  html.mk-on.manager-signal.manager-signal-switch:not(.manager-signal-reduce):is(.tool-exit,.tab-exit) :is(.page,.board-page,.tab-page):not(.page *, .board-page *, .tab-page *) {
+    animation: sagePolishOut .14s var(--mk-exit) both !important;
+  }
+}
+
+/* ---- 4. one press ----
+   The press lives in the script, for every button at once. The desk also had a
+   :active scale of its own on top of it, so a desk button gave twice as far as
+   anything else; under the kit it gives once, like everything else. */
+html.mk-on .lpc :is(button, [role="button"], [role="tab"], [role="switch"]):not(:disabled):not(.tdial):not(.sf *):active {
+  transform:none;
+}
+/* A hover lift has no hover to end it on a phone, so the lift stayed after the
+   finger left. Lifts are for a mouse. */
+@media (hover: none) {
+  html.mk-on :is(.btn, .help-fab, .q-row, .fbp-tbl, .lf-go, .s2-pod, .tile):hover,
+  html.mk-on .mdial:hover svg { transform:none; }
+}
+
+/* ---- 6. bars stretch and settle ----
+   The first time a bar shows it grows from its root and passes its length by a
+   hair before settling; later changes glide (they ride --spring above). After
+   the first move between tabs the desk stops replaying mount effects, and so do
+   the bars. Under the arrival cover they wait, so the growth is seen. */
+html.mk-on.manager-signal:not(.manager-signal-switch) :is(.gauge-fill, .lb-fill, .ac-bar, .oyo-fill) {
+  transform-origin:left center;
+  animation: mkGrowX var(--mk-stage) var(--mk-pop) backwards;
+}
+html.mk-on.manager-signal:not(.manager-signal-switch) .s2g4-col i {
+  transform-origin:bottom center;
+  animation: mkGrowY var(--mk-stage) var(--mk-pop) backwards;
+}
+html.mk-on.manager-signal .s2-hcol i { animation-duration: var(--mk-stage); }
+
+/* ---- 7. lists cascade in ----
+   Rows arrive one after another, 40 ms apart, on the first landing only. Rows
+   that change rank later hop to their new place (motion-kit.mjs). */
+html.mk-on.manager-signal:not(.manager-signal-switch) :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row) {
+  animation: mkRowIn var(--mk-stage) var(--mk-pop) backwards;
+}
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(2) { animation-delay:40ms; }
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(3) { animation-delay:80ms; }
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(4) { animation-delay:120ms; }
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(5) { animation-delay:160ms; }
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(6) { animation-delay:200ms; }
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(7) { animation-delay:240ms; }
+html.mk-on.manager-signal :is(.s2-rolecard > .assoc-card, .s2-podium > .s2-pod, .bp-stand > .bp-row):nth-child(n+8) { animation-delay:280ms; }
+html.mk-on.jump-under :is(.gauge-fill, .lb-fill, .ac-bar, .oyo-fill, .s2g4-col i, .assoc-card, .s2-pod, .bp-row) {
+  animation-play-state:paused;
+}
+
+/* ---- 8. the associate card ----
+   The card itself springs in the script; the frosted backdrop fades with it,
+   where it used to cut in. */
+html.mk-on.manager-signal .acard-scrim { animation: mkFadeIn var(--mk-move) ease-out backwards; }
+
+/* ---- 10. no jumps ----
+   A figure the kit lands (5) needs a box of its own to bounce in. */
+html.mk-on .mk-num { display:inline-block; }
+
+/* ---- reduced motion ----
+   Everything above that travels becomes a short fade, or nothing. The old
+   catch-all sat inside .lpc and never reached the sheets on <body>. */
+@media (prefers-reduced-motion: reduce) {
+  html.mk-on :is(.mc-sheet, .fsw-sheet, .help-sheet, .fba-sheet, .fr-sheet, .ru-sheet, .qpick, .drawer, .q-page.sf-day-root,
+    .gauge-fill, .lb-fill, .ac-bar, .oyo-fill, .s2g4-col i, .assoc-card, .s2-pod, .bp-row) {
+    animation: mkFadeIn 140ms ease-out backwards !important;
+  }
+}
+html.mk-on.sage-signal-reduce :is(.fr-sheet, .ru-sheet, .qpick, .drawer, .gauge-fill, .lb-fill, .ac-bar, .oyo-fill, .s2g4-col i, .assoc-card, .s2-pod, .bp-row) {
+  animation: mkFadeIn 140ms ease-out backwards !important;
+}
