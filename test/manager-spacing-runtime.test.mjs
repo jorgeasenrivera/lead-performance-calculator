@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY,DUET_STORE_CARD_POLICY,ROOMS_HINT_POLICY,DUET_COPY_POLICY,PEOPLE_SCHEDULER_COPY_POLICY,STORE_HERO_LAYOUT_POLICY,MANAGER_PAGES_POLICY,STORE_ROOM_VISIBILITY_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
+import {POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY,DUET_STORE_CARD_POLICY,ROOMS_HINT_POLICY,DUET_COPY_POLICY,PEOPLE_SCHEDULER_COPY_POLICY,STORE_HERO_LAYOUT_POLICY,MANAGER_PAGES_POLICY,STORE_ROOM_VISIBILITY_POLICY,MOTION_KIT_POLICY,policyForPullRequest,validateEvent,runtimeFor,verifyRouted,sealBuild,verifyBuild,verifyServedBuild} from '../scripts/manager-spacing-runtime.mjs';
 
 const sha=b=>createHash('sha256').update(b).digest('hex');
 function fixture(extra=false,withSnapshot=false){
@@ -467,7 +467,7 @@ test('Sage #538 layout checks verify exact current source while retaining all hi
 });
 
 
-test('Manager Pages runs only on its pinned current Chromium and WebKit lanes',()=>{
+test('Manager Pages and motion kit use the current Pages lanes in Chromium and WebKit',()=>{
  const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
  const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
  const p=MANAGER_PAGES_POLICY,n=p.pullRequest;
@@ -478,13 +478,14 @@ test('Manager Pages runs only on its pinned current Chromium and WebKit lanes',(
  const steps=runner.split('      - name: ');
  const heat=steps.find(s=>s.startsWith('Exercise Manager Pages navigation'));
  const plain=steps.find(s=>s.startsWith('Exercise the current Calendar entry'));
- assert.ok(heat.includes("if: matrix.runtime == 'current' && github.event.pull_request.number == "+n));
+ const pagesWhen="matrix.runtime == 'current' && (github.event.pull_request.number == "+n+" || github.event.pull_request.number == "+MOTION_KIT_POLICY.pullRequest+")";
+ assert.ok(heat.includes("if: "+pagesWhen));
  assert.ok(heat.includes("PROBE_SCHEDULER_FLAG: '0'")&&heat.includes("PROBE_MANAGER_PAGES: '1'"));
  assert.ok(heat.includes('/manager-pages-integration')&&plain.includes('/hero-integration'));
  assert.ok(heat.includes('node scripts/probe-scheduler-integration.mjs')&&plain.includes('node scripts/probe-scheduler-integration.mjs'));
  assert.ok(!plain.includes('PROBE_MANAGER_PAGES'));
  assert.ok(steps.indexOf(heat)<steps.findIndex(s=>s.startsWith('Recheck both source')));
- assert.ok(runner.includes("MANAGER_PAGES_CURRENT: $"+"{{ matrix.runtime == 'current' && github.event.pull_request.number == "+n+" }}"));
+ assert.ok(runner.includes("MANAGER_PAGES_CURRENT: $"+"{{ "+pagesWhen+" }}"));
  assert.ok(runner.includes('NAV_DRIVERS="$DRIVERS"'));
  for(const driver of ['manager-viewports','color-phone','search-keyboard','manager-selector','manager-spacing'])
   assert.ok(runner.includes('node "$NAV_DRIVERS/'+driver+'.mjs"'));
@@ -543,6 +544,40 @@ test('Sage Rooms visibility checks verify exact current source while retaining a
   assert.throws(()=>verify({runtimeRoot:f.historicalRoot}),/served runtime commit/);
   assert.throws(()=>verify({},{...local,current:{...local.current,parents:[f.policy.current.commit]}}),/exact source anchor parents/);
   for(const change of [e=>e.number=527,e=>e.pull_request.head.ref='other/branch',e=>e.pull_request.head.repo.full_name='other/repo',
+      e=>e.pull_request.base.repo.full_name='other/repo',e=>e.pull_request.base.sha=f.policy.current.commit]){
+   const wrong=structuredClone(event);change(wrong);assert.throws(()=>verify({event:wrong}));
+  }
+ }finally{f.close();}
+});
+
+
+test('the motion kit checks use the exact current app, keeping independent historical lanes',()=>{
+ const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
+ const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
+ const p=MOTION_KIT_POLICY,n=p.pullRequest;
+ assert.deepEqual(p.current.definitionChanges,['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs','test/manager-spacing-runtime.test.mjs']);
+ assert.equal(p.current.commit,'4e83e4ac0d9aed152b44f1a6cd67e7dab83b5fa0');
+ assert.equal(policyForPullRequest(n),p);
+ assert.ok(caller.includes("number == "+n+" && github.head_ref == '"+p.branch+"' && github.base_ref == 'main'"));
+ assert.ok(runner.includes("number == "+n+" && '"+p.current.commit+"'"));
+ assert.match(runner,/engine: \[chromium, webkit\]/);
+ assert.match(runner,/runtime: \[historical, current\]/);
+ assert.match(runner,/node "\$DRIVERS\/manager-spacing\.mjs"/);
+ for(const old of [POLICY,PARITY_POLICY,SERVICE_TOTALS_POLICY,PEOPLE_SERVICE_POLICY]){
+  assert.equal(policyForPullRequest(old.pullRequest),old);
+  assert.equal(runtimeFor('historical',p),old.historical);
+  assert.notEqual(runtimeFor('current',p).commit,old.current.commit);
+ }
+ const f=fixture();try{
+  const local={...p,base:f.policy.base,current:{...f.policy.current,parents:[f.policy.base.commit],definitionChanges:undefined},historical:f.policy.historical,manifest:f.policy.manifest};
+  const event=structuredClone(f.event);event.number=n;event.pull_request.head.ref=local.branch;
+  const env={...f.env,GITHUB_REF:'refs/pull/'+n+'/merge'};
+  const verify=(overrides={},policy=local)=>verifyRouted({runtimeRoot:f.currentRoot,definitionRoot:f.definition,eventRoot:f.eventRoot,event,env,caseName:'current',...overrides},policy);
+  assert.equal(verify().runtimeCommit,f.policy.current.commit);
+  assert.throws(()=>verify({eventRoot:f.definition,env:{...env,GITHUB_SHA:f.head,GITHUB_REF:'refs/pull/'+n+'/head'}}),/requires an exact merge checkout/);
+  assert.throws(()=>verify({runtimeRoot:f.historicalRoot}),/served runtime commit/);
+  assert.throws(()=>verify({},{...local,current:{...local.current,parents:[f.policy.current.commit]}}),/exact source anchor parents/);
+  for(const change of [e=>e.number=529,e=>e.pull_request.head.ref='other/branch',e=>e.pull_request.head.repo.full_name='other/repo',
       e=>e.pull_request.base.repo.full_name='other/repo',e=>e.pull_request.base.sha=f.policy.current.commit]){
    const wrong=structuredClone(event);change(wrong);assert.throws(()=>verify({event:wrong}));
   }

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import ManagerPagesNav from "./ManagerPagesNav.jsx";
 import { managerNavGlyphs } from "./manager-nav-glyphs.mjs";
 import { report, setReportContext } from "./report.js";
+import { MK, installMotionKit } from "./motion-kit.mjs";
 import { renderLeaderboard } from "./board-loader.mjs";
 import { viaFor, readVia, rememberWallKey, doorbellTopic, TICKET_PREFIX } from "./row-access.mjs";
 import { isOldCodeLink } from "./old-links.mjs";
@@ -12851,7 +12852,7 @@ if (typeof window !== "undefined") {
    frames and a finger that has moved by then is scrolling, not pressing, so
    it gets no tick and the press lets go. Reduced motion keeps the tick and
    skips the scale. */
-const PRESS_SEL = 'button, [role="button"], a.btn';
+const PRESS_SEL = 'button, [role="button"], a.btn, .assoc-row';
 let pressed = null;
 function pressDown(e) {
   if (e.button != null && e.button !== 0) return;
@@ -12870,15 +12871,25 @@ function pressDown(e) {
 }
 function pressMove(e) {
   if (!pressed || pressed.x == null) return;
-  if (Math.abs(e.clientX - pressed.x) > 8 || Math.abs(e.clientY - pressed.y) > 8) pressUp();
+  if (Math.abs(e.clientX - pressed.x) > 8 || Math.abs(e.clientY - pressed.y) > 8) pressUp(e, true);
 }
-function pressUp() {
+/* A finger that lifts gets the spring back. A finger that turned into a scroll,
+   or a press the browser took away, lets go quietly with no bounce: the bounce
+   says "that was a tap", and it was not. Under the motion kit the spring is the
+   kit's pop; without it, and inside the rooms, whose press is on their sheet
+   (docs/sheets/rooms.html), the old overshoot keyframe. */
+const ROOM_PRESS = ".sf, .mc-pill, .ar-bar";
+function pressUp(e, quiet) {
   if (!pressed) return;
   const { el, anim, s, tick } = pressed; pressed = null;
   if (tick) clearTimeout(tick);
   if (!anim) return;
   try { anim.cancel(); } catch (x) {}
-  try { el.animate([{ scale: s }, { scale: "1.015", offset: 0.55 }, { scale: "1" }], { duration: MOTION.release, easing: "ease-out" }); } catch (x) {}
+  const still = quiet === true || (e && e.type === "pointercancel");
+  const kit = MK.on && !el.closest(ROOM_PRESS);
+  const frames = kit || still ? [{ scale: s }, { scale: "1" }] : [{ scale: s }, { scale: "1.015", offset: 0.55 }, { scale: "1" }];
+  const easing = kit ? (still ? MK.glide : MK.pop) : "ease-out";
+  try { el.animate(frames, { duration: MOTION.release, easing }); } catch (x) {}
 }
 if (typeof window !== "undefined") {
   window.addEventListener("pointerdown", pressDown, { capture: true, passive: true });
@@ -12886,6 +12897,10 @@ if (typeof window !== "undefined") {
   window.addEventListener("pointerup", pressUp, { capture: true, passive: true });
   window.addEventListener("pointercancel", pressUp, { capture: true, passive: true });
 }
+/* One set of speeds and curves for every screen outside the rooms
+   (src/motion-kit.mjs), put on the page as soon as the app's code runs, so the
+   first sheet already moves on it. ?motion=off turns it off on that phone. */
+if (typeof window !== "undefined") installMotionKit();
 
 
 
