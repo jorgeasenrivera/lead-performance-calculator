@@ -94,7 +94,7 @@ export const STORE_HERO_LAYOUT_POLICY=Object.freeze({
 export const MANAGER_PAGES_POLICY=Object.freeze({
  repository:POLICY.repository,pullRequest:540,branch:'codex/manager-pages-pix-20261118',
  base:{commit:'855d6d8f1c6c55fe71fa8329aad197b07cf4486d',tree:'c0fe6ddbc916856d44fb08dc9f4b1795a6b002eb'},
- current:{commit:'1ad0eac356d3a9ac742bb9bad47fb2b47ced228c',tree:'9249341597d5e4edb1daca74fbd7591d517f808b',parents:['5bf917e93896203dd7eab7b85b272bf6d718b3a1'],
+ current:{commit:'fce52dcd7c2100786b22da28bd492031d502f730',tree:'cc491ec2a2916968e9fe57a0f11b08b16081bd14',parents:['28c261b0feab2dfe1f800e71828d2c07a37c9987'],
   definitionChanges:['.github/workflows/manager-hero-spacing.yml','scripts/manager-spacing-runtime.mjs']},
  historical:POLICY.historical,qualification:POLICY.qualification,manifest:POLICY.manifest,
  requireMerge:true,
