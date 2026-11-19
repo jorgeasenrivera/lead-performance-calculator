@@ -72,3 +72,38 @@ test("today rolls over at midnight Eastern, not at midnight UTC or on the device
   assert.equal(confirmedStaffingToday(store, d, new Date("2026-11-20T05:00:00Z")), null);
   assert.deepEqual([...staffingFor(store, d, "2026-11-20").off], ["p2"]);
 });
+
+/* Jorge, 19 November: with the calendar off the button said "2 off" while the
+   list it opened showed only Sales, because the list read the floor roster and
+   the count read the planner's. Both now read the planner's roster. */
+test("Sales and Service both off: the count and the names agree", () => {
+  const d = {
+    __storeId: "fictional-7", rev: 5,
+    roster: [
+      { id: "s1", name: "Avery Fable", roleId: "sales" },
+      { id: "v1", name: "Dale Mockwell", roleId: "service" },
+    ],
+    departed: [], daysOff: { s1: [DAY], v1: [DAY] },
+  };
+  const staffing = staffingFor(store, d, DAY);
+  assert.deepEqual(staffing.counts, { on: 0, off: 2 });
+  assert.deepEqual(staffing.offPeople.map((p) => p.name), ["Avery Fable", "Dale Mockwell"]);
+  assert.deepEqual(staffing.onPeople, []);
+  assert.equal(staffing.offPeople.length, staffing.counts.off);
+});
+
+test("an unknown person is listed neither on nor off, and the count goes", () => {
+  const d = data({ p1: [DAY] });
+  const staffing = staffingFor(store, d, DAY);
+  assert.equal(staffing.counts, null);
+  assert.deepEqual(staffing.offPeople.map((p) => p.id), ["p1"]);
+  assert.deepEqual(staffing.onPeople, []);
+});
+
+test("the Dashboard lists come from the planner's roster, not the floor roster", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
+  assert.equal((src.match(/const offToday = staffing\?\.offPeople \|\| \[\];/g) || []).length, 2);
+  assert.equal((src.match(/const onToday = staffing\?\.onPeople \|\| \[\];/g) || []).length, 2);
+  assert.doesNotMatch(src, /offToday = floorRoster/);
+});

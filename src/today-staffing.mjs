@@ -8,8 +8,9 @@ import { createLegacyScheduleResolver, editorStore, zonedToday } from './schedul
 
 // Who the planner confirms on, who it has explicitly off, and the counts when
 // every person that day is one or the other. With the calendar off, the lists
-// under the schedule control are drawn from this too: explicit days off, and
-// nobody called on unless the planner says so.
+// under the schedule control are drawn from this too (onPeople, offPeople), on
+// the planner's own roster, so the count on the button and the names it opens
+// can never disagree: Service off counts as off in both, or in neither.
 export function staffingFor(store, data, day) {
   try {
     if (!store || !data || typeof day !== 'string') return null;
@@ -25,14 +26,15 @@ export function staffingFor(store, data, day) {
     const record = resolver.explicitAssignmentForDay(day, 0)?.record;
     if (!record) return null;
     const onIds = new Set(record.on || []), offIds = new Set(record.off || []);
-    const on = new Set(), off = new Set();
+    const on = new Set(), off = new Set(), onPeople = [], offPeople = [];
     let known = people.length > 0;
     for (const p of people) {
       const isOn = onIds.has(p.id), isOff = offIds.has(p.id);
       if (isOn === isOff) { known = false; continue; }
       (isOn ? on : off).add(p.id);
+      (isOn ? onPeople : offPeople).push({ id: p.id, name: p.name });
     }
-    return { day, on, off, counts: known ? { on: on.size, off: off.size } : null };
+    return { day, on, off, onPeople, offPeople, counts: known ? { on: on.size, off: off.size } : null };
   } catch {
     return null;
   }

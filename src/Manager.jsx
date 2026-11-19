@@ -17191,7 +17191,6 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
     return o;
   }, [digests]);
   const series = useMemo(() => (digests ? dailySeries(digests, thr) : null), [digests, thr]); // eslint-disable-line
-  const floorRoster = activityRoster(config, data);
   // Today in the store's zone. It moves on at midnight there, and again when a
   // sleeping tab wakes, so the control never keeps yesterday's day or counts.
   const schedDay = useZonedToday(store?.timezone || STORE_TZ);
@@ -17200,9 +17199,10 @@ function BoardRoomPhone({ config, store, data, session, schedulerPrincipalEpoch 
   const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);
   const scheduleLabel = todaysScheduleLabel(staffing?.counts?.on, staffing?.counts?.off);
   // The list behind it is explicit days off, and only those the planner
-  // confirms are called on. Not being listed off is not being on.
-  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(schedDay));
-  const onToday = floorRoster.filter((a) => staffing?.on.has(a.id));
+  // confirms are called on. Not being listed off is not being on. It is the
+  // planner's roster, the same one the count reads, so the two always agree.
+  const offToday = staffing?.offPeople || [];
+  const onToday = staffing?.onPeople || [];
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -17894,15 +17894,14 @@ function StoreHero({ config, store, data, session, schedulerPrincipalEpoch = nul
     }
     return o;
   }, [digests]);
-  /* The same people the check-out sheet counts, read the same way, so the two
-     screens can never put a different number of bodies on the floor. */
-  const floorRoster = activityRoster(config, data);
   // Today in the store's zone, moving on at midnight and when a sleeping tab
   // wakes. Days off are the explicit ones; on is only what the planner confirms.
+  // The names come from the planner's roster, the one the count reads, so the
+  // label and the list it opens cannot disagree.
   const schedDay = useZonedToday(store?.timezone || STORE_TZ);
   const staffing = useMemo(() => staffingFor(store, data, schedDay), [store, data, schedDay]);
-  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(schedDay));
-  const onToday = floorRoster.filter((a) => staffing?.on.has(a.id));
+  const offToday = staffing?.offPeople || [];
+  const onToday = staffing?.onPeople || [];
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
