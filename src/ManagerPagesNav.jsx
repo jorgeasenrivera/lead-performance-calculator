@@ -9,6 +9,7 @@ export default function ManagerPagesNav({ items, value, onChange, Icon, importBa
   const [open, setOpen] = useState(false);
   const id = useId();
   const root = useRef(null), trigger = useRef(null), panel = useRef(null);
+  const selectionFocus = useRef(null);
   const importing = value === "import";
   const pinned = pages.find(([key]) => key === (importing ? lastPage : value)) || pages[0];
 
@@ -17,6 +18,15 @@ export default function ManagerPagesNav({ items, value, onChange, Icon, importBa
     if (panel.current?.contains(document.activeElement)) trigger.current?.focus();
     setOpen(false);
   }, [value]);
+  useBrowserLayoutEffect(() => {
+    const destination = selectionFocus.current;
+    selectionFocus.current = null;
+    // A first visit to a lazy page can hide the shell in Suspense. Only
+    // recover focus lost to the document, never take it from another control.
+    if (destination === value && document.activeElement === document.body) {
+      trigger.current?.focus({ preventScroll: true });
+    }
+  });
 
   const close = (restore) => {
     if (restore) trigger.current?.focus();
@@ -38,6 +48,7 @@ export default function ManagerPagesNav({ items, value, onChange, Icon, importBa
     setOpen(true);
   };
   const select = (key, restore = false) => {
+    if (restore && key !== value) selectionFocus.current = key;
     close(restore);
     onChange(key);
   };

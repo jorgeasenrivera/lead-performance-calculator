@@ -47,12 +47,15 @@ export async function activate(page,label,key=null) {
   else if(modern){await opened(page);target=panel(page).getByRole('button',{name:label,exact:true});}
   else target=page.getByRole('button',{name:label,exact:true}).and(page.locator('.sect-chip'));
   if(key){await target.focus();await page.keyboard.press(key);}else await target.click();
+  await selected(page,label);
   if(modern&&label!=='Import'){
     await panel(page).waitFor({state:'hidden'});
+    // A cold lazy route can temporarily hide the shell as well as the panel.
+    // Confirm the new route and visible shell before checking the actual focus.
+    await toggle(page).waitFor({state:'visible'});
     assert.equal(await toggle(page).getAttribute('aria-expanded'),'false');
     assert.ok(await focused(toggle(page)),'selection restores meaningful focus to Pages');
   }
-  await selected(page,label);
 }
 export const openPages=opened;
 export const closePages=closed;

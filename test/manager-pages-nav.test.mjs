@@ -44,3 +44,73 @@ test("the disclosure only exposes parent-permitted pages and uses the supplied l
   assert.equal((html.match(/>Import /g)||[]).length,1);
   assert.match(html,/fixture count/);
 });
+
+test("a committed Pages selection recovers detached focus without taking focus from another control", () => {
+  const originalDocument = globalThis.document;
+  const body = {}, other = {}, menuItem = {};
+  const document = { body, activeElement: body };
+  globalThis.document = document;
+  try {
+    const refs = [], state = [], layout = [];
+    let refIndex, stateIndex, requested;
+    const trigger = { focus: () => { document.activeElement = trigger; } };
+    const hooks = {
+      ...React,
+      useState: (initial) => {
+        const index = stateIndex++;
+        if (!(index in state)) state[index] = initial;
+        return [state[index], next => { state[index] = next; }];
+      },
+      useId: () => "fixture-pages",
+      useRef: initial => refs[refIndex++] ??= {current: initial},
+      useEffect: () => {},
+      useLayoutEffect: effect => layout.push(effect),
+    };
+    const mod = {exports: {}};
+    new Function("require", "module", "exports", output.outputFiles[0].text)(
+      name => name === "react" ? hooks : createRequire(url)(name), mod, mod.exports);
+    const render = value => {
+      refIndex = stateIndex = 0;
+      layout.length = 0;
+      const tree = mod.exports.default({items: [["board", "Dashboard"], ["history", "History"], ["gm", "Summary"]],
+        value, onChange: key => { requested = key; }, Icon: () => null});
+      const [rail, panel] = tree.props.children;
+      const toggle = rail.props.children[2];
+      toggle.ref.current = trigger;
+      tree.ref.current = {getBoundingClientRect: () => ({left: 0}), style: {setProperty() {}}};
+      trigger.getBoundingClientRect = () => ({left: 0, width: 44});
+      panel.ref.current = {contains: node => node === menuItem};
+      return {toggle, panel};
+    };
+    const commit = () => { for (const effect of layout) effect(); };
+    const select = (from, index) => {
+      render(from).toggle.props.onClick();
+      const {panel} = render(from);
+      document.activeElement = menuItem;
+      panel.props.children[index].props.onClick();
+      assert.equal(document.activeElement, trigger, "selection immediately returns focus");
+    };
+
+    render("board"); commit();
+    select("board", 0); render("board"); commit();
+    assert.equal(document.activeElement, trigger, "same-page activation preserves focus");
+    select("board", 1);
+    assert.equal(requested, "history");
+    // The hidden shell lost its active control before the lazy page committed.
+    document.activeElement = body;
+    render("history"); commit();
+    assert.equal(document.activeElement, trigger, "new destination recovers document focus");
+    select("history", 2);
+    document.activeElement = other;
+    render("gm"); commit();
+    assert.equal(document.activeElement, other, "a control that owns focus keeps it");
+    select("gm", 1);
+    render("gm"); commit(); // a guard prevented this selection from committing
+    document.activeElement = body;
+    render("history"); commit();
+    assert.equal(document.activeElement, body, "a later unrelated change does not reuse the rejected request");
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
+});
