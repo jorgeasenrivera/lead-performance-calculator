@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
 const sha = (source) => createHash("sha256").update(source).digest("hex");
-const WITH_NAV = "3d27a0e78e4c7943a6e1f280c2a1b6e9477d9f7ae4a00150bad8a7771c07c6a4";
-const WITHOUT_NAV = "eb546a60c96a9e22fde29a4bdfacf7c6fc468cd00fda25591893cb5119f77a6a";
+const WITH_NAV = "17de0d26c06578a97b5daae50f05d07f16f6c14cdbfa278a02bdb549f59fae0e";
+const WITHOUT_NAV = "d3fe0b82dd6efb3b06625e2077ec7923ebe727708dc43a9bdfcba6206a2ad1f6";
 
 // A production shell slot is not part of the frozen synthetic preview.
 const shell = [

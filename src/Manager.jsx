@@ -651,10 +651,10 @@ const DOT_DIGITS = {
   ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
 };
 
-function DotNum({ value, dot = 6, color = "currentColor", boxRef = undefined }) {
+function DotNum({ value, dot = 6, color = "currentColor", boxRef = undefined, label = null }) {
   const chars = String(value).split("");
   return (
-    <span className="dotnum" ref={boxRef} style={{ display: "inline-flex", alignItems: "center", gap: dot * 1.1 }} aria-label={String(value)}>
+    <span className="dotnum" ref={boxRef} style={{ display: "inline-flex", alignItems: "center", gap: dot * 1.1 }} aria-label={String(label ?? value)}>
       {chars.map((ch, di) => {
         const rows = DOT_DIGITS[ch];
         if (!rows) return null;
@@ -26950,7 +26950,9 @@ function SignalSold({value, mem = null}) {
      leave room for the goal beside it on a phone (189px of numeral, the
      goal's own 15px type unchanged); four digits wrap the goal under it. */
   const dot = value.length <= 2 ? 13 : value.length === 3 ? 11 : value.length === 4 ? 8.6 : 6.4;
-  return <DotNum value={counts ? String(shown) : value} dot={signal ? dot : 6} color="#fff" boxRef={box} />;
+  /* The label says the figure the count is going to, so a screen reader, or
+     anything else that reads it, never catches a frame of the roll. */
+  return <DotNum value={counts ? String(shown) : value} dot={signal ? dot : 6} color="#fff" boxRef={box} label={value} />;
 }
 function SignalRoomHeader({title, storeName, date, count, noun, full = null}) {
   return useSignal() ? <div className="sd-head sg-room-head">

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { CURRENT_MANAGER_SHA } from "./historical-manager-fixture.mjs";
 
 const sha = (source) => createHash("sha256").update(source).digest("hex");
-const PEOPLE_MANAGER_SHA = "415683001243b7b28469b863d01404174ba1c206c8e8f8cf99660a7825973a9a";
+const PEOPLE_MANAGER_SHA = "a64fc5f60a9d1a74662e62d7251fb21004f32f7759a5f573442dd9d8f72865ae";
 
 // Undo only the two reviewed People expressions in memory, before handing the
 // original approved input to the historical fixture. No other source qualifies.
