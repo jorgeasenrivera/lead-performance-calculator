@@ -48,6 +48,14 @@ async function shot(name, log=false) {
   if(log)console.log('SELECTOR_IMAGE '+JSON.stringify({name,png:png.toString('base64')}));
 }
 async function check(name, fn){try{await fn();evidence.push({name,pass:true});}catch(e){failures.push({name,error:e.message});await shot('failure-'+name.replace(/[^a-z0-9]/gi,'-'));}}
+// .bp-row can mount during the app's finite sign-in/refresh assembly.
+async function settledStoreBoard(){
+  await page.locator('.bp-row').first().waitFor({timeout:40000});
+  await page.locator('.sage-pages-nav .sage-page-pinned[aria-current="page"]')
+    .filter({hasText:/^Dashboard$/}).waitFor();
+  await page.locator('html:is(.sage-cover-active,.sage-assemble,.refresh-hold)').waitFor({state:'detached'});
+  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
+}
 async function geometry(name){
   const g=await page.evaluate(()=>{
     const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}};
@@ -68,7 +76,7 @@ async function geometry(name){
 
 }
 try{
- await page.goto(url);await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');await page.locator('input[type="password"]').fill('x');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.locator('.bp-row').first().waitFor({timeout:40000});await page.evaluate(()=>document.fonts.ready);
+ await page.goto(url);await page.locator('input[type="email"],input[autocomplete="username"]').fill('demo@sageonline.app');await page.locator('input[type="password"]').fill('x');await page.getByRole('button',{name:'Sign in',exact:true}).click();await settledStoreBoard();
  for(const width of [320,360,375,390,414,430,667]){
   await page.setViewportSize({width,height:width===667?320:667});
   for(const scale of [1,2])for(const inset of [0,34]){
@@ -157,6 +165,26 @@ try{
  await page.emulateMedia({reducedMotion:'reduce'});
  await check('activity-report',async()=>{await page.locator('.botnav').getByRole('button',{name:'Activity',exact:true}).click();await page.locator('.co-hero').waitFor();await shot('activity-320',true);await page.getByRole('button',{name:'Open the daily report',exact:true}).click();await page.locator('.dayreport-modal').waitFor();await page.locator('.dayreport-modal').getByRole('button',{name:'Close',exact:true}).click();await page.locator('.sect-chip').filter({hasText:/^Coaching$/}).click();assert.equal(await page.getByRole('button',{name:'Open the daily report',exact:true}).count(),0);});
  await page.locator('.botnav').getByRole('button',{name:'Performance',exact:true}).click();await page.locator('.bp-row').first().waitFor();
- for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{dockFixture=mode;await page.reload();await page.locator('.bp-row').first().waitFor();const action=page.locator('.sage-page-import');assert.equal((await action.locator('.badge').innerText()).replace(/\s/g,''),`${mode.done}/2`);await shot(`import-${mode.done}`);const pinned=await page.locator('.sage-page-pinned').innerText();await pagesNav.activate(page,'Import');await page.locator('.sage-intake-entry .import-hero').waitFor();assert.equal(await page.locator('.sage-page-pinned').innerText(),pinned,'Import keeps the previous regular page pinned');});
+ await page.setViewportSize({width:320,height:667});
+ for(const mode of [{rooms:1,done:0},{rooms:2,done:1},{rooms:2,done:2}])await check(`import-${mode.done}`,async()=>{
+  dockFixture=mode;
+  await page.reload();
+  await settledStoreBoard();
+  const action=page.locator('.sage-pages-nav .sage-page-import');
+  const pinnedControl=page.locator('.sage-pages-nav .sage-page-pinned');
+  const badge=()=>action.locator('.badge').innerText().then(text=>text.replace(/\s/g,''));
+  assert.equal(await badge(),`${mode.done}/2`);
+  const pinned=await pinnedControl.innerText();
+  assert.equal(await action.getAttribute('aria-current'),null,'Import starts inactive');
+  await shot(`import-${mode.done}`);
+  await action.click();
+  const hero=page.locator('.sage-intake-entry .imp-hero-ph');
+  await hero.getByRole('button',{name:'Cross-check the board',exact:true}).waitFor();
+  await hero.getByRole('button',{name:'How to pull reports',exact:true}).waitFor();
+  await page.locator('.sage-pages-nav .sage-page-import[aria-current="page"]').waitFor();
+  assert.equal(await badge(),`${mode.done}/2`,'the live badge persists into Intake');
+  assert.equal(await pinnedControl.innerText(),pinned,'Import keeps the previous regular page pinned');
+  assert.equal(await pinnedControl.getAttribute('aria-current'),null,'Import is the only current destination');
+ });
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
 }finally{await writeFile('manager-selector/evidence.json',JSON.stringify({engine,evidence,failures,errors},null,2));console.log('SELECTOR_RESULT '+JSON.stringify({engine,evidence,failures,errors}));await browser.close();}
