@@ -259,8 +259,6 @@ ${policy}
   /* The total is right-aligned in a box as wide as its captions, so its landing
      grows from the right edge, where the figure is, not from the middle. */
   .total-num { transform-origin:right center; }
-  .tv-stale { display:inline-block; margin-top:.6vh; padding:.3vh .9vw; border-radius:99px;
-    background:rgba(255,207,107,.16); color:#FFCF6B; font-size:1.5vh; font-weight:700; letter-spacing:.02em; }
 
   /* the leader gets a lit band and a slow shine that travels across it */
   .lb tbody tr.leader { position:relative; }
@@ -759,9 +757,6 @@ ${scriptTag}
     var root = document.getElementById('root');
     // an error is not the same as an empty store: say which, never just hang
     if (store && store.__err){
-      // A refresh that fails keeps the last board up and says so, rather than
-      // blanking a room full of people for one bad connection.
-      if (keepStale(root)) return;
       root.innerHTML = '<div class="empty">' + text(store.__err) + '</div>';
       return;
     }
@@ -1088,20 +1083,6 @@ ${scriptTag}
     }
     requestAnimationFrame(step);
   }
-  /* The last good board stays, with a chip that says it is the last good board.
-     Only an error with nothing on screen yet shows the message on its own. */
-  function keepStale(root){
-    if (!root || typeof root.querySelector !== 'function' || !root.querySelector('.panel')) return false;
-    var total = root.querySelector('.total');
-    if (total && !total.querySelector('.tv-stale')) {
-      var chip = document.createElement('div');
-      chip.className = 'tv-stale'; chip.setAttribute('role', 'status');
-      chip.textContent = 'Showing the last update. Reconnecting';
-      total.appendChild(chip);
-    }
-    return true;
-  }
-
   /* The padding above is arithmetic against an ASSUMED 80vh of panel; the real
      panel is whatever the header, the footer and the ticker leave behind. When the
      guess overshoots, a list that fits on the screen would start scrolling for the

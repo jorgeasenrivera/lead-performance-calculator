@@ -44,22 +44,15 @@ test("the kit can be switched off and honours reduced motion", () => {
 });
 
 test("no em dashes in the kit or the TV refresh", () => {
-  const refresh = block(tv, "  /* ---- a refresh updates in place ----", "  function keepStale(root){");
+  const refresh = block(tv, "  /* ---- a refresh updates in place ----", "  /* The padding above is arithmetic");
   for (const [name, s] of [["kit", kit], ["css", css], ["tv refresh", refresh]]) assert.ok(!s.includes("\u2014"), name);
 });
 
-test("a failed TV refresh keeps the last board up with a chip, once", () => {
-  const code = block(tv, "  function keepStale(root){", "\n  }\n");
-  const kids = [];
-  const total = { querySelector: () => kids[0] || null, appendChild: (n) => kids.push(n) };
-  const board = { querySelector: (sel) => (sel === ".panel" ? {} : sel === ".total" ? total : null) };
-  const ctx = { document: { createElement: () => ({ setAttribute() {} }) } };
-  vm.createContext(ctx); vm.runInContext(code, ctx);
-  assert.equal(ctx.keepStale(board), true);
-  assert.equal(ctx.keepStale(board), true);
-  assert.equal(kids.length, 1);
-  assert.equal(kids[0].className, "tv-stale");
-  assert.equal(ctx.keepStale({ querySelector: () => null }), false, "with nothing on screen the error shows");
+test("a failed TV refresh is not part of the motion kit: the error path is as before", () => {
+  // Sage dot, 19 November: keeping the last board on a failed refresh also kept it
+  // after access was denied. That is not motion, so it left this change.
+  assert.ok(!tv.includes("keepStale"));
+  assert.ok(!tv.includes("tv-stale"));
 });
 
 test("a TV refresh rolls numbers from what was on screen, not from 0", () => {
