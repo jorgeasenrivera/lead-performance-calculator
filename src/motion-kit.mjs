@@ -190,7 +190,9 @@ function hop(list) {
    back where it stood; it is positioned absolutely, so nothing around it moves. */
 const IN_PLACE = ".qpick";
 function ghostInPlace(node, parent, next) {
-  if (!parent.isConnected) return;
+  /* A menu taking its place ends the picker at once: two menus are never on
+     screen together, even for the length of a fade. */
+  if (!parent.isConnected || document.querySelector(".drawer-root.open")) return;
   const g = node.cloneNode(true);
   g.setAttribute("data-mk-ghost", "");
   g.setAttribute("aria-hidden", "true");
@@ -218,7 +220,11 @@ function watchDrawer(el) {
     if (now === open) return;
     open = now;
     clearTimeout(timer);
-    if (now) { el.classList.remove("mk-closing"); return; }
+    if (now) {
+      el.classList.remove("mk-closing");
+      document.querySelectorAll(IN_PLACE + "[data-mk-ghost]").forEach((g) => g.remove());
+      return;
+    }
     if (calm()) return;
     el.classList.add("mk-closing");
     timer = setTimeout(() => el.classList.remove("mk-closing"), 400);

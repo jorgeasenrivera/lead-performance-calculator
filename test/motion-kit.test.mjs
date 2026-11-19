@@ -1,7 +1,7 @@
 /* The motion kit (src/motion-kit.mjs, src/motion-kit.css) and the TV board's
    in-place refresh. These pin what Jorge picked on the demo page on 18 November
    and the lines the kit must not cross: the rooms keep their own motion, the
-   switch to turn it off stays, and a failed TV refresh keeps the last board. */
+   switch to turn it off stays, and two menus are never up together. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -59,4 +59,14 @@ test("a TV refresh rolls numbers from what was on screen, not from 0", () => {
   assert.match(tv, /var was = \(SHOWN === shownAs\) \? tvSnap\(root\) : null;/);
   assert.match(tv, /num\.setAttribute\('data-from', old\.sold\)/);
   assert.match(tv, /#root\.tv-calm \.lb tbody tr\.row, #root\.tv-calm \.lb2 tbody tr\.row \{ animation:none; \}/);
+});
+
+test("opening More ends the room picker's fade at once: two menus are never up together", () => {
+  // The spacing check taps Rooms then More and counts .qpick straight away. The
+  // picker's fading copy is a .qpick too, so it must not outlive the drawer opening.
+  const ghost = block(kit, "function ghostInPlace", "\n}\n");
+  assert.ok(ghost.includes('document.querySelector(".drawer-root.open")'));
+  const drawer = block(kit, "function watchDrawer", "\n}\n");
+  assert.ok(drawer.includes('IN_PLACE + "[data-mk-ghost]"'));
+  assert.ok(drawer.indexOf("[data-mk-ghost]") < drawer.indexOf("if (calm())"));
 });
