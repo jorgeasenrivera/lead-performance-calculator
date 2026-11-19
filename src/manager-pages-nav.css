@@ -50,7 +50,8 @@
   top: calc(100% + 8px);
   inset-inline: 0;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0,1fr));
+  /* Keep the five-tile shelf at default text size and reflow as type grows. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(4rem + 32px)), 1fr));
   gap: 4px;
   padding: 8px;
   color: #213e32;
@@ -80,6 +81,7 @@
   min-width: 0;
   padding: 6px;
   font-size: .78rem;
+  overflow-wrap: anywhere;
   animation: sage-page-arrive .25s var(--sage-nav-ease) both;
   animation-delay: calc(var(--sage-page-order) * 17ms);
 }
