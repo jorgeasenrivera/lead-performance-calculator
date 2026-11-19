@@ -35,7 +35,7 @@ import { stationPlanOf, claimStation, releaseStation, coverLineOf,
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
-import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT } from "../api/_rooms.mjs";
+import { roomListOf, openRoom, roomsOf, hoursOf, DAY_KEYS, DAY_SHORT, VIEW_ROOMS, viewRoomsOf, viewSwitchesOf, withRoom } from "../api/_rooms.mjs";
 import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
@@ -6725,7 +6725,7 @@ function PhoneRoomCard({ config, storeId, onChange }) {
   const setMode = (m) => save((s) => { s.stationMode = m; },
     { action: "Changed the phone room", detail: `${store.name}: ${m === "open" ? "no rotation" : "rotation"}` });
   const rooms = roomsOf(config, storeId);
-  const setRoom = (k, on) => save((s) => { s.rooms = { ...roomsOf(config, storeId), [k]: on }; },
+  const setRoom = (k, on) => save((s) => { s.rooms = withRoom(config, storeId, k, on); },
     { action: on ? "Turned a room on for the floor" : "Turned a room off for the floor",
       detail: `${store.name}: ${k === "line" ? "Phone Line" : "Live Floor"}` });
   /* When a room opens on its own, a time per weekday; blank is the desk
@@ -6771,7 +6771,7 @@ function PhoneRoomCard({ config, storeId, onChange }) {
           from how the desk runs the room: a store can watch its stations from
           the desk without putting a tab on anybody's phone. */}
       <div className="prc-rooms">
-        <div className="prc-cap">On a salesperson&rsquo;s phone</div>
+        <div className="prc-cap">Who sees it: this store&rsquo;s managers and salespeople</div>
         {[["floor", "Live Floor", "Their corner, the room, and the up they are waiting for."],
           ["line", "Phone Line", "The phone room, the line, and their own day at a desk."]].map(([k, title, sub]) => (
           <label key={k} className="prc-toggle">
@@ -7184,7 +7184,12 @@ function FloorLoading({ store, finishing }) {
 }
 
 function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onImport, shell }) {
-  const stores = accessibleStores || [];
+  /* A manager only gets the stores that have this room switched on, and none
+     at all sends them back to Performance rather than to a room the store
+     said it does not have. An admin gets every store. */
+  const stores = (accessibleStores || []).filter((s) => isAdmin || viewRoomsOf(config, s.id).includes(queue));
+  const roomless = !isAdmin && !stores.length;
+  useEffect(() => { if (roomless) onToolChange("perf"); }, [roomless]); // eslint-disable-line
   const [storeId, setStoreId] = useState(() => {
     if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
     return stores[0] ? stores[0].id : null;
@@ -7338,7 +7343,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   return (
     <AppShell {...shell}
       appModule={queue} onToolChange={onToolChange} onImport={onImport}
-      rooms={store ? roomListOf(config, store.id) : null}
+      rooms={isAdmin ? VIEW_ROOMS : store ? viewRoomsOf(config, store.id) : []}
       brand={store?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeName={store?.name || ""}
@@ -16209,7 +16214,7 @@ They come off the roster, the check out sheet, the line and the board right away
 }
 
 /* ---------------- Tool switcher ---------------- */
-function ToolSwitcher({ value, onChange }) {
+function ToolSwitcher({ value, onChange, rooms }) {
   const tools = [
     ["perf", "Performance"],
     ["activity", "Daily Activity"],
@@ -16219,7 +16224,7 @@ function ToolSwitcher({ value, onChange }) {
     ["floor", "Live Floor", "#10B981", "door"],
     ["line", "Phone Line", "#5566F0", "phone"],
     ["online", "Online", "#8B5CF6", "globe"],
-  ];
+  ].filter(([id]) => !Array.isArray(rooms) || rooms.includes(id));
   // Same sliding thumb as the tab bar, so switching tools and switching tabs
   // feel like the same gesture rather than two different controls.
   const wrapRef = useRef(null);
@@ -16250,7 +16255,7 @@ function ToolSwitcher({ value, onChange }) {
           </button>
         ))}
       </div>
-      <div className="qsel" role="group" aria-label="Sign-in queue">
+      {queues.length > 0 && <div className="qsel" role="group" aria-label="Sign-in queue">
         {queues.map(([id, label, color, glyph], i) => (
           <button key={id} type="button" aria-selected={value === id}
             className={"qsel-pill" + (value === id ? " on" : "")}
@@ -16260,7 +16265,7 @@ function ToolSwitcher({ value, onChange }) {
             <span className="qsel-lbl">{label}</span>
           </button>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -16361,10 +16366,16 @@ function BottomNav({ appModule, onToolChange, onMore, moreOpen, rooms }) {
   const pickerId = React.useId();
   useSelectorFocus(picking, pickerRef, () => setPicking(false));
   useEffect(() => { setPicking(false); }, [appModule, moreOpen]);
-  const solo = Array.isArray(rooms) && rooms.length === 1 ? queueTool(rooms[0]) : null;
+  /* The rooms this person may open here. No list is every room, which is how
+     the bar read before a store could switch one off. */
+  const shownRooms = Array.isArray(rooms) ? QUEUE_TOOLS.filter((q) => rooms.includes(q.id)) : QUEUE_TOOLS;
+  const solo = shownRooms.length === 1 ? shownRooms[0] : null;
   return <>
     {picking && <div className="botnav-scrim" onClick={() => setPicking(false)} aria-hidden="true" />}
-    <nav ref={barRef} className="botnav no-print up" aria-label="Tools">
+    {/* Three across when a store has every room off, so More keeps its corner
+        rather than leaving a gap where Rooms was. */}
+    <nav ref={barRef} className="botnav no-print up" aria-label="Tools"
+      style={shownRooms.length ? undefined : { gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
       {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => <button type="button" key={id}
         className={"botnav-btn" + (appModule === id ? " on" : "")}
         aria-current={appModule === id ? "page" : undefined}
@@ -16372,7 +16383,7 @@ function BottomNav({ appModule, onToolChange, onMore, moreOpen, rooms }) {
         <span className="botnav-ico"><PixIcon glyph={glyph} size={24} /></span>
         <span className="botnav-lbl">{label}</span>
       </button>)}
-      <button type="button" className={"botnav-btn" + (queueOn ? " on" : "")}
+      {shownRooms.length > 0 && <button type="button" className={"botnav-btn" + (queueOn ? " on" : "")}
         aria-label={solo ? `Rooms: ${solo.label}` : "Rooms"}
         aria-current={solo && queueOn ? "page" : undefined}
         aria-haspopup={solo ? undefined : "dialog"} aria-expanded={solo ? undefined : picking}
@@ -16380,10 +16391,10 @@ function BottomNav({ appModule, onToolChange, onMore, moreOpen, rooms }) {
         onClick={event => { event.currentTarget.focus(); if (solo) { if (appModule !== solo.id) onToolChange(solo.id); } else setPicking(v => !v); }}>
         <span className="botnav-ico"><PixIcon glyph={BAR_TOOLS[2][2]} size={24} /></span>
         <span className="botnav-lbl">Rooms</span>
-      </button>
+      </button>}
       {picking && !solo && <div id={pickerId} ref={pickerRef} className="qpick" role="dialog" aria-modal="true" aria-label="Choose a room" tabIndex={-1}>
         <div className="selector-sheet-heading"><strong>Rooms</strong><button type="button" onClick={() => setPicking(false)} aria-label="Close rooms"><PixIcon glyph="close" size={16} /></button></div>
-        {QUEUE_TOOLS.map(q => <button type="button" key={q.id} className={"qpick-btn" + (appModule === q.id ? " on" : "")}
+        {shownRooms.map(q => <button type="button" key={q.id} className={"qpick-btn" + (appModule === q.id ? " on" : "")}
           aria-current={appModule === q.id ? "page" : undefined}
           onClick={() => { setPicking(false); if (appModule !== q.id) onToolChange(q.id); }}>
           <span className="qpick-ico"><PixIcon glyph={q.glyph} size={24} /></span>
@@ -22279,6 +22290,42 @@ function SettingsPanel({ config, onChange }) {
       {wizard && (
         <StoreWizard config={config} store={wizard.store} onCancel={() => setWizard(null)} onSave={saveStore} />
       )}
+      {/* The rooms' switches, every store on one card. They used to live only
+          inside Live Floor's own settings, which a phone never shows, and they
+          reached nobody but salespeople. Jorge, 18 November: off takes the room
+          away from that store's managers and salespeople both. */}
+      <div className="card">
+        <h3>Rooms</h3>
+        <p className="hint">Off hides a room from that store&rsquo;s managers and salespeople. You still see every room.</p>
+        <table className="roster-table">
+          <thead>
+            <tr><th>Store</th>{VIEW_ROOMS.map((k) => <th key={k}>{queueTool(k).label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {config.stores.map((st) => {
+              const on = viewSwitchesOf(config, st.id);
+              return (
+                <tr key={st.id}>
+                  <td>{st.name}</td>
+                  {VIEW_ROOMS.map((k) => (
+                    <td key={k}>
+                      <label className="check-inline">
+                        <input type="checkbox" checked={!!on[k]} aria-label={`${queueTool(k).label} at ${st.name}`}
+                          onChange={(e) => {
+                            const next = JSON.parse(JSON.stringify(config));
+                            next.stores.find((x) => x.id === st.id).rooms = withRoom(config, st.id, k, e.target.checked);
+                            onChange(next, { store: st.id, action: e.target.checked ? "Turned a room on" : "Turned a room off", detail: `${st.name}: ${queueTool(k).label}` });
+                          }} />
+                        {on[k] ? "On" : "Off"}
+                      </label>
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <HolidayPanel config={config} onChange={onChange} />
       <div className="card">
         <h3>Positions</h3>
@@ -22736,7 +22783,7 @@ function AppShell({
         <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin}
           onSignOut={onSignOut} onReplayIntro={onReplayIntro} onHelp={onHelp} />
         <div className="topbar-right">
-          <ToolSwitcher value={appModule} onChange={onToolChange} />
+          <ToolSwitcher value={appModule} onChange={onToolChange} rooms={rooms} />
           {right}
           {storeName && <span className="manager-store-name" title={storeName}>{storeName}</span>}
           <ManagerContextAction appModule={appModule} navValue={navValue} storeData={storeData} onImport={onImport} />

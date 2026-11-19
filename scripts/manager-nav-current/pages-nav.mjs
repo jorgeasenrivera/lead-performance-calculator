@@ -33,11 +33,13 @@ export async function labels(page){
   assert.ok(rows.every(label=>label.trim())&&!rows.includes('Import'),'Import stays independent of Pages');
   return rows;
 }
-export async function selected(page,label) {
-  if(await hasPages(page)){
-    const control=label==='Import'?importing(page):pin(page);
-    await page.waitForFunction(({label,selector})=>{const n=document.querySelector(selector);return n?.getAttribute('aria-current')==='page'&&(label==='Import'||n.textContent.trim()===label);},{label,selector:label==='Import'?NAV+' .sage-page-import':NAV+' .sage-page-pinned'});
-    assert.equal(await control.getAttribute('aria-current'),'page');
+async function selected(page,label,modern) {
+  if(modern){
+    const isImport=label==='Import';
+    const current=visible(page).locator((isImport?'.sage-page-import':'.sage-page-pinned')+'[aria-current="page"]');
+    const destination=isImport?current:current.and(visible(page).getByRole('button',{name:label,exact:true}));
+    await destination.waitFor({state:'visible'});
+    assert.equal(await destination.getAttribute('aria-current'),'page');
   }else await page.waitForFunction(label=>[...document.querySelectorAll('.sect-chip')].some(n=>n.textContent===label&&n.classList.contains('on')),label);
 }
 export async function activate(page,label,key=null) {
@@ -47,7 +49,9 @@ export async function activate(page,label,key=null) {
   else if(modern){await opened(page);target=panel(page).getByRole('button',{name:label,exact:true});}
   else target=page.getByRole('button',{name:label,exact:true}).and(page.locator('.sect-chip'));
   if(key){await target.focus();await page.keyboard.press(key);}else await target.click();
-  await selected(page,label);
+  // A cold destination can briefly hide the whole shell. Keep the mode of
+  // the control that actually received the activation.
+  await selected(page,label,modern);
   if(modern&&label!=='Import'){
     await panel(page).waitFor({state:'hidden'});
     // A cold lazy route can temporarily hide the shell as well as the panel.

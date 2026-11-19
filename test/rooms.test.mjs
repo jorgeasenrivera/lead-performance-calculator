@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ROOMS, roomsOf, roomListOf, openRoom } from "../api/_rooms.mjs";
+import { ROOMS, roomsOf, roomListOf, openRoom, VIEW_ROOMS, viewRoomsOf, viewRoomsFor, withRoom } from "../api/_rooms.mjs";
 
 const cfg = (rooms) => ({ stores: [{ id: "a", ...(rooms ? { rooms } : {}) }] });
 
@@ -55,4 +55,29 @@ test("a store that offers nothing says so", () => {
   /* Somebody has switched both off. That is a real state and the caller should
      say it plainly rather than draw an empty shell. */
   assert.equal(openRoom(cfg({ floor: false, line: false }), "a", "floor"), null);
+});
+
+test("the same switches reach managers, and Online has its own, off until a store turns it on", () => {
+  /* Jorge, 18 November: off takes the room away from managers as well as
+     salespeople. Online has no salesperson room, so it never joins ROOMS. */
+  assert.deepEqual(VIEW_ROOMS, ["floor", "line", "online"]);
+  assert.deepEqual(viewRoomsOf(cfg(null), "a"), ["floor"]);
+  assert.deepEqual(viewRoomsOf(cfg({ line: true, online: true }), "a"), ["floor", "line", "online"]);
+  assert.deepEqual(viewRoomsOf(cfg({ floor: false, online: "yes" }), "a"), []);
+  assert.deepEqual(roomListOf(cfg({ online: true }), "a"), ["floor"]);
+});
+
+test("the combined view shows a room that is on at any of the stores", () => {
+  const two = { stores: [{ id: "a", rooms: { floor: false, line: true } }, { id: "b", rooms: { online: true } }] };
+  assert.deepEqual(viewRoomsFor(two, ["a", "b"]), ["floor", "line", "online"]);
+  assert.deepEqual(viewRoomsFor(two, ["a"]), ["line"]);
+  assert.deepEqual(viewRoomsFor(two, []), []);
+});
+
+test("moving one switch keeps the other two as they read", () => {
+  /* The old save spread only floor and line back, which would have wiped a
+     store's Online switch the next time anybody touched the floor's. */
+  const c = cfg({ line: true, online: true });
+  assert.deepEqual(withRoom(c, "a", "floor", false), { floor: false, line: true, online: true });
+  assert.deepEqual(withRoom(cfg(null), "a", "online", true), { floor: true, line: false, online: true });
 });

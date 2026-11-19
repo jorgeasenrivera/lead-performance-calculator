@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { patchManager, patchPhoneLayout } from "./build.mjs";
+import { sharedManager } from "./shared-transform.mjs";
 import postcss from "postcss";
 import {historicalManagerFixture,CURRENT_MANAGER_SHA,HISTORICAL_MANAGER_SHA} from "./historical-manager-fixture.mjs";
 import {createHash} from "node:crypto";
@@ -85,19 +86,34 @@ test("the frozen preview restores only the exact Rooms copy change", async () =>
  const prior = roomHintPreviewInput(managerPagesPreviewInput(current));
  assert.notEqual(current, prior);
  const sha = (source) => createHash("sha256").update(source).digest("hex");
- assert.equal(sha(managerPagesPreviewInput(current)),"4856759537c2d4091f060c853ecfebe9b9a596b3c2b9d31098bab6c724346d8d");
- assert.equal(sha(prior),"9f468e577bc8e123b4e0589fcf30d7b9d92a4e208ba8b75c0a4b019b9b95d580");
+ assert.equal(sha(managerPagesPreviewInput(current)),"4cc3c11e926f6157d30339f3a4af75d237078d1ca4e18e8944de66acc49338bc");
+ assert.equal(sha(prior),"7d5d45691eac734b7f21743b26af403089f039ef98c9dea276c7a653d89b08ea");
  assert.match(current, /k === "floor" \? "Leave blank to open Live Floor 1 hour before the store opens, or at 8:00 AM if store hours aren’t set\. A time you set for a weekday takes priority\. Store time\." : "Blank means the desk opens it, as before\. Store time\."/);
  const altered = current + "\n";
  assert.equal(roomHintPreviewInput(altered), altered);
  assert.throws(() => historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(altered))), /fixture input changed/);
 });
 
+test("exact room toggle preview keeps the production room filter while disabling fictional room controls", async () => {
+ const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
+ const priorInput = peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(current)));
+ const fixture = patchManager(historicalManagerFixture(priorInput));
+ const active = '{shownRooms.map(q => <button type="button" key={q.id}';
+ const legacy = '{QUEUE_TOOLS.map(q => <button type="button" key={q.id}';
+ assert.equal(fixture.split(active).length,2);
+ assert.ok(sharedManager(fixture).includes('{shownRooms.map(q => <button type="button" data-sage-family={q.id} disabled key={q.id}'));
+ assert.ok(sharedManager(fixture.replace(active,legacy)).includes('{QUEUE_TOOLS.map(q => <button type="button" data-sage-family={q.id} disabled key={q.id}'));
+ for(const drift of [fixture.replace(active,''),fixture.replace(active,active+legacy),fixture.replace(active,active+active)]) {
+  assert.throws(()=>sharedManager(drift),/boundary|anchor/i);
+ }
+ assert.ok(current.includes(active) && !current.includes('{shownRooms.map(q => <button type="button" disabled'),"the production room picker remains enabled");
+});
+
 test("the Manager Pages shell adapter restores only the exact reviewed slot", async () => {
  const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
  const restored = managerPagesPreviewInput(current);
  assert.notEqual(restored,current);
- assert.equal(createHash("sha256").update(restored).digest("hex"),"4856759537c2d4091f060c853ecfebe9b9a596b3c2b9d31098bab6c724346d8d");
+ assert.equal(createHash("sha256").update(restored).digest("hex"),"4cc3c11e926f6157d30339f3a4af75d237078d1ca4e18e8944de66acc49338bc");
  const altered = current + "\n";
  assert.equal(managerPagesPreviewInput(altered),altered);
  assert.throws(() => historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(altered)))), /fixture input changed/);

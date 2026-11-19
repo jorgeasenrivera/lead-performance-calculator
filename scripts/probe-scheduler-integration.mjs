@@ -108,10 +108,23 @@ try{
       assert.equal(await pages.evaluate(el=>el===document.activeElement),true);
       assert.equal(await choices.isVisible(),false);
       await pages.click();
-      const fits=await nav.evaluate(el=>[...el.querySelectorAll('button')].filter(node=>node.getClientRects().length).every(node=>{
-        const r=node.getBoundingClientRect(); return r.left>=-1&&r.right<=innerWidth+1&&r.height>=44;
+      await choices.waitFor({state:'visible'});
+      // The real reveal scales the panel from 94%; measure its settled targets,
+      // not a transient animation frame, without disabling the animation.
+      await choices.evaluate(async el=>{
+        await new Promise(requestAnimationFrame);
+        await Promise.all(el.getAnimations({subtree:true})
+          .filter(a=>['sage-pages-reveal','sage-page-arrive'].includes(a.animationName))
+          .map(a=>a.finished));
+        await new Promise(requestAnimationFrame);
+      });
+      assert.equal(await pages.getAttribute('aria-expanded'),'true');
+      assert.equal(await choices.isVisible(),true);
+      const clipped=await nav.evaluate(el=>[...el.querySelectorAll('button')].filter(node=>node.getClientRects().length).flatMap(node=>{
+        const {left,right,height}=node.getBoundingClientRect();
+        return left>=-1&&right<=innerWidth+1&&height>=44?[]:[{label:node.textContent.trim(),left,right,height}];
       }));
-      assert.equal(fits,true,'visible controls fit and are at least 44px at '+width);
+      assert.deepEqual(clipped,[],'visible controls fit and are at least 44px at '+width);
       await page.locator('body').dispatchEvent('click');
       assert.equal(await pages.getAttribute('aria-expanded'),'false');
       await pages.click();
