@@ -467,7 +467,7 @@ test('Sage #538 layout checks verify exact current source while retaining all hi
 });
 
 
-test('Manager Pages runs only on its pinned current Chromium and WebKit lanes',()=>{
+test('Manager Pages and motion kit use the current Pages lanes in Chromium and WebKit',()=>{
  const caller=fs.readFileSync(new URL('../.github/workflows/manager-spacing.yml',import.meta.url),'utf8');
  const runner=fs.readFileSync(new URL('../.github/workflows/manager-hero-spacing.yml',import.meta.url),'utf8');
  const p=MANAGER_PAGES_POLICY,n=p.pullRequest;
@@ -478,13 +478,14 @@ test('Manager Pages runs only on its pinned current Chromium and WebKit lanes',(
  const steps=runner.split('      - name: ');
  const heat=steps.find(s=>s.startsWith('Exercise Manager Pages navigation'));
  const plain=steps.find(s=>s.startsWith('Exercise the current Calendar entry'));
- assert.ok(heat.includes("if: matrix.runtime == 'current' && github.event.pull_request.number == "+n));
+ const pagesWhen="matrix.runtime == 'current' && (github.event.pull_request.number == "+n+" || github.event.pull_request.number == "+MOTION_KIT_POLICY.pullRequest+")";
+ assert.ok(heat.includes("if: "+pagesWhen));
  assert.ok(heat.includes("PROBE_SCHEDULER_FLAG: '0'")&&heat.includes("PROBE_MANAGER_PAGES: '1'"));
  assert.ok(heat.includes('/manager-pages-integration')&&plain.includes('/hero-integration'));
  assert.ok(heat.includes('node scripts/probe-scheduler-integration.mjs')&&plain.includes('node scripts/probe-scheduler-integration.mjs'));
  assert.ok(!plain.includes('PROBE_MANAGER_PAGES'));
  assert.ok(steps.indexOf(heat)<steps.findIndex(s=>s.startsWith('Recheck both source')));
- assert.ok(runner.includes("MANAGER_PAGES_CURRENT: $"+"{{ matrix.runtime == 'current' && github.event.pull_request.number == "+n+" }}"));
+ assert.ok(runner.includes("MANAGER_PAGES_CURRENT: $"+"{{ "+pagesWhen+" }}"));
  assert.ok(runner.includes('NAV_DRIVERS="$DRIVERS"'));
  for(const driver of ['manager-viewports','color-phone','search-keyboard','manager-selector','manager-spacing'])
   assert.ok(runner.includes('node "$NAV_DRIVERS/'+driver+'.mjs"'));
