@@ -83,9 +83,11 @@ test("an old note that they were let back in does not resurrect them", () => {
 
 test("somebody genuinely let back in later is still let back in", () => {
   /* The stamp comparison has to work in both directions, or un-ignoring a real
-     person becomes impossible. */
-  const server = store([], { excluded: ["Angel Perez"], ignoredAt: { "angel perez": "2026-08-20T18:00:00.000Z" } });
-  const mine = store(["Angel Perez"], { unignored: { "angel perez": "2026-08-21T09:00:00.000Z" } });
+     person becomes impossible. The stamps are relative to today: stamps are
+     pruned at ninety days, and fixed August dates aged out on 19 November. */
+  const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString();
+  const server = store([], { excluded: ["Angel Perez"], ignoredAt: { "angel perez": daysAgo(2) } });
+  const mine = store(["Angel Perez"], { unignored: { "angel perez": daysAgo(1) } });
   const out = rosterMerge(mine, server);
   assert.ok(out.roster.some((a) => norm(a.name) === "angel perez"));
 });

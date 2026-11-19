@@ -202,12 +202,17 @@ test("a fold can be undone, and the spelling is free again", () => {
   assert.equal(out.peopleLog[0].name, "Alejandro Diaz Visit");
 });
 
+/* The undo's stamp is a tombstone, and tombstones are pruned at TOMB_DAYS, so a
+   fixed August date aged out on 19 November and the fold read as back. The
+   stamp is relative to today so the test keeps testing the merge, not the
+   calendar. */
+const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString();
 test("undoing it survives a merge with a copy that still has the fold", () => {
   /* The whole reason it is a stamp. Without this the fold is back within
      seconds, which is instances one through seven of this fault verbatim. */
   const folded = foldedStore();
   const out = mergeAgainstServer(
-    JSON.parse(JSON.stringify(unfold(folded, "Alejandro Diaz Visit", { by: "Jorge", at: "2026-08-21T10:00:00.000Z" }))),
+    JSON.parse(JSON.stringify(unfold(folded, "Alejandro Diaz Visit", { by: "Jorge", at: daysAgo(1) }))),
     folded);
   assert.equal(out.aliases["alejandro diaz visit"], undefined,
     "the fold came back: " + JSON.stringify(out.aliases));
