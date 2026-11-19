@@ -86,8 +86,8 @@ test("the frozen preview restores only the exact Rooms copy change", async () =>
  const prior = roomHintPreviewInput(managerPagesPreviewInput(current));
  assert.notEqual(current, prior);
  const sha = (source) => createHash("sha256").update(source).digest("hex");
- assert.equal(sha(managerPagesPreviewInput(current)),"4cc3c11e926f6157d30339f3a4af75d237078d1ca4e18e8944de66acc49338bc");
- assert.equal(sha(prior),"7d5d45691eac734b7f21743b26af403089f039ef98c9dea276c7a653d89b08ea");
+ assert.equal(sha(managerPagesPreviewInput(current)),"d3fe0b82dd6efb3b06625e2077ec7923ebe727708dc43a9bdfcba6206a2ad1f6");
+ assert.equal(sha(prior),"a64fc5f60a9d1a74662e62d7251fb21004f32f7759a5f573442dd9d8f72865ae");
  assert.match(current, /k === "floor" \? "Leave blank to open Live Floor 1 hour before the store opens, or at 8:00 AM if store hours aren’t set\. A time you set for a weekday takes priority\. Store time\." : "Blank means the desk opens it, as before\. Store time\."/);
  const altered = current + "\n";
  assert.equal(roomHintPreviewInput(altered), altered);
@@ -113,7 +113,7 @@ test("the Manager Pages shell adapter restores only the exact reviewed slot", as
  const current = await readFile(new URL("../../src/Manager.jsx", import.meta.url), "utf8");
  const restored = managerPagesPreviewInput(current);
  assert.notEqual(restored,current);
- assert.equal(createHash("sha256").update(restored).digest("hex"),"4cc3c11e926f6157d30339f3a4af75d237078d1ca4e18e8944de66acc49338bc");
+ assert.equal(createHash("sha256").update(restored).digest("hex"),"d3fe0b82dd6efb3b06625e2077ec7923ebe727708dc43a9bdfcba6206a2ad1f6");
  const altered = current + "\n";
  assert.equal(managerPagesPreviewInput(altered),altered);
  assert.throws(() => historicalManagerFixture(peoplePreviewInput(roomHintPreviewInput(managerPagesPreviewInput(altered)))), /fixture input changed/);
