@@ -10,7 +10,7 @@
  * still doing it the old way. These checks are the merge itself, run against a
  * removal, so it cannot quietly go back to filtering.
  */
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 /* The merge itself, imported. This used to read the app's source as text, cut the
    roster half out with indexOf and rebuild it with `new Function`, because the
@@ -22,6 +22,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { norm } from "../api/_report-parsers.mjs";
 import { mergeAgainstServer } from "../api/_store-merge.mjs";
+
+/* The stamps below are fixed dates from August, and the merge prunes any stamp
+   older than ninety days (TOMB_DAYS). Read against the real clock they aged out
+   on 19 November and two of these started failing on main. The clock is held at
+   the week they were written, so the window stays the one the fixtures assume. */
+mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-08-25T12:00:00.000Z") });
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /* Still read as text, and rightly so: the three checks at the bottom are about
